@@ -390,7 +390,7 @@ std::optional<std::unordered_map<std::string, std::string>> extractJsonFlatObjec
     }
 
     std::unordered_map<std::string, std::string> out;
-    static const std::regex pair_regex(R"("([^"]+)"\s*:\s*"([^"]*)")");
+    static const std::regex pair_regex(R"re("([^"]+)"\s*:\s*"([^"]*)")re");
     for (auto it = std::sregex_iterator(raw.begin(), raw.end(), pair_regex); it != std::sregex_iterator(); ++it) {
         out[(*it)[1].str()] = (*it)[2].str();
     }
