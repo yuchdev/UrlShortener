@@ -10,6 +10,9 @@ prefix/
 CMakeLists.txt.user
 CMakeUserPresets.json
 
+# Runtime generated data
+uri.txt
+
 # Prerequisites
 *.d
 

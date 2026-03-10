@@ -241,7 +241,7 @@ http::response<http::string_body> makeResponse(const http::request<http::string_
     }
 
     if (is_tls) {
-        res.set(http::field::x_content_type_options, "nosniff");
+        res.set("X-Content-Type-Options", "nosniff");
     }
 
     res.body() = body;
@@ -521,7 +521,7 @@ private:
     void onWrite(const beast::error_code&, std::size_t)
     {
         beast::error_code ignored;
-        socket_.shutdown(tcp::socket::shutdown_send, ignored);
+        socket_.socket().shutdown(tcp::socket::shutdown_send, ignored);
     }
 
     beast::tcp_stream socket_;
@@ -587,11 +587,17 @@ private:
 
     void onWrite(const beast::error_code&, std::size_t)
     {
-        beast::error_code ignored;
-        stream_.shutdown(ignored);
+        beast::get_lowest_layer(stream_).expires_after(request_timeout);
+        stream_.async_shutdown(
+            beast::bind_front_handler(&TlsSession::onShutdown, shared_from_this()));
     }
 
-    beast::ssl_stream<beast::tcp_stream> stream_;
+    void onShutdown(const beast::error_code&)
+    {
+        beast::get_lowest_layer(stream_).close();
+    }
+
+    ssl::stream<beast::tcp_stream> stream_;
     beast::flat_buffer buffer_;
     http::request<http::string_body> req_;
     http::response<http::string_body> res_;
