@@ -364,6 +364,9 @@ std::optional<std::string> headerString(
     return clampString(std::string(req.base().at(field)), max_len);
 }
 
+std::string currentTimestamp();
+std::string generateId();
+
 void emitClickEvent(
     const http::request<http::string_body>& req,
     const ServerConfig& config,
@@ -400,8 +403,6 @@ void emitClickEvent(
 }
 
 std::string trim(const std::string& value);
-std::string currentTimestamp();
-std::string generateId();
 
 std::string jsonEscape(const std::string& input)
 {
