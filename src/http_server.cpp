@@ -740,29 +740,27 @@ http::response<http::string_body> handleShortenerRequest(
             return handleApplicationRequest(req, config, is_tls);
         }
         const std::string slug = target.substr(1);
-        if (!isValidSlug(slug)) {
-            return makeApiErrorResponse(req, config, is_tls, 404, "not_found", "Link not found");
-        }
+        if (isValidSlug(slug)) {
+            const auto link = linkRepository().getBySlug(slug);
+            if (link.has_value()) {
+                if (!link->enabled) {
+                    return makeApiErrorResponse(req, config, is_tls, 410, "link_disabled", "Link is disabled");
+                }
+                if (isExpired(link->expires_at)) {
+                    return makeApiErrorResponse(req, config, is_tls, 410, "link_expired", "Link has expired");
+                }
 
-        const auto link = linkRepository().getBySlug(slug);
-        if (!link.has_value()) {
-            return makeApiErrorResponse(req, config, is_tls, 404, "not_found", "Link not found");
+                http::response<http::string_body> res{
+                    link->redirect_type == RedirectType::permanent ? http::status::moved_permanently : http::status::found,
+                    req.version()};
+                res.set(http::field::server, "simple-http");
+                res.set(http::field::location, link->target_url);
+                res.keep_alive(false);
+                res.prepare_payload();
+                return res;
+            }
         }
-        if (!link->enabled) {
-            return makeApiErrorResponse(req, config, is_tls, 410, "link_disabled", "Link is disabled");
-        }
-        if (isExpired(link->expires_at)) {
-            return makeApiErrorResponse(req, config, is_tls, 410, "link_expired", "Link has expired");
-        }
-
-        http::response<http::string_body> res{
-            link->redirect_type == RedirectType::permanent ? http::status::moved_permanently : http::status::found,
-            req.version()};
-        res.set(http::field::server, "simple-http");
-        res.set(http::field::location, link->target_url);
-        res.keep_alive(false);
-        res.prepare_payload();
-        return res;
+        return handleApplicationRequest(req, config, is_tls);
     }
 
     return handleApplicationRequest(req, config, is_tls);
