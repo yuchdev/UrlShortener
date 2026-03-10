@@ -20,6 +20,7 @@
 #include <unordered_set>
 #include <unordered_map>
 #include <utility>
+#include <vector>
 
 #include <boost/asio.hpp>
 #include <boost/asio/ssl.hpp>
@@ -53,14 +54,45 @@ enum class RedirectType
 
 struct Link
 {
+    struct Campaign
+    {
+        std::optional<std::string> name;
+        std::optional<std::string> source;
+        std::optional<std::string> medium;
+        std::optional<std::string> term;
+        std::optional<std::string> content;
+        std::optional<std::string> id;
+    };
+
+    struct Stats
+    {
+        uint64_t total_redirects = 0;
+        uint64_t redirects_24h = 0;
+        uint64_t redirects_7d = 0;
+        std::optional<std::string> last_accessed_at;
+    };
+
     std::string id;
     std::string slug;
     std::string target_url;
     std::string created_at;
     std::string updated_at;
     std::optional<std::string> expires_at;
+    std::optional<std::string> deleted_at;
     bool enabled = true;
+    std::vector<std::string> tags;
+    std::unordered_map<std::string, std::string> metadata;
+    std::optional<Campaign> campaign;
+    Stats stats;
     RedirectType redirect_type = RedirectType::temporary;
+};
+
+enum class LinkStatus
+{
+    active,
+    disabled,
+    expired,
+    deleted
 };
 
 class InMemoryLinkRepository
@@ -101,6 +133,17 @@ public:
     {
         std::shared_lock lock(mutex_);
         return slug_to_id_.find(slug) != slug_to_id_.end();
+    }
+
+    bool update(const Link& link)
+    {
+        std::unique_lock lock(mutex_);
+        const auto it = by_id_.find(link.id);
+        if (it == by_id_.end()) {
+            return false;
+        }
+        it->second = link;
+        return true;
     }
 
 private:
@@ -200,6 +243,168 @@ bool hasJsonField(const std::string& body, const std::string& field)
     return body.find(key) != std::string::npos;
 }
 
+std::optional<std::string> extractJsonValueToken(const std::string& body, const std::string& field)
+{
+    const auto key = '"' + field + '"';
+    const auto key_pos = body.find(key);
+    if (key_pos == std::string::npos) {
+        return std::nullopt;
+    }
+    auto colon_pos = body.find(':', key_pos + key.size());
+    if (colon_pos == std::string::npos) {
+        return std::nullopt;
+    }
+    ++colon_pos;
+    while (colon_pos < body.size() && std::isspace(static_cast<unsigned char>(body[colon_pos]))) {
+        ++colon_pos;
+    }
+    if (colon_pos >= body.size()) {
+        return std::nullopt;
+    }
+
+    if (body[colon_pos] == 'n' && body.compare(colon_pos, 4, "null") == 0) {
+        return std::string("null");
+    }
+
+    if (body[colon_pos] == '"') {
+        const auto value = extractJsonStringField(body.substr(key_pos), field);
+        return value;
+    }
+
+    if (body[colon_pos] == '[' || body[colon_pos] == '{') {
+        const char open = body[colon_pos];
+        const char close = open == '[' ? ']' : '}';
+        int depth = 0;
+        bool in_string = false;
+        bool escape = false;
+        for (size_t i = colon_pos; i < body.size(); ++i) {
+            const char c = body[i];
+            if (in_string) {
+                if (escape) {
+                    escape = false;
+                    continue;
+                }
+                if (c == '\\') {
+                    escape = true;
+                    continue;
+                }
+                if (c == '"') {
+                    in_string = false;
+                }
+                continue;
+            }
+            if (c == '"') {
+                in_string = true;
+                continue;
+            }
+            if (c == open) {
+                ++depth;
+            }
+            else if (c == close) {
+                --depth;
+                if (depth == 0) {
+                    return body.substr(colon_pos, i - colon_pos + 1);
+                }
+            }
+        }
+        return std::nullopt;
+    }
+
+    return std::nullopt;
+}
+
+std::optional<std::vector<std::string>> extractJsonStringArrayField(const std::string& body, const std::string& field)
+{
+    const auto token = extractJsonValueToken(body, field);
+    if (!token.has_value()) {
+        return std::nullopt;
+    }
+    if (*token == "null") {
+        return std::vector<std::string>{};
+    }
+    const std::string& raw = *token;
+    if (raw.size() < 2 || raw.front() != '[' || raw.back() != ']') {
+        return std::nullopt;
+    }
+
+    std::vector<std::string> out;
+    size_t i = 1;
+    while (i < raw.size() - 1) {
+        while (i < raw.size() - 1 && std::isspace(static_cast<unsigned char>(raw[i]))) {
+            ++i;
+        }
+        if (i >= raw.size() - 1) {
+            break;
+        }
+        if (raw[i] != '"') {
+            return std::nullopt;
+        }
+        ++i;
+        std::string value;
+        bool escape = false;
+        while (i < raw.size() - 1) {
+            const char c = raw[i++];
+            if (escape) {
+                value.push_back(c);
+                escape = false;
+                continue;
+            }
+            if (c == '\\') {
+                escape = true;
+                continue;
+            }
+            if (c == '"') {
+                break;
+            }
+            value.push_back(c);
+        }
+        out.push_back(value);
+        while (i < raw.size() - 1 && std::isspace(static_cast<unsigned char>(raw[i]))) {
+            ++i;
+        }
+        if (i < raw.size() - 1) {
+            if (raw[i] != ',') {
+                return std::nullopt;
+            }
+            ++i;
+        }
+    }
+    return out;
+}
+
+std::optional<std::unordered_map<std::string, std::string>> extractJsonFlatObjectStringField(
+    const std::string& body,
+    const std::string& field)
+{
+    const auto token = extractJsonValueToken(body, field);
+    if (!token.has_value()) {
+        return std::nullopt;
+    }
+    if (*token == "null") {
+        return std::unordered_map<std::string, std::string>{};
+    }
+
+    const std::string& raw = *token;
+    if (raw.size() < 2 || raw.front() != '{' || raw.back() != '}') {
+        return std::nullopt;
+    }
+
+    std::unordered_map<std::string, std::string> out;
+    static const std::regex pair_regex(R"re("([^"]+)"\s*:\s*"([^"]*)")re");
+    for (auto it = std::sregex_iterator(raw.begin(), raw.end(), pair_regex); it != std::sregex_iterator(); ++it) {
+        out[(*it)[1].str()] = (*it)[2].str();
+    }
+
+    const std::string without_pairs = std::regex_replace(raw, pair_regex, "");
+    for (const char c : without_pairs) {
+        if (!std::isspace(static_cast<unsigned char>(c)) && c != '{' && c != '}' && c != ',') {
+            return std::nullopt;
+        }
+    }
+
+    return out;
+}
+
 bool isValidHttpUrl(const std::string& url)
 {
     return url.rfind("http://", 0) == 0 || url.rfind("https://", 0) == 0;
@@ -208,11 +413,19 @@ bool isValidHttpUrl(const std::string& url)
 bool isValidSlug(const std::string& slug)
 {
     static const std::regex slug_regex("^[A-Za-z0-9][A-Za-z0-9_-]{2,63}$");
-    static const std::unordered_set<std::string> reserved = {"api", "r", "health"};
     if (!std::regex_match(slug, slug_regex)) {
         return false;
     }
-    return reserved.find(slug) == reserved.end();
+    return true;
+}
+
+bool isReservedSlug(const std::string& slug)
+{
+    static const std::unordered_set<std::string> reserved = {
+        "api", "health", "metrics", "admin", "login", "logout", "r", "preview", "stats"};
+    std::string lower = slug;
+    std::transform(lower.begin(), lower.end(), lower.begin(), [](const unsigned char c) { return std::tolower(c); });
+    return reserved.find(lower) != reserved.end();
 }
 
 std::optional<std::pair<std::string, std::string>> splitUrl(const std::string& input_url)
@@ -353,6 +566,95 @@ bool isExpired(const std::optional<std::string>& expires_at)
         return false;
     }
     return std::chrono::system_clock::now() >= *ts;
+}
+
+LinkStatus resolveLinkStatus(const Link& link)
+{
+    if (link.deleted_at.has_value()) {
+        return LinkStatus::deleted;
+    }
+    if (!link.enabled) {
+        return LinkStatus::disabled;
+    }
+    if (isExpired(link.expires_at)) {
+        return LinkStatus::expired;
+    }
+    return LinkStatus::active;
+}
+
+std::string linkStatusToString(const LinkStatus status)
+{
+    switch (status) {
+    case LinkStatus::deleted:
+        return "deleted";
+    case LinkStatus::disabled:
+        return "disabled";
+    case LinkStatus::expired:
+        return "expired";
+    case LinkStatus::active:
+    default:
+        return "active";
+    }
+}
+
+bool validateTags(std::vector<std::string>& tags)
+{
+    if (tags.size() > 20) {
+        return false;
+    }
+    static const std::regex tag_regex("^[a-zA-Z0-9:_-]+$");
+    std::vector<std::string> normalized;
+    normalized.reserve(tags.size());
+    std::unordered_set<std::string> seen;
+    for (auto& tag : tags) {
+        const auto t = trim(tag);
+        if (t.empty() || t.size() > 32 || !std::regex_match(t, tag_regex)) {
+            return false;
+        }
+        if (seen.insert(t).second) {
+            normalized.push_back(t);
+        }
+    }
+    tags = std::move(normalized);
+    return true;
+}
+
+bool validateMetadata(const std::unordered_map<std::string, std::string>& metadata)
+{
+    if (metadata.size() > 50) {
+        return false;
+    }
+    for (const auto& [key, value] : metadata) {
+        if (key.empty() || key.size() > 64 || value.size() > 512) {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool validateCampaignField(const std::optional<std::string>& field)
+{
+    return !field.has_value() || field->size() <= 128;
+}
+
+bool validateCampaign(const std::optional<Link::Campaign>& campaign)
+{
+    if (!campaign.has_value()) {
+        return true;
+    }
+    const auto& c = *campaign;
+    return validateCampaignField(c.name) && validateCampaignField(c.source) && validateCampaignField(c.medium)
+        && validateCampaignField(c.term) && validateCampaignField(c.content) && validateCampaignField(c.id);
+}
+
+bool passwordGuardCheck(const Link&, const http::request<http::string_body>&)
+{
+    return true;
+}
+
+bool rateLimitGuardAllow(const Link&, const http::request<http::string_body>&)
+{
+    return true;
 }
 
 std::string trim(const std::string& value)
@@ -544,6 +846,41 @@ std::string makeShortUrl(const http::request<http::string_body>& req, const Serv
     return base + "/" + slug;
 }
 
+std::optional<Link::Campaign> extractCampaign(const std::string& body)
+{
+    const auto raw = extractJsonValueToken(body, "campaign");
+    if (!raw.has_value()) {
+        return std::nullopt;
+    }
+    if (*raw == "null") {
+        return Link::Campaign{};
+    }
+    if (raw->size() < 2 || raw->front() != '{' || raw->back() != '}') {
+        return std::nullopt;
+    }
+
+    Link::Campaign campaign;
+    if (const auto value = extractJsonStringField(*raw, "name"); value.has_value()) {
+        campaign.name = *value;
+    }
+    if (const auto value = extractJsonStringField(*raw, "source"); value.has_value()) {
+        campaign.source = *value;
+    }
+    if (const auto value = extractJsonStringField(*raw, "medium"); value.has_value()) {
+        campaign.medium = *value;
+    }
+    if (const auto value = extractJsonStringField(*raw, "term"); value.has_value()) {
+        campaign.term = *value;
+    }
+    if (const auto value = extractJsonStringField(*raw, "content"); value.has_value()) {
+        campaign.content = *value;
+    }
+    if (const auto value = extractJsonStringField(*raw, "id"); value.has_value()) {
+        campaign.id = *value;
+    }
+    return campaign;
+}
+
 std::string serializeLink(const Link& link, const std::string& short_url)
 {
     std::ostringstream body;
@@ -554,6 +891,14 @@ std::string serializeLink(const Link& link, const std::string& short_url)
          << "\"url\":" << jsonString(link.target_url) << ","
          << "\"redirect_type\":" << jsonString(redirectTypeToString(link.redirect_type)) << ","
          << "\"enabled\":" << (link.enabled ? "true" : "false") << ","
+         << "\"deleted_at\":";
+    if (link.deleted_at.has_value()) {
+        body << jsonString(*link.deleted_at);
+    }
+    else {
+        body << "null";
+    }
+    body << ","
          << "\"expires_at\":";
     if (link.expires_at.has_value()) {
         body << jsonString(*link.expires_at);
@@ -563,6 +908,60 @@ std::string serializeLink(const Link& link, const std::string& short_url)
     }
     body << ",\"created_at\":" << jsonString(link.created_at)
          << ",\"updated_at\":" << jsonString(link.updated_at)
+         << ",\"tags\":[";
+    for (size_t i = 0; i < link.tags.size(); ++i) {
+        if (i > 0) {
+            body << ',';
+        }
+        body << jsonString(link.tags[i]);
+    }
+    body << "],\"metadata\":{";
+    bool first = true;
+    for (const auto& [key, value] : link.metadata) {
+        if (!first) {
+            body << ',';
+        }
+        body << jsonString(key) << ':' << jsonString(value);
+        first = false;
+    }
+    body << "},\"campaign\":";
+    if (link.campaign.has_value()) {
+        const auto& c = *link.campaign;
+        body << '{';
+        bool first_campaign = true;
+        auto add_field = [&](const std::string& key, const std::optional<std::string>& value) {
+            if (!value.has_value()) {
+                return;
+            }
+            if (!first_campaign) {
+                body << ',';
+            }
+            body << jsonString(key) << ':' << jsonString(*value);
+            first_campaign = false;
+        };
+        add_field("name", c.name);
+        add_field("source", c.source);
+        add_field("medium", c.medium);
+        add_field("term", c.term);
+        add_field("content", c.content);
+        add_field("id", c.id);
+        body << '}';
+    }
+    else {
+        body << "null";
+    }
+    body << ",\"stats\":{"
+         << "\"total_redirects\":" << link.stats.total_redirects << ','
+         << "\"redirects_24h\":" << link.stats.redirects_24h << ','
+         << "\"redirects_7d\":" << link.stats.redirects_7d << ','
+         << "\"last_accessed_at\":";
+    if (link.stats.last_accessed_at.has_value()) {
+        body << jsonString(*link.stats.last_accessed_at);
+    }
+    else {
+        body << "null";
+    }
+    body << "}"
          << "}";
     return body.str();
 }
@@ -587,15 +986,188 @@ http::response<http::string_body> handleShortenerRequest(
     }
 
     if (target.rfind(std::string(shortener_api_prefix) + '/', 0) == 0) {
-        if (req.method() != http::verb::get) {
-            return makeApiErrorResponse(req, config, is_tls, 400, "invalid_method", "Only GET is supported");
-        }
-        const std::string slug = target.substr(std::string(shortener_api_prefix).size() + 1);
-        const auto link = linkRepository().getBySlug(slug);
-        if (!link.has_value()) {
+        const std::string resource = target.substr(std::string(shortener_api_prefix).size() + 1);
+        const auto action_pos = resource.find('/');
+        const std::string slug = action_pos == std::string::npos ? resource : resource.substr(0, action_pos);
+        const std::string action = action_pos == std::string::npos ? "" : resource.substr(action_pos + 1);
+
+        if (slug.empty()) {
             return makeApiErrorResponse(req, config, is_tls, 404, "not_found", "Link not found");
         }
-        return makeResponse(req, config, is_tls, 200, serializeLink(*link, makeShortUrl(req, config, is_tls, link->slug)), "application/json");
+
+        if (action == "preview") {
+            if (req.method() != http::verb::get) {
+                return makeApiErrorResponse(req, config, is_tls, 400, "invalid_method", "Only GET is supported");
+            }
+            const auto link = linkRepository().getBySlug(slug);
+            if (!link.has_value()) {
+                return makeApiErrorResponse(req, config, is_tls, 404, "not_found", "Link not found");
+            }
+            const auto status = resolveLinkStatus(*link);
+            std::ostringstream body;
+            body << "{\"slug\":" << jsonString(link->slug)
+                 << ",\"url\":" << jsonString(link->target_url)
+                 << ",\"status\":" << jsonString(linkStatusToString(status))
+                 << ",\"redirect_type\":" << jsonString(redirectTypeToString(link->redirect_type))
+                 << ",\"enabled\":" << (link->enabled ? "true" : "false")
+                 << ",\"expires_at\":";
+            if (link->expires_at.has_value()) {
+                body << jsonString(*link->expires_at);
+            }
+            else {
+                body << "null";
+            }
+            body << ",\"deleted_at\":";
+            if (link->deleted_at.has_value()) {
+                body << jsonString(*link->deleted_at);
+            }
+            else {
+                body << "null";
+            }
+            body << '}';
+            return makeResponse(req, config, is_tls, 200, body.str(), "application/json");
+        }
+
+        if (action == "stats") {
+            if (req.method() != http::verb::get) {
+                return makeApiErrorResponse(req, config, is_tls, 400, "invalid_method", "Only GET is supported");
+            }
+            const auto link = linkRepository().getBySlug(slug);
+            if (!link.has_value()) {
+                return makeApiErrorResponse(req, config, is_tls, 404, "not_found", "Link not found");
+            }
+            std::ostringstream body;
+            body << "{\"slug\":" << jsonString(link->slug)
+                 << ",\"total_redirects\":" << link->stats.total_redirects
+                 << ",\"redirects_24h\":" << link->stats.redirects_24h
+                 << ",\"redirects_7d\":" << link->stats.redirects_7d
+                 << ",\"last_accessed_at\":";
+            if (link->stats.last_accessed_at.has_value()) {
+                body << jsonString(*link->stats.last_accessed_at);
+            }
+            else {
+                body << "null";
+            }
+            body << ",\"created_at\":" << jsonString(link->created_at) << '}';
+            return makeResponse(req, config, is_tls, 200, body.str(), "application/json");
+        }
+
+        if (action == "enable" || action == "disable" || action == "restore") {
+            if (req.method() != http::verb::post) {
+                return makeApiErrorResponse(req, config, is_tls, 400, "invalid_method", "Only POST is supported");
+            }
+            auto link = linkRepository().getBySlug(slug);
+            if (!link.has_value()) {
+                return makeApiErrorResponse(req, config, is_tls, 404, "not_found", "Link not found");
+            }
+            if (action == "enable") {
+                link->enabled = true;
+            }
+            else if (action == "disable") {
+                link->enabled = false;
+            }
+            else {
+                link->deleted_at.reset();
+            }
+            link->updated_at = currentTimestamp();
+            linkRepository().update(*link);
+            return makeResponse(req, config, is_tls, 200, serializeLink(*link, makeShortUrl(req, config, is_tls, link->slug)), "application/json");
+        }
+
+        if (action.empty()) {
+            if (req.method() == http::verb::get) {
+                const auto link = linkRepository().getBySlug(slug);
+                if (!link.has_value()) {
+                    return makeApiErrorResponse(req, config, is_tls, 404, "not_found", "Link not found");
+                }
+                return makeResponse(req, config, is_tls, 200, serializeLink(*link, makeShortUrl(req, config, is_tls, link->slug)), "application/json");
+            }
+
+            if (req.method() == http::verb::delete_) {
+                auto link = linkRepository().getBySlug(slug);
+                if (!link.has_value()) {
+                    return makeApiErrorResponse(req, config, is_tls, 404, "not_found", "Link not found");
+                }
+                link->deleted_at = currentTimestamp();
+                link->updated_at = currentTimestamp();
+                linkRepository().update(*link);
+                return makeResponse(req, config, is_tls, 200, serializeLink(*link, makeShortUrl(req, config, is_tls, link->slug)), "application/json");
+            }
+
+            if (req.method() == http::verb::patch) {
+                auto link = linkRepository().getBySlug(slug);
+                if (!link.has_value()) {
+                    return makeApiErrorResponse(req, config, is_tls, 404, "not_found", "Link not found");
+                }
+
+                if (hasJsonField(req.body(), "enabled")) {
+                    const auto enabled = extractJsonBoolField(req.body(), "enabled");
+                    if (!enabled.has_value()) {
+                        return makeApiErrorResponse(req, config, is_tls, 400, "invalid_enabled", "enabled must be boolean");
+                    }
+                    link->enabled = *enabled;
+                }
+
+                if (hasJsonField(req.body(), "expires_at")) {
+                    const auto expires_at = extractJsonValueToken(req.body(), "expires_at");
+                    if (!expires_at.has_value()) {
+                        return makeApiErrorResponse(req, config, is_tls, 400, "invalid_expires_at", "expires_at must be RFC3339 UTC or null");
+                    }
+                    if (*expires_at == "null") {
+                        link->expires_at.reset();
+                    }
+                    else if (const auto parsed = extractJsonStringField(req.body(), "expires_at"); parsed.has_value() && parseRfc3339Zulu(*parsed).has_value()) {
+                        link->expires_at = *parsed;
+                    }
+                    else {
+                        return makeApiErrorResponse(req, config, is_tls, 400, "invalid_expires_at", "expires_at must be RFC3339 UTC or null");
+                    }
+                }
+
+                if (hasJsonField(req.body(), "tags")) {
+                    const auto tags = extractJsonStringArrayField(req.body(), "tags");
+                    if (!tags.has_value()) {
+                        return makeApiErrorResponse(req, config, is_tls, 400, "invalid_tags", "tags must be string array");
+                    }
+                    auto normalized = *tags;
+                    if (!validateTags(normalized)) {
+                        return makeApiErrorResponse(req, config, is_tls, 400, "invalid_tags", "tags violate constraints");
+                    }
+                    link->tags = std::move(normalized);
+                }
+
+                if (hasJsonField(req.body(), "metadata")) {
+                    const auto metadata = extractJsonFlatObjectStringField(req.body(), "metadata");
+                    if (!metadata.has_value() || !validateMetadata(*metadata)) {
+                        return makeApiErrorResponse(req, config, is_tls, 400, "invalid_metadata", "metadata must be flat object with string values");
+                    }
+                    link->metadata = *metadata;
+                }
+
+                if (hasJsonField(req.body(), "campaign")) {
+                    const auto raw_campaign = extractJsonValueToken(req.body(), "campaign");
+                    if (raw_campaign.has_value() && *raw_campaign == "null") {
+                        link->campaign.reset();
+                    }
+                    else {
+                        const auto campaign = extractCampaign(req.body());
+                        if (!campaign.has_value()) {
+                            return makeApiErrorResponse(req, config, is_tls, 400, "invalid_campaign", "campaign must be object or null");
+                        }
+                        link->campaign = *campaign;
+                        if (!validateCampaign(link->campaign)) {
+                            return makeApiErrorResponse(req, config, is_tls, 400, "invalid_campaign", "campaign fields exceed limits");
+                        }
+                    }
+                }
+
+                link->updated_at = currentTimestamp();
+                linkRepository().update(*link);
+                return makeResponse(req, config, is_tls, 200, serializeLink(*link, makeShortUrl(req, config, is_tls, link->slug)), "application/json");
+            }
+        }
+
+        return makeApiErrorResponse(req, config, is_tls, 400, "invalid_method", "Unsupported operation");
     }
 
     if (target.rfind(std::string(shortener_api_compat_prefix) + '/', 0) == 0) {
@@ -629,6 +1201,9 @@ http::response<http::string_body> handleShortenerRequest(
             if (!isValidSlug(*custom_slug)) {
                 return makeApiErrorResponse(req, config, is_tls, 400, "invalid_slug", "slug format is invalid");
             }
+            if (isReservedSlug(*custom_slug)) {
+                return makeApiErrorResponse(req, config, is_tls, 409, "reserved_slug", "slug is reserved");
+            }
             if (linkRepository().slugExists(*custom_slug)) {
                 return makeApiErrorResponse(req, config, is_tls, 409, "slug_conflict", "slug already in use");
             }
@@ -637,6 +1212,9 @@ http::response<http::string_body> handleShortenerRequest(
         else if (const auto compat_code = extractJsonStringField(req.body(), "code"); compat_code.has_value()) {
             if (!isValidSlug(*compat_code)) {
                 return makeApiErrorResponse(req, config, is_tls, 400, "invalid_slug", "slug format is invalid");
+            }
+            if (isReservedSlug(*compat_code)) {
+                return makeApiErrorResponse(req, config, is_tls, 409, "reserved_slug", "slug is reserved");
             }
             if (linkRepository().slugExists(*compat_code)) {
                 return makeApiErrorResponse(req, config, is_tls, 409, "slug_conflict", "slug already in use");
@@ -647,7 +1225,7 @@ http::response<http::string_body> handleShortenerRequest(
             bool created = false;
             for (int attempt = 0; attempt < 20; ++attempt) {
                 const auto candidate = generateSlug(config.shortener_generated_slug_length);
-                if (!linkRepository().slugExists(candidate)) {
+                if (!isReservedSlug(candidate) && !linkRepository().slugExists(candidate)) {
                     slug = candidate;
                     created = true;
                     break;
@@ -687,6 +1265,45 @@ http::response<http::string_body> handleShortenerRequest(
             enabled = *enabled_raw;
         }
 
+        std::vector<std::string> tags;
+        if (hasJsonField(req.body(), "tags")) {
+            const auto raw_tags = extractJsonStringArrayField(req.body(), "tags");
+            if (!raw_tags.has_value()) {
+                return makeApiErrorResponse(req, config, is_tls, 400, "invalid_tags", "tags must be string array");
+            }
+            tags = *raw_tags;
+            if (!validateTags(tags)) {
+                return makeApiErrorResponse(req, config, is_tls, 400, "invalid_tags", "tags violate constraints");
+            }
+        }
+
+        std::unordered_map<std::string, std::string> metadata;
+        if (hasJsonField(req.body(), "metadata")) {
+            const auto raw_metadata = extractJsonFlatObjectStringField(req.body(), "metadata");
+            if (!raw_metadata.has_value() || !validateMetadata(*raw_metadata)) {
+                return makeApiErrorResponse(req, config, is_tls, 400, "invalid_metadata", "metadata must be flat object with limits");
+            }
+            metadata = *raw_metadata;
+        }
+
+        std::optional<Link::Campaign> campaign;
+        if (hasJsonField(req.body(), "campaign")) {
+            const auto raw_campaign = extractJsonValueToken(req.body(), "campaign");
+            if (raw_campaign.has_value() && *raw_campaign == "null") {
+                campaign.reset();
+            }
+            else {
+                campaign = extractCampaign(req.body());
+                if (!campaign.has_value() || !validateCampaign(campaign)) {
+                    return makeApiErrorResponse(req, config, is_tls, 400, "invalid_campaign", "campaign must be valid object");
+                }
+            }
+        }
+
+        if (hasJsonField(req.body(), "deleted_at")) {
+            return makeApiErrorResponse(req, config, is_tls, 400, "invalid_request", "deleted_at is server-managed");
+        }
+
         Link link;
         link.id = generateId();
         link.slug = slug;
@@ -695,6 +1312,9 @@ http::response<http::string_body> handleShortenerRequest(
         link.updated_at = link.created_at;
         link.expires_at = expires_at;
         link.enabled = enabled;
+        link.tags = std::move(tags);
+        link.metadata = std::move(metadata);
+        link.campaign = std::move(campaign);
         link.redirect_type = redirect_type;
 
         if (!linkRepository().create(link)) {
@@ -718,12 +1338,26 @@ http::response<http::string_body> handleShortenerRequest(
             return makeApiErrorResponse(req, config, is_tls, 404, "not_found", "Link not found");
         }
 
-        if (!link->enabled) {
+        const auto status = resolveLinkStatus(*link);
+        if (status == LinkStatus::deleted) {
+            return makeApiErrorResponse(req, config, is_tls, 404, "link_deleted", "Link not found");
+        }
+        if (status == LinkStatus::disabled) {
             return makeApiErrorResponse(req, config, is_tls, 410, "link_disabled", "Link is disabled");
         }
-        if (isExpired(link->expires_at)) {
+        if (status == LinkStatus::expired) {
             return makeApiErrorResponse(req, config, is_tls, 410, "link_expired", "Link has expired");
         }
+        if (!passwordGuardCheck(*link, req) || !rateLimitGuardAllow(*link, req)) {
+            return makeApiErrorResponse(req, config, is_tls, 429, "feature_not_enabled", "Request blocked by policy hook");
+        }
+
+        auto updated = *link;
+        updated.stats.total_redirects += 1;
+        updated.stats.redirects_24h += 1;
+        updated.stats.redirects_7d += 1;
+        updated.stats.last_accessed_at = currentTimestamp();
+        linkRepository().update(updated);
 
         http::response<http::string_body> res{
             link->redirect_type == RedirectType::permanent ? http::status::moved_permanently : http::status::found,
@@ -743,12 +1377,26 @@ http::response<http::string_body> handleShortenerRequest(
         if (isValidSlug(slug)) {
             const auto link = linkRepository().getBySlug(slug);
             if (link.has_value()) {
-                if (!link->enabled) {
+                const auto status = resolveLinkStatus(*link);
+                if (status == LinkStatus::deleted) {
+                    return makeApiErrorResponse(req, config, is_tls, 404, "link_deleted", "Link not found");
+                }
+                if (status == LinkStatus::disabled) {
                     return makeApiErrorResponse(req, config, is_tls, 410, "link_disabled", "Link is disabled");
                 }
-                if (isExpired(link->expires_at)) {
+                if (status == LinkStatus::expired) {
                     return makeApiErrorResponse(req, config, is_tls, 410, "link_expired", "Link has expired");
                 }
+                if (!passwordGuardCheck(*link, req) || !rateLimitGuardAllow(*link, req)) {
+                    return makeApiErrorResponse(req, config, is_tls, 429, "feature_not_enabled", "Request blocked by policy hook");
+                }
+
+                auto updated = *link;
+                updated.stats.total_redirects += 1;
+                updated.stats.redirects_24h += 1;
+                updated.stats.redirects_7d += 1;
+                updated.stats.last_accessed_at = currentTimestamp();
+                linkRepository().update(updated);
 
                 http::response<http::string_body> res{
                     link->redirect_type == RedirectType::permanent ? http::status::moved_permanently : http::status::found,
