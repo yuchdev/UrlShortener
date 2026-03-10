@@ -1,7 +1,7 @@
 #include <fstream>
 #include <iostream>
 
-#include <http_server/uri_map_singleton.h>
+#include <url_shortener/uri_map_singleton.h>
 
 UriMapSingleton& UriMapSingleton::getInstance()
 {

@@ -7,8 +7,8 @@
 #include <string_view>
 
 #include <boost/asio.hpp>
-#include <http_server/http_server.h>
-#include <http_server/uri_map_singleton.h>
+#include <url_shortener/url_shortener.h>
+#include <url_shortener/uri_map_singleton.h>
 
 namespace fs = std::filesystem;
 namespace net = boost::asio;

@@ -62,7 +62,7 @@ Required common fields:
 - `level`
 - `msg`
 - `request_id` (if request-scoped)
-- `component` (http_server, tls, storage, routing, config, etc.)
+- `component` (url_shortener, tls, storage, routing, config, etc.)
 - `remote_addr` (when available and policy-allowed)
 - `method`, `path`, `status`, `latency_ms` for request completion logs
 

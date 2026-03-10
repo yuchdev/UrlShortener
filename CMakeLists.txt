@@ -24,7 +24,7 @@ find_package(Python3 COMPONENTS Interpreter REQUIRED)
 # ---- Declare executable ----
 include(sources.cmake)
 
-add_executable(simple-http ${HTTP_SERVER_SOURCES})
+add_executable(simple-http ${URL_SHORTENER_SOURCES})
 add_executable(simple-http::exe ALIAS simple-http)
 
 set_property(TARGET simple-http PROPERTY OUTPUT_NAME simple-http)
