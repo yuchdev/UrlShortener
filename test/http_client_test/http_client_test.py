@@ -253,6 +253,15 @@ class TestShortenerApi(unittest.TestCase):
         status, _, _ = self.request("GET", "/api/v1/links/unknown-code")
         self.assertEqual(404, status)
 
+        status, payload, _ = self.request(
+            "POST",
+            "/api/v1/links",
+            body='{"url":"https://example.com/rsv","slug":"API"}',
+            headers={"Content-Type": "application/json"},
+        )
+        self.assertEqual(409, status)
+        self.assertIn('"reserved_slug"', payload)
+
     def test_disabled_expired_and_permanent_redirects(self):
         status, payload, _ = self.request(
             "POST",
@@ -297,6 +306,84 @@ class TestShortenerApi(unittest.TestCase):
 
         status, _, _ = self.request("DELETE", "/legacy")
         self.assertEqual(200, status)
+
+    def test_stage2_management_lifecycle_preview_and_stats(self):
+        status, payload, _ = self.request(
+            "POST",
+            "/api/v1/links",
+            body=(
+                '{"url":"https://example.com/mgmt","slug":"mgmt01",'
+                '"tags":[" spring ","paid","paid"],'
+                '"metadata":{"owner":"growth","locale":"en-US"},'
+                '"campaign":{"name":"launch","source":"newsletter"}}'
+            ),
+            headers={"Content-Type": "application/json"},
+        )
+        self.assertEqual(201, status)
+        self.assertIn('"tags":["spring","paid"]', payload)
+        self.assertIn('"campaign":{"name":"launch","source":"newsletter"}', payload)
+
+        status, _, _ = self.request("POST", "/api/v1/links/mgmt01/disable")
+        self.assertEqual(200, status)
+
+        status, payload, _ = self.request("GET", "/mgmt01")
+        self.assertEqual(410, status)
+        self.assertIn('"link_disabled"', payload)
+
+        status, _, _ = self.request("POST", "/api/v1/links/mgmt01/enable")
+        self.assertEqual(200, status)
+
+        status, _, res = self.request("GET", "/mgmt01")
+        self.assertEqual(302, status)
+        self.assertEqual("https://example.com/mgmt", res.getheader("Location"))
+
+        status, payload, _ = self.request("GET", "/api/v1/links/mgmt01/stats")
+        self.assertEqual(200, status)
+        self.assertIn('"total_redirects":1', payload)
+
+        status, _, _ = self.request("DELETE", "/api/v1/links/mgmt01")
+        self.assertEqual(200, status)
+
+        status, payload, _ = self.request("GET", "/mgmt01")
+        self.assertEqual(404, status)
+        self.assertIn('"link_deleted"', payload)
+
+        status, payload, _ = self.request("GET", "/api/v1/links/mgmt01/preview")
+        self.assertEqual(200, status)
+        self.assertIn('"status":"deleted"', payload)
+
+        status, _, _ = self.request("POST", "/api/v1/links/mgmt01/restore")
+        self.assertEqual(200, status)
+
+        status, _, res = self.request("GET", "/mgmt01")
+        self.assertEqual(302, status)
+        self.assertEqual("https://example.com/mgmt", res.getheader("Location"))
+
+    def test_stage2_patch_and_expiry(self):
+        status, _, _ = self.request(
+            "POST",
+            "/api/v1/links",
+            body='{"url":"https://example.com/patch","slug":"patch01"}',
+            headers={"Content-Type": "application/json"},
+        )
+        self.assertEqual(201, status)
+
+        status, payload, _ = self.request(
+            "PATCH",
+            "/api/v1/links/patch01",
+            body='{"expires_at":"2000-01-01T00:00:00Z"}',
+            headers={"Content-Type": "application/json"},
+        )
+        self.assertEqual(200, status)
+        self.assertIn('"expires_at":"2000-01-01T00:00:00Z"', payload)
+
+        status, payload, _ = self.request("GET", "/patch01")
+        self.assertEqual(410, status)
+        self.assertIn('"link_expired"', payload)
+
+        status, payload, _ = self.request("GET", "/api/v1/links/patch01/preview")
+        self.assertEqual(200, status)
+        self.assertIn('"status":"expired"', payload)
 
 
 if __name__ == "__main__":

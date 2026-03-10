@@ -178,11 +178,34 @@ curl -i http://localhost:8000/r/docs
 curl -i http://localhost:8000/api/v1/short-urls/docs
 ```
 
-### Delete short URL
+### Patch link management fields
 
 ```bash
-curl -i -X DELETE http://localhost:8000/api/v1/short-urls/docs
+curl -i -X PATCH http://localhost:8000/api/v1/links/docs \
+  -H 'Content-Type: application/json' \
+  -d '{"enabled":false,"tags":["campaign","email"],"metadata":{"owner":"growth"}}'
 ```
+
+### Soft delete / restore
+
+```bash
+curl -i -X DELETE http://localhost:8000/api/v1/links/docs
+curl -i -X POST http://localhost:8000/api/v1/links/docs/restore
+```
+
+### Preview and stats
+
+```bash
+curl -i http://localhost:8000/api/v1/links/docs/preview
+curl -i http://localhost:8000/api/v1/links/docs/stats
+```
+
+## Stage 2 migration notes
+
+- New optional fields: `deleted_at`, `tags`, `metadata`, `campaign`, `stats`.
+- Old records default to: `enabled=true`, `deleted_at=null`, `tags=[]`, `metadata={}`, `campaign=null`, stats counters `0`.
+- Stats are provisional Stage 2 in-memory counters and reset on process restart.
+- Legacy `/api/v1/short-urls` create/read compatibility routes remain available.
 
 ## Tests
 
