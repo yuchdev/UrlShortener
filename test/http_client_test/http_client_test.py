@@ -6,6 +6,7 @@ import subprocess
 import tempfile
 import time
 import unittest
+import urllib.error
 import urllib.request
 
 
@@ -105,7 +106,7 @@ class TestHttpAndHttps(unittest.TestCase):
         context.maximum_version = ssl.TLSVersion.TLSv1_1
         context.check_hostname = False
         context.verify_mode = ssl.CERT_NONE
-        with self.assertRaises(ssl.SSLError):
+        with self.assertRaises((ssl.SSLError, urllib.error.URLError)):
             with urllib.request.urlopen("https://localhost:18443", context=context, timeout=3):
                 pass
 

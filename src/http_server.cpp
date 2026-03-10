@@ -587,8 +587,14 @@ private:
 
     void onWrite(const beast::error_code&, std::size_t)
     {
-        beast::error_code ignored;
-        stream_.shutdown(ignored);
+        beast::get_lowest_layer(stream_).expires_after(request_timeout);
+        stream_.async_shutdown(
+            beast::bind_front_handler(&TlsSession::onShutdown, shared_from_this()));
+    }
+
+    void onShutdown(const beast::error_code&)
+    {
+        beast::get_lowest_layer(stream_).close();
     }
 
     ssl::stream<beast::tcp_stream> stream_;
