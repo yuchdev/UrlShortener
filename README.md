@@ -114,6 +114,20 @@ The development target is a service optimized for fast redirects and safe operat
 - Strong TLS defaults preserved for HTTPS deployments.
 - Clear rollback/migration strategy as data model evolves.
 
+## Ubuntu dependency baseline (Stage 0)
+
+Canonical environment: **Ubuntu 24.04 LTS** (best-effort 22.04).
+
+Install build/test dependencies with:
+
+```bash
+./scripts/setup_ubuntu_dependencies.sh
+```
+
+This installs all required Stage 0 packages through `apt` (including Boost and OpenSSL) and replaces the old Boost-from-source flow for Ubuntu.
+
+See `docs/setup/UBUNTU.md` for package details and troubleshooting.
+
 ## Build
 
 ```bash
@@ -173,11 +187,13 @@ curl -i -X DELETE http://localhost:8000/api/v1/short-urls/docs
 ## Tests
 
 ```bash
-python3 test/http_client_test/http_client_test.py
+ctest --test-dir build --output-on-failure
 ```
+
+(Direct invocation still works: `python3 test/http_client_test/http_client_test.py`.)
 
 ## Repo guides
 
 - `ARCHITECTURE.md` - current architecture and layout.
-- `docs/roadmap/` - staged roadmap/specification documents.
-- `docs/roadmap/0{N}-STAGE_*.md` - planned feature/spec evolution
+- `docs/stages/` - staged specification documents.
+- `docs/setup/UBUNTU.md` - Ubuntu dependency/bootstrap guide.
