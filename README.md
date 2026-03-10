@@ -218,5 +218,6 @@ ctest --test-dir build --output-on-failure
 ## Repo guides
 
 - `ARCHITECTURE.md` - current architecture and layout.
+- `docs/storage/overview.md` - Stage 03 storage abstraction (scope 1) overview.
 - `docs/stages/` - staged specification documents.
 - `docs/setup/UBUNTU.md` - Ubuntu dependency/bootstrap guide.

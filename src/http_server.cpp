@@ -95,13 +95,44 @@ enum class LinkStatus
     deleted
 };
 
-class InMemoryLinkRepository
+enum class RepoError
+{
+    not_found,
+    already_exists,
+    transient_failure,
+    permanent_failure
+};
+
+class IMetadataRepository
 {
 public:
-    bool create(const Link& link)
+    virtual ~IMetadataRepository() = default;
+    virtual bool create(const Link& link, RepoError* error = nullptr) = 0;
+    virtual std::optional<Link> getBySlug(const std::string& slug, RepoError* error = nullptr) const = 0;
+    virtual std::optional<Link> getById(const std::string& id, RepoError* error = nullptr) const = 0;
+    virtual bool slugExists(const std::string& slug, RepoError* error = nullptr) const = 0;
+    virtual bool update(const Link& link, RepoError* error = nullptr) = 0;
+};
+
+class ILinkCacheStore
+{
+public:
+    virtual ~ILinkCacheStore() = default;
+    virtual std::optional<Link> get(const std::string& slug) = 0;
+    virtual void set(const std::string& slug, const Link& link) = 0;
+    virtual void erase(const std::string& slug) = 0;
+};
+
+class InMemoryMetadataRepository final : public IMetadataRepository
+{
+public:
+    bool create(const Link& link, RepoError* error = nullptr) override
     {
         std::unique_lock lock(mutex_);
         if (slug_to_id_.find(link.slug) != slug_to_id_.end() || by_id_.find(link.id) != by_id_.end()) {
+            if (error != nullptr) {
+                *error = RepoError::already_exists;
+            }
             return false;
         }
         slug_to_id_[link.slug] = link.id;
@@ -109,7 +140,7 @@ public:
         return true;
     }
 
-    std::optional<Link> getBySlug(const std::string& slug) const
+    std::optional<Link> getBySlug(const std::string& slug, RepoError* error = nullptr) const override
     {
         std::shared_lock lock(mutex_);
         if (const auto slug_it = slug_to_id_.find(slug); slug_it != slug_to_id_.end()) {
@@ -117,29 +148,38 @@ public:
                 return id_it->second;
             }
         }
+        if (error != nullptr) {
+            *error = RepoError::not_found;
+        }
         return std::nullopt;
     }
 
-    std::optional<Link> getById(const std::string& id) const
+    std::optional<Link> getById(const std::string& id, RepoError* error = nullptr) const override
     {
         std::shared_lock lock(mutex_);
         if (const auto it = by_id_.find(id); it != by_id_.end()) {
             return it->second;
         }
+        if (error != nullptr) {
+            *error = RepoError::not_found;
+        }
         return std::nullopt;
     }
 
-    bool slugExists(const std::string& slug) const
+    bool slugExists(const std::string& slug, RepoError* /*error*/ = nullptr) const override
     {
         std::shared_lock lock(mutex_);
         return slug_to_id_.find(slug) != slug_to_id_.end();
     }
 
-    bool update(const Link& link)
+    bool update(const Link& link, RepoError* error = nullptr) override
     {
         std::unique_lock lock(mutex_);
         const auto it = by_id_.find(link.id);
         if (it == by_id_.end()) {
+            if (error != nullptr) {
+                *error = RepoError::not_found;
+            }
             return false;
         }
         it->second = link;
@@ -152,10 +192,67 @@ private:
     std::unordered_map<std::string, std::string> slug_to_id_;
 };
 
-InMemoryLinkRepository& linkRepository()
+class InMemoryLinkCacheStore final : public ILinkCacheStore
 {
-    static InMemoryLinkRepository repo;
+public:
+    std::optional<Link> get(const std::string& slug) override
+    {
+        std::shared_lock lock(mutex_);
+        if (const auto it = by_slug_.find(slug); it != by_slug_.end()) {
+            return it->second;
+        }
+        return std::nullopt;
+    }
+
+    void set(const std::string& slug, const Link& link) override
+    {
+        std::unique_lock lock(mutex_);
+        by_slug_[slug] = link;
+    }
+
+    void erase(const std::string& slug) override
+    {
+        std::unique_lock lock(mutex_);
+        by_slug_.erase(slug);
+    }
+
+private:
+    std::shared_mutex mutex_;
+    std::unordered_map<std::string, Link> by_slug_;
+};
+
+IMetadataRepository& linkRepository()
+{
+    static InMemoryMetadataRepository repo;
     return repo;
+}
+
+ILinkCacheStore& linkCache()
+{
+    static InMemoryLinkCacheStore cache;
+    return cache;
+}
+
+std::optional<Link> getLinkForRead(const std::string& slug)
+{
+    if (const auto cached = linkCache().get(slug); cached.has_value()) {
+        return cached;
+    }
+
+    const auto link = linkRepository().getBySlug(slug);
+    if (link.has_value()) {
+        linkCache().set(slug, *link);
+    }
+    return link;
+}
+
+bool updateLinkAndInvalidateCache(const Link& link)
+{
+    if (!linkRepository().update(link)) {
+        return false;
+    }
+    linkCache().erase(link.slug);
+    return true;
 }
 
 std::string trim(const std::string& value);
@@ -999,7 +1096,7 @@ http::response<http::string_body> handleShortenerRequest(
             if (req.method() != http::verb::get) {
                 return makeApiErrorResponse(req, config, is_tls, 400, "invalid_method", "Only GET is supported");
             }
-            const auto link = linkRepository().getBySlug(slug);
+            const auto link = getLinkForRead(slug);
             if (!link.has_value()) {
                 return makeApiErrorResponse(req, config, is_tls, 404, "not_found", "Link not found");
             }
@@ -1032,7 +1129,7 @@ http::response<http::string_body> handleShortenerRequest(
             if (req.method() != http::verb::get) {
                 return makeApiErrorResponse(req, config, is_tls, 400, "invalid_method", "Only GET is supported");
             }
-            const auto link = linkRepository().getBySlug(slug);
+            const auto link = getLinkForRead(slug);
             if (!link.has_value()) {
                 return makeApiErrorResponse(req, config, is_tls, 404, "not_found", "Link not found");
             }
@@ -1056,7 +1153,7 @@ http::response<http::string_body> handleShortenerRequest(
             if (req.method() != http::verb::post) {
                 return makeApiErrorResponse(req, config, is_tls, 400, "invalid_method", "Only POST is supported");
             }
-            auto link = linkRepository().getBySlug(slug);
+            auto link = getLinkForRead(slug);
             if (!link.has_value()) {
                 return makeApiErrorResponse(req, config, is_tls, 404, "not_found", "Link not found");
             }
@@ -1070,13 +1167,13 @@ http::response<http::string_body> handleShortenerRequest(
                 link->deleted_at.reset();
             }
             link->updated_at = currentTimestamp();
-            linkRepository().update(*link);
+            updateLinkAndInvalidateCache(*link);
             return makeResponse(req, config, is_tls, 200, serializeLink(*link, makeShortUrl(req, config, is_tls, link->slug)), "application/json");
         }
 
         if (action.empty()) {
             if (req.method() == http::verb::get) {
-                const auto link = linkRepository().getBySlug(slug);
+                const auto link = getLinkForRead(slug);
                 if (!link.has_value()) {
                     return makeApiErrorResponse(req, config, is_tls, 404, "not_found", "Link not found");
                 }
@@ -1084,18 +1181,18 @@ http::response<http::string_body> handleShortenerRequest(
             }
 
             if (req.method() == http::verb::delete_) {
-                auto link = linkRepository().getBySlug(slug);
+                auto link = getLinkForRead(slug);
                 if (!link.has_value()) {
                     return makeApiErrorResponse(req, config, is_tls, 404, "not_found", "Link not found");
                 }
                 link->deleted_at = currentTimestamp();
                 link->updated_at = currentTimestamp();
-                linkRepository().update(*link);
+                updateLinkAndInvalidateCache(*link);
                 return makeResponse(req, config, is_tls, 200, serializeLink(*link, makeShortUrl(req, config, is_tls, link->slug)), "application/json");
             }
 
             if (req.method() == http::verb::patch) {
-                auto link = linkRepository().getBySlug(slug);
+                auto link = getLinkForRead(slug);
                 if (!link.has_value()) {
                     return makeApiErrorResponse(req, config, is_tls, 404, "not_found", "Link not found");
                 }
@@ -1162,7 +1259,7 @@ http::response<http::string_body> handleShortenerRequest(
                 }
 
                 link->updated_at = currentTimestamp();
-                linkRepository().update(*link);
+                updateLinkAndInvalidateCache(*link);
                 return makeResponse(req, config, is_tls, 200, serializeLink(*link, makeShortUrl(req, config, is_tls, link->slug)), "application/json");
             }
         }
@@ -1175,7 +1272,7 @@ http::response<http::string_body> handleShortenerRequest(
             return makeApiErrorResponse(req, config, is_tls, 400, "invalid_method", "Only GET is supported");
         }
         const std::string slug = target.substr(std::string(shortener_api_compat_prefix).size() + 1);
-        const auto link = linkRepository().getBySlug(slug);
+        const auto link = getLinkForRead(slug);
         if (!link.has_value()) {
             return makeApiErrorResponse(req, config, is_tls, 404, "not_found", "Link not found");
         }
@@ -1320,6 +1417,7 @@ http::response<http::string_body> handleShortenerRequest(
         if (!linkRepository().create(link)) {
             return makeApiErrorResponse(req, config, is_tls, 409, "slug_conflict", "slug already in use");
         }
+        linkCache().erase(link.slug);
 
         return makeResponse(req, config, is_tls, 201, serializeLink(link, makeShortUrl(req, config, is_tls, link.slug)), "application/json");
     }
@@ -1333,7 +1431,7 @@ http::response<http::string_body> handleShortenerRequest(
             return makeApiErrorResponse(req, config, is_tls, 404, "not_found", "Short code not found");
         }
 
-        const auto link = linkRepository().getBySlug(slug);
+        const auto link = getLinkForRead(slug);
         if (!link.has_value()) {
             return makeApiErrorResponse(req, config, is_tls, 404, "not_found", "Link not found");
         }
@@ -1357,7 +1455,7 @@ http::response<http::string_body> handleShortenerRequest(
         updated.stats.redirects_24h += 1;
         updated.stats.redirects_7d += 1;
         updated.stats.last_accessed_at = currentTimestamp();
-        linkRepository().update(updated);
+        updateLinkAndInvalidateCache(updated);
 
         http::response<http::string_body> res{
             link->redirect_type == RedirectType::permanent ? http::status::moved_permanently : http::status::found,
@@ -1375,7 +1473,7 @@ http::response<http::string_body> handleShortenerRequest(
         }
         const std::string slug = target.substr(1);
         if (isValidSlug(slug)) {
-            const auto link = linkRepository().getBySlug(slug);
+            const auto link = getLinkForRead(slug);
             if (link.has_value()) {
                 const auto status = resolveLinkStatus(*link);
                 if (status == LinkStatus::deleted) {
@@ -1396,7 +1494,7 @@ http::response<http::string_body> handleShortenerRequest(
                 updated.stats.redirects_24h += 1;
                 updated.stats.redirects_7d += 1;
                 updated.stats.last_accessed_at = currentTimestamp();
-                linkRepository().update(updated);
+                updateLinkAndInvalidateCache(updated);
 
                 http::response<http::string_body> res{
                     link->redirect_type == RedirectType::permanent ? http::status::moved_permanently : http::status::found,
