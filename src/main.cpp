@@ -118,6 +118,15 @@ ServerConfig parseArgs(int argc, char* argv[])
         else if (arg == "--analytics-client-hash-salt" && i + 1 < argc) {
             config.analytics_client_hash_salt = argv[++i];
         }
+        else if (arg == "--request-id-max-length" && i + 1 < argc) {
+            config.request_id_max_length = static_cast<uint32_t>(std::stoul(argv[++i]));
+        }
+        else if (arg == "--max-request-body-bytes" && i + 1 < argc) {
+            config.max_request_body_bytes = static_cast<uint32_t>(std::stoul(argv[++i]));
+        }
+        else if (arg == "--max-request-target-length" && i + 1 < argc) {
+            config.max_request_target_length = static_cast<uint32_t>(std::stoul(argv[++i]));
+        }
         else if (arg[0] != '-') {
             config.http_port = parsePort(arg);
         }

@@ -187,6 +187,7 @@ class TestShortenerApi(unittest.TestCase):
             "--http-enabled", "true",
             "--tls-enabled", "false",
             "--shortener-base-domain", "http://sho.rt",
+            "--max-request-body-bytes", "4096",
         ])
         cls.server.start()
 
@@ -411,6 +412,52 @@ class TestShortenerApi(unittest.TestCase):
         status, payload, _ = self.request("GET", "/api/v1/links/patch01/preview")
         self.assertEqual(200, status)
         self.assertIn('"status":"expired"', payload)
+
+    def test_stage5_request_id_propagation(self):
+        request_id = "req-abc.123_TEST"
+        status, payload, res = self.request(
+            "POST",
+            "/api/v1/links",
+            body='{"url":"https://example.com/stage5","slug":"obs001"}',
+            headers={"Content-Type": "application/json", "X-Request-Id": request_id},
+        )
+        self.assertEqual(201, status)
+        self.assertEqual(request_id, res.getheader("X-Request-Id"))
+
+        status, payload, res = self.request(
+            "POST",
+            "/api/v1/links",
+            body='{"url":"ftp://bad"}',
+            headers={"Content-Type": "application/json", "X-Request-Id": "bad id with spaces"},
+        )
+        self.assertEqual(400, status)
+        response_request_id = res.getheader("X-Request-Id")
+        self.assertTrue(response_request_id)
+        self.assertNotEqual("bad id with spaces", response_request_id)
+        self.assertIn(f'"request_id":"{response_request_id}"', payload)
+
+    def test_stage5_metrics_and_payload_limit(self):
+        status, _, _ = self.request(
+            "POST",
+            "/api/v1/links",
+            body='{"url":"https://example.com/metric","slug":"met001"}',
+            headers={"Content-Type": "application/json"},
+        )
+        self.assertEqual(201, status)
+
+        status, payload, _ = self.request(
+            "POST",
+            "/api/v1/links",
+            body='{"url":"https://example.com/' + ('x' * 9000) + '"}',
+            headers={"Content-Type": "application/json"},
+        )
+        self.assertEqual(413, status)
+        self.assertIn('"payload_too_large"', payload)
+
+        status, payload, _ = self.request("GET", "/metrics")
+        self.assertEqual(200, status)
+        self.assertIn("http_requests_total", payload)
+        self.assertIn("http_malformed_requests_total", payload)
 
 
 class TestStage4AnalyticsQueue(unittest.TestCase):

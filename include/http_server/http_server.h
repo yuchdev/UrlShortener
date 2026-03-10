@@ -55,6 +55,9 @@ struct ServerConfig
     bool analytics_enabled = true;
     uint32_t analytics_queue_capacity = 1024;
     std::string analytics_client_hash_salt = "dev-analytics-salt";
+    uint32_t request_id_max_length = 64;
+    uint32_t max_request_body_bytes = 65536;
+    uint32_t max_request_target_length = 2048;
 };
 
 class HttpServer
