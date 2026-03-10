@@ -413,5 +413,57 @@ class TestShortenerApi(unittest.TestCase):
         self.assertIn('"status":"expired"', payload)
 
 
+class TestStage4AnalyticsQueue(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.server = ServerHarness([
+            "--http-port", "38080",
+            "--http-enabled", "true",
+            "--tls-enabled", "false",
+            "--analytics-enabled", "true",
+            "--analytics-queue-capacity", "0",
+            "--analytics-client-hash-salt", "test-salt",
+        ])
+        cls.server.start()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.server.stop()
+
+    def request(self, method, path, body=None, headers=None):
+        conn = http.client.HTTPConnection("localhost", 38080)
+        conn.request(method, path, body=body, headers=headers or {})
+        res = conn.getresponse()
+        payload = res.read().decode("utf-8")
+        conn.close()
+        return res.status, payload, res
+
+    def test_redirects_work_with_saturated_analytics_queue(self):
+        status, payload, _ = self.request(
+            "POST",
+            "/api/v1/links",
+            body='{"url":"https://example.com/analytics","slug":"anl001"}',
+            headers={"Content-Type": "application/json"},
+        )
+        self.assertEqual(201, status)
+
+        for _ in range(20):
+            status, _, res = self.request(
+                "GET",
+                "/anl001",
+                headers={
+                    "User-Agent": "x" * 2048,
+                    "Referer": "https://example.com/ref/" + ("y" * 2048),
+                    "X-Forwarded-For": "203.0.113.9",
+                },
+            )
+            self.assertEqual(302, status)
+            self.assertEqual("https://example.com/analytics", res.getheader("Location"))
+
+        status, payload, _ = self.request("GET", "/api/v1/links/anl001/stats")
+        self.assertEqual(200, status)
+        self.assertIn('"total_redirects":20', payload)
+
+
 if __name__ == "__main__":
     unittest.main()

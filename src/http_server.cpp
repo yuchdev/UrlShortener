@@ -3,6 +3,7 @@
 #include <chrono>
 #include <cctype>
 #include <ctime>
+#include <deque>
 #include <functional>
 #include <cstdio>
 #include <filesystem>
@@ -29,6 +30,7 @@
 #include <http_server/http_server.h>
 #include <http_server/uri_map_singleton.h>
 #include <openssl/err.h>
+#include <openssl/hmac.h>
 #include <openssl/ssl.h>
 #include <openssl/x509.h>
 
@@ -85,6 +87,59 @@ struct Link
     std::optional<Campaign> campaign;
     Stats stats;
     RedirectType redirect_type = RedirectType::temporary;
+};
+
+
+
+struct ClickEvent
+{
+    std::string event_id;
+    std::string occurred_at;
+    std::string slug;
+    std::optional<std::string> link_id;
+    std::string domain;
+    uint16_t status_code = 0;
+    std::optional<std::string> referrer;
+    std::optional<std::string> user_agent;
+    std::string client_id_hash;
+};
+
+class BoundedClickEventQueue
+{
+public:
+    explicit BoundedClickEventQueue(size_t capacity)
+        : capacity_(capacity)
+    {
+    }
+
+    void resetCapacity(size_t capacity)
+    {
+        std::unique_lock lock(mutex_);
+        capacity_ = capacity;
+        while (events_.size() > capacity_) {
+            events_.pop_front();
+            ++dropped_total_;
+        }
+    }
+
+    bool tryEnqueue(ClickEvent event)
+    {
+        std::unique_lock lock(mutex_);
+        if (events_.size() >= capacity_) {
+            ++dropped_total_;
+            return false;
+        }
+        events_.push_back(std::move(event));
+        ++enqueued_total_;
+        return true;
+    }
+
+private:
+    std::mutex mutex_;
+    size_t capacity_;
+    std::deque<ClickEvent> events_;
+    uint64_t enqueued_total_ = 0;
+    uint64_t dropped_total_ = 0;
 };
 
 enum class LinkStatus
@@ -253,6 +308,98 @@ bool updateLinkAndInvalidateCache(const Link& link)
     }
     linkCache().erase(link.slug);
     return true;
+}
+
+BoundedClickEventQueue& analyticsQueue(const ServerConfig& config)
+{
+    static BoundedClickEventQueue queue(config.analytics_queue_capacity);
+    static size_t last_capacity = config.analytics_queue_capacity;
+    if (last_capacity != config.analytics_queue_capacity) {
+        queue.resetCapacity(config.analytics_queue_capacity);
+        last_capacity = config.analytics_queue_capacity;
+    }
+    return queue;
+}
+
+std::string clampString(const std::string& value, size_t max_len)
+{
+    if (value.size() <= max_len) {
+        return value;
+    }
+    return value.substr(0, max_len);
+}
+
+std::string hexEncode(const unsigned char* data, size_t len)
+{
+    std::ostringstream out;
+    out << std::hex << std::setfill('0');
+    for (size_t i = 0; i < len; ++i) {
+        out << std::setw(2) << static_cast<unsigned int>(data[i]);
+    }
+    return out.str();
+}
+
+std::string hashClientIdentifier(const std::string& raw_client, const std::string& salt)
+{
+    unsigned int len = 0;
+    unsigned char digest[EVP_MAX_MD_SIZE];
+    HMAC(EVP_sha256(),
+        reinterpret_cast<const unsigned char*>(salt.data()),
+        static_cast<int>(salt.size()),
+        reinterpret_cast<const unsigned char*>(raw_client.data()),
+        raw_client.size(),
+        digest,
+        &len);
+    return hexEncode(digest, len);
+}
+
+std::optional<std::string> headerString(
+    const http::request<http::string_body>& req,
+    const http::field field,
+    const size_t max_len)
+{
+    if (!req.base().count(field)) {
+        return std::nullopt;
+    }
+    return clampString(std::string(req.base().at(field)), max_len);
+}
+
+std::string currentTimestamp();
+std::string generateId();
+
+void emitClickEvent(
+    const http::request<http::string_body>& req,
+    const ServerConfig& config,
+    const std::string& slug,
+    const std::optional<Link>& link,
+    const uint16_t status_code)
+{
+    if (!config.analytics_enabled) {
+        return;
+    }
+
+    ClickEvent event;
+    event.event_id = generateId();
+    event.occurred_at = currentTimestamp();
+    event.slug = slug;
+    if (link.has_value()) {
+        event.link_id = link->id;
+    }
+
+    std::string host = req.base().count(http::field::host) ? std::string(req.base().at(http::field::host)) : "";
+    if (const auto pos = host.find(':'); pos != std::string::npos) {
+        host = host.substr(0, pos);
+    }
+    event.domain = clampString(host, 255);
+    event.status_code = status_code;
+    event.referrer = headerString(req, http::field::referer, 512);
+    event.user_agent = headerString(req, http::field::user_agent, 512);
+
+    const std::string forwarded_for = req.base().count("X-Forwarded-For") ? std::string(req.base().at("X-Forwarded-For")) : "";
+    const std::string client_source = forwarded_for.empty() ? "unknown" : clampString(forwarded_for, 128);
+    event.client_id_hash = hashClientIdentifier(client_source, config.analytics_client_hash_salt);
+
+    (void)analyticsQueue(config).tryEnqueue(std::move(event));
 }
 
 std::string trim(const std::string& value);
@@ -1428,22 +1575,27 @@ http::response<http::string_body> handleShortenerRequest(
         }
         const std::string slug = target.substr(short_redirect_prefix.size());
         if (!isValidSlug(slug)) {
+            emitClickEvent(req, config, slug, std::nullopt, 404);
             return makeApiErrorResponse(req, config, is_tls, 404, "not_found", "Short code not found");
         }
 
         const auto link = getLinkForRead(slug);
         if (!link.has_value()) {
+            emitClickEvent(req, config, slug, std::nullopt, 404);
             return makeApiErrorResponse(req, config, is_tls, 404, "not_found", "Link not found");
         }
 
         const auto status = resolveLinkStatus(*link);
         if (status == LinkStatus::deleted) {
+            emitClickEvent(req, config, slug, link, 404);
             return makeApiErrorResponse(req, config, is_tls, 404, "link_deleted", "Link not found");
         }
         if (status == LinkStatus::disabled) {
+            emitClickEvent(req, config, slug, link, 410);
             return makeApiErrorResponse(req, config, is_tls, 410, "link_disabled", "Link is disabled");
         }
         if (status == LinkStatus::expired) {
+            emitClickEvent(req, config, slug, link, 410);
             return makeApiErrorResponse(req, config, is_tls, 410, "link_expired", "Link has expired");
         }
         if (!passwordGuardCheck(*link, req) || !rateLimitGuardAllow(*link, req)) {
@@ -1457,9 +1609,11 @@ http::response<http::string_body> handleShortenerRequest(
         updated.stats.last_accessed_at = currentTimestamp();
         updateLinkAndInvalidateCache(updated);
 
-        http::response<http::string_body> res{
-            link->redirect_type == RedirectType::permanent ? http::status::moved_permanently : http::status::found,
-            req.version()};
+        const auto redirect_status =
+            link->redirect_type == RedirectType::permanent ? http::status::moved_permanently : http::status::found;
+        emitClickEvent(req, config, slug, link, static_cast<uint16_t>(redirect_status));
+
+        http::response<http::string_body> res{redirect_status, req.version()};
         res.set(http::field::server, "simple-http");
         res.set(http::field::location, link->target_url);
         res.keep_alive(false);
@@ -1477,12 +1631,15 @@ http::response<http::string_body> handleShortenerRequest(
             if (link.has_value()) {
                 const auto status = resolveLinkStatus(*link);
                 if (status == LinkStatus::deleted) {
+                    emitClickEvent(req, config, slug, link, 404);
                     return makeApiErrorResponse(req, config, is_tls, 404, "link_deleted", "Link not found");
                 }
                 if (status == LinkStatus::disabled) {
+                    emitClickEvent(req, config, slug, link, 410);
                     return makeApiErrorResponse(req, config, is_tls, 410, "link_disabled", "Link is disabled");
                 }
                 if (status == LinkStatus::expired) {
+                    emitClickEvent(req, config, slug, link, 410);
                     return makeApiErrorResponse(req, config, is_tls, 410, "link_expired", "Link has expired");
                 }
                 if (!passwordGuardCheck(*link, req) || !rateLimitGuardAllow(*link, req)) {
@@ -1496,9 +1653,11 @@ http::response<http::string_body> handleShortenerRequest(
                 updated.stats.last_accessed_at = currentTimestamp();
                 updateLinkAndInvalidateCache(updated);
 
-                http::response<http::string_body> res{
-                    link->redirect_type == RedirectType::permanent ? http::status::moved_permanently : http::status::found,
-                    req.version()};
+                const auto redirect_status =
+                    link->redirect_type == RedirectType::permanent ? http::status::moved_permanently : http::status::found;
+                emitClickEvent(req, config, slug, link, static_cast<uint16_t>(redirect_status));
+
+                http::response<http::string_body> res{redirect_status, req.version()};
                 res.set(http::field::server, "simple-http");
                 res.set(http::field::location, link->target_url);
                 res.keep_alive(false);
