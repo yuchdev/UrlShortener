@@ -11,6 +11,7 @@
 #include <iostream>
 #include <mutex>
 #include <memory>
+#include <map>
 #include <optional>
 #include <random>
 #include <regex>
@@ -46,7 +47,27 @@ constexpr auto request_timeout = std::chrono::seconds(30);
 constexpr std::string_view shortener_api_prefix = "/api/v1/links";
 constexpr std::string_view shortener_api_compat_prefix = "/api/v1/short-urls";
 constexpr std::string_view short_redirect_prefix = "/r/";
-constexpr std::string_view request_id = "req_local";
+constexpr std::string_view request_id_header = "X-Request-Id";
+constexpr std::string_view internal_request_id_header = "X-Internal-Request-Id";
+
+struct RequestContext
+{
+    std::string request_id;
+    std::string route_label;
+    std::chrono::steady_clock::time_point started_at;
+};
+
+struct MetricsRegistry
+{
+    std::atomic<uint64_t> inflight_requests{0};
+    std::atomic<uint64_t> parse_errors_total{0};
+    std::atomic<uint64_t> malformed_requests_total{0};
+    std::atomic<uint64_t> tls_reload_success_total{0};
+    std::atomic<uint64_t> tls_reload_failure_total{0};
+
+    std::mutex mutex;
+    std::map<std::string, uint64_t> http_requests_total;
+};
 
 enum class RedirectType
 {
@@ -936,6 +957,131 @@ std::string currentTimestamp()
     return out.str();
 }
 
+MetricsRegistry& metricsRegistry()
+{
+    static MetricsRegistry registry;
+    return registry;
+}
+
+std::string sanitizeLogValue(std::string value)
+{
+    constexpr size_t max_len = 160;
+    value.erase(std::remove_if(value.begin(), value.end(), [](unsigned char c) {
+        return c < 0x20 && c != ' ';
+    }), value.end());
+    if (value.size() > max_len) {
+        value = value.substr(0, max_len);
+    }
+    return value;
+}
+
+void logStructured(const std::string& level, const std::string& msg, const std::map<std::string, std::string>& fields)
+{
+    std::ostringstream out;
+    out << "ts=" << currentTimestamp() << " level=" << level << " msg=" << jsonString(msg);
+    for (const auto& [key, value] : fields) {
+        out << ' ' << key << '=' << jsonString(sanitizeLogValue(value));
+    }
+    std::cout << out.str() << '\n';
+}
+
+bool isValidRequestId(const std::string& value, const uint32_t max_len)
+{
+    if (value.empty() || value.size() > max_len) {
+        return false;
+    }
+    return std::all_of(value.begin(), value.end(), [](unsigned char c) {
+        return std::isalnum(c) || c == '-' || c == '_' || c == '.';
+    });
+}
+
+std::string generateRequestId()
+{
+    static thread_local std::mt19937_64 rng(std::random_device{}());
+    std::uniform_int_distribution<uint64_t> dist;
+    const uint64_t hi = dist(rng);
+    const uint64_t lo = dist(rng);
+    std::ostringstream out;
+    out << std::hex << std::setw(16) << std::setfill('0') << hi
+        << std::setw(16) << std::setfill('0') << lo;
+    return out.str();
+}
+
+std::string statusClass(const unsigned status)
+{
+    return std::to_string(status / 100) + "xx";
+}
+
+std::string routeLabelFor(const std::string& target)
+{
+    if (target == "/metrics") {
+        return "metrics";
+    }
+    if (target == "/healthz") {
+        return "healthz";
+    }
+    if (target == "/readyz") {
+        return "readyz";
+    }
+    if (target.rfind(std::string(short_redirect_prefix), 0) == 0) {
+        return "redirect_prefixed";
+    }
+    if (target.rfind(std::string(shortener_api_prefix), 0) == 0 || target.rfind(std::string(shortener_api_compat_prefix), 0) == 0) {
+        return "api_links";
+    }
+    if (target.size() > 1 && target[0] == '/') {
+        return "redirect_root";
+    }
+    return "app";
+}
+
+std::string resolveRequestId(const http::request<http::string_body>& req, const ServerConfig& config)
+{
+    const std::string incoming = std::string(req[request_id_header]);
+    if (isValidRequestId(incoming, config.request_id_max_length)) {
+        return incoming;
+    }
+
+    static std::atomic<uint64_t> invalid_count{0};
+    if (!incoming.empty() && invalid_count.fetch_add(1) % 100 == 0) {
+        logStructured("WARN", "invalid inbound request id ignored", { {"component", "http_server"} });
+    }
+    return generateRequestId();
+}
+
+std::string requestIdFromRequest(const http::request<http::string_body>& req)
+{
+    const std::string internal = std::string(req[internal_request_id_header]);
+    if (!internal.empty()) {
+        return internal;
+    }
+    return generateRequestId();
+}
+
+void recordHttpMetric(const http::request<http::string_body>& req, const std::string& route_label, const unsigned status)
+{
+    auto& metrics = metricsRegistry();
+    const std::string key = "method=" + std::string(req.method_string()) + ",route=" + route_label + ",status_class=" + statusClass(status);
+    std::lock_guard lock(metrics.mutex);
+    metrics.http_requests_total[key] += 1;
+}
+
+std::string renderMetrics()
+{
+    auto& metrics = metricsRegistry();
+    std::ostringstream out;
+    out << "http_inflight_requests " << metrics.inflight_requests.load() << '\n';
+    out << "http_parse_errors_total " << metrics.parse_errors_total.load() << '\n';
+    out << "http_malformed_requests_total " << metrics.malformed_requests_total.load() << '\n';
+    out << "tls_reload_success_total " << metrics.tls_reload_success_total.load() << '\n';
+    out << "tls_reload_failure_total " << metrics.tls_reload_failure_total.load() << '\n';
+    std::lock_guard lock(metrics.mutex);
+    for (const auto& [labels, value] : metrics.http_requests_total) {
+        out << "http_requests_total{" << labels << "} " << value << '\n';
+    }
+    return out.str();
+}
+
 std::string generateId()
 {
     return generateSlug(20);
@@ -989,6 +1135,9 @@ http::response<http::string_body> makeResponse(const http::request<http::string_
         res.set("X-Content-Type-Options", "nosniff");
     }
 
+    const auto req_id = requestIdFromRequest(req);
+    res.set(request_id_header, req_id);
+
     res.body() = body;
     res.prepare_payload();
     return res;
@@ -1002,10 +1151,11 @@ http::response<http::string_body> makeApiErrorResponse(
     const std::string& code,
     const std::string& message)
 {
+    const auto req_id = requestIdFromRequest(req);
     std::ostringstream body;
     body << "{\"error\":{\"code\":" << jsonString(code)
          << ",\"message\":" << jsonString(message)
-         << ",\"request_id\":" << jsonString(std::string(request_id))
+         << ",\"request_id\":" << jsonString(req_id)
          << "}}";
     return makeResponse(req, config, is_tls, status, body.str(), "application/json");
 }
@@ -1069,6 +1219,7 @@ http::response<http::string_body> makeRedirectResponse(
     http::response<http::string_body> res{http::status::permanent_redirect, req.version()};
     res.set(http::field::location, location.str());
     res.set(http::field::content_type, "text/plain");
+    res.set(request_id_header, requestIdFromRequest(req));
     res.body() = "Use HTTPS\n";
     res.prepare_payload();
     return res;
@@ -1216,6 +1367,20 @@ http::response<http::string_body> handleShortenerRequest(
     const bool is_tls)
 {
     const auto target = std::string(req.target());
+
+    if (target == "/healthz" || target == "/readyz") {
+        if (req.method() != http::verb::get) {
+            return makeApiErrorResponse(req, config, is_tls, 400, "invalid_method", "Only GET is supported");
+        }
+        return makeResponse(req, config, is_tls, 200, "ok\n", "text/plain");
+    }
+
+    if (target == "/metrics") {
+        if (req.method() != http::verb::get) {
+            return makeApiErrorResponse(req, config, is_tls, 400, "invalid_method", "Only GET is supported");
+        }
+        return makeResponse(req, config, is_tls, 200, renderMetrics(), "text/plain");
+    }
 
     if (target.rfind(std::string(shortener_api_prefix) + "/id/", 0) == 0) {
         if (req.method() != http::verb::get) {
@@ -1616,6 +1781,7 @@ http::response<http::string_body> handleShortenerRequest(
         http::response<http::string_body> res{redirect_status, req.version()};
         res.set(http::field::server, "simple-http");
         res.set(http::field::location, link->target_url);
+        res.set(request_id_header, requestIdFromRequest(req));
         res.keep_alive(false);
         res.prepare_payload();
         return res;
@@ -1660,6 +1826,7 @@ http::response<http::string_body> handleShortenerRequest(
                 http::response<http::string_body> res{redirect_status, req.version()};
                 res.set(http::field::server, "simple-http");
                 res.set(http::field::location, link->target_url);
+                res.set(request_id_header, requestIdFromRequest(req));
                 res.keep_alive(false);
                 res.prepare_payload();
                 return res;
@@ -1714,15 +1881,47 @@ private:
     void onRead(const beast::error_code& ec, std::size_t)
     {
         if (ec) {
+            metricsRegistry().parse_errors_total.fetch_add(1);
             return;
         }
 
-        if (config_.http_redirect_to_https && config_.tls.enabled) {
+        const RequestContext ctx{
+            resolveRequestId(req_, config_),
+            routeLabelFor(std::string(req_.target())),
+            std::chrono::steady_clock::now() };
+        req_.set(internal_request_id_header, ctx.request_id);
+        metricsRegistry().inflight_requests.fetch_add(1);
+
+        if (req_.target().size() > config_.max_request_target_length) {
+            metricsRegistry().malformed_requests_total.fetch_add(1);
+            res_ = makeApiErrorResponse(req_, config_, false, 414, "target_too_large", "request target too large");
+        }
+        else if (req_.body().size() > config_.max_request_body_bytes) {
+            metricsRegistry().malformed_requests_total.fetch_add(1);
+            res_ = makeApiErrorResponse(req_, config_, false, 413, "payload_too_large", "request body too large");
+        }
+        else if (config_.http_redirect_to_https && config_.tls.enabled) {
             res_ = makeRedirectResponse(req_, config_);
         }
         else {
             res_ = handleShortenerRequest(req_, config_, false);
         }
+
+        metricsRegistry().inflight_requests.fetch_sub(1);
+        recordHttpMetric(req_, ctx.route_label, res_.result_int());
+        const auto latency_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now() - ctx.started_at).count();
+        logStructured("INFO", "request completed",
+            {
+                {"component", "http_server"},
+                {"request_id", ctx.request_id},
+                {"method", std::string(req_.method_string())},
+                {"path", std::string(req_.target())},
+                {"route", ctx.route_label},
+                {"status", std::to_string(res_.result_int())},
+                {"response_size", std::to_string(res_.payload_size().value_or(0))},
+                {"latency_ms", std::to_string(latency_ms)}
+            });
 
         http::async_write(socket_, res_, beast::bind_front_handler(&PlainSession::onWrite, shared_from_this()));
     }
@@ -1786,10 +1985,45 @@ private:
     void onRead(const beast::error_code& ec, std::size_t)
     {
         if (ec) {
+            metricsRegistry().parse_errors_total.fetch_add(1);
             return;
         }
 
-        res_ = handleShortenerRequest(req_, config_, true);
+        const RequestContext ctx{
+            resolveRequestId(req_, config_),
+            routeLabelFor(std::string(req_.target())),
+            std::chrono::steady_clock::now() };
+        req_.set(internal_request_id_header, ctx.request_id);
+        metricsRegistry().inflight_requests.fetch_add(1);
+
+        if (req_.target().size() > config_.max_request_target_length) {
+            metricsRegistry().malformed_requests_total.fetch_add(1);
+            res_ = makeApiErrorResponse(req_, config_, true, 414, "target_too_large", "request target too large");
+        }
+        else if (req_.body().size() > config_.max_request_body_bytes) {
+            metricsRegistry().malformed_requests_total.fetch_add(1);
+            res_ = makeApiErrorResponse(req_, config_, true, 413, "payload_too_large", "request body too large");
+        }
+        else {
+            res_ = handleShortenerRequest(req_, config_, true);
+        }
+
+        metricsRegistry().inflight_requests.fetch_sub(1);
+        recordHttpMetric(req_, ctx.route_label, res_.result_int());
+        const auto latency_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now() - ctx.started_at).count();
+        logStructured("INFO", "request completed",
+            {
+                {"component", "http_server"},
+                {"request_id", ctx.request_id},
+                {"method", std::string(req_.method_string())},
+                {"path", std::string(req_.target())},
+                {"route", ctx.route_label},
+                {"status", std::to_string(res_.result_int())},
+                {"response_size", std::to_string(res_.payload_size().value_or(0))},
+                {"latency_ms", std::to_string(latency_ms)}
+            });
+
         http::async_write(stream_, res_,
             beast::bind_front_handler(&TlsSession::onWrite, shared_from_this()));
     }
@@ -1970,7 +2204,13 @@ void HttpServer::reloadTlsContext()
     if (!config_.tls.enabled) {
         return;
     }
-
-    tls_context_ = std::make_shared<ssl::context>(buildTlsContext());
-    std::cout << "TLS context reloaded successfully" << '\n';
+    try {
+        tls_context_ = std::make_shared<ssl::context>(buildTlsContext());
+        metricsRegistry().tls_reload_success_total.fetch_add(1);
+        logStructured("INFO", "tls context reloaded", { {"component", "tls"} });
+    }
+    catch (...) {
+        metricsRegistry().tls_reload_failure_total.fetch_add(1);
+        throw;
+    }
 }

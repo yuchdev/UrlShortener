@@ -221,6 +221,21 @@ Deferred to later Stage 4 scope:
 - Aggregate analytics read API
 - Retention hooks
 
+## Stage 5 (scope 1) observability + hardening notes
+
+Implemented in this stage slice:
+- Request ID propagation (`X-Request-Id`) with validation/fallback generation.
+- Stable error envelope request correlation (`error.request_id`).
+- Request completion structured logs with method/path/route/status/latency fields.
+- In-process counters exposed via `GET /metrics`.
+- Liveness/readiness probes: `GET /healthz`, `GET /readyz`.
+- Early request-boundary hardening: max target length and max body size caps.
+
+Current config knobs:
+- `--request-id-max-length` (default: `64`)
+- `--max-request-body-bytes` (default: `65536`)
+- `--max-request-target-length` (default: `2048`)
+
 ## Tests
 
 ```bash
