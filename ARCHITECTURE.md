@@ -8,7 +8,7 @@ The service is a single-process asynchronous network server:
 
 - **Transport/runtime**: Boost.Asio + Boost.Beast.
 - **Security**: OpenSSL-backed TLS context for HTTPS.
-- **Application logic**: request routing + handlers in `src/http_server.cpp`.
+- **Application logic**: request routing + handlers in `src/url_shortener.cpp`.
 - **Storage**: process-local singleton map (`UriMapSingleton`) with best-effort file persistence (`uri.txt`) at shutdown.
 
 Data flow today:
@@ -25,12 +25,12 @@ Data flow today:
 
 ```text
 .
-├── include/http_server/
-│   ├── http_server.h          # public server/tls config + HttpServer interface
+├── include/url_shortener/
+│   ├── url_shortener.h          # public server/tls config + HttpServer interface
 │   └── uri_map_singleton.h    # in-memory singleton storage interface
 ├── src/
 │   ├── main.cpp               # process entrypoint, args, signals, persistence lifecycle
-│   ├── http_server.cpp        # protocol handling, routing, TLS setup, sessions
+│   ├── url_shortener.cpp        # protocol handling, routing, TLS setup, sessions
 │   └── uri_map_singleton.cpp  # storage implementation + file serialize/deserialize
 ├── test/http_client_test/
 │   └── http_client_test.py    # integration checks (HTTP/HTTPS behavior)
@@ -60,7 +60,7 @@ Responsibilities:
   - `SIGINT`/`SIGTERM`: stop server, persist map, stop io context.
   - `SIGHUP` (unix): reload TLS context.
 
-### 3.2 Server and networking (`src/http_server.cpp`)
+### 3.2 Server and networking (`src/url_shortener.cpp`)
 
 Responsibilities:
 

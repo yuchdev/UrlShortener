@@ -28,8 +28,8 @@
 #include <boost/asio/ssl.hpp>
 #include <boost/beast.hpp>
 #include <boost/beast/http.hpp>
-#include <http_server/http_server.h>
-#include <http_server/uri_map_singleton.h>
+#include <url_shortener/url_shortener.h>
+#include <url_shortener/uri_map_singleton.h>
 #include <openssl/err.h>
 #include <openssl/hmac.h>
 #include <openssl/ssl.h>
@@ -1044,7 +1044,7 @@ std::string resolveRequestId(const http::request<http::string_body>& req, const 
 
     static std::atomic<uint64_t> invalid_count{0};
     if (!incoming.empty() && invalid_count.fetch_add(1) % 100 == 0) {
-        logStructured("WARN", "invalid inbound request id ignored", { {"component", "http_server"} });
+        logStructured("WARN", "invalid inbound request id ignored", { {"component", "url_shortener"} });
     }
     return generateRequestId();
 }
@@ -1913,7 +1913,7 @@ private:
             std::chrono::steady_clock::now() - ctx.started_at).count();
         logStructured("INFO", "request completed",
             {
-                {"component", "http_server"},
+                {"component", "url_shortener"},
                 {"request_id", ctx.request_id},
                 {"method", std::string(req_.method_string())},
                 {"path", std::string(req_.target())},
@@ -2014,7 +2014,7 @@ private:
             std::chrono::steady_clock::now() - ctx.started_at).count();
         logStructured("INFO", "request completed",
             {
-                {"component", "http_server"},
+                {"component", "url_shortener"},
                 {"request_id", ctx.request_id},
                 {"method", std::string(req_.method_string())},
                 {"path", std::string(req_.target())},
