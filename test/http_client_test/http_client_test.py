@@ -359,6 +359,33 @@ class TestShortenerApi(unittest.TestCase):
         self.assertEqual(302, status)
         self.assertEqual("https://example.com/mgmt", res.getheader("Location"))
 
+    def test_stage3_cache_invalidation_on_lifecycle_update(self):
+        status, _, _ = self.request(
+            "POST",
+            "/api/v1/links",
+            body='{"url":"https://example.com/cache","slug":"cache01"}',
+            headers={"Content-Type": "application/json"},
+        )
+        self.assertEqual(201, status)
+
+        status, _, res = self.request("GET", "/cache01")
+        self.assertEqual(302, status)
+        self.assertEqual("https://example.com/cache", res.getheader("Location"))
+
+        status, _, _ = self.request("POST", "/api/v1/links/cache01/disable")
+        self.assertEqual(200, status)
+
+        status, payload, _ = self.request("GET", "/cache01")
+        self.assertEqual(410, status)
+        self.assertIn('"link_disabled"', payload)
+
+        status, _, _ = self.request("POST", "/api/v1/links/cache01/enable")
+        self.assertEqual(200, status)
+
+        status, _, res = self.request("GET", "/cache01")
+        self.assertEqual(302, status)
+        self.assertEqual("https://example.com/cache", res.getheader("Location"))
+
     def test_stage2_patch_and_expiry(self):
         status, _, _ = self.request(
             "POST",
