@@ -2,16 +2,23 @@
 #include <array>
 #include <chrono>
 #include <cctype>
+#include <ctime>
 #include <functional>
 #include <cstdio>
 #include <filesystem>
+#include <iomanip>
 #include <iostream>
+#include <mutex>
 #include <memory>
 #include <optional>
 #include <random>
+#include <regex>
 #include <sstream>
+#include <shared_mutex>
 #include <stdexcept>
 #include <string>
+#include <unordered_set>
+#include <unordered_map>
 #include <utility>
 
 #include <boost/asio.hpp>
@@ -33,8 +40,82 @@ namespace ssl = net::ssl;
 namespace {
 
 constexpr auto request_timeout = std::chrono::seconds(30);
-constexpr std::string_view shortener_api_prefix = "/api/v1/short-urls";
+constexpr std::string_view shortener_api_prefix = "/api/v1/links";
+constexpr std::string_view shortener_api_compat_prefix = "/api/v1/short-urls";
 constexpr std::string_view short_redirect_prefix = "/r/";
+constexpr std::string_view request_id = "req_local";
+
+enum class RedirectType
+{
+    temporary,
+    permanent
+};
+
+struct Link
+{
+    std::string id;
+    std::string slug;
+    std::string target_url;
+    std::string created_at;
+    std::string updated_at;
+    std::optional<std::string> expires_at;
+    bool enabled = true;
+    RedirectType redirect_type = RedirectType::temporary;
+};
+
+class InMemoryLinkRepository
+{
+public:
+    bool create(const Link& link)
+    {
+        std::unique_lock lock(mutex_);
+        if (slug_to_id_.find(link.slug) != slug_to_id_.end() || by_id_.find(link.id) != by_id_.end()) {
+            return false;
+        }
+        slug_to_id_[link.slug] = link.id;
+        by_id_[link.id] = link;
+        return true;
+    }
+
+    std::optional<Link> getBySlug(const std::string& slug) const
+    {
+        std::shared_lock lock(mutex_);
+        if (const auto slug_it = slug_to_id_.find(slug); slug_it != slug_to_id_.end()) {
+            if (const auto id_it = by_id_.find(slug_it->second); id_it != by_id_.end()) {
+                return id_it->second;
+            }
+        }
+        return std::nullopt;
+    }
+
+    std::optional<Link> getById(const std::string& id) const
+    {
+        std::shared_lock lock(mutex_);
+        if (const auto it = by_id_.find(id); it != by_id_.end()) {
+            return it->second;
+        }
+        return std::nullopt;
+    }
+
+    bool slugExists(const std::string& slug) const
+    {
+        std::shared_lock lock(mutex_);
+        return slug_to_id_.find(slug) != slug_to_id_.end();
+    }
+
+private:
+    mutable std::shared_mutex mutex_;
+    std::unordered_map<std::string, Link> by_id_;
+    std::unordered_map<std::string, std::string> slug_to_id_;
+};
+
+InMemoryLinkRepository& linkRepository()
+{
+    static InMemoryLinkRepository repo;
+    return repo;
+}
+
+std::string trim(const std::string& value);
 
 std::string jsonEscape(const std::string& input)
 {
@@ -124,66 +205,154 @@ bool isValidHttpUrl(const std::string& url)
     return url.rfind("http://", 0) == 0 || url.rfind("https://", 0) == 0;
 }
 
-bool isValidCode(const std::string& code)
+bool isValidSlug(const std::string& slug)
 {
-    if (code.size() < 3 || code.size() > 32) {
+    static const std::regex slug_regex("^[A-Za-z0-9][A-Za-z0-9_-]{2,63}$");
+    static const std::unordered_set<std::string> reserved = {"api", "r", "health"};
+    if (!std::regex_match(slug, slug_regex)) {
         return false;
     }
-    return std::all_of(code.begin(), code.end(), [](const char c) {
-        return std::isalnum(static_cast<unsigned char>(c)) || c == '_' || c == '-';
-    });
+    return reserved.find(slug) == reserved.end();
 }
 
-std::string codeStoragePath(const std::string& code)
+std::optional<std::pair<std::string, std::string>> splitUrl(const std::string& input_url)
 {
-    return std::string(short_redirect_prefix) + code;
-}
-
-std::string makeStoredMappingPayload(const std::string& code, const std::string& long_url)
-{
-    std::ostringstream payload;
-    payload << "{"
-            << "\"code\":" << jsonString(code) << ","
-            << "\"url\":" << jsonString(long_url) << ","
-            << "\"meta\":{}"
-            << "}";
-    return payload.str();
-}
-
-std::optional<std::string> loadShortCodeTarget(const std::string& code)
-{
-    const auto stored = UriMapSingleton::getInstance().getData(codeStoragePath(code));
-    if (!stored.has_value()) {
+    static const std::regex url_regex(R"(^([A-Za-z][A-Za-z0-9+.-]*):\/\/([^\/\?#]+)(.*)$)");
+    std::smatch match;
+    if (!std::regex_match(input_url, match, url_regex)) {
         return std::nullopt;
     }
-    return extractJsonStringField(stored->first, "url");
+    return std::make_pair(match[1].str(), match[2].str() + match[3].str());
 }
 
-bool storeShortCode(const std::string& code, const std::string& long_url)
+bool isPrivateHost(const std::string& host)
 {
-    UriMapSingleton::getInstance().saveData(
-        codeStoragePath(code), makeStoredMappingPayload(code, long_url), "application/json");
-    return true;
+    const std::string lower_host = [&host]() {
+        std::string out = host;
+        std::transform(out.begin(), out.end(), out.begin(), [](const unsigned char c) { return std::tolower(c); });
+        return out;
+    }();
+    return lower_host == "localhost" || lower_host == "::1" || lower_host.rfind("127.", 0) == 0
+        || lower_host.rfind("10.", 0) == 0 || lower_host.rfind("192.168.", 0) == 0
+        || lower_host.rfind("169.254.", 0) == 0 || lower_host.rfind("172.16.", 0) == 0
+        || lower_host.rfind("172.17.", 0) == 0 || lower_host.rfind("172.18.", 0) == 0
+        || lower_host.rfind("172.19.", 0) == 0 || lower_host.rfind("172.2", 0) == 0
+        || lower_host.rfind("172.30.", 0) == 0 || lower_host.rfind("172.31.", 0) == 0;
 }
 
-bool deleteShortCode(const std::string& code)
+std::optional<std::string> normalizeTargetUrl(const std::string& input_url, const ServerConfig& config)
 {
-    return UriMapSingleton::getInstance().deleteData(codeStoragePath(code));
-}
-
-std::string generateShortCode()
-{
-    static constexpr std::string_view chars = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
-    static constexpr int length = 6;
-    static thread_local std::mt19937 rng{std::random_device{}()};
-    std::uniform_int_distribution<std::size_t> dist(0, chars.size() - 1);
-
-    std::string generated;
-    generated.reserve(length);
-    for (int i = 0; i < length; ++i) {
-        generated.push_back(chars[dist(rng)]);
+    const std::string trimmed = trim(input_url);
+    if (trimmed.empty()) {
+        return std::nullopt;
     }
-    return generated;
+    const auto split = splitUrl(trimmed);
+    if (!split.has_value()) {
+        return std::nullopt;
+    }
+
+    auto [scheme, rest] = *split;
+    std::transform(scheme.begin(), scheme.end(), scheme.begin(), [](const unsigned char c) { return std::tolower(c); });
+    if (scheme != "http" && scheme != "https") {
+        return std::nullopt;
+    }
+
+    const auto host_end = rest.find_first_of("/?#");
+    std::string authority = host_end == std::string::npos ? rest : rest.substr(0, host_end);
+    const std::string suffix = host_end == std::string::npos ? "" : rest.substr(host_end);
+
+    if (authority.find('@') != std::string::npos) {
+        return std::nullopt;
+    }
+
+    std::string host = authority;
+    std::optional<std::string> port;
+    if (const auto colon = authority.find(':'); colon != std::string::npos) {
+        host = authority.substr(0, colon);
+        port = authority.substr(colon + 1);
+    }
+    std::transform(host.begin(), host.end(), host.begin(), [](const unsigned char c) { return std::tolower(c); });
+    if (host.empty()) {
+        return std::nullopt;
+    }
+    if (!config.shortener_allow_private_targets && isPrivateHost(host)) {
+        return std::nullopt;
+    }
+
+    if ((scheme == "http" && port == "80") || (scheme == "https" && port == "443")) {
+        port.reset();
+    }
+
+    std::ostringstream out;
+    out << scheme << "://" << host;
+    if (port.has_value() && !port->empty()) {
+        out << ':' << *port;
+    }
+    out << suffix;
+    return out.str();
+}
+
+std::optional<bool> extractJsonBoolField(const std::string& body, const std::string& field)
+{
+    const auto key = '"' + field + '"';
+    const auto key_pos = body.find(key);
+    if (key_pos == std::string::npos) {
+        return std::nullopt;
+    }
+    auto colon_pos = body.find(':', key_pos + key.size());
+    if (colon_pos == std::string::npos) {
+        return std::nullopt;
+    }
+    ++colon_pos;
+    while (colon_pos < body.size() && std::isspace(static_cast<unsigned char>(body[colon_pos]))) {
+        ++colon_pos;
+    }
+    if (body.compare(colon_pos, 4, "true") == 0) {
+        return true;
+    }
+    if (body.compare(colon_pos, 5, "false") == 0) {
+        return false;
+    }
+    return std::nullopt;
+}
+
+std::optional<RedirectType> parseRedirectType(const std::string& value)
+{
+    if (value == "temporary") {
+        return RedirectType::temporary;
+    }
+    if (value == "permanent") {
+        return RedirectType::permanent;
+    }
+    return std::nullopt;
+}
+
+std::string redirectTypeToString(const RedirectType value)
+{
+    return value == RedirectType::permanent ? "permanent" : "temporary";
+}
+
+std::optional<std::chrono::system_clock::time_point> parseRfc3339Zulu(const std::string& value)
+{
+    std::tm tm{};
+    std::istringstream in(value);
+    in >> std::get_time(&tm, "%Y-%m-%dT%H:%M:%SZ");
+    if (in.fail()) {
+        return std::nullopt;
+    }
+    return std::chrono::system_clock::from_time_t(timegm(&tm));
+}
+
+bool isExpired(const std::optional<std::string>& expires_at)
+{
+    if (!expires_at.has_value()) {
+        return false;
+    }
+    const auto ts = parseRfc3339Zulu(*expires_at);
+    if (!ts.has_value()) {
+        return false;
+    }
+    return std::chrono::system_clock::now() >= *ts;
 }
 
 std::string trim(const std::string& value)
@@ -194,6 +363,36 @@ std::string trim(const std::string& value)
     }
     const auto end = value.find_last_not_of(" \t\r\n");
     return value.substr(start, end - start + 1);
+}
+
+std::string generateSlug(const uint32_t length)
+{
+    static constexpr std::string_view chars = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+    static thread_local std::mt19937 rng{std::random_device{}()};
+    std::uniform_int_distribution<std::size_t> dist(0, chars.size() - 1);
+
+    std::string generated;
+    generated.reserve(length);
+    for (uint32_t i = 0; i < length; ++i) {
+        generated.push_back(chars[dist(rng)]);
+    }
+    return generated;
+}
+
+std::string currentTimestamp()
+{
+    const auto now = std::chrono::system_clock::now();
+    const std::time_t now_time = std::chrono::system_clock::to_time_t(now);
+    std::tm tm{};
+    gmtime_r(&now_time, &tm);
+    std::ostringstream out;
+    out << std::put_time(&tm, "%Y-%m-%dT%H:%M:%SZ");
+    return out.str();
+}
+
+std::string generateId()
+{
+    return generateSlug(20);
 }
 
 uint64_t certExpiryDaysRemaining(const std::string& cert_path)
@@ -259,7 +458,9 @@ http::response<http::string_body> makeApiErrorResponse(
 {
     std::ostringstream body;
     body << "{\"error\":{\"code\":" << jsonString(code)
-         << ",\"message\":" << jsonString(message) << "}}";
+         << ",\"message\":" << jsonString(message)
+         << ",\"request_id\":" << jsonString(std::string(request_id))
+         << "}}";
     return makeResponse(req, config, is_tls, status, body.str(), "application/json");
 }
 
@@ -334,16 +535,36 @@ std::string getHostWithoutPort(const http::request<http::string_body>& req)
 }
 
 std::string makeShortUrl(const http::request<http::string_body>& req, const ServerConfig& config, const bool is_tls,
-    const std::string& code)
+    const std::string& slug)
 {
-    std::ostringstream out;
-    out << (is_tls ? "https://" : "http://") << getHostWithoutPort(req);
-    const auto port = is_tls ? config.tls.port : config.http_port;
-    if ((is_tls && port != 443) || (!is_tls && port != 80)) {
-        out << ':' << port;
+    std::string base = config.shortener_base_domain;
+    while (!base.empty() && base.back() == '/') {
+        base.pop_back();
     }
-    out << short_redirect_prefix << code;
-    return out.str();
+    return base + "/" + slug;
+}
+
+std::string serializeLink(const Link& link, const std::string& short_url)
+{
+    std::ostringstream body;
+    body << "{"
+         << "\"id\":" << jsonString(link.id) << ","
+         << "\"slug\":" << jsonString(link.slug) << ","
+         << "\"short_url\":" << jsonString(short_url) << ","
+         << "\"url\":" << jsonString(link.target_url) << ","
+         << "\"redirect_type\":" << jsonString(redirectTypeToString(link.redirect_type)) << ","
+         << "\"enabled\":" << (link.enabled ? "true" : "false") << ","
+         << "\"expires_at\":";
+    if (link.expires_at.has_value()) {
+        body << jsonString(*link.expires_at);
+    }
+    else {
+        body << "null";
+    }
+    body << ",\"created_at\":" << jsonString(link.created_at)
+         << ",\"updated_at\":" << jsonString(link.updated_at)
+         << "}";
+    return body.str();
 }
 
 http::response<http::string_body> handleShortenerRequest(
@@ -353,110 +574,193 @@ http::response<http::string_body> handleShortenerRequest(
 {
     const auto target = std::string(req.target());
 
-    if (target.rfind(std::string(short_redirect_prefix), 0) == 0) {
+    if (target.rfind(std::string(shortener_api_prefix) + "/id/", 0) == 0) {
         if (req.method() != http::verb::get) {
-            return makeApiErrorResponse(req, config, is_tls, 400, "invalid_method", "Only GET is supported for redirects");
+            return makeApiErrorResponse(req, config, is_tls, 400, "invalid_method", "Only GET is supported");
         }
-        const std::string code = target.substr(short_redirect_prefix.size());
-        if (!isValidCode(code)) {
-            return makeApiErrorResponse(req, config, is_tls, 404, "not_found", "Short code not found");
+        const std::string id = target.substr(std::string(shortener_api_prefix).size() + 4);
+        const auto link = linkRepository().getById(id);
+        if (!link.has_value()) {
+            return makeApiErrorResponse(req, config, is_tls, 404, "not_found", "Link not found");
         }
-
-        const auto long_url = loadShortCodeTarget(code);
-        if (!long_url.has_value()) {
-            return makeApiErrorResponse(req, config, is_tls, 404, "not_found", "Short code not found");
-        }
-
-        http::response<http::string_body> res{http::status::found, req.version()};
-        res.set(http::field::server, "simple-http");
-        res.set(http::field::location, *long_url);
-        res.keep_alive(false);
-        res.prepare_payload();
-        return res;
+        return makeResponse(req, config, is_tls, 200, serializeLink(*link, makeShortUrl(req, config, is_tls, link->slug)), "application/json");
     }
 
-    if (target == shortener_api_prefix) {
+    if (target.rfind(std::string(shortener_api_prefix) + '/', 0) == 0) {
+        if (req.method() != http::verb::get) {
+            return makeApiErrorResponse(req, config, is_tls, 400, "invalid_method", "Only GET is supported");
+        }
+        const std::string slug = target.substr(std::string(shortener_api_prefix).size() + 1);
+        const auto link = linkRepository().getBySlug(slug);
+        if (!link.has_value()) {
+            return makeApiErrorResponse(req, config, is_tls, 404, "not_found", "Link not found");
+        }
+        return makeResponse(req, config, is_tls, 200, serializeLink(*link, makeShortUrl(req, config, is_tls, link->slug)), "application/json");
+    }
+
+    if (target.rfind(std::string(shortener_api_compat_prefix) + '/', 0) == 0) {
+        if (req.method() != http::verb::get) {
+            return makeApiErrorResponse(req, config, is_tls, 400, "invalid_method", "Only GET is supported");
+        }
+        const std::string slug = target.substr(std::string(shortener_api_compat_prefix).size() + 1);
+        const auto link = linkRepository().getBySlug(slug);
+        if (!link.has_value()) {
+            return makeApiErrorResponse(req, config, is_tls, 404, "not_found", "Link not found");
+        }
+        return makeResponse(req, config, is_tls, 200, serializeLink(*link, makeShortUrl(req, config, is_tls, link->slug)), "application/json");
+    }
+
+    if (target == shortener_api_prefix || target == shortener_api_compat_prefix) {
         if (req.method() != http::verb::post) {
             return makeApiErrorResponse(req, config, is_tls, 400, "invalid_method", "Only POST is supported");
         }
 
-        const auto url = extractJsonStringField(req.body(), "url");
-        if (!url.has_value() || !isValidHttpUrl(*url)) {
-            return makeApiErrorResponse(req, config, is_tls, 400, "invalid_url", "Field 'url' must be an absolute http(s) URL");
+        const auto raw_url = extractJsonStringField(req.body(), "url");
+        if (!raw_url.has_value()) {
+            return makeApiErrorResponse(req, config, is_tls, 400, "invalid_url", "url is required");
+        }
+        const auto normalized_url = normalizeTargetUrl(*raw_url, config);
+        if (!normalized_url.has_value()) {
+            return makeApiErrorResponse(req, config, is_tls, 400, "invalid_url", "url must be an absolute http/https URL");
         }
 
-        std::string code;
-        const auto requested_code = extractJsonStringField(req.body(), "code");
-        if (hasJsonField(req.body(), "code") && !requested_code.has_value()) {
-            return makeApiErrorResponse(req, config, is_tls, 400, "invalid_code", "Field 'code' must be a string");
+        std::string slug;
+        if (const auto custom_slug = extractJsonStringField(req.body(), "slug"); custom_slug.has_value()) {
+            if (!isValidSlug(*custom_slug)) {
+                return makeApiErrorResponse(req, config, is_tls, 400, "invalid_slug", "slug format is invalid");
+            }
+            if (linkRepository().slugExists(*custom_slug)) {
+                return makeApiErrorResponse(req, config, is_tls, 409, "slug_conflict", "slug already in use");
+            }
+            slug = *custom_slug;
         }
-
-        if (requested_code.has_value()) {
-            code = *requested_code;
-            if (!isValidCode(code)) {
-                return makeApiErrorResponse(req, config, is_tls, 400, "invalid_code", "Field 'code' has invalid format");
+        else if (const auto compat_code = extractJsonStringField(req.body(), "code"); compat_code.has_value()) {
+            if (!isValidSlug(*compat_code)) {
+                return makeApiErrorResponse(req, config, is_tls, 400, "invalid_slug", "slug format is invalid");
             }
-            if (loadShortCodeTarget(code).has_value()) {
-                return makeApiErrorResponse(req, config, is_tls, 409, "code_conflict", "Short code is already in use");
+            if (linkRepository().slugExists(*compat_code)) {
+                return makeApiErrorResponse(req, config, is_tls, 409, "slug_conflict", "slug already in use");
             }
+            slug = *compat_code;
         }
         else {
-            constexpr int max_attempts = 20;
             bool created = false;
-            for (int attempt = 0; attempt < max_attempts; ++attempt) {
-                auto candidate = generateShortCode();
-                if (!loadShortCodeTarget(candidate).has_value()) {
-                    code = std::move(candidate);
+            for (int attempt = 0; attempt < 20; ++attempt) {
+                const auto candidate = generateSlug(config.shortener_generated_slug_length);
+                if (!linkRepository().slugExists(candidate)) {
+                    slug = candidate;
                     created = true;
                     break;
                 }
             }
             if (!created) {
-                return makeApiErrorResponse(req, config, is_tls, 500, "code_generation_failed", "Unable to generate unique short code");
+                return makeApiErrorResponse(req, config, is_tls, 500, "slug_generation_failed", "Unable to generate a unique slug");
             }
         }
 
-        storeShortCode(code, *url);
-        std::ostringstream body;
-        body << "{"
-             << "\"code\":" << jsonString(code) << ","
-             << "\"short_url\":" << jsonString(makeShortUrl(req, config, is_tls, code)) << ","
-             << "\"url\":" << jsonString(*url) << ","
-             << "\"meta\":{}"
-             << "}";
-        return makeResponse(req, config, is_tls, 201, body.str(), "application/json");
+        RedirectType redirect_type = RedirectType::temporary;
+        if (const auto redirect_type_raw = extractJsonStringField(req.body(), "redirect_type"); redirect_type_raw.has_value()) {
+            const auto parsed = parseRedirectType(*redirect_type_raw);
+            if (!parsed.has_value()) {
+                return makeApiErrorResponse(req, config, is_tls, 400, "invalid_redirect_type", "redirect_type must be temporary or permanent");
+            }
+            redirect_type = *parsed;
+        }
+        else if (const auto parsed = parseRedirectType(config.shortener_default_redirect_type); parsed.has_value()) {
+            redirect_type = *parsed;
+        }
+
+        std::optional<std::string> expires_at;
+        if (const auto expires_at_raw = extractJsonStringField(req.body(), "expires_at"); expires_at_raw.has_value()) {
+            if (!parseRfc3339Zulu(*expires_at_raw).has_value()) {
+                return makeApiErrorResponse(req, config, is_tls, 400, "invalid_expires_at", "expires_at must be RFC3339 UTC");
+            }
+            expires_at = *expires_at_raw;
+        }
+
+        bool enabled = true;
+        if (hasJsonField(req.body(), "enabled")) {
+            const auto enabled_raw = extractJsonBoolField(req.body(), "enabled");
+            if (!enabled_raw.has_value()) {
+                return makeApiErrorResponse(req, config, is_tls, 400, "invalid_enabled", "enabled must be boolean");
+            }
+            enabled = *enabled_raw;
+        }
+
+        Link link;
+        link.id = generateId();
+        link.slug = slug;
+        link.target_url = *normalized_url;
+        link.created_at = currentTimestamp();
+        link.updated_at = link.created_at;
+        link.expires_at = expires_at;
+        link.enabled = enabled;
+        link.redirect_type = redirect_type;
+
+        if (!linkRepository().create(link)) {
+            return makeApiErrorResponse(req, config, is_tls, 409, "slug_conflict", "slug already in use");
+        }
+
+        return makeResponse(req, config, is_tls, 201, serializeLink(link, makeShortUrl(req, config, is_tls, link.slug)), "application/json");
     }
 
-    if (target.rfind(std::string(shortener_api_prefix) + '/', 0) == 0) {
-        const std::string code = target.substr(shortener_api_prefix.size() + 1);
-        if (!isValidCode(code)) {
+    if (target.rfind(std::string(short_redirect_prefix), 0) == 0) {
+        if (req.method() != http::verb::get) {
+            return makeApiErrorResponse(req, config, is_tls, 400, "invalid_method", "Only GET is supported for redirects");
+        }
+        const std::string slug = target.substr(short_redirect_prefix.size());
+        if (!isValidSlug(slug)) {
             return makeApiErrorResponse(req, config, is_tls, 404, "not_found", "Short code not found");
         }
 
-        if (req.method() == http::verb::get) {
-            const auto long_url = loadShortCodeTarget(code);
-            if (!long_url.has_value()) {
-                return makeApiErrorResponse(req, config, is_tls, 404, "not_found", "Short code not found");
-            }
-
-            std::ostringstream body;
-            body << "{"
-                 << "\"code\":" << jsonString(code) << ","
-                 << "\"short_url\":" << jsonString(makeShortUrl(req, config, is_tls, code)) << ","
-                 << "\"url\":" << jsonString(*long_url) << ","
-                 << "\"meta\":{}"
-                 << "}";
-            return makeResponse(req, config, is_tls, 200, body.str(), "application/json");
+        const auto link = linkRepository().getBySlug(slug);
+        if (!link.has_value()) {
+            return makeApiErrorResponse(req, config, is_tls, 404, "not_found", "Link not found");
         }
 
-        if (req.method() == http::verb::delete_) {
-            if (!deleteShortCode(code)) {
-                return makeApiErrorResponse(req, config, is_tls, 404, "not_found", "Short code not found");
-            }
-            return makeResponse(req, config, is_tls, 204, "", std::nullopt);
+        if (!link->enabled) {
+            return makeApiErrorResponse(req, config, is_tls, 410, "link_disabled", "Link is disabled");
+        }
+        if (isExpired(link->expires_at)) {
+            return makeApiErrorResponse(req, config, is_tls, 410, "link_expired", "Link has expired");
         }
 
-        return makeApiErrorResponse(req, config, is_tls, 400, "invalid_method", "Unsupported method for short URL resource");
+        http::response<http::string_body> res{
+            link->redirect_type == RedirectType::permanent ? http::status::moved_permanently : http::status::found,
+            req.version()};
+        res.set(http::field::server, "simple-http");
+        res.set(http::field::location, link->target_url);
+        res.keep_alive(false);
+        res.prepare_payload();
+        return res;
+    }
+
+    if (target.size() > 1 && target[0] == '/' && target.rfind("/api/", 0) != 0) {
+        if (req.method() != http::verb::get) {
+            return handleApplicationRequest(req, config, is_tls);
+        }
+        const std::string slug = target.substr(1);
+        if (isValidSlug(slug)) {
+            const auto link = linkRepository().getBySlug(slug);
+            if (link.has_value()) {
+                if (!link->enabled) {
+                    return makeApiErrorResponse(req, config, is_tls, 410, "link_disabled", "Link is disabled");
+                }
+                if (isExpired(link->expires_at)) {
+                    return makeApiErrorResponse(req, config, is_tls, 410, "link_expired", "Link has expired");
+                }
+
+                http::response<http::string_body> res{
+                    link->redirect_type == RedirectType::permanent ? http::status::moved_permanently : http::status::found,
+                    req.version()};
+                res.set(http::field::server, "simple-http");
+                res.set(http::field::location, link->target_url);
+                res.keep_alive(false);
+                res.prepare_payload();
+                return res;
+            }
+        }
+        return handleApplicationRequest(req, config, is_tls);
     }
 
     return handleApplicationRequest(req, config, is_tls);
