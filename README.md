@@ -137,10 +137,22 @@ cmake --build build --target simple-http
 
 ## Run
 
+### Show all options
+
+```bash
+./build/simple-http --help
+```
+
 ### HTTP only
 
 ```bash
 ./build/simple-http
+```
+
+### HTTP only on a custom port (positional shorthand)
+
+```bash
+./build/simple-http 9090
 ```
 
 ### HTTPS enabled

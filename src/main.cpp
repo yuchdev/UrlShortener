@@ -7,6 +7,7 @@
 #include <string_view>
 
 #include <boost/asio.hpp>
+#include <url_shortener/cli/cli_parser.h>
 #include <url_shortener/url_shortener.h>
 #include <url_shortener/uri_map_singleton.h>
 
@@ -14,136 +15,18 @@ namespace fs = std::filesystem;
 namespace net = boost::asio;
 constexpr std::string_view uri_filename = "uri.txt";
 
-namespace {
-
-bool parseBool(const std::string& value)
-{
-    return value == "1" || value == "true" || value == "on" || value == "yes";
-}
-
-uint16_t parsePort(const std::string& value)
-{
-    const int port = std::stoi(value);
-    if (port <= 0 || port > 65535) {
-        throw std::out_of_range("Invalid port number");
-    }
-    return static_cast<uint16_t>(port);
-}
-
-ServerConfig parseArgs(int argc, char* argv[])
-{
-    ServerConfig config;
-
-    if (const char* env_base_domain = std::getenv("SHORTENER_BASE_DOMAIN"); env_base_domain != nullptr) {
-        config.shortener_base_domain = env_base_domain;
-    }
-
-    for (int i = 1; i < argc; ++i) {
-        const std::string arg = argv[i];
-        if (arg == "--http-port" && i + 1 < argc) {
-            config.http_port = parsePort(argv[++i]);
-        }
-        else if (arg == "--http-enabled" && i + 1 < argc) {
-            config.http_enabled = parseBool(argv[++i]);
-        }
-        else if (arg == "--http-redirect-to-https" && i + 1 < argc) {
-            config.http_redirect_to_https = parseBool(argv[++i]);
-        }
-        else if (arg == "--hsts-max-age" && i + 1 < argc) {
-            config.hsts_max_age = static_cast<uint32_t>(std::stoul(argv[++i]));
-        }
-        else if (arg == "--tls-enabled" && i + 1 < argc) {
-            config.tls.enabled = parseBool(argv[++i]);
-        }
-        else if (arg == "--https-port" && i + 1 < argc) {
-            config.tls.port = parsePort(argv[++i]);
-        }
-        else if (arg == "--tls-cert" && i + 1 < argc) {
-            config.tls.certificate_chain_file = argv[++i];
-        }
-        else if (arg == "--tls-key" && i + 1 < argc) {
-            config.tls.private_key_file = argv[++i];
-        }
-        else if (arg == "--tls-key-passphrase" && i + 1 < argc) {
-            config.tls.private_key_passphrase = std::string(argv[++i]);
-        }
-        else if (arg == "--tls-ca-file" && i + 1 < argc) {
-            config.tls.ca_file = std::string(argv[++i]);
-        }
-        else if (arg == "--tls-ca-path" && i + 1 < argc) {
-            config.tls.ca_path = std::string(argv[++i]);
-        }
-        else if (arg == "--tls-min-version" && i + 1 < argc) {
-            config.tls.min_version = argv[++i];
-        }
-        else if (arg == "--tls-cipher-suites" && i + 1 < argc) {
-            config.tls.cipher_suites = argv[++i];
-        }
-        else if (arg == "--tls-ciphers" && i + 1 < argc) {
-            config.tls.ciphers = argv[++i];
-        }
-        else if (arg == "--tls-curves" && i + 1 < argc) {
-            config.tls.curves = argv[++i];
-        }
-        else if (arg == "--tls-alpn" && i + 1 < argc) {
-            config.tls.alpn = argv[++i];
-        }
-        else if (arg == "--tls-session-tickets" && i + 1 < argc) {
-            config.tls.session_tickets = parseBool(argv[++i]);
-        }
-        else if (arg == "--tls-session-cache" && i + 1 < argc) {
-            config.tls.session_cache = parseBool(argv[++i]);
-        }
-        else if (arg == "--tls-client-auth" && i + 1 < argc) {
-            config.tls.client_auth_mode = parseClientAuthMode(argv[++i]);
-        }
-        else if (arg == "--shortener-base-domain" && i + 1 < argc) {
-            config.shortener_base_domain = argv[++i];
-        }
-        else if (arg == "--shortener-default-redirect-type" && i + 1 < argc) {
-            config.shortener_default_redirect_type = argv[++i];
-        }
-        else if (arg == "--shortener-generated-slug-length" && i + 1 < argc) {
-            config.shortener_generated_slug_length = static_cast<uint32_t>(std::stoul(argv[++i]));
-        }
-        else if (arg == "--shortener-allow-private-targets" && i + 1 < argc) {
-            config.shortener_allow_private_targets = parseBool(argv[++i]);
-        }
-        else if (arg == "--analytics-enabled" && i + 1 < argc) {
-            config.analytics_enabled = parseBool(argv[++i]);
-        }
-        else if (arg == "--analytics-queue-capacity" && i + 1 < argc) {
-            config.analytics_queue_capacity = static_cast<uint32_t>(std::stoul(argv[++i]));
-        }
-        else if (arg == "--analytics-client-hash-salt" && i + 1 < argc) {
-            config.analytics_client_hash_salt = argv[++i];
-        }
-        else if (arg == "--request-id-max-length" && i + 1 < argc) {
-            config.request_id_max_length = static_cast<uint32_t>(std::stoul(argv[++i]));
-        }
-        else if (arg == "--max-request-body-bytes" && i + 1 < argc) {
-            config.max_request_body_bytes = static_cast<uint32_t>(std::stoul(argv[++i]));
-        }
-        else if (arg == "--max-request-target-length" && i + 1 < argc) {
-            config.max_request_target_length = static_cast<uint32_t>(std::stoul(argv[++i]));
-        }
-        else if (arg[0] != '-') {
-            config.http_port = parsePort(arg);
-        }
-        else {
-            throw std::invalid_argument("Unknown or incomplete argument: " + arg);
-        }
-    }
-
-    return config;
-}
-
-} // namespace
-
 int main(int argc, char* argv[])
 {
     try {
-        auto config = parseArgs(argc, argv);
+        CliParser cli;
+        ParseResult parsed = cli.parse(argc, argv);
+
+        if (parsed.help_requested) {
+            std::cout << parsed.help_text;
+            return 0;
+        }
+
+        auto& config = parsed.config;
         net::io_context io_context;
         HttpServer server(io_context, config);
 
