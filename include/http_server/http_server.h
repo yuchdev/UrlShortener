@@ -48,6 +48,10 @@ struct ServerConfig
     std::optional<uint32_t> hsts_max_age;
     bool fail_fast_on_invalid_tls_config = true;
     TlsConfig tls;
+    std::string shortener_base_domain = "http://localhost:8000";
+    std::string shortener_default_redirect_type = "temporary";
+    uint32_t shortener_generated_slug_length = 7;
+    bool shortener_allow_private_targets = false;
 };
 
 class HttpServer

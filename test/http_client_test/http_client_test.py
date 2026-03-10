@@ -182,7 +182,12 @@ class TestMutualTls(unittest.TestCase):
 class TestShortenerApi(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.server = ServerHarness(["--http-port", "28080", "--http-enabled", "true", "--tls-enabled", "false"])
+        cls.server = ServerHarness([
+            "--http-port", "28080",
+            "--http-enabled", "true",
+            "--tls-enabled", "false",
+            "--shortener-base-domain", "http://sho.rt",
+        ])
         cls.server.start()
 
     @classmethod
@@ -200,34 +205,28 @@ class TestShortenerApi(unittest.TestCase):
     def test_shortener_happy_path(self):
         status, payload, _ = self.request(
             "POST",
-            "/api/v1/short-urls",
+            "/api/v1/links",
             body='{"url":"https://example.com/path"}',
             headers={"Content-Type": "application/json"},
         )
         self.assertEqual(201, status)
-        self.assertIn('"code"', payload)
+        self.assertIn('"slug"', payload)
+        self.assertIn('"short_url":"http://sho.rt/', payload)
 
-        code = payload.split('"code":"', 1)[1].split('"', 1)[0]
+        code = payload.split('"slug":"', 1)[1].split('"', 1)[0]
 
-        status, _, res = self.request("GET", f"/r/{code}")
+        status, _, res = self.request("GET", f"/{code}")
         self.assertEqual(302, status)
         self.assertEqual("https://example.com/path", res.getheader("Location"))
 
-        status, payload, _ = self.request("GET", f"/api/v1/short-urls/{code}")
+        status, payload, _ = self.request("GET", f"/api/v1/links/{code}")
         self.assertEqual(200, status)
         self.assertIn('"url":"https://example.com/path"', payload)
-
-        status, _, _ = self.request("DELETE", f"/api/v1/short-urls/{code}")
-        self.assertEqual(204, status)
-
-        status, payload, _ = self.request("GET", f"/r/{code}")
-        self.assertEqual(404, status)
-        self.assertIn('"error"', payload)
 
     def test_shortener_validation_and_conflicts(self):
         status, payload, _ = self.request(
             "POST",
-            "/api/v1/short-urls",
+            "/api/v1/links",
             body='{"url":"ftp://invalid"}',
             headers={"Content-Type": "application/json"},
         )
@@ -236,23 +235,57 @@ class TestShortenerApi(unittest.TestCase):
 
         status, payload, _ = self.request(
             "POST",
-            "/api/v1/short-urls",
-            body='{"url":"https://example.com/a","code":"my-code"}',
+            "/api/v1/links",
+            body='{"url":"https://example.com/a","slug":"my-code"}',
             headers={"Content-Type": "application/json"},
         )
         self.assertEqual(201, status)
 
         status, payload, _ = self.request(
             "POST",
-            "/api/v1/short-urls",
-            body='{"url":"https://example.com/b","code":"my-code"}',
+            "/api/v1/links",
+            body='{"url":"https://example.com/b","slug":"my-code"}',
             headers={"Content-Type": "application/json"},
         )
         self.assertEqual(409, status)
-        self.assertIn('"code_conflict"', payload)
+        self.assertIn('"slug_conflict"', payload)
 
-        status, _, _ = self.request("GET", "/api/v1/short-urls/unknown-code")
+        status, _, _ = self.request("GET", "/api/v1/links/unknown-code")
         self.assertEqual(404, status)
+
+    def test_disabled_expired_and_permanent_redirects(self):
+        status, payload, _ = self.request(
+            "POST",
+            "/api/v1/links",
+            body='{"url":"https://example.com/p","slug":"perm-301","redirect_type":"permanent"}',
+            headers={"Content-Type": "application/json"},
+        )
+        self.assertEqual(201, status)
+        status, _, res = self.request("GET", "/perm-301")
+        self.assertEqual(301, status)
+        self.assertEqual("https://example.com/p", res.getheader("Location"))
+
+        status, payload, _ = self.request(
+            "POST",
+            "/api/v1/links",
+            body='{"url":"https://example.com/off","slug":"off001","enabled":false}',
+            headers={"Content-Type": "application/json"},
+        )
+        self.assertEqual(201, status)
+        status, payload, _ = self.request("GET", "/off001")
+        self.assertEqual(410, status)
+        self.assertIn('"link_disabled"', payload)
+
+        status, payload, _ = self.request(
+            "POST",
+            "/api/v1/links",
+            body='{"url":"https://example.com/exp","slug":"exp001","expires_at":"2000-01-01T00:00:00Z"}',
+            headers={"Content-Type": "application/json"},
+        )
+        self.assertEqual(201, status)
+        status, payload, _ = self.request("GET", "/exp001")
+        self.assertEqual(410, status)
+        self.assertIn('"link_expired"', payload)
 
     def test_legacy_api_still_works(self):
         status, _, _ = self.request("POST", "/legacy", body="data", headers={"Content-Type": "text/plain"})

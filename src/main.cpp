@@ -1,5 +1,6 @@
 #include <filesystem>
 #include <functional>
+#include <cstdlib>
 #include <iostream>
 #include <stdexcept>
 #include <string>
@@ -32,6 +33,10 @@ uint16_t parsePort(const std::string& value)
 ServerConfig parseArgs(int argc, char* argv[])
 {
     ServerConfig config;
+
+    if (const char* env_base_domain = std::getenv("SHORTENER_BASE_DOMAIN"); env_base_domain != nullptr) {
+        config.shortener_base_domain = env_base_domain;
+    }
 
     for (int i = 1; i < argc; ++i) {
         const std::string arg = argv[i];
@@ -91,6 +96,18 @@ ServerConfig parseArgs(int argc, char* argv[])
         }
         else if (arg == "--tls-client-auth" && i + 1 < argc) {
             config.tls.client_auth_mode = parseClientAuthMode(argv[++i]);
+        }
+        else if (arg == "--shortener-base-domain" && i + 1 < argc) {
+            config.shortener_base_domain = argv[++i];
+        }
+        else if (arg == "--shortener-default-redirect-type" && i + 1 < argc) {
+            config.shortener_default_redirect_type = argv[++i];
+        }
+        else if (arg == "--shortener-generated-slug-length" && i + 1 < argc) {
+            config.shortener_generated_slug_length = static_cast<uint32_t>(std::stoul(argv[++i]));
+        }
+        else if (arg == "--shortener-allow-private-targets" && i + 1 < argc) {
+            config.shortener_allow_private_targets = parseBool(argv[++i]);
         }
         else if (arg[0] != '-') {
             config.http_port = parsePort(arg);
