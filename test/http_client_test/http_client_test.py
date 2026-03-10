@@ -10,12 +10,18 @@ import urllib.request
 
 
 def find_server_path():
-    debug = os.path.abspath("../../cmake-build-debug/simple-http")
-    release = os.path.abspath("../../cmake-build-release/simple-http")
-    if os.path.exists(debug):
-        return debug
-    if os.path.exists(release):
-        return release
+    env_bin = os.environ.get("SIMPLE_HTTP_BIN")
+    if env_bin and os.path.exists(env_bin):
+        return env_bin
+
+    candidates = [
+        os.path.abspath("../../cmake-build-debug/simple-http"),
+        os.path.abspath("../../cmake-build-release/simple-http"),
+        os.path.abspath("../../build/simple-http"),
+    ]
+    for candidate in candidates:
+        if os.path.exists(candidate):
+            return candidate
     raise RuntimeError("Server executable not found")
 
 
