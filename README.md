@@ -200,12 +200,26 @@ curl -i http://localhost:8000/api/v1/links/docs/preview
 curl -i http://localhost:8000/api/v1/links/docs/stats
 ```
 
-## Stage 2 migration notes
+## Stage 4 (scope 5.1) analytics notes
 
-- New optional fields: `deleted_at`, `tags`, `metadata`, `campaign`, `stats`.
-- Old records default to: `enabled=true`, `deleted_at=null`, `tags=[]`, `metadata={}`, `campaign=null`, stats counters `0`.
-- Stats are provisional Stage 2 in-memory counters and reset on process restart.
-- Legacy `/api/v1/short-urls` create/read compatibility routes remain available.
+Implemented in this stage slice:
+- Internal `ClickEvent` capture model on redirect attempts.
+- Bounded in-memory analytics queue with non-blocking drop-on-overflow behavior.
+- Redirect flow instrumentation is best-effort and does not change redirect response behavior.
+
+Current config knobs:
+- `--analytics-enabled` (default: `true`)
+- `--analytics-queue-capacity` (default: `1024`)
+- `--analytics-client-hash-salt` (default dev value; set explicitly in non-dev environments)
+
+Privacy defaults in current scope:
+- Raw client identifiers are not persisted; a salted HMAC-SHA256-derived `client_id_hash` is captured.
+- `Referer` and `User-Agent` are length-bounded before enqueue to keep memory usage predictable.
+
+Deferred to later Stage 4 scope:
+- Worker persistence pipeline
+- Aggregate analytics read API
+- Retention hooks
 
 ## Tests
 

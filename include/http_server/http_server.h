@@ -52,6 +52,9 @@ struct ServerConfig
     std::string shortener_default_redirect_type = "temporary";
     uint32_t shortener_generated_slug_length = 7;
     bool shortener_allow_private_targets = false;
+    bool analytics_enabled = true;
+    uint32_t analytics_queue_capacity = 1024;
+    std::string analytics_client_hash_salt = "dev-analytics-salt";
 };
 
 class HttpServer

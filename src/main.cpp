@@ -109,6 +109,15 @@ ServerConfig parseArgs(int argc, char* argv[])
         else if (arg == "--shortener-allow-private-targets" && i + 1 < argc) {
             config.shortener_allow_private_targets = parseBool(argv[++i]);
         }
+        else if (arg == "--analytics-enabled" && i + 1 < argc) {
+            config.analytics_enabled = parseBool(argv[++i]);
+        }
+        else if (arg == "--analytics-queue-capacity" && i + 1 < argc) {
+            config.analytics_queue_capacity = static_cast<uint32_t>(std::stoul(argv[++i]));
+        }
+        else if (arg == "--analytics-client-hash-salt" && i + 1 < argc) {
+            config.analytics_client_hash_salt = argv[++i];
+        }
         else if (arg[0] != '-') {
             config.http_port = parsePort(arg);
         }
