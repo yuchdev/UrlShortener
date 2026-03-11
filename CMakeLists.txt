@@ -16,7 +16,7 @@ include(cmake/variables.cmake)
 set(CMAKE_CXX_STANDARD 17)
 
 # ---- Dependencies (Ubuntu system packages) ----
-find_package(Boost 1.74 REQUIRED COMPONENTS system program_options)
+find_package(Boost 1.74 REQUIRED COMPONENTS system program_options unit_test_framework)
 find_package(OpenSSL REQUIRED)
 find_package(Threads REQUIRED)
 find_package(Python3 COMPONENTS Interpreter REQUIRED)
@@ -57,6 +57,33 @@ if(BUILD_TESTING)
     ENVIRONMENT "SIMPLE_HTTP_BIN=$<TARGET_FILE:simple-http>"
     TIMEOUT 180
   )
+
+  # ---- CLI parser unit tests (Boost.Test) ----
+  add_executable(cli_parser_test
+      ${CMAKE_CURRENT_SOURCE_DIR}/test/cli_parser_test/cli_parser_test.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/cli_parser.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/url_shortener.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/uri_map_singleton.cpp
+  )
+
+  target_compile_features(cli_parser_test PRIVATE cxx_std_17)
+
+  target_include_directories(cli_parser_test
+      PRIVATE
+          ${CMAKE_CURRENT_SOURCE_DIR}/include
+  )
+
+  target_link_libraries(cli_parser_test
+      PRIVATE
+          Boost::system
+          Boost::program_options
+          Boost::unit_test_framework
+          OpenSSL::SSL
+          OpenSSL::Crypto
+          Threads::Threads
+  )
+
+  add_test(NAME cli_parser_test COMMAND cli_parser_test)
 endif()
 
 # ---- Install rules ----
