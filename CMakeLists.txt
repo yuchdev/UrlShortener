@@ -5,8 +5,8 @@ include(cmake/prelude.cmake)
 project(
     simple-http
     VERSION 1.0.0
-    DESCRIPTION "Simple HTTP Server"
-    HOMEPAGE_URL "https://github.com/yuchdev/interview-linux"
+    DESCRIPTION "HTTPS URL Shortener Server"
+    HOMEPAGE_URL "https://github.com/yuchdev/UrlShortener"
     LANGUAGES CXX
 )
 
