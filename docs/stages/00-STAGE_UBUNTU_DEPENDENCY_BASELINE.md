@@ -27,7 +27,6 @@ This stage is intentionally infrastructure-oriented. It must make all later stag
 - Introduce GitHub Actions pipeline for configure/build/test on Ubuntu.
 - Update developer documentation accordingly.
 - Fail clearly when a required system dependency is unavailable.
-- If you find active references to old Windows bulid in Cmake scripts, remove it
 
 ### 2.2 Out of scope
 
