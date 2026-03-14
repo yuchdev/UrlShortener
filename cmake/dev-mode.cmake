@@ -7,10 +7,10 @@ endif()
 
 add_custom_target(
     run-exe
-    COMMAND simple-http_exe
+    COMMAND url_shortener_exe
     VERBATIM
 )
-add_dependencies(run-exe simple-http_exe)
+add_dependencies(run-exe url_shortener_exe)
 
 option(BUILD_MCSS_DOCS "Build documentation using Doxygen and m.css" OFF)
 if(BUILD_MCSS_DOCS)
