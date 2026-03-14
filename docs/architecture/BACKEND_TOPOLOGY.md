@@ -272,7 +272,7 @@ Secrets must not be hard-coded in source or committed example configs with live 
 ### 13.1 Minimal local developer topology
 
 ```text
-simple-http
+url_shortener
   + SQLite metadata
   + no Redis
   + analytics disabled
@@ -281,7 +281,7 @@ simple-http
 ### 13.2 Realistic staging topology
 
 ```text
-simple-http
+url_shortener
   + PostgreSQL metadata
   + Redis cache
   + analytics repository enabled

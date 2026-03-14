@@ -8,7 +8,7 @@ The intended direction is to evolve this service into a **low-latency URL shorte
 
 ### What exists today
 
-- Single binary server (`simple-http`) built with Boost.Asio/Beast + OpenSSL.
+- Single binary server (`url_shortener`) built with Boost.Asio/Beast + OpenSSL.
 - HTTP listener and optional HTTPS listener.
 - Optional HTTP -> HTTPS redirect (`308`).
 - TLS hardening controls (TLS version/ciphers/curves/session config), optional mTLS, and SIGHUP TLS context reload.
@@ -132,7 +132,7 @@ See `docs/setup/UBUNTU.md` for package details and troubleshooting.
 
 ```bash
 cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
-cmake --build build --target simple-http
+cmake --build build --target url_shortener
 ```
 
 ## Run
@@ -140,25 +140,25 @@ cmake --build build --target simple-http
 ### Show all options
 
 ```bash
-./build/simple-http --help
+./build/url_shortener --help
 ```
 
 ### HTTP only
 
 ```bash
-./build/simple-http
+./build/url_shortener
 ```
 
 ### HTTP only on a custom port (positional shorthand)
 
 ```bash
-./build/simple-http 9090
+./build/url_shortener 9090
 ```
 
 ### HTTPS enabled
 
 ```bash
-./build/simple-http \
+./build/url_shortener \
   --http-port 8080 \
   --tls-enabled true \
   --https-port 8443 \

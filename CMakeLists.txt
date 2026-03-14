@@ -3,7 +3,7 @@ cmake_minimum_required(VERSION 3.25)
 include(cmake/prelude.cmake)
 
 project(
-    simple-http
+    url_shortener
     VERSION 1.0.0
     DESCRIPTION "HTTPS URL Shortener Server"
     HOMEPAGE_URL "https://github.com/yuchdev/UrlShortener"
@@ -24,20 +24,20 @@ find_package(Python3 COMPONENTS Interpreter REQUIRED)
 # ---- Declare executable ----
 include(sources.cmake)
 
-add_executable(simple-http ${URL_SHORTENER_SOURCES})
-add_executable(simple-http::exe ALIAS simple-http)
+add_executable(url_shortener ${URL_SHORTENER_SOURCES})
+add_executable(url_shortener::exe ALIAS url_shortener)
 
-set_property(TARGET simple-http PROPERTY OUTPUT_NAME simple-http)
+set_property(TARGET url_shortener PROPERTY OUTPUT_NAME url_shortener)
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 
-target_compile_features(simple-http PRIVATE cxx_std_17)
+target_compile_features(url_shortener PRIVATE cxx_std_17)
 
-target_include_directories(simple-http
+target_include_directories(url_shortener
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
-target_link_libraries(simple-http
+target_link_libraries(url_shortener
     PRIVATE
         Boost::system
         Boost::program_options
@@ -54,7 +54,7 @@ if(BUILD_TESTING)
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/http_client_test/http_client_test.py
   )
   set_tests_properties(http_client_test PROPERTIES
-    ENVIRONMENT "SIMPLE_HTTP_BIN=$<TARGET_FILE:simple-http>"
+    ENVIRONMENT "SIMPLE_HTTP_BIN=$<TARGET_FILE:url_shortener>"
     TIMEOUT 180
   )
 
@@ -92,12 +92,12 @@ if(NOT CMAKE_SKIP_INSTALL_RULES)
 endif()
 
 # ---- Developer mode ----
-if(NOT simple-http_DEVELOPER_MODE)
+if(NOT url_shortener_DEVELOPER_MODE)
   return()
 elseif(NOT PROJECT_IS_TOP_LEVEL)
   message(
       AUTHOR_WARNING
-      "Developer mode is intended for developers of simple-http"
+      "Developer mode is intended for developers of url_shortener"
   )
 endif()
 

@@ -1,6 +1,6 @@
 install(
-    TARGETS simple-http
-    RUNTIME COMPONENT simple-http_Runtime
+    TARGETS url_shortener
+    RUNTIME COMPONENT url_shortener_Runtime
 )
 
 if(PROJECT_IS_TOP_LEVEL)

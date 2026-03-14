@@ -43,7 +43,7 @@ For Stage 0, we prioritize a simple and robust Ubuntu bootstrap over aggressive 
 
 ```bash
 cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
-cmake --build build --target simple-http
+cmake --build build --target url_shortener
 ctest --test-dir build --output-on-failure
 ```
 
