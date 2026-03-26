@@ -968,6 +968,39 @@ std::string generateSlug(const uint32_t length)
     return generated;
 }
 
+/**
+ * @brief Generate a non-reserved unique slug with bounded retry attempts.
+ *
+ * @param config Runtime shortener config for slug length.
+ * @param generator Slug generator callback (injected for tests).
+ * @return std::optional<std::string> Generated unique slug, or nullopt on bounded failure.
+ */
+std::optional<std::string> generateUniqueSlug(
+    const ServerConfig& config,
+    const std::function<std::string(uint32_t)>& generator = generateSlug)
+{
+    for (int attempt = 0; attempt < 20; ++attempt) {
+        const auto candidate = generator(config.shortener_generated_slug_length);
+        if (!isReservedSlug(candidate) && !linkRepository().slugExists(candidate)) {
+            return candidate;
+        }
+    }
+    return std::nullopt;
+}
+
+/**
+ * @brief Resolve HTTP redirect status from link redirect type.
+ *
+ * @param link Link entity.
+ * @return http::status Redirect HTTP status code.
+ */
+http::status redirectStatusFor(const Link& link)
+{
+    return link.redirect_type == RedirectType::permanent
+        ? http::status::moved_permanently
+        : http::status::found;
+}
+
 std::string currentTimestamp()
 {
     const auto now = std::chrono::system_clock::now();
@@ -1709,18 +1742,11 @@ http::response<http::string_body> handleShortenerRequest(
             slug = *compat_code;
         }
         else {
-            bool created = false;
-            for (int attempt = 0; attempt < 20; ++attempt) {
-                const auto candidate = generateSlug(config.shortener_generated_slug_length);
-                if (!isReservedSlug(candidate) && !linkRepository().slugExists(candidate)) {
-                    slug = candidate;
-                    created = true;
-                    break;
-                }
-            }
-            if (!created) {
+            const auto generated_slug = generateUniqueSlug(config);
+            if (!generated_slug.has_value()) {
                 return makeApiErrorResponse(req, config, is_tls, 500, "slug_generation_failed", "Unable to generate a unique slug");
             }
+            slug = *generated_slug;
         }
 
         RedirectType redirect_type = RedirectType::temporary;
@@ -1856,8 +1882,7 @@ http::response<http::string_body> handleShortenerRequest(
         updated.stats.last_accessed_at = currentTimestamp();
         updateLinkAndInvalidateCache(updated);
 
-        const auto redirect_status =
-            link->redirect_type == RedirectType::permanent ? http::status::moved_permanently : http::status::found;
+        const auto redirect_status = redirectStatusFor(*link);
         emitClickEvent(req, config, slug, link, static_cast<uint16_t>(redirect_status));
 
         http::response<http::string_body> res{redirect_status, req.version()};
@@ -1901,8 +1926,7 @@ http::response<http::string_body> handleShortenerRequest(
                 updated.stats.last_accessed_at = currentTimestamp();
                 updateLinkAndInvalidateCache(updated);
 
-                const auto redirect_status =
-                    link->redirect_type == RedirectType::permanent ? http::status::moved_permanently : http::status::found;
+                const auto redirect_status = redirectStatusFor(*link);
                 emitClickEvent(req, config, slug, link, static_cast<uint16_t>(redirect_status));
 
                 http::response<http::string_body> res{redirect_status, req.version()};

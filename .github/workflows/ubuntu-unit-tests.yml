@@ -23,4 +23,4 @@ jobs:
         run: cmake --build build
 
       - name: Run unit tests
-        run: ctest --test-dir build --output-on-failure -R "cli_parser_test"
+        run: ctest --test-dir build --output-on-failure -R "(cli_parser_test|shortener_core_unit_test)"

@@ -272,6 +272,15 @@ class TestShortenerApi(unittest.TestCase):
             headers={"Content-Type": "application/json"},
         )
         self.assertEqual(201, status)
+        self.assertIn('"slug":"my-code"', payload)
+
+        status, payload, _ = self.request("GET", "/api/v1/links/my-code")
+        self.assertEqual(200, status)
+        link_id = payload.split('"id":"', 1)[1].split('"', 1)[0]
+
+        status, payload, _ = self.request("GET", f"/api/v1/links/id/{link_id}")
+        self.assertEqual(200, status)
+        self.assertIn('"slug":"my-code"', payload)
 
         status, payload, _ = self.request(
             "POST",

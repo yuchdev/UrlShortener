@@ -84,6 +84,31 @@ if(BUILD_TESTING)
   )
 
   add_test(NAME cli_parser_test COMMAND cli_parser_test)
+
+  add_executable(shortener_core_unit_test
+      ${CMAKE_CURRENT_SOURCE_DIR}/test/shortener_core_unit_test.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/cli_parser.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/uri_map_singleton.cpp
+  )
+
+  target_compile_features(shortener_core_unit_test PRIVATE cxx_std_17)
+
+  target_include_directories(shortener_core_unit_test
+      PRIVATE
+          ${CMAKE_CURRENT_SOURCE_DIR}/include
+  )
+
+  target_link_libraries(shortener_core_unit_test
+      PRIVATE
+          Boost::system
+          Boost::program_options
+          Boost::unit_test_framework
+          OpenSSL::SSL
+          OpenSSL::Crypto
+          Threads::Threads
+  )
+
+  add_test(NAME shortener_core_unit_test COMMAND shortener_core_unit_test)
 endif()
 
 # ---- Install rules ----
