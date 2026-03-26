@@ -1,0 +1,26 @@
+name: Ubuntu Unit Tests
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+jobs:
+  unit-tests:
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: ./scripts/setup_ubuntu_dependencies.sh
+
+      - name: Configure
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build
+
+      - name: Run unit tests
+        run: ctest --test-dir build --output-on-failure -R "cli_parser_test"

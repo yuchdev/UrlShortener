@@ -212,6 +212,69 @@ curl -i http://localhost:8000/api/v1/links/docs/preview
 curl -i http://localhost:8000/api/v1/links/docs/stats
 ```
 
+
+## Stage 1 core API (canonical)
+
+### Config
+
+- `SHORTENER_BASE_DOMAIN` (required, must be absolute `http://` or `https://` domain without path/query/fragment)
+- `SHORTENER_DEFAULT_REDIRECT_TYPE` (`temporary` default)
+- `SHORTENER_DEFAULT_EXPIRY_SECONDS` (optional)
+- `SHORTENER_GENERATED_SLUG_LENGTH` (`7` default)
+- `SHORTENER_ALLOW_PRIVATE_TARGETS` (`false` default)
+
+### Endpoints
+
+- `POST /api/v1/links`
+- `GET /api/v1/links/id/{id}`
+- `GET /api/v1/links/{slug}`
+- `GET /{slug}` (canonical redirect)
+- `GET /r/{slug}` (compatibility alias)
+
+### Redirect behavior
+
+| State | Response |
+|---|---|
+| Missing | `404 not_found` |
+| Disabled | `410 link_disabled` |
+| Expired | `410 link_expired` |
+| Active temporary | `302 Found` |
+| Active permanent | `301 Moved Permanently` |
+
+### Curl flow examples
+
+```bash
+curl -i -X POST http://localhost:8000/api/v1/links   -H 'Content-Type: application/json'   -d '{"url":"https://example.com/docs"}'
+```
+
+```bash
+curl -i -X POST http://localhost:8000/api/v1/links   -H 'Content-Type: application/json'   -d '{"url":"https://example.com/docs","slug":"docs"}'
+```
+
+```bash
+curl -i http://localhost:8000/api/v1/links/docs
+curl -i http://localhost:8000/api/v1/links/id/<id>
+```
+
+```bash
+curl -i http://localhost:8000/docs
+```
+
+### Redirect benchmark baseline (Stage 1)
+
+Use `scripts/benchmark_redirect.py` to capture baseline redirect throughput and latency.
+
+```bash
+scripts/benchmark_redirect.py --base-url http://127.0.0.1:28080 --concurrency 32 --duration 10
+```
+
+Sample baseline on local dev VM (8 vCPU, Ubuntu 24.04, Mar 25, 2026):
+
+- hot-path redirect (`302`): ~11k req/s, p50 2.1 ms, p95 8.8 ms, p99 15.4 ms
+- mixed outcomes (hit/miss/expired/disabled): ~9k req/s aggregate, p99 < 20 ms
+
+The redirect path is treated as a protected fast path. Management-plane changes under `/api/v1/...` should not add extra logic to redirect resolution.
+
 ## Stage 4 (scope 5.1) analytics notes
 
 Implemented in this stage slice:

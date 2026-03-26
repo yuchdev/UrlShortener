@@ -1,3 +1,7 @@
+/**
+ * @file cli_parser_test.cpp
+ * @brief Unit tests for CLI parser behavior.
+ */
 #define BOOST_TEST_MODULE CliParserTest
 #include <boost/test/unit_test.hpp>
 
@@ -23,8 +27,8 @@ struct Argv
     char** argv() { return ptrs_.data(); }
 
 private:
-    std::vector<std::string> strings_;
-    std::vector<char*> ptrs_;
+    std::vector<std::string> strings_;  ///< Owns argv string storage.
+    std::vector<char*> ptrs_;  ///< Mutable argv pointer list.
 };
 
 // ---- Default values ----
@@ -44,6 +48,7 @@ BOOST_AUTO_TEST_CASE(defaults_when_no_args)
     BOOST_TEST(result.config.tls.port == 443);
     BOOST_TEST(result.config.shortener_base_domain == "http://localhost:8000");
     BOOST_TEST(result.config.shortener_default_redirect_type == "temporary");
+    BOOST_TEST(!result.config.shortener_default_expiry_seconds.has_value());
     BOOST_TEST(result.config.shortener_generated_slug_length == 7u);
     BOOST_TEST(result.config.shortener_allow_private_targets == false);
     BOOST_TEST(result.config.analytics_enabled == true);
@@ -258,6 +263,16 @@ BOOST_AUTO_TEST_CASE(shortener_default_redirect_type_permanent)
     auto result = parser.parse(args.argc(), args.argv());
 
     BOOST_TEST(result.config.shortener_default_redirect_type == "permanent");
+}
+
+BOOST_AUTO_TEST_CASE(shortener_default_expiry_seconds)
+{
+    Argv args({"simple-http", "--shortener-default-expiry-seconds", "3600"});
+    CliParser parser;
+    auto result = parser.parse(args.argc(), args.argv());
+
+    BOOST_REQUIRE(result.config.shortener_default_expiry_seconds.has_value());
+    BOOST_TEST(*result.config.shortener_default_expiry_seconds == 3600u);
 }
 
 BOOST_AUTO_TEST_CASE(shortener_generated_slug_length)

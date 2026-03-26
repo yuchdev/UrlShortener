@@ -1,3 +1,5 @@
+"""HTTP/HTTPS integration tests for URL shortener service."""
+
 import http.client
 import os
 import shutil
@@ -11,6 +13,7 @@ import urllib.request
 
 
 def find_server_path():
+    """Resolve server executable path from env or common build output locations."""
     env_bin = os.environ.get("SIMPLE_HTTP_BIN")
     if env_bin and os.path.exists(env_bin):
         return env_bin
@@ -27,11 +30,14 @@ def find_server_path():
 
 
 class ServerHarness:
+    """Small process lifecycle helper used by integration tests."""
     def __init__(self, args):
+        """Store command-line arguments for spawned server process."""
         self.args = args
         self.process = None
 
     def start(self):
+        """Start server subprocess and fail fast when startup fails."""
         self.process = subprocess.Popen(
             [find_server_path()] + self.args,
             stdout=subprocess.PIPE,
@@ -44,12 +50,14 @@ class ServerHarness:
             raise RuntimeError(f"Server failed to start\nstdout={out}\nstderr={err}")
 
     def stop(self):
+        """Terminate server subprocess if it is still running."""
         if self.process and self.process.poll() is None:
             self.process.terminate()
             self.process.wait(timeout=5)
 
 
 class TestHttpAndHttps(unittest.TestCase):
+    """TLS and HTTP->HTTPS redirect integration checks."""
     @classmethod
     def setUpClass(cls):
         cls.temp_dir = tempfile.mkdtemp(prefix="https-test-")
@@ -120,6 +128,7 @@ class TestHttpAndHttps(unittest.TestCase):
 
 
 class TestMutualTls(unittest.TestCase):
+    """Mutual TLS integration checks."""
     @classmethod
     def setUpClass(cls):
         cls.temp_dir = tempfile.mkdtemp(prefix="mtls-test-")
@@ -180,6 +189,7 @@ class TestMutualTls(unittest.TestCase):
 
 
 class TestShortenerApi(unittest.TestCase):
+    """URL shortener API + redirect behavior integration checks."""
     @classmethod
     def setUpClass(cls):
         cls.server = ServerHarness([
@@ -196,6 +206,7 @@ class TestShortenerApi(unittest.TestCase):
         cls.server.stop()
 
     def request(self, method, path, body=None, headers=None):
+        """Issue a request to the test server and return status/body/response."""
         conn = http.client.HTTPConnection("localhost", 28080)
         conn.request(method, path, body=body, headers=headers or {})
         res = conn.getresponse()
@@ -223,6 +234,26 @@ class TestShortenerApi(unittest.TestCase):
         status, payload, _ = self.request("GET", f"/api/v1/links/{code}")
         self.assertEqual(200, status)
         self.assertIn('"url":"https://example.com/path"', payload)
+
+        link_id = payload.split('"id":"', 1)[1].split('"', 1)[0]
+        status, payload, _ = self.request("GET", f"/api/v1/links/id/{link_id}")
+        self.assertEqual(200, status)
+        self.assertIn(f'"id":"{link_id}"', payload)
+
+    def test_redirect_compat_route_and_short_url_shape(self):
+        status, payload, _ = self.request(
+            "POST",
+            "/api/v1/links",
+            body='{"url":"https://example.com/compat","slug":"compat01"}',
+            headers={"Content-Type": "application/json"},
+        )
+        self.assertEqual(201, status)
+        self.assertIn('"short_url":"http://sho.rt/compat01"', payload)
+        self.assertNotIn("http://sho.rt//compat01", payload)
+
+        status, _, res = self.request("GET", "/r/compat01")
+        self.assertEqual(302, status)
+        self.assertEqual("https://example.com/compat", res.getheader("Location"))
 
     def test_shortener_validation_and_conflicts(self):
         status, payload, _ = self.request(
@@ -461,6 +492,7 @@ class TestShortenerApi(unittest.TestCase):
 
 
 class TestStage4AnalyticsQueue(unittest.TestCase):
+    """Ensure analytics queue saturation does not break redirects."""
     @classmethod
     def setUpClass(cls):
         cls.server = ServerHarness([
@@ -478,6 +510,7 @@ class TestStage4AnalyticsQueue(unittest.TestCase):
         cls.server.stop()
 
     def request(self, method, path, body=None, headers=None):
+        """Issue a request to analytics test server and return status/body/response."""
         conn = http.client.HTTPConnection("localhost", 38080)
         conn.request(method, path, body=body, headers=headers or {})
         res = conn.getresponse()

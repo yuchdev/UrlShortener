@@ -1,14 +1,24 @@
+/**
+ * @file uri_map_singleton.cpp
+ * @brief Legacy URI payload singleton implementation.
+ */
 #include <fstream>
 #include <iostream>
 
 #include <url_shortener/uri_map_singleton.h>
 
+/**
+ * @brief Return global singleton instance.
+ */
 UriMapSingleton& UriMapSingleton::getInstance()
 {
     static UriMapSingleton instance;
     return instance;
 }
 
+/**
+ * @brief Store payload and content type for URI.
+ */
 void UriMapSingleton::saveData(const std::string& uri,
                                const std::string& data,
                                const std::string& content_type)
@@ -16,6 +26,9 @@ void UriMapSingleton::saveData(const std::string& uri,
     data_[uri] = std::make_pair(data, content_type);
 }
 
+/**
+ * @brief Remove URI payload from in-memory map.
+ */
 bool UriMapSingleton::deleteData(const std::string& uri)
 {
     if (data_.find(uri) != data_.end()) {
@@ -25,6 +38,9 @@ bool UriMapSingleton::deleteData(const std::string& uri)
     return false;
 }
 
+/**
+ * @brief Lookup URI payload.
+ */
 std::optional<std::pair<std::string, std::string>> UriMapSingleton::getData(const std::string& uri) const
 {
     if (const auto it = data_.find(uri); it != data_.end()) {
@@ -33,6 +49,9 @@ std::optional<std::pair<std::string, std::string>> UriMapSingleton::getData(cons
     return std::nullopt;
 }
 
+/**
+ * @brief Serialize in-memory URI payload map to disk.
+ */
 void UriMapSingleton::serialize(const std::string& filename) const
 {
     std::ofstream file(filename, std::ios::trunc);
@@ -59,6 +78,9 @@ void UriMapSingleton::serialize(const std::string& filename) const
     }
 }
 
+/**
+ * @brief Deserialize URI payload map from disk file.
+ */
 void UriMapSingleton::deserialize(const std::string& filename)
 {
     if (std::ifstream file(filename); file.is_open()) {
