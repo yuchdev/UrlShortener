@@ -23,4 +23,4 @@ jobs:
         run: cmake --build build
 
       - name: Run integration tests
-        run: ctest --test-dir build --output-on-failure -R "http_client_test"
+        run: ctest --test-dir build --output-on-failure -L "integration"

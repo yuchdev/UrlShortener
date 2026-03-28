@@ -56,6 +56,7 @@ if(BUILD_TESTING)
   set_tests_properties(http_client_test PROPERTIES
     ENVIRONMENT "SIMPLE_HTTP_BIN=$<TARGET_FILE:url_shortener>"
     TIMEOUT 180
+    LABELS "integration"
   )
 
   # ---- CLI parser unit tests (Boost.Test) ----
@@ -84,6 +85,7 @@ if(BUILD_TESTING)
   )
 
   add_test(NAME cli_parser_test COMMAND cli_parser_test)
+  set_tests_properties(cli_parser_test PROPERTIES LABELS "unit")
 
   add_executable(shortener_core_unit_test
       ${CMAKE_CURRENT_SOURCE_DIR}/test/shortener_core_unit_test.cpp
@@ -109,6 +111,7 @@ if(BUILD_TESTING)
   )
 
   add_test(NAME shortener_core_unit_test COMMAND shortener_core_unit_test)
+  set_tests_properties(shortener_core_unit_test PROPERTIES LABELS "unit")
 endif()
 
 # ---- Install rules ----

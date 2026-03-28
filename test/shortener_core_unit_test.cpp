@@ -12,6 +12,9 @@
 // Intentionally include implementation to unit-test anonymous-namespace helpers.
 #include "../src/url_shortener.cpp"
 
+/**
+ * @test Verifies HTTP/HTTPS absolute URLs are accepted by normalization validator.
+ */
 BOOST_AUTO_TEST_CASE(url_validation_accepts_http_https_absolute)
 {
     ServerConfig cfg;
@@ -20,6 +23,9 @@ BOOST_AUTO_TEST_CASE(url_validation_accepts_http_https_absolute)
     BOOST_TEST(normalizeTargetUrl("https://example.com/path", cfg).has_value());
 }
 
+/**
+ * @test Verifies invalid/unsafe URL inputs are rejected.
+ */
 BOOST_AUTO_TEST_CASE(url_validation_rejects_invalid_or_unsafe)
 {
     ServerConfig cfg;
@@ -30,6 +36,9 @@ BOOST_AUTO_TEST_CASE(url_validation_rejects_invalid_or_unsafe)
     BOOST_TEST(!normalizeTargetUrl("https://user:pass@example.com", cfg).has_value());
 }
 
+/**
+ * @test Verifies normalization lowercases scheme/host and strips default ports.
+ */
 BOOST_AUTO_TEST_CASE(url_normalization_lowercases_and_strips_default_ports)
 {
     ServerConfig cfg;
@@ -39,12 +48,18 @@ BOOST_AUTO_TEST_CASE(url_normalization_lowercases_and_strips_default_ports)
     BOOST_TEST(*normalized == "https://example.com/Path?q=1#frag");
 }
 
+/**
+ * @test Verifies slug validator accepts boundary-valid values.
+ */
 BOOST_AUTO_TEST_CASE(slug_validator_accepts_boundary_values)
 {
     BOOST_TEST(isValidSlug("Ab1"));
     BOOST_TEST(isValidSlug("a" + std::string(63, 'b')));
 }
 
+/**
+ * @test Verifies slug validator rejects invalid length/charset values.
+ */
 BOOST_AUTO_TEST_CASE(slug_validator_rejects_invalid_values)
 {
     BOOST_TEST(!isValidSlug("ab"));
@@ -53,6 +68,9 @@ BOOST_AUTO_TEST_CASE(slug_validator_rejects_invalid_values)
     BOOST_TEST(!isValidSlug(std::string(65, 'a')));
 }
 
+/**
+ * @test Verifies generated slug collision retry loop is bounded and returns failure.
+ */
 BOOST_AUTO_TEST_CASE(generated_slug_collision_retry_is_bounded)
 {
     const std::string collision_slug = "zzz" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count());
@@ -72,12 +90,18 @@ BOOST_AUTO_TEST_CASE(generated_slug_collision_retry_is_bounded)
     BOOST_TEST(!generated.has_value());
 }
 
+/**
+ * @test Verifies expiry evaluation logic for null and past timestamps.
+ */
 BOOST_AUTO_TEST_CASE(expiry_evaluation_logic)
 {
     BOOST_TEST(!isExpired(std::nullopt));
     BOOST_TEST(isExpired(std::optional<std::string>{"2000-01-01T00:00:00Z"}));
 }
 
+/**
+ * @test Verifies redirect HTTP status mapping for temporary vs permanent links.
+ */
 BOOST_AUTO_TEST_CASE(redirect_status_selection_from_redirect_type)
 {
     Link temp;
