@@ -1,4 +1,4 @@
-# Low-latency URL shortener (in progress)
+# Low-latency URL shortener
 
 This repository currently contains a C++17 HTTP/HTTPS service that started as a key-value URI store and now includes initial URL shortener endpoints.
 
