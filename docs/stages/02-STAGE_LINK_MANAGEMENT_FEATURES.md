@@ -434,15 +434,23 @@ Stage is complete only if all are true:
 
 ## 14. Definition of done checklist
 
-- [ ] Management fields added with safe defaults.
-- [ ] Redirect path enforces lifecycle state gating.
-- [ ] Enable/disable endpoints (or equivalent patch semantics) implemented.
-- [ ] Soft delete and restore flows implemented.
-- [ ] Preview endpoint implemented.
-- [ ] Aggregate stats endpoint implemented.
-- [ ] Reserved slug protection implemented.
-- [ ] Password/rate-limit hooks added with default no-op strategy.
-- [ ] QR and advanced routing extension points introduced.
-- [ ] Unit and integration tests added and passing.
-- [ ] Migration notes documented.
-- [ ] API docs updated.
+- [x] Management fields added with safe defaults.
+- [x] Redirect path enforces lifecycle state gating.
+- [x] Enable/disable endpoints (or equivalent patch semantics) implemented.
+- [x] Soft delete and restore flows implemented.
+- [x] Preview endpoint implemented.
+- [x] Aggregate stats endpoint implemented.
+- [x] Reserved slug protection implemented.
+- [x] Password/rate-limit hooks added with default no-op strategy.
+- [x] QR and advanced routing extension points introduced (`/api/v1/links/{slug}/qr` and `/api/v1/links/{slug}/routing` currently return `501 feature_not_enabled`).
+- [x] Unit and integration tests added and passing.
+- [x] Migration notes documented.
+- [x] API docs updated.
+
+
+### Stage 2 migration notes (implementation status)
+
+- New management fields are optional and default as: `enabled=true`, `deleted_at=null`, `expires_at` preserved when present, `tags=[]`, `metadata={}`, `campaign=null`, and stats counters initialized to zero values.
+- Existing records that do not include Stage 2 fields are interpreted with those defaults at read time.
+- Stats in the current implementation are stored with link records in the process-local repository and therefore reset if runtime state is lost (for example process restart without state restore). These counters are provisional until Stage 04 analytics.
+- Legacy endpoints under `/api/v1/short-urls` remain backward compatible for create/read, while lifecycle controls are served under `/api/v1/links/...`.

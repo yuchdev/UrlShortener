@@ -59,6 +59,7 @@ if(BUILD_TESTING)
       test/unit/06_slug_collision_retry_test.cpp
       test/unit/07_expiry_logic_test.cpp
       test/unit/08_redirect_status_test.cpp
+      test/unit/09_stage2_management_unit_test.cpp
   )
 
   foreach(unit_src IN LISTS STAGE1_UNIT_SOURCES)
@@ -92,6 +93,8 @@ if(BUILD_TESTING)
       test/integration/06_missing_slug_not_found_test.py
       test/integration/07_permanent_temporary_status_test.py
       test/integration/08_short_url_base_domain_once_test.py
+      test/integration/09_stage2_lifecycle_nonfunctional_test.py
+      test/http_client_test/http_client_test.py
   )
 
   foreach(integration_src IN LISTS STAGE1_INTEGRATION_SOURCES)

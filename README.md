@@ -141,6 +141,13 @@ curl -i http://localhost:8000/api/v1/links/docs/preview
 curl -i http://localhost:8000/api/v1/links/docs/stats
 ```
 
+### Stage 2 migration notes
+
+- Stage 2 management fields are backward-compatible and default to: `enabled=true`, `deleted_at=null`, `tags=[]`, `metadata={}`, and `campaign=null` when absent.
+- Redirect stats are **provisional operational counters** in the current in-memory implementation and may reset on process restart/state loss.
+- Old clients using existing create/read/redirect flows continue to work; new lifecycle operations live under `/api/v1/links/{slug}/...`.
+- Placeholder extension routes for future work are available at `GET /api/v1/links/{slug}/qr` and `GET /api/v1/links/{slug}/routing`, both currently returning `501 feature_not_enabled`.
+
 ## Current state
 
 ### What exists today
