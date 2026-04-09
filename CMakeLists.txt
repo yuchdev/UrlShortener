@@ -49,8 +49,8 @@ target_link_libraries(url_shortener
 # ---- Tests ----
 include(CTest)
 if(BUILD_TESTING)
-  # ---- Stage 1 unit tests: 8 standalone executables ----
-  set(STAGE1_UNIT_SOURCES
+  # ---- Unit tests: standalone executables ----
+  set(UNIT_TEST_SOURCES
       test/unit/01_url_validation_accept_test.cpp
       test/unit/02_url_validation_reject_test.cpp
       test/unit/03_url_normalization_test.cpp
@@ -62,7 +62,7 @@ if(BUILD_TESTING)
       test/unit/09_stage2_management_unit_test.cpp
   )
 
-  foreach(unit_src IN LISTS STAGE1_UNIT_SOURCES)
+  foreach(unit_src IN LISTS UNIT_TEST_SOURCES)
     get_filename_component(unit_name ${unit_src} NAME_WE)
     add_executable(${unit_name}
         ${CMAKE_CURRENT_SOURCE_DIR}/${unit_src}
@@ -83,8 +83,8 @@ if(BUILD_TESTING)
     set_tests_properties(${unit_name} PROPERTIES LABELS "unit")
   endforeach()
 
-  # ---- Stage 1 integration tests: 8 standalone executables (Python scripts) ----
-  set(STAGE1_INTEGRATION_SOURCES
+  # ---- Integration tests: standalone executables (Python scripts) ----
+  set(INTEGRATION_TEST_SOURCES
       test/integration/01_generated_slug_redirect_test.py
       test/integration/02_custom_slug_get_by_id_slug_test.py
       test/integration/03_duplicate_slug_conflict_test.py
@@ -97,7 +97,7 @@ if(BUILD_TESTING)
       test/http_client_test/http_client_test.py
   )
 
-  foreach(integration_src IN LISTS STAGE1_INTEGRATION_SOURCES)
+  foreach(integration_src IN LISTS INTEGRATION_TEST_SOURCES)
     get_filename_component(integration_name ${integration_src} NAME_WE)
     add_test(
       NAME ${integration_name}

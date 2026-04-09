@@ -1557,6 +1557,10 @@ http::response<http::string_body> handleShortenerRequest(
             if (req.method() != http::verb::get) {
                 return makeApiErrorResponse(req, config, is_tls, 400, "invalid_method", "Only GET is supported");
             }
+            const auto link = getLinkForRead(slug);
+            if (!link.has_value()) {
+                return makeApiErrorResponse(req, config, is_tls, 404, "not_found", "Link not found");
+            }
             return makeApiErrorResponse(
                 req,
                 config,

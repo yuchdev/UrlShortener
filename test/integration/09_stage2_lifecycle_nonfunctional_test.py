@@ -102,6 +102,15 @@ class Stage2LifecycleNonFunctionalTest(unittest.TestCase):
         self.assertEqual(501, status)
         self.assertIn('"feature_not_enabled"', payload)
 
+    def test_placeholder_endpoints_return_404_for_missing_slug(self):
+        status, payload, _ = request(self.port, "GET", "/api/v1/links/nonexistent/qr")
+        self.assertEqual(404, status)
+        self.assertIn('"not_found"', payload)
+
+        status, payload, _ = request(self.port, "GET", "/api/v1/links/nonexistent/routing")
+        self.assertEqual(404, status)
+        self.assertIn('"not_found"', payload)
+
 
 if __name__ == "__main__":
     unittest.main()
