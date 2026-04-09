@@ -1548,6 +1548,19 @@ http::response<http::string_body> handleShortenerRequest(
             return makeResponse(req, config, is_tls, 200, body.str(), "application/json");
         }
 
+        if (action == "qr" || action == "routing") {
+            if (req.method() != http::verb::get) {
+                return makeApiErrorResponse(req, config, is_tls, 400, "invalid_method", "Only GET is supported");
+            }
+            return makeApiErrorResponse(
+                req,
+                config,
+                is_tls,
+                501,
+                "feature_not_enabled",
+                "Feature placeholder only; implementation deferred");
+        }
+
         if (action == "stats") {
             if (req.method() != http::verb::get) {
                 return makeApiErrorResponse(req, config, is_tls, 400, "invalid_method", "Only GET is supported");

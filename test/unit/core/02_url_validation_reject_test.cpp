@@ -1,7 +1,7 @@
 /** @file 02_url_validation_reject_test.cpp @brief Unit test: invalid/unsafe schemes are rejected. */
 #define BOOST_TEST_MODULE UrlValidationRejectTest
 #include <boost/test/unit_test.hpp>
-#include "../../src/url_shortener.cpp"
+#include "../../../src/url_shortener.cpp"
 
 BOOST_AUTO_TEST_CASE(url_validation_rejects_invalid_unsafe_schemes)
 {

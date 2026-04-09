@@ -2,7 +2,7 @@
 #define BOOST_TEST_MODULE SlugCollisionRetryTest
 #include <boost/test/unit_test.hpp>
 #include <chrono>
-#include "../../src/url_shortener.cpp"
+#include "../../../src/url_shortener.cpp"
 
 BOOST_AUTO_TEST_CASE(generated_slug_collision_retry_behavior)
 {
