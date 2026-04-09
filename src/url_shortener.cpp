@@ -884,6 +884,11 @@ std::string linkStatusToString(const LinkStatus status)
     }
 }
 
+std::ostream& operator<<(std::ostream& os, const LinkStatus status)
+{
+    return os << linkStatusToString(status);
+}
+
 bool validateTags(std::vector<std::string>& tags)
 {
     if (tags.size() > 20) {

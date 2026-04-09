@@ -53,9 +53,9 @@ BOOST_AUTO_TEST_CASE(metadata_campaign_and_reserved_slug_validation)
 
     Link::Campaign campaign;
     campaign.name = std::string{"spring-launch"};
-    BOOST_TEST(validateCampaign(campaign));
+    BOOST_TEST(validateCampaign(std::optional<Link::Campaign>{campaign}));
     campaign.name = std::string(129, 'x');
-    BOOST_TEST(!validateCampaign(campaign));
+    BOOST_TEST(!validateCampaign(std::optional<Link::Campaign>{campaign}));
 
     BOOST_TEST(isReservedSlug("API"));
     BOOST_TEST(isReservedSlug("Stats"));
