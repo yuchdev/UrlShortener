@@ -1,3 +1,7 @@
+/**
+ * @file main.cpp
+ * @brief Application entry point for url_shortener service.
+ */
 #include <filesystem>
 #include <functional>
 #include <cstdlib>
@@ -15,6 +19,13 @@ namespace fs = std::filesystem;
 namespace net = boost::asio;
 constexpr std::string_view uri_filename = "uri.txt";
 
+/**
+ * @brief Process entry point: parse configuration, boot server, and handle shutdown signals.
+ *
+ * @param argc Number of CLI arguments.
+ * @param argv CLI argument vector.
+ * @return int Process exit code (0 on success).
+ */
 int main(int argc, char* argv[])
 {
     try {

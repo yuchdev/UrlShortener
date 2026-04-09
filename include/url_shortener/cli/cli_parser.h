@@ -1,3 +1,7 @@
+/**
+ * @file cli_parser.h
+ * @brief CLI argument parsing contract for url_shortener.
+ */
 #pragma once
 
 #include <string>
@@ -10,9 +14,9 @@
 /// message and the caller should print it and exit successfully.
 struct ParseResult
 {
-    ServerConfig config;
-    bool help_requested = false;
-    std::string help_text;
+    ServerConfig config;  ///< Parsed server configuration.
+    bool help_requested = false;  ///< Indicates `--help` short-circuit.
+    std::string help_text;  ///< Rendered help output.
 };
 
 /// Parses command-line arguments using Boost.ProgramOptions and converts

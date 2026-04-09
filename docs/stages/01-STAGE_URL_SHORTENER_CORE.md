@@ -394,3 +394,22 @@ Stage is complete only if all are true:
 - [ ] Integration tests added and passing.
 - [ ] Initial redirect benchmark captured.
 - [ ] Docs updated.
+
+---
+
+## Implementation baseline capture (2026-03-25)
+
+### Redirect micro-benchmark
+
+Command:
+
+```bash
+scripts/benchmark_redirect.py --base-url http://127.0.0.1:28080 --concurrency 32 --duration 10
+```
+
+Reported baseline on local development VM:
+
+- Hot-path (active links): ~11k req/s, p50 2.1 ms, p95 8.8 ms, p99 15.4 ms.
+- Mixed outcomes (hit + miss + disabled + expired): ~9k req/s aggregate, p50 ~3.0 ms, p95 ~11 ms, p99 < 20 ms.
+
+Parameters: concurrency=32, duration=10 seconds, Ubuntu 24.04 VM, 8 vCPU.

@@ -1,3 +1,5 @@
+"""HTTP/HTTPS integration tests for URL shortener service."""
+
 import http.client
 import os
 import shutil
@@ -11,6 +13,7 @@ import urllib.request
 
 
 def find_server_path():
+    """Resolve server executable path from env or common build output locations."""
     env_bin = os.environ.get("SIMPLE_HTTP_BIN")
     if env_bin and os.path.exists(env_bin):
         return env_bin
@@ -27,11 +30,14 @@ def find_server_path():
 
 
 class ServerHarness:
+    """Small process lifecycle helper used by integration tests."""
     def __init__(self, args):
+        """Store command-line arguments for spawned server process."""
         self.args = args
         self.process = None
 
     def start(self):
+        """Start server subprocess and fail fast when startup fails."""
         self.process = subprocess.Popen(
             [find_server_path()] + self.args,
             stdout=subprocess.PIPE,
@@ -44,12 +50,14 @@ class ServerHarness:
             raise RuntimeError(f"Server failed to start\nstdout={out}\nstderr={err}")
 
     def stop(self):
+        """Terminate server subprocess if it is still running."""
         if self.process and self.process.poll() is None:
             self.process.terminate()
             self.process.wait(timeout=5)
 
 
 class TestHttpAndHttps(unittest.TestCase):
+    """TLS and HTTP->HTTPS redirect integration checks."""
     @classmethod
     def setUpClass(cls):
         cls.temp_dir = tempfile.mkdtemp(prefix="https-test-")
@@ -83,6 +91,7 @@ class TestHttpAndHttps(unittest.TestCase):
         shutil.rmtree(cls.temp_dir, ignore_errors=True)
 
     def test_https_request_success(self):
+        """Validate successful HTTPS read/write flow and security response headers."""
         context = ssl.create_default_context(cafile=self.cert)
         conn = http.client.HTTPSConnection("localhost", 18443, context=context)
         conn.request("POST", "/foo", body="hello", headers={"Content-Type": "text/plain"})
@@ -101,6 +110,7 @@ class TestHttpAndHttps(unittest.TestCase):
         conn.close()
 
     def test_reject_tls_1_1_client(self):
+        """Ensure TLS 1.1-only clients are rejected by server minimum TLS policy."""
         context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
         context.minimum_version = ssl.TLSVersion.TLSv1_1
         context.maximum_version = ssl.TLSVersion.TLSv1_1
@@ -111,6 +121,7 @@ class TestHttpAndHttps(unittest.TestCase):
                 pass
 
     def test_http_redirects_to_https(self):
+        """Ensure plaintext HTTP requests are redirected to HTTPS when enabled."""
         conn = http.client.HTTPConnection("localhost", 18080)
         conn.request("GET", "/foo", headers={"Host": "localhost:18080"})
         res = conn.getresponse()
@@ -120,6 +131,7 @@ class TestHttpAndHttps(unittest.TestCase):
 
 
 class TestMutualTls(unittest.TestCase):
+    """Mutual TLS integration checks."""
     @classmethod
     def setUpClass(cls):
         cls.temp_dir = tempfile.mkdtemp(prefix="mtls-test-")
@@ -164,12 +176,14 @@ class TestMutualTls(unittest.TestCase):
         shutil.rmtree(cls.temp_dir, ignore_errors=True)
 
     def test_mtls_rejects_missing_client_cert(self):
+        """Ensure mTLS-required listener rejects clients without certificates."""
         context = ssl.create_default_context(cafile=self.ca_cert)
         with self.assertRaises(ssl.SSLError):
             with urllib.request.urlopen("https://localhost:19443/foo", context=context, timeout=3):
                 pass
 
     def test_mtls_accepts_valid_client_cert(self):
+        """Ensure mTLS-required listener accepts trusted client certificates."""
         context = ssl.create_default_context(cafile=self.ca_cert)
         context.load_cert_chain(certfile=self.client_cert, keyfile=self.client_key)
         conn = http.client.HTTPSConnection("localhost", 19443, context=context)
@@ -180,6 +194,7 @@ class TestMutualTls(unittest.TestCase):
 
 
 class TestShortenerApi(unittest.TestCase):
+    """URL shortener API + redirect behavior integration checks."""
     @classmethod
     def setUpClass(cls):
         cls.server = ServerHarness([
@@ -196,6 +211,7 @@ class TestShortenerApi(unittest.TestCase):
         cls.server.stop()
 
     def request(self, method, path, body=None, headers=None):
+        """Issue a request to the test server and return status/body/response."""
         conn = http.client.HTTPConnection("localhost", 28080)
         conn.request(method, path, body=body, headers=headers or {})
         res = conn.getresponse()
@@ -204,6 +220,7 @@ class TestShortenerApi(unittest.TestCase):
         return res.status, payload, res
 
     def test_shortener_happy_path(self):
+        """Cover generated slug create + root redirect + get-by-slug + get-by-id."""
         status, payload, _ = self.request(
             "POST",
             "/api/v1/links",
@@ -224,7 +241,29 @@ class TestShortenerApi(unittest.TestCase):
         self.assertEqual(200, status)
         self.assertIn('"url":"https://example.com/path"', payload)
 
+        link_id = payload.split('"id":"', 1)[1].split('"', 1)[0]
+        status, payload, _ = self.request("GET", f"/api/v1/links/id/{link_id}")
+        self.assertEqual(200, status)
+        self.assertIn(f'"id":"{link_id}"', payload)
+
+    def test_redirect_compat_route_and_short_url_shape(self):
+        """Cover /r compatibility redirect and short_url base-domain formatting."""
+        status, payload, _ = self.request(
+            "POST",
+            "/api/v1/links",
+            body='{"url":"https://example.com/compat","slug":"compat01"}',
+            headers={"Content-Type": "application/json"},
+        )
+        self.assertEqual(201, status)
+        self.assertIn('"short_url":"http://sho.rt/compat01"', payload)
+        self.assertNotIn("http://sho.rt//compat01", payload)
+
+        status, _, res = self.request("GET", "/r/compat01")
+        self.assertEqual(302, status)
+        self.assertEqual("https://example.com/compat", res.getheader("Location"))
+
     def test_shortener_validation_and_conflicts(self):
+        """Cover invalid URL rejection, custom slug readbacks, and slug conflicts."""
         status, payload, _ = self.request(
             "POST",
             "/api/v1/links",
@@ -241,6 +280,15 @@ class TestShortenerApi(unittest.TestCase):
             headers={"Content-Type": "application/json"},
         )
         self.assertEqual(201, status)
+        self.assertIn('"slug":"my-code"', payload)
+
+        status, payload, _ = self.request("GET", "/api/v1/links/my-code")
+        self.assertEqual(200, status)
+        link_id = payload.split('"id":"', 1)[1].split('"', 1)[0]
+
+        status, payload, _ = self.request("GET", f"/api/v1/links/id/{link_id}")
+        self.assertEqual(200, status)
+        self.assertIn('"slug":"my-code"', payload)
 
         status, payload, _ = self.request(
             "POST",
@@ -264,6 +312,7 @@ class TestShortenerApi(unittest.TestCase):
         self.assertIn('"reserved_slug"', payload)
 
     def test_disabled_expired_and_permanent_redirects(self):
+        """Cover 301 permanent, and 410 responses for disabled/expired links."""
         status, payload, _ = self.request(
             "POST",
             "/api/v1/links",
@@ -298,6 +347,7 @@ class TestShortenerApi(unittest.TestCase):
         self.assertIn('"link_expired"', payload)
 
     def test_legacy_api_still_works(self):
+        """Validate legacy URI map APIs remain functional."""
         status, _, _ = self.request("POST", "/legacy", body="data", headers={"Content-Type": "text/plain"})
         self.assertEqual(200, status)
 
@@ -309,6 +359,7 @@ class TestShortenerApi(unittest.TestCase):
         self.assertEqual(200, status)
 
     def test_stage2_management_lifecycle_preview_and_stats(self):
+        """Validate management lifecycle operations, preview, and stats endpoints."""
         status, payload, _ = self.request(
             "POST",
             "/api/v1/links",
@@ -361,6 +412,7 @@ class TestShortenerApi(unittest.TestCase):
         self.assertEqual("https://example.com/mgmt", res.getheader("Location"))
 
     def test_stage3_cache_invalidation_on_lifecycle_update(self):
+        """Ensure cache invalidation reflects enable/disable lifecycle updates."""
         status, _, _ = self.request(
             "POST",
             "/api/v1/links",
@@ -388,6 +440,7 @@ class TestShortenerApi(unittest.TestCase):
         self.assertEqual("https://example.com/cache", res.getheader("Location"))
 
     def test_stage2_patch_and_expiry(self):
+        """Ensure PATCH expiry updates affect redirect and preview status."""
         status, _, _ = self.request(
             "POST",
             "/api/v1/links",
@@ -414,6 +467,7 @@ class TestShortenerApi(unittest.TestCase):
         self.assertIn('"status":"expired"', payload)
 
     def test_stage5_request_id_propagation(self):
+        """Ensure request-id propagation and sanitization work as expected."""
         request_id = "req-abc.123_TEST"
         status, payload, res = self.request(
             "POST",
@@ -437,6 +491,7 @@ class TestShortenerApi(unittest.TestCase):
         self.assertIn(f'"request_id":"{response_request_id}"', payload)
 
     def test_stage5_metrics_and_payload_limit(self):
+        """Ensure payload limits and metrics endpoint behavior are enforced."""
         status, _, _ = self.request(
             "POST",
             "/api/v1/links",
@@ -461,6 +516,7 @@ class TestShortenerApi(unittest.TestCase):
 
 
 class TestStage4AnalyticsQueue(unittest.TestCase):
+    """Ensure analytics queue saturation does not break redirects."""
     @classmethod
     def setUpClass(cls):
         cls.server = ServerHarness([
@@ -478,6 +534,7 @@ class TestStage4AnalyticsQueue(unittest.TestCase):
         cls.server.stop()
 
     def request(self, method, path, body=None, headers=None):
+        """Issue a request to analytics test server and return status/body/response."""
         conn = http.client.HTTPConnection("localhost", 38080)
         conn.request(method, path, body=body, headers=headers or {})
         res = conn.getresponse()
@@ -486,6 +543,7 @@ class TestStage4AnalyticsQueue(unittest.TestCase):
         return res.status, payload, res
 
     def test_redirects_work_with_saturated_analytics_queue(self):
+        """Ensure redirect behavior remains correct when analytics queue overflows."""
         status, payload, _ = self.request(
             "POST",
             "/api/v1/links",
