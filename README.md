@@ -114,21 +114,60 @@ The development target is a service optimized for fast redirects and safe operat
 - Strong TLS defaults preserved for HTTPS deployments.
 - Clear rollback/migration strategy as data model evolves.
 
-## Ubuntu dependency baseline (Stage 0)
+## Prerequisites
 
-Canonical environment: **Ubuntu 24.04 LTS** (best-effort 22.04).
+The project requires:
 
-Install build/test dependencies with:
+- C++17 compiler
+- CMake 3.25+
+- Ninja (recommended generator)
+- Boost (with `system`, `program_options`, `unit_test_framework`)
+- OpenSSL
+- Python 3 (for integration tests)
+
+### Linux (Ubuntu 24.04/22.04)
 
 ```bash
 ./scripts/setup_ubuntu_dependencies.sh
 ```
 
-This installs all required Stage 0 packages through `apt` (including Boost and OpenSSL) and replaces the old Boost-from-source flow for Ubuntu.
-
 See `docs/setup/UBUNTU.md` for package details and troubleshooting.
 
-## Build
+### macOS
+
+Install tools with Homebrew:
+
+```bash
+brew install cmake ninja boost openssl python
+```
+
+If CMake cannot locate OpenSSL/Boost automatically, set `CMAKE_PREFIX_PATH` to your Homebrew prefix before configuring.
+
+### Windows
+
+Install:
+
+- Visual Studio 2022 (Desktop development with C++)
+- CMake 3.25+
+- Ninja
+- Python 3
+- Boost and OpenSSL (for example via vcpkg)
+
+Example with vcpkg:
+
+```powershell
+vcpkg install boost-system boost-program-options boost-test openssl
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE=C:/path/to/vcpkg/scripts/buildsystems/vcpkg.cmake
+```
+
+## Setup workspace
+
+```bash
+git clone <your-fork-or-repo-url> UrlShortener
+cd UrlShortener
+```
+
+## Build with CMake
 
 ```bash
 cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
