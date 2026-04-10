@@ -1,5 +1,6 @@
 #pragma once
 
+#include <ostream>
 #include <optional>
 #include <string>
 
@@ -18,6 +19,17 @@ enum class ResolveStatus {
     inactive,
     expired,
 };
+
+inline std::ostream& operator<<(std::ostream& os, ResolveStatus e)
+{
+    switch (e) {
+    case ResolveStatus::redirect:  return os << "ResolveStatus::redirect";
+    case ResolveStatus::not_found: return os << "ResolveStatus::not_found";
+    case ResolveStatus::inactive:  return os << "ResolveStatus::inactive";
+    case ResolveStatus::expired:   return os << "ResolveStatus::expired";
+    }
+    return os << "ResolveStatus(" << static_cast<int>(e) << ")";
+}
 
 /**
  * @brief Redirect-resolution service output model.
