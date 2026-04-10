@@ -71,9 +71,70 @@ if(BUILD_TESTING)
       test/unit/link_management/07_stats_increment_test.cpp
   )
 
+  set(STAGE3_CORE_UNIT_SOURCES
+      test/unit/core/01_result_error_taxonomy.cpp
+      test/unit/core/02_link_record_validation.cpp
+      test/unit/core/03_cache_value_model.cpp
+      test/unit/core/04_link_access_event_model.cpp
+      test/unit/core/05_interface_smoke_compile.cpp
+  )
+
+  set(STAGE3_INMEMORY_UNIT_SOURCES
+      test/unit/storage/inmemory/01_create_and_get_roundtrip.cpp
+      test/unit/storage/inmemory/02_duplicate_short_code.cpp
+      test/unit/storage/inmemory/03_get_unknown.cpp
+      test/unit/storage/inmemory/04_update_existing.cpp
+      test/unit/storage/inmemory/05_delete_existing.cpp
+      test/unit/storage/inmemory/06_exists_consistency.cpp
+      test/unit/storage/inmemory/07_list_filtering_and_pagination.cpp
+      test/unit/storage/inmemory/08_expiry_semantics.cpp
+      test/unit/storage/inmemory/09_thread_safety_smoke.cpp
+      test/unit/storage/inmemory/10_cache_get_set_delete.cpp
+      test/unit/storage/inmemory/11_cache_ttl_lazy_eviction.cpp
+      test/unit/storage/inmemory/12_cache_clear_by_prefix.cpp
+      test/unit/storage/inmemory/13_cache_fail_open_behavior.cpp
+      test/unit/storage/inmemory/14_analytics_emit_and_flush.cpp
+      test/unit/storage/inmemory/15_rate_limit_allow_window.cpp
+  )
+
+  set(STAGE3_CONTRACT_METADATA_SOURCES
+      test/contract/metadata/01_create_get_roundtrip.cpp
+      test/contract/metadata/02_duplicate_short_code.cpp
+      test/contract/metadata/03_get_unknown.cpp
+      test/contract/metadata/04_update_existing.cpp
+      test/contract/metadata/05_delete_removes_record.cpp
+      test/contract/metadata/06_list_filtering_pagination.cpp
+      test/contract/metadata/07_expiry_semantics.cpp
+      test/contract/metadata/08_concurrent_create_one_wins.cpp
+  )
+
+  set(STAGE3_STORAGE_INTEGRATION_SOURCES
+      test/integration/storage/01_inmemory_resolve_full_flow.cpp
+      test/integration/storage/02_inmemory_cache_aside.cpp
+      test/integration/storage/03_inmemory_cache_invalidation_after_update.cpp
+      test/integration/storage/04_inmemory_cache_invalidation_after_delete.cpp
+      test/integration/storage/05_inmemory_redirect_visible_states.cpp
+      test/integration/storage/06_inmemory_analytics_best_effort.cpp
+  )
+
+  set(STAGE3_COMMON_CPP_SOURCES
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/core/LinkService.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/storage/inmemory/InMemoryMetadataRepository.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/storage/inmemory/InMemoryCacheStore.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/storage/inmemory/InMemoryAnalyticsSink.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/storage/inmemory/InMemoryRateLimiter.cpp
+  )
+
   set(ALL_UNIT_SOURCES
       ${STAGE1_UNIT_SOURCES}
       ${STAGE2_LINK_MANAGEMENT_UNIT_SOURCES}
+  )
+
+  set(ALL_STAGE3_CPP_TEST_SOURCES
+      ${STAGE3_CORE_UNIT_SOURCES}
+      ${STAGE3_INMEMORY_UNIT_SOURCES}
+      ${STAGE3_CONTRACT_METADATA_SOURCES}
+      ${STAGE3_STORAGE_INTEGRATION_SOURCES}
   )
 
   foreach(unit_src IN LISTS ALL_UNIT_SOURCES)
@@ -97,6 +158,28 @@ if(BUILD_TESTING)
     set_tests_properties(${unit_name} PROPERTIES LABELS "unit")
   endforeach()
 
+
+
+  foreach(stage3_src IN LISTS ALL_STAGE3_CPP_TEST_SOURCES)
+    get_filename_component(stage3_name ${stage3_src} NAME_WE)
+    add_executable(${stage3_name}
+        ${CMAKE_CURRENT_SOURCE_DIR}/${stage3_src}
+        ${STAGE3_COMMON_CPP_SOURCES}
+    )
+    target_compile_features(${stage3_name} PRIVATE cxx_std_17)
+    target_include_directories(${stage3_name} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include ${CMAKE_CURRENT_SOURCE_DIR}/test/contract/metadata)
+    target_link_libraries(${stage3_name}
+      PRIVATE
+        Boost::system
+        Boost::program_options
+        Boost::unit_test_framework
+        OpenSSL::SSL
+        OpenSSL::Crypto
+        Threads::Threads
+    )
+    add_test(NAME ${stage3_name} COMMAND ${stage3_name})
+    set_tests_properties(${stage3_name} PROPERTIES LABELS "unit")
+  endforeach()
   # ---- Stage 1 integration tests: 8 standalone executables (Python scripts) ----
   set(STAGE1_INTEGRATION_SOURCES
       test/integration/core/01_generated_slug_redirect_test.py
