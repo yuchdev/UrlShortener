@@ -336,7 +336,9 @@ Add standard codes:
 
 ## 9. Test plan (mandatory)
 
-### 9.1 Unit tests
+Perform comprehensive coverage of all possible paths
+
+### 9.1 Unit tests (each test is an executable)
 
 Minimum set:
 
@@ -348,7 +350,7 @@ Minimum set:
 6. hook default behavior (password/rate-limit pass)
 7. stats increment logic on successful redirects only
 
-### 9.2 Integration tests
+### 9.2 Integration tests (each test is an executable)
 
 Minimum scenarios:
 
