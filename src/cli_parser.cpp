@@ -1,3 +1,7 @@
+/**
+ * @file cli_parser.cpp
+ * @brief CLI parser implementation for runtime server configuration.
+ */
 #include <url_shortener/cli/cli_parser.h>
 
 #include <cstdlib>
@@ -11,6 +15,14 @@ namespace po = boost::program_options;
 
 namespace {
 
+/**
+ * @brief Parse a textual boolean representation.
+ *
+ * @param value Input string.
+ * @return true Parsed true value.
+ * @return false Parsed false value.
+ * @throws std::invalid_argument If the value is not a supported boolean token.
+ */
 bool parseBool(const std::string& value)
 {
     if (value == "1" || value == "true" || value == "on" || value == "yes") {
@@ -23,6 +35,13 @@ bool parseBool(const std::string& value)
         + "'. Use true/false, 1/0, on/off, or yes/no.");
 }
 
+/**
+ * @brief Validate and convert a raw port value.
+ *
+ * @param value Raw numeric port candidate.
+ * @return uint16_t Validated TCP port.
+ * @throws std::out_of_range If the port is outside [1, 65535].
+ */
 uint16_t parsePort(uint32_t value)
 {
     if (value == 0 || value > 65535) {
@@ -35,16 +54,45 @@ uint16_t parsePort(uint32_t value)
 
 } // namespace
 
+/**
+ * @brief Parse process arguments into a normalized ParseResult.
+ *
+ * Environment variables are loaded first and can be overridden by CLI flags.
+ *
+ * @param argc Argument count.
+ * @param argv Argument vector.
+ * @return ParseResult Parsed configuration and help metadata.
+ */
 ParseResult CliParser::parse(int argc, char* argv[]) const
 {
     ParseResult result;
     ServerConfig& cfg = result.config;
 
-    // Read environment variable before CLI args so explicit CLI overrides it.
+    // Read environment variables before CLI args so explicit CLI overrides them.
     if (const char* env = std::getenv("SHORTENER_BASE_DOMAIN");
         env != nullptr)
     {
         cfg.shortener_base_domain = env;
+    }
+    if (const char* env = std::getenv("SHORTENER_DEFAULT_REDIRECT_TYPE");
+        env != nullptr)
+    {
+        cfg.shortener_default_redirect_type = env;
+    }
+    if (const char* env = std::getenv("SHORTENER_DEFAULT_EXPIRY_SECONDS");
+        env != nullptr)
+    {
+        cfg.shortener_default_expiry_seconds = static_cast<uint32_t>(std::stoul(env));
+    }
+    if (const char* env = std::getenv("SHORTENER_GENERATED_SLUG_LENGTH");
+        env != nullptr)
+    {
+        cfg.shortener_generated_slug_length = static_cast<uint32_t>(std::stoul(env));
+    }
+    if (const char* env = std::getenv("SHORTENER_ALLOW_PRIVATE_TARGETS");
+        env != nullptr)
+    {
+        cfg.shortener_allow_private_targets = parseBool(env);
     }
 
     // ---- Option storage for values that need custom conversion ----
@@ -171,6 +219,10 @@ ParseResult CliParser::parse(int argc, char* argv[]) const
             ->value_name("TYPE")
             ->default_value(cfg.shortener_default_redirect_type),
         "Default redirect type: temporary or permanent (default: temporary)."
+    )(
+        "shortener-default-expiry-seconds",
+        po::value<uint32_t>()->value_name("SECONDS"),
+        "Default expiration window in seconds for new links when expires_at is omitted."
     )(
         "shortener-generated-slug-length",
         po::value<uint32_t>(&cfg.shortener_generated_slug_length)
@@ -338,6 +390,9 @@ ParseResult CliParser::parse(int argc, char* argv[]) const
     if (!shortener_allow_private_targets_str.empty()) {
         cfg.shortener_allow_private_targets =
             parseBool(shortener_allow_private_targets_str);
+    }
+    if (vm.count("shortener-default-expiry-seconds")) {
+        cfg.shortener_default_expiry_seconds = vm["shortener-default-expiry-seconds"].as<uint32_t>();
     }
 
     if (!analytics_enabled_str.empty()) {

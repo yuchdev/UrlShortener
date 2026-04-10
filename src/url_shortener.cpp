@@ -1,3 +1,7 @@
+/**
+ * @file url_shortener.cpp
+ * @brief Core HTTP request handling and server runtime implementation.
+ */
 #include <algorithm>
 #include <array>
 #include <chrono>
@@ -52,21 +56,21 @@ constexpr std::string_view internal_request_id_header = "X-Internal-Request-Id";
 
 struct RequestContext
 {
-    std::string request_id;
-    std::string route_label;
-    std::chrono::steady_clock::time_point started_at;
+    std::string request_id;  ///< Request correlation identifier.
+    std::string route_label;  ///< Normalized route label for metrics/logging.
+    std::chrono::steady_clock::time_point started_at;  ///< Request start timestamp.
 };
 
 struct MetricsRegistry
 {
-    std::atomic<uint64_t> inflight_requests{0};
-    std::atomic<uint64_t> parse_errors_total{0};
-    std::atomic<uint64_t> malformed_requests_total{0};
-    std::atomic<uint64_t> tls_reload_success_total{0};
-    std::atomic<uint64_t> tls_reload_failure_total{0};
+    std::atomic<uint64_t> inflight_requests{0};  ///< Current inflight HTTP requests.
+    std::atomic<uint64_t> parse_errors_total{0};  ///< HTTP parser error count.
+    std::atomic<uint64_t> malformed_requests_total{0};  ///< Malformed request count.
+    std::atomic<uint64_t> tls_reload_success_total{0};  ///< Successful TLS reloads.
+    std::atomic<uint64_t> tls_reload_failure_total{0};  ///< Failed TLS reloads.
 
-    std::mutex mutex;
-    std::map<std::string, uint64_t> http_requests_total;
+    std::mutex mutex;  ///< Protects http_requests_total map.
+    std::map<std::string, uint64_t> http_requests_total;  ///< Per-route/status request counters.
 };
 
 enum class RedirectType
@@ -79,50 +83,50 @@ struct Link
 {
     struct Campaign
     {
-        std::optional<std::string> name;
-        std::optional<std::string> source;
-        std::optional<std::string> medium;
-        std::optional<std::string> term;
-        std::optional<std::string> content;
-        std::optional<std::string> id;
+        std::optional<std::string> name;  ///< Campaign name.
+        std::optional<std::string> source;  ///< Campaign source.
+        std::optional<std::string> medium;  ///< Campaign medium.
+        std::optional<std::string> term;  ///< Campaign term.
+        std::optional<std::string> content;  ///< Campaign content.
+        std::optional<std::string> id;  ///< Campaign identifier.
     };
 
     struct Stats
     {
-        uint64_t total_redirects = 0;
-        uint64_t redirects_24h = 0;
-        uint64_t redirects_7d = 0;
-        std::optional<std::string> last_accessed_at;
+        uint64_t total_redirects = 0;  ///< Lifetime redirect count.
+        uint64_t redirects_24h = 0;  ///< Rolling 24h redirect count.
+        uint64_t redirects_7d = 0;  ///< Rolling 7d redirect count.
+        std::optional<std::string> last_accessed_at;  ///< Last redirect timestamp.
     };
 
-    std::string id;
-    std::string slug;
-    std::string target_url;
-    std::string created_at;
-    std::string updated_at;
-    std::optional<std::string> expires_at;
-    std::optional<std::string> deleted_at;
-    bool enabled = true;
-    std::vector<std::string> tags;
-    std::unordered_map<std::string, std::string> metadata;
-    std::optional<Campaign> campaign;
-    Stats stats;
-    RedirectType redirect_type = RedirectType::temporary;
+    std::string id;  ///< Stable link identifier.
+    std::string slug;  ///< Public redirect slug.
+    std::string target_url;  ///< Normalized destination URL.
+    std::string created_at;  ///< Creation timestamp.
+    std::string updated_at;  ///< Last update timestamp.
+    std::optional<std::string> expires_at;  ///< Optional expiry timestamp.
+    std::optional<std::string> deleted_at;  ///< Optional soft-delete timestamp.
+    bool enabled = true;  ///< Enable/disable switch.
+    std::vector<std::string> tags;  ///< Optional link tags.
+    std::unordered_map<std::string, std::string> metadata;  ///< Optional metadata map.
+    std::optional<Campaign> campaign;  ///< Optional campaign metadata.
+    Stats stats;  ///< Redirect counters and timestamps.
+    RedirectType redirect_type = RedirectType::temporary;  ///< Redirect semantics.
 };
 
 
 
 struct ClickEvent
 {
-    std::string event_id;
-    std::string occurred_at;
-    std::string slug;
-    std::optional<std::string> link_id;
-    std::string domain;
-    uint16_t status_code = 0;
-    std::optional<std::string> referrer;
-    std::optional<std::string> user_agent;
-    std::string client_id_hash;
+    std::string event_id;  ///< Event identifier.
+    std::string occurred_at;  ///< Event timestamp.
+    std::string slug;  ///< Redirect slug associated with event.
+    std::optional<std::string> link_id;  ///< Optional resolved link id.
+    std::string domain;  ///< Request host domain.
+    uint16_t status_code = 0;  ///< HTTP response status code.
+    std::optional<std::string> referrer;  ///< Optional Referer header value.
+    std::optional<std::string> user_agent;  ///< Optional User-Agent header value.
+    std::string client_id_hash;  ///< Anonymized client hash.
 };
 
 class BoundedClickEventQueue
@@ -156,11 +160,11 @@ public:
     }
 
 private:
-    std::mutex mutex_;
-    size_t capacity_;
-    std::deque<ClickEvent> events_;
-    uint64_t enqueued_total_ = 0;
-    uint64_t dropped_total_ = 0;
+    std::mutex mutex_;  ///< Protects queue internals.
+    size_t capacity_;  ///< Maximum queue capacity.
+    std::deque<ClickEvent> events_;  ///< Buffered click events.
+    uint64_t enqueued_total_ = 0;  ///< Total enqueued events.
+    uint64_t dropped_total_ = 0;  ///< Total dropped events.
 };
 
 enum class LinkStatus
@@ -263,9 +267,9 @@ public:
     }
 
 private:
-    mutable std::shared_mutex mutex_;
-    std::unordered_map<std::string, Link> by_id_;
-    std::unordered_map<std::string, std::string> slug_to_id_;
+    mutable std::shared_mutex mutex_;  ///< Protects repository maps.
+    std::unordered_map<std::string, Link> by_id_;  ///< Primary index: id -> Link.
+    std::unordered_map<std::string, std::string> slug_to_id_;  ///< Secondary index: slug -> id.
 };
 
 class InMemoryLinkCacheStore final : public ILinkCacheStore
@@ -293,8 +297,8 @@ public:
     }
 
 private:
-    std::shared_mutex mutex_;
-    std::unordered_map<std::string, Link> by_slug_;
+    std::shared_mutex mutex_;  ///< Protects cache map.
+    std::unordered_map<std::string, Link> by_slug_;  ///< Slug -> Link cache entries.
 };
 
 IMetadataRepository& linkRepository()
@@ -703,6 +707,13 @@ std::optional<std::pair<std::string, std::string>> splitUrl(const std::string& i
     return std::make_pair(match[1].str(), match[2].str() + match[3].str());
 }
 
+/**
+ * @brief Determine whether the hostname is private, loopback, link-local, or internal-only.
+ *
+ * @param host Hostname (or textual IP) extracted from a target URL authority.
+ * @return true Host should be rejected when private targets are disabled.
+ * @return false Host is considered publicly routable for Stage 1 policy.
+ */
 bool isPrivateHost(const std::string& host)
 {
     const std::string lower_host = [&host]() {
@@ -710,12 +721,23 @@ bool isPrivateHost(const std::string& host)
         std::transform(out.begin(), out.end(), out.begin(), [](const unsigned char c) { return std::tolower(c); });
         return out;
     }();
+    if (lower_host == "localhost" || lower_host == "::1" || lower_host == "::" || lower_host == "0.0.0.0"
+        || lower_host == "[::1]" || lower_host == "[::]") {
+        return true;
+    }
+    if (lower_host == "internal" || lower_host == "localhost.localdomain"
+        || lower_host.find(".internal") != std::string::npos
+        || lower_host.find(".local") != std::string::npos) {
+        return true;
+    }
     return lower_host == "localhost" || lower_host == "::1" || lower_host.rfind("127.", 0) == 0
         || lower_host.rfind("10.", 0) == 0 || lower_host.rfind("192.168.", 0) == 0
         || lower_host.rfind("169.254.", 0) == 0 || lower_host.rfind("172.16.", 0) == 0
         || lower_host.rfind("172.17.", 0) == 0 || lower_host.rfind("172.18.", 0) == 0
         || lower_host.rfind("172.19.", 0) == 0 || lower_host.rfind("172.2", 0) == 0
-        || lower_host.rfind("172.30.", 0) == 0 || lower_host.rfind("172.31.", 0) == 0;
+        || lower_host.rfind("172.30.", 0) == 0 || lower_host.rfind("172.31.", 0) == 0
+        || lower_host.rfind("fc", 0) == 0 || lower_host.rfind("fd", 0) == 0
+        || lower_host.rfind("fe80:", 0) == 0;
 }
 
 std::optional<std::string> normalizeTargetUrl(const std::string& input_url, const ServerConfig& config)
@@ -862,6 +884,11 @@ std::string linkStatusToString(const LinkStatus status)
     }
 }
 
+std::ostream& operator<<(std::ostream& os, const LinkStatus status)
+{
+    return os << linkStatusToString(status);
+}
+
 bool validateTags(std::vector<std::string>& tags)
 {
     if (tags.size() > 20) {
@@ -946,6 +973,39 @@ std::string generateSlug(const uint32_t length)
     return generated;
 }
 
+/**
+ * @brief Generate a non-reserved unique slug with bounded retry attempts.
+ *
+ * @param config Runtime shortener config for slug length.
+ * @param generator Slug generator callback (injected for tests).
+ * @return std::optional<std::string> Generated unique slug, or nullopt on bounded failure.
+ */
+std::optional<std::string> generateUniqueSlug(
+    const ServerConfig& config,
+    const std::function<std::string(uint32_t)>& generator = generateSlug)
+{
+    for (int attempt = 0; attempt < 20; ++attempt) {
+        const auto candidate = generator(config.shortener_generated_slug_length);
+        if (!isReservedSlug(candidate) && !linkRepository().slugExists(candidate)) {
+            return candidate;
+        }
+    }
+    return std::nullopt;
+}
+
+/**
+ * @brief Resolve HTTP redirect status from link redirect type.
+ *
+ * @param link Link entity.
+ * @return http::status Redirect HTTP status code.
+ */
+http::status redirectStatusFor(const Link& link)
+{
+    return link.redirect_type == RedirectType::permanent
+        ? http::status::moved_permanently
+        : http::status::found;
+}
+
 std::string currentTimestamp()
 {
     const auto now = std::chrono::system_clock::now();
@@ -955,6 +1015,62 @@ std::string currentTimestamp()
     std::ostringstream out;
     out << std::put_time(&tm, "%Y-%m-%dT%H:%M:%SZ");
     return out.str();
+}
+
+/**
+ * @brief Format a UTC timestamp using RFC3339 Zulu encoding.
+ *
+ * @param time_point Time point to serialize.
+ * @return std::string RFC3339 timestamp in the form YYYY-MM-DDTHH:MM:SSZ.
+ */
+std::string formatTimestamp(const std::chrono::system_clock::time_point time_point)
+{
+    const std::time_t ts = std::chrono::system_clock::to_time_t(time_point);
+    std::tm tm{};
+    gmtime_r(&ts, &tm);
+    std::ostringstream out;
+    out << std::put_time(&tm, "%Y-%m-%dT%H:%M:%SZ");
+    return out.str();
+}
+
+/**
+ * @brief Validate and canonicalize SHORTENER_BASE_DOMAIN.
+ *
+ * Enforces a strict absolute URL containing only scheme + authority (no path/query/fragment)
+ * and strips trailing slashes.
+ *
+ * @param raw_domain Raw configured base domain.
+ * @return std::string Canonicalized base domain.
+ * @throws std::runtime_error If configuration is invalid.
+ */
+std::string normalizeAndValidateBaseDomain(const std::string& raw_domain)
+{
+    const std::string trimmed = trim(raw_domain);
+    if (trimmed.empty()) {
+        throw std::runtime_error("SHORTENER_BASE_DOMAIN must not be empty");
+    }
+    const auto split = splitUrl(trimmed);
+    if (!split.has_value()) {
+        throw std::runtime_error("SHORTENER_BASE_DOMAIN must include http:// or https:// and a host");
+    }
+    auto [scheme, authority_and_rest] = *split;
+    std::transform(scheme.begin(), scheme.end(), scheme.begin(), [](const unsigned char c) { return std::tolower(c); });
+    if (scheme != "http" && scheme != "https") {
+        throw std::runtime_error("SHORTENER_BASE_DOMAIN scheme must be http or https");
+    }
+
+    while (!authority_and_rest.empty() && authority_and_rest.back() == '/') {
+        authority_and_rest.pop_back();
+    }
+    const auto sep = authority_and_rest.find_first_of("/?#");
+    if (sep != std::string::npos) {
+        throw std::runtime_error("SHORTENER_BASE_DOMAIN must not include path, query, or fragment");
+    }
+    if (authority_and_rest.empty()) {
+        throw std::runtime_error("SHORTENER_BASE_DOMAIN host is required");
+    }
+
+    return scheme + "://" + authority_and_rest;
 }
 
 MetricsRegistry& metricsRegistry()
@@ -1437,6 +1553,23 @@ http::response<http::string_body> handleShortenerRequest(
             return makeResponse(req, config, is_tls, 200, body.str(), "application/json");
         }
 
+        if (action == "qr" || action == "routing") {
+            if (req.method() != http::verb::get) {
+                return makeApiErrorResponse(req, config, is_tls, 400, "invalid_method", "Only GET is supported");
+            }
+            const auto link = getLinkForRead(slug);
+            if (!link.has_value()) {
+                return makeApiErrorResponse(req, config, is_tls, 404, "not_found", "Link not found");
+            }
+            return makeApiErrorResponse(
+                req,
+                config,
+                is_tls,
+                501,
+                "feature_not_enabled",
+                "Feature placeholder only; implementation deferred");
+        }
+
         if (action == "stats") {
             if (req.method() != http::verb::get) {
                 return makeApiErrorResponse(req, config, is_tls, 400, "invalid_method", "Only GET is supported");
@@ -1631,18 +1764,11 @@ http::response<http::string_body> handleShortenerRequest(
             slug = *compat_code;
         }
         else {
-            bool created = false;
-            for (int attempt = 0; attempt < 20; ++attempt) {
-                const auto candidate = generateSlug(config.shortener_generated_slug_length);
-                if (!isReservedSlug(candidate) && !linkRepository().slugExists(candidate)) {
-                    slug = candidate;
-                    created = true;
-                    break;
-                }
-            }
-            if (!created) {
+            const auto generated_slug = generateUniqueSlug(config);
+            if (!generated_slug.has_value()) {
                 return makeApiErrorResponse(req, config, is_tls, 500, "slug_generation_failed", "Unable to generate a unique slug");
             }
+            slug = *generated_slug;
         }
 
         RedirectType redirect_type = RedirectType::temporary;
@@ -1663,6 +1789,10 @@ http::response<http::string_body> handleShortenerRequest(
                 return makeApiErrorResponse(req, config, is_tls, 400, "invalid_expires_at", "expires_at must be RFC3339 UTC");
             }
             expires_at = *expires_at_raw;
+        }
+        else if (config.shortener_default_expiry_seconds.has_value()) {
+            expires_at = formatTimestamp(
+                std::chrono::system_clock::now() + std::chrono::seconds(*config.shortener_default_expiry_seconds));
         }
 
         bool enabled = true;
@@ -1774,8 +1904,7 @@ http::response<http::string_body> handleShortenerRequest(
         updated.stats.last_accessed_at = currentTimestamp();
         updateLinkAndInvalidateCache(updated);
 
-        const auto redirect_status =
-            link->redirect_type == RedirectType::permanent ? http::status::moved_permanently : http::status::found;
+        const auto redirect_status = redirectStatusFor(*link);
         emitClickEvent(req, config, slug, link, static_cast<uint16_t>(redirect_status));
 
         http::response<http::string_body> res{redirect_status, req.version()};
@@ -1819,8 +1948,7 @@ http::response<http::string_body> handleShortenerRequest(
                 updated.stats.last_accessed_at = currentTimestamp();
                 updateLinkAndInvalidateCache(updated);
 
-                const auto redirect_status =
-                    link->redirect_type == RedirectType::permanent ? http::status::moved_permanently : http::status::found;
+                const auto redirect_status = redirectStatusFor(*link);
                 emitClickEvent(req, config, slug, link, static_cast<uint16_t>(redirect_status));
 
                 http::response<http::string_body> res{redirect_status, req.version()};
@@ -1831,6 +1959,8 @@ http::response<http::string_body> handleShortenerRequest(
                 res.prepare_payload();
                 return res;
             }
+            emitClickEvent(req, config, slug, std::nullopt, 404);
+            return makeApiErrorResponse(req, config, is_tls, 404, "not_found", "Link not found");
         }
         return handleApplicationRequest(req, config, is_tls);
     }
@@ -1932,11 +2062,11 @@ private:
         socket_.socket().shutdown(tcp::socket::shutdown_send, ignored);
     }
 
-    beast::tcp_stream socket_;
-    beast::flat_buffer buffer_;
-    http::request<http::string_body> req_;
-    http::response<http::string_body> res_;
-    const ServerConfig& config_;
+    beast::tcp_stream socket_;  ///< Underlying TCP stream.
+    beast::flat_buffer buffer_;  ///< Read buffer.
+    http::request<http::string_body> req_;  ///< Parsed request object.
+    http::response<http::string_body> res_;  ///< Response object.
+    const ServerConfig& config_;  ///< Shared runtime config reference.
 };
 
 class TlsSession : public std::enable_shared_from_this<TlsSession>
@@ -2040,13 +2170,13 @@ private:
         beast::get_lowest_layer(stream_).close();
     }
 
-    ssl::stream<beast::tcp_stream> stream_;
-    beast::flat_buffer buffer_;
-    http::request<http::string_body> req_;
-    http::response<http::string_body> res_;
-    const ServerConfig& config_;
-    std::atomic<uint64_t>& success_counter_;
-    std::atomic<uint64_t>& failure_counter_;
+    ssl::stream<beast::tcp_stream> stream_;  ///< TLS stream wrapper.
+    beast::flat_buffer buffer_;  ///< Read buffer.
+    http::request<http::string_body> req_;  ///< Parsed request object.
+    http::response<http::string_body> res_;  ///< Response object.
+    const ServerConfig& config_;  ///< Shared runtime config reference.
+    std::atomic<uint64_t>& success_counter_;  ///< TLS handshake success counter.
+    std::atomic<uint64_t>& failure_counter_;  ///< TLS handshake failure counter.
 };
 
 } // namespace
@@ -2062,10 +2192,17 @@ TlsConfig::ClientAuthMode parseClientAuthMode(const std::string& value)
     return TlsConfig::ClientAuthMode::none;
 }
 
+/**
+ * @brief Construct HTTP server with validated/canonicalized shortener configuration.
+ *
+ * @param io_context Shared io_context for listeners/sessions.
+ * @param config Runtime server configuration.
+ */
 HttpServer::HttpServer(net::io_context& io_context, ServerConfig config)
     : io_context_(io_context)
     , config_(std::move(config))
 {
+    config_.shortener_base_domain = normalizeAndValidateBaseDomain(config_.shortener_base_domain);
 }
 
 boost::asio::ssl::context HttpServer::buildTlsContext() const

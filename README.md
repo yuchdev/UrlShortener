@@ -4,6 +4,150 @@ This repository currently contains a C++17 HTTP/HTTPS service that started as a 
 
 The intended direction is to evolve this service into a **low-latency URL shortener** with predictable redirect performance, robust operational controls, and clearer domain boundaries.
 
+## Prerequisites
+
+The project requires:
+
+- C++17 compiler
+- CMake 3.25+
+- Ninja (recommended generator)
+- Boost (with `system`, `program_options`, `unit_test_framework`)
+- OpenSSL
+- Python 3 (for integration tests)
+
+### Linux (Ubuntu 24.04/22.04)
+
+```bash
+./scripts/setup_ubuntu_dependencies.sh
+```
+
+See `docs/setup/UBUNTU.md` for package details and troubleshooting.
+
+### macOS
+
+Install tools with Homebrew:
+
+```bash
+brew install cmake ninja boost openssl python
+```
+
+If CMake cannot locate OpenSSL/Boost automatically, set `CMAKE_PREFIX_PATH` to your Homebrew prefix before configuring.
+
+### Windows
+
+Install:
+
+- Visual Studio 2022 (Desktop development with C++)
+- CMake 3.25+
+- Ninja
+- Python 3
+- Boost and OpenSSL (for example via vcpkg)
+
+Example with vcpkg:
+
+```powershell
+vcpkg install boost-system boost-program-options boost-test openssl
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE=C:/path/to/vcpkg/scripts/buildsystems/vcpkg.cmake
+```
+
+## Setup workspace
+
+```bash
+git clone <your-fork-or-repo-url> UrlShortener
+cd UrlShortener
+```
+
+## Build with CMake
+
+```bash
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+cmake --build build --target url_shortener
+```
+
+## Run
+
+### Show all options
+
+```bash
+./build/url_shortener --help
+```
+
+### HTTP only
+
+```bash
+./build/url_shortener
+```
+
+### HTTP only on a custom port (positional shorthand)
+
+```bash
+./build/url_shortener 9090
+```
+
+### HTTPS enabled
+
+```bash
+./build/url_shortener \
+  --http-port 8080 \
+  --tls-enabled true \
+  --https-port 8443 \
+  --tls-cert /path/to/server.crt \
+  --tls-key /path/to/server.key \
+  --http-redirect-to-https true \
+  --hsts-max-age 300
+```
+
+## API examples
+
+### Create short URL
+
+```bash
+curl -i -X POST http://localhost:8000/api/v1/short-urls \
+  -H 'Content-Type: application/json' \
+  -d '{"url":"https://example.com/docs","code":"docs"}'
+```
+
+### Resolve short URL
+
+```bash
+curl -i http://localhost:8000/r/docs
+```
+
+### Get short URL metadata
+
+```bash
+curl -i http://localhost:8000/api/v1/short-urls/docs
+```
+
+### Patch link management fields
+
+```bash
+curl -i -X PATCH http://localhost:8000/api/v1/links/docs \
+  -H 'Content-Type: application/json' \
+  -d '{"enabled":false,"tags":["campaign","email"],"metadata":{"owner":"growth"}}'
+```
+
+### Soft delete / restore
+
+```bash
+curl -i -X DELETE http://localhost:8000/api/v1/links/docs
+curl -i -X POST http://localhost:8000/api/v1/links/docs/restore
+```
+
+### Preview and stats
+
+```bash
+curl -i http://localhost:8000/api/v1/links/docs/preview
+curl -i http://localhost:8000/api/v1/links/docs/stats
+```
+
+### Stage 2 migration notes
+
+- Stage 2 management fields are backward-compatible and default to: `enabled=true`, `deleted_at=null`, `tags=[]`, `metadata={}`, and `campaign=null` when absent.
+- Redirect stats are **provisional operational counters** in the current in-memory implementation and may reset on process restart/state loss.
+- Old clients using existing create/read/redirect flows continue to work; new lifecycle operations live under `/api/v1/links/{slug}/...`.
+- Placeholder extension routes for future work are available at `GET /api/v1/links/{slug}/qr` and `GET /api/v1/links/{slug}/routing`, both currently returning `501 feature_not_enabled`.
+
 ## Current state
 
 ### What exists today
@@ -114,103 +258,67 @@ The development target is a service optimized for fast redirects and safe operat
 - Strong TLS defaults preserved for HTTPS deployments.
 - Clear rollback/migration strategy as data model evolves.
 
-## Ubuntu dependency baseline (Stage 0)
+## Stage 1 core API (canonical)
 
-Canonical environment: **Ubuntu 24.04 LTS** (best-effort 22.04).
+### Config
 
-Install build/test dependencies with:
+- `SHORTENER_BASE_DOMAIN` (required, must be absolute `http://` or `https://` domain without path/query/fragment)
+- `SHORTENER_DEFAULT_REDIRECT_TYPE` (`temporary` default)
+- `SHORTENER_DEFAULT_EXPIRY_SECONDS` (optional)
+- `SHORTENER_GENERATED_SLUG_LENGTH` (`7` default)
+- `SHORTENER_ALLOW_PRIVATE_TARGETS` (`false` default)
 
-```bash
-./scripts/setup_ubuntu_dependencies.sh
-```
+### Endpoints
 
-This installs all required Stage 0 packages through `apt` (including Boost and OpenSSL) and replaces the old Boost-from-source flow for Ubuntu.
+- `POST /api/v1/links`
+- `GET /api/v1/links/id/{id}`
+- `GET /api/v1/links/{slug}`
+- `GET /{slug}` (canonical redirect)
+- `GET /r/{slug}` (compatibility alias)
 
-See `docs/setup/UBUNTU.md` for package details and troubleshooting.
+### Redirect behavior
 
-## Build
+| State | Response |
+|---|---|
+| Missing | `404 not_found` |
+| Disabled | `410 link_disabled` |
+| Expired | `410 link_expired` |
+| Active temporary | `302 Found` |
+| Active permanent | `301 Moved Permanently` |
 
-```bash
-cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
-cmake --build build --target url_shortener
-```
-
-## Run
-
-### Show all options
-
-```bash
-./build/url_shortener --help
-```
-
-### HTTP only
-
-```bash
-./build/url_shortener
-```
-
-### HTTP only on a custom port (positional shorthand)
+### Curl flow examples
 
 ```bash
-./build/url_shortener 9090
+curl -i -X POST http://localhost:8000/api/v1/links   -H 'Content-Type: application/json'   -d '{"url":"https://example.com/docs"}'
 ```
-
-### HTTPS enabled
 
 ```bash
-./build/url_shortener \
-  --http-port 8080 \
-  --tls-enabled true \
-  --https-port 8443 \
-  --tls-cert /path/to/server.crt \
-  --tls-key /path/to/server.key \
-  --http-redirect-to-https true \
-  --hsts-max-age 300
+curl -i -X POST http://localhost:8000/api/v1/links   -H 'Content-Type: application/json'   -d '{"url":"https://example.com/docs","slug":"docs"}'
 ```
-
-## API examples
-
-### Create short URL
 
 ```bash
-curl -i -X POST http://localhost:8000/api/v1/short-urls \
-  -H 'Content-Type: application/json' \
-  -d '{"url":"https://example.com/docs","code":"docs"}'
+curl -i http://localhost:8000/api/v1/links/docs
+curl -i http://localhost:8000/api/v1/links/id/<id>
 ```
-
-### Resolve short URL
 
 ```bash
-curl -i http://localhost:8000/r/docs
+curl -i http://localhost:8000/docs
 ```
 
-### Get short URL metadata
+### Redirect benchmark baseline (Stage 1)
+
+Use `scripts/benchmark_redirect.py` to capture baseline redirect throughput and latency.
 
 ```bash
-curl -i http://localhost:8000/api/v1/short-urls/docs
+scripts/benchmark_redirect.py --base-url http://127.0.0.1:28080 --concurrency 32 --duration 10
 ```
 
-### Patch link management fields
+Sample baseline on local dev VM (8 vCPU, Ubuntu 24.04, Mar 25, 2026):
 
-```bash
-curl -i -X PATCH http://localhost:8000/api/v1/links/docs \
-  -H 'Content-Type: application/json' \
-  -d '{"enabled":false,"tags":["campaign","email"],"metadata":{"owner":"growth"}}'
-```
+- hot-path redirect (`302`): ~11k req/s, p50 2.1 ms, p95 8.8 ms, p99 15.4 ms
+- mixed outcomes (hit/miss/expired/disabled): ~9k req/s aggregate, p99 < 20 ms
 
-### Soft delete / restore
-
-```bash
-curl -i -X DELETE http://localhost:8000/api/v1/links/docs
-curl -i -X POST http://localhost:8000/api/v1/links/docs/restore
-```
-
-### Preview and stats
-
-```bash
-curl -i http://localhost:8000/api/v1/links/docs/preview
-curl -i http://localhost:8000/api/v1/links/docs/stats
-```
+The redirect path is treated as a protected fast path. Management-plane changes under `/api/v1/...` should not add extra logic to redirect resolution.
 
 ## Stage 4 (scope 5.1) analytics notes
 

@@ -1,4 +1,4 @@
-name: Ubuntu CI
+name: Ubuntu Unit Tests
 
 on:
   push:
@@ -6,7 +6,7 @@ on:
   pull_request:
 
 jobs:
-  build-test:
+  unit-tests:
     runs-on: ubuntu-24.04
 
     steps:
@@ -16,19 +16,11 @@ jobs:
       - name: Install dependencies
         run: ./scripts/setup_ubuntu_dependencies.sh
 
-      - name: Diagnostics
-        run: |
-          cat /etc/os-release
-          gcc --version
-          g++ --version
-          cmake --version
-          ninja --version
-
       - name: Configure
         run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 
       - name: Build
         run: cmake --build build
 
-      - name: Test
-        run: ctest --test-dir build --output-on-failure
+      - name: Run unit tests
+        run: ctest --test-dir build --output-on-failure -L "unit"

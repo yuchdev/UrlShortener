@@ -1,3 +1,7 @@
+/**
+ * @file uri_map_singleton.h
+ * @brief Legacy URI payload map singleton API.
+ */
 #pragma once
 
 #include <string>
@@ -68,6 +72,5 @@ private:
      */
     UriMapSingleton() = default;
 
-    /**< The hash map of URI data ensures search in O(1) time */
-    std::unordered_map<std::string, std::pair<std::string, std::string>> data_;
+    std::unordered_map<std::string, std::pair<std::string, std::string>> data_;  ///< In-memory URI payload map.
 };
