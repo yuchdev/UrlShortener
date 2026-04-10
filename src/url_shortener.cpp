@@ -884,6 +884,11 @@ std::string linkStatusToString(const LinkStatus status)
     }
 }
 
+std::ostream& operator<<(std::ostream& os, const LinkStatus status)
+{
+    return os << linkStatusToString(status);
+}
+
 bool validateTags(std::vector<std::string>& tags)
 {
     if (tags.size() > 20) {
@@ -1551,6 +1556,10 @@ http::response<http::string_body> handleShortenerRequest(
         if (action == "qr" || action == "routing") {
             if (req.method() != http::verb::get) {
                 return makeApiErrorResponse(req, config, is_tls, 400, "invalid_method", "Only GET is supported");
+            }
+            const auto link = getLinkForRead(slug);
+            if (!link.has_value()) {
+                return makeApiErrorResponse(req, config, is_tls, 404, "not_found", "Link not found");
             }
             return makeApiErrorResponse(
                 req,
