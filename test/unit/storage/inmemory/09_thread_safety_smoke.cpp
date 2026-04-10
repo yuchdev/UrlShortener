@@ -1,5 +1,6 @@
 #define BOOST_TEST_MODULE InMemoryMetadataThreadSafetySmokeTest
 #include <boost/test/unit_test.hpp>
+#include <atomic>
 #include <thread>
 #include <vector>
 #include "url_shortener/storage/inmemory/InMemoryMetadataRepository.hpp"

@@ -130,13 +130,6 @@ if(BUILD_TESTING)
       ${STAGE2_LINK_MANAGEMENT_UNIT_SOURCES}
   )
 
-  set(ALL_STAGE3_CPP_TEST_SOURCES
-      ${STAGE3_CORE_UNIT_SOURCES}
-      ${STAGE3_INMEMORY_UNIT_SOURCES}
-      ${STAGE3_CONTRACT_METADATA_SOURCES}
-      ${STAGE3_STORAGE_INTEGRATION_SOURCES}
-  )
-
   foreach(unit_src IN LISTS ALL_UNIT_SOURCES)
     get_filename_component(unit_name ${unit_src} NAME_WE)
     add_executable(${unit_name}
@@ -160,26 +153,41 @@ if(BUILD_TESTING)
 
 
 
-  foreach(stage3_src IN LISTS ALL_STAGE3_CPP_TEST_SOURCES)
-    get_filename_component(stage3_name ${stage3_src} NAME_WE)
-    add_executable(${stage3_name}
-        ${CMAKE_CURRENT_SOURCE_DIR}/${stage3_src}
-        ${STAGE3_COMMON_CPP_SOURCES}
-    )
-    target_compile_features(${stage3_name} PRIVATE cxx_std_17)
-    target_include_directories(${stage3_name} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include ${CMAKE_CURRENT_SOURCE_DIR}/test/contract/metadata)
-    target_link_libraries(${stage3_name}
-      PRIVATE
-        Boost::system
-        Boost::program_options
-        Boost::unit_test_framework
-        OpenSSL::SSL
-        OpenSSL::Crypto
-        Threads::Threads
-    )
-    add_test(NAME ${stage3_name} COMMAND ${stage3_name})
-    set_tests_properties(${stage3_name} PROPERTIES LABELS "unit")
-  endforeach()
+  # Helper macro to register Stage-3 C++ tests with unique target names (parent_dir__filename)
+  # and the appropriate CTest label so suites can be run independently.
+  macro(register_stage3_cpp_tests src_list label)
+    foreach(stage3_src IN LISTS ${src_list})
+      get_filename_component(stage3_name   ${stage3_src} NAME_WE)
+      get_filename_component(stage3_dir    ${stage3_src} DIRECTORY)
+      get_filename_component(stage3_parent ${stage3_dir} NAME)
+      set(stage3_target "${stage3_parent}__${stage3_name}")
+      add_executable(${stage3_target}
+          ${CMAKE_CURRENT_SOURCE_DIR}/${stage3_src}
+          ${STAGE3_COMMON_CPP_SOURCES}
+      )
+      target_compile_features(${stage3_target} PRIVATE cxx_std_17)
+      target_include_directories(${stage3_target} PRIVATE
+          ${CMAKE_CURRENT_SOURCE_DIR}/include
+          ${CMAKE_CURRENT_SOURCE_DIR}/test/contract/metadata
+      )
+      target_link_libraries(${stage3_target}
+        PRIVATE
+          Boost::system
+          Boost::program_options
+          Boost::unit_test_framework
+          OpenSSL::SSL
+          OpenSSL::Crypto
+          Threads::Threads
+      )
+      add_test(NAME ${stage3_target} COMMAND ${stage3_target})
+      set_tests_properties(${stage3_target} PROPERTIES LABELS "${label}")
+    endforeach()
+  endmacro()
+
+  register_stage3_cpp_tests(STAGE3_CORE_UNIT_SOURCES           "unit")
+  register_stage3_cpp_tests(STAGE3_INMEMORY_UNIT_SOURCES       "unit")
+  register_stage3_cpp_tests(STAGE3_CONTRACT_METADATA_SOURCES   "contract")
+  register_stage3_cpp_tests(STAGE3_STORAGE_INTEGRATION_SOURCES "integration")
   # ---- Stage 1 integration tests: 8 standalone executables (Python scripts) ----
   set(STAGE1_INTEGRATION_SOURCES
       test/integration/core/01_generated_slug_redirect_test.py

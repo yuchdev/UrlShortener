@@ -51,7 +51,7 @@ std::optional<LinkRecord> InMemoryMetadataRepository::GetByShortCode(const std::
         return it->second;
     }
     if (error != nullptr) {
-        *error = RepoError::none;
+        *error = RepoError::not_found;
     }
     return std::nullopt;
 }
@@ -112,8 +112,12 @@ std::vector<LinkRecord> InMemoryMetadataRepository::ListLinks(const ListLinksQue
         return {};
     }
 
-    const std::size_t end = std::min(records.size(), query.offset + query.limit);
-    std::vector<LinkRecord> paged(records.begin() + static_cast<long>(query.offset), records.begin() + static_cast<long>(end));
+    const std::size_t remaining = records.size() - query.offset;
+    const std::size_t limit = std::min(query.limit, remaining);
+    const std::size_t end = query.offset + limit;
+    using DifferenceType = std::vector<LinkRecord>::difference_type;
+    std::vector<LinkRecord> paged(records.begin() + static_cast<DifferenceType>(query.offset),
+                                  records.begin() + static_cast<DifferenceType>(end));
     if (error != nullptr) {
         *error = RepoError::none;
     }

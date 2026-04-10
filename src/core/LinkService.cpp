@@ -19,6 +19,7 @@ ResolveResult LinkService::Resolve(const std::string& short_code)
             EmitAnalytics(short_code, result);
             return result;
         }
+        cache_.Delete(short_code);
     }
 
     auto record = repo_.GetByShortCode(short_code);
@@ -41,8 +42,15 @@ ResolveResult LinkService::Resolve(const std::string& short_code)
         return result;
     }
 
+    std::optional<std::chrono::seconds> ttl = std::nullopt;
+    if (record->expires_at.has_value()) {
+        const auto duration = record->expires_at.value() - clock_.now();
+        if (duration > std::chrono::seconds{0}) {
+            ttl = std::chrono::duration_cast<std::chrono::seconds>(duration);
+        }
+    }
     CacheValue value{record->target_url, record->expires_at, record->is_active, record->version};
-    cache_.Set(short_code, value, std::nullopt);
+    cache_.Set(short_code, value, ttl);
 
     ResolveResult result{ResolveStatus::redirect, record->target_url, false};
     EmitAnalytics(short_code, result);
