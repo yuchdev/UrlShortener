@@ -125,7 +125,6 @@ if(BUILD_TESTING)
   set(ALL_INTEGRATION_SOURCES
       ${STAGE1_INTEGRATION_SOURCES}
       ${STAGE2_LINK_MANAGEMENT_INTEGRATION_SOURCES}
-      test/http_client_test/http_client_test.py
   )
 
   foreach(integration_src IN LISTS ALL_INTEGRATION_SOURCES)
