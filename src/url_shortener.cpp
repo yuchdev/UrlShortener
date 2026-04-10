@@ -1059,6 +1059,9 @@ std::string normalizeAndValidateBaseDomain(const std::string& raw_domain)
         throw std::runtime_error("SHORTENER_BASE_DOMAIN scheme must be http or https");
     }
 
+    while (!authority_and_rest.empty() && authority_and_rest.back() == '/') {
+        authority_and_rest.pop_back();
+    }
     const auto sep = authority_and_rest.find_first_of("/?#");
     if (sep != std::string::npos) {
         throw std::runtime_error("SHORTENER_BASE_DOMAIN must not include path, query, or fragment");
@@ -1067,9 +1070,6 @@ std::string normalizeAndValidateBaseDomain(const std::string& raw_domain)
         throw std::runtime_error("SHORTENER_BASE_DOMAIN host is required");
     }
 
-    while (!authority_and_rest.empty() && authority_and_rest.back() == '/') {
-        authority_and_rest.pop_back();
-    }
     return scheme + "://" + authority_and_rest;
 }
 
@@ -1959,6 +1959,8 @@ http::response<http::string_body> handleShortenerRequest(
                 res.prepare_payload();
                 return res;
             }
+            emitClickEvent(req, config, slug, std::nullopt, 404);
+            return makeApiErrorResponse(req, config, is_tls, 404, "not_found", "Link not found");
         }
         return handleApplicationRequest(req, config, is_tls);
     }
