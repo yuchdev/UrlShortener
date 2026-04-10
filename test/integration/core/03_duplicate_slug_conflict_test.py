@@ -15,6 +15,21 @@ class DuplicateSlugConflictTest(unittest.TestCase):
         cls.server.stop()
 
     def test_duplicate_custom_slug_conflict(self):
+        """
+        [Integration][Core] Duplicate slug conflict protection.
+        
+        Scenario:
+            Given a link already created with slug dup-01.
+            When a second create uses dup-01 again.
+            Then API returns 409 with slug_conflict code.
+        
+        API/Feature covered:
+            - Slug uniqueness enforcement in create endpoint.
+        
+        If this breaks, first check:
+            - Collision detection before persistence.
+            - Error envelope code mapping for conflicts.
+        """
         status, _, _ = request(self.port, "POST", "/api/v1/links", body='{"url":"https://example.com/a","slug":"dup-01"}', headers={"Content-Type": "application/json"})
         self.assertEqual(201, status)
         status, payload, _ = request(self.port, "POST", "/api/v1/links", body='{"url":"https://example.com/b","slug":"dup-01"}', headers={"Content-Type": "application/json"})

@@ -3,6 +3,21 @@
 #include <boost/test/unit_test.hpp>
 #include "../../../src/url_shortener.cpp"
 
+/**
+ * [Unit][Core] URL validation rejects malformed and unsafe inputs.
+ *
+ * Scenario:
+ *   Given disallowed schemes, relative paths, and credentialed URLs.
+ *   When normalizeTargetUrl() validates the input.
+ *   Then each unsafe/malformed value is rejected.
+ *
+ * API/Feature covered:
+ *   - normalizeTargetUrl() security rejection rules.
+ *
+ * If this breaks:
+ *   - Dangerous destinations may bypass validation.
+ *   - First check scheme filtering and path/userinfo guards.
+ */
 BOOST_AUTO_TEST_CASE(url_validation_rejects_invalid_unsafe_schemes)
 {
     ServerConfig cfg;

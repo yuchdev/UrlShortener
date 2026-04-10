@@ -1,3 +1,8 @@
+"""Executable integration test with self-documenting scenario and failure triage.
+
+This file validates a single API behavior end-to-end and includes method-level
+Given/When/Then coverage, API surface, and what to check first on regression.
+"""
 import unittest
 from link_management_common import LinkManagementIntegrationBase, create_link, request
 
@@ -6,6 +11,21 @@ class PreviewStatusMatrixTest(LinkManagementIntegrationBase):
     port = 38307
 
     def test_preview_returns_active_disabled_expired_deleted(self):
+        """
+        [Integration][Link Management] Preview endpoint reports lifecycle status matrix.
+        
+        Scenario:
+            Given active, disabled, expired, and deleted links.
+            When GET /api/v1/links/{slug}/preview is called for each.
+            Then response status field is active/disabled/expired/deleted as expected.
+        
+        API/Feature covered:
+            - Stage 2 preview endpoint lifecycle projection.
+        
+        If this breaks, first check:
+            - resolveLinkStatus() usage in preview handler.
+            - status string mapping in preview payload.
+        """
         status, _, _ = create_link(self.port, "lmprev1", "https://example.com/a")
         self.assertEqual(201, status)
         status, payload, _ = request(self.port, "GET", "/api/v1/links/lmprev1/preview")

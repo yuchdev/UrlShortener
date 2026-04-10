@@ -15,6 +15,22 @@ class CustomSlugGetByIdSlugTest(unittest.TestCase):
         cls.server.stop()
 
     def test_custom_slug_get_by_id_and_slug(self):
+        """
+        [Integration][Core] Custom slug retrieval by slug and id.
+        
+        Scenario:
+            Given POST /api/v1/links with slug=my-code.
+            When reading via GET /api/v1/links/{slug} and GET /api/v1/links/id/{id}.
+            Then both reads succeed and return the expected slug.
+        
+        API/Feature covered:
+            - Create with custom slug.
+            - Management read by slug and by id.
+        
+        If this breaks, first check:
+            - ID serialization in create/get response.
+            - Repository lookups for slug and id paths.
+        """
         status, payload, _ = request(self.port, "POST", "/api/v1/links", body='{"url":"https://example.com/a","slug":"my-code"}', headers={"Content-Type": "application/json"})
         self.assertEqual(201, status)
         status, payload, _ = request(self.port, "GET", "/api/v1/links/my-code")

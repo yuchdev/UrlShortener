@@ -1,8 +1,24 @@
+/** @file 02_tag_validation_test.cpp @brief Unit test: tag validation enforces bounds, regex, trimming and dedupe. */
 #define BOOST_TEST_MODULE LinkManagementTagValidationTest
 #include <boost/test/unit_test.hpp>
 #include <vector>
 #include "../../../src/url_shortener.cpp"
 
+/**
+ * [Unit][Link Management] Tag validation enforces normalization and constraints.
+ *
+ * Scenario:
+ *   Given tags with whitespace, duplicates, invalid chars, and too many entries.
+ *   When validateTags() is called.
+ *   Then values are trimmed/deduped and invalid sets are rejected.
+ *
+ * API/Feature covered:
+ *   - Stage 2 tags validation contract.
+ *
+ * If this breaks:
+ *   - Tag data shape can violate API guarantees.
+ *   - First check trim/dedupe path, regex checks, and max count.
+ */
 BOOST_AUTO_TEST_CASE(tag_validation_bounds_regex_and_dedupe)
 {
     std::vector<std::string> tags{" spring ", "paid", "paid"};
