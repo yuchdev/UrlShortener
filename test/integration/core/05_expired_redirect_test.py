@@ -15,6 +15,21 @@ class ExpiredRedirectTest(unittest.TestCase):
         cls.server.stop()
 
     def test_expired_link_redirect(self):
+        """
+        [Integration][Core] Expired links do not redirect.
+        
+        Scenario:
+            Given POST /api/v1/links with past expires_at.
+            When GET /{slug} is requested.
+            Then response is 410 with link_expired code.
+        
+        API/Feature covered:
+            - Redirect lifecycle gate for expired links.
+        
+        If this breaks, first check:
+            - Expiry parsing/comparison logic.
+            - Expired branch handling in redirect flow.
+        """
         status, _, _ = request(self.port, "POST", "/api/v1/links", body='{"url":"https://example.com/exp","slug":"exp001","expires_at":"2000-01-01T00:00:00Z"}', headers={"Content-Type": "application/json"})
         self.assertEqual(201, status)
         status, payload, _ = request(self.port, "GET", "/exp001")

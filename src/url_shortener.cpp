@@ -884,6 +884,11 @@ std::string linkStatusToString(const LinkStatus status)
     }
 }
 
+std::ostream& operator<<(std::ostream& os, const LinkStatus status)
+{
+    return os << linkStatusToString(status);
+}
+
 bool validateTags(std::vector<std::string>& tags)
 {
     if (tags.size() > 20) {
@@ -1054,6 +1059,9 @@ std::string normalizeAndValidateBaseDomain(const std::string& raw_domain)
         throw std::runtime_error("SHORTENER_BASE_DOMAIN scheme must be http or https");
     }
 
+    while (!authority_and_rest.empty() && authority_and_rest.back() == '/') {
+        authority_and_rest.pop_back();
+    }
     const auto sep = authority_and_rest.find_first_of("/?#");
     if (sep != std::string::npos) {
         throw std::runtime_error("SHORTENER_BASE_DOMAIN must not include path, query, or fragment");
@@ -1062,9 +1070,6 @@ std::string normalizeAndValidateBaseDomain(const std::string& raw_domain)
         throw std::runtime_error("SHORTENER_BASE_DOMAIN host is required");
     }
 
-    while (!authority_and_rest.empty() && authority_and_rest.back() == '/') {
-        authority_and_rest.pop_back();
-    }
     return scheme + "://" + authority_and_rest;
 }
 
@@ -1548,6 +1553,23 @@ http::response<http::string_body> handleShortenerRequest(
             return makeResponse(req, config, is_tls, 200, body.str(), "application/json");
         }
 
+        if (action == "qr" || action == "routing") {
+            if (req.method() != http::verb::get) {
+                return makeApiErrorResponse(req, config, is_tls, 400, "invalid_method", "Only GET is supported");
+            }
+            const auto link = getLinkForRead(slug);
+            if (!link.has_value()) {
+                return makeApiErrorResponse(req, config, is_tls, 404, "not_found", "Link not found");
+            }
+            return makeApiErrorResponse(
+                req,
+                config,
+                is_tls,
+                501,
+                "feature_not_enabled",
+                "Feature placeholder only; implementation deferred");
+        }
+
         if (action == "stats") {
             if (req.method() != http::verb::get) {
                 return makeApiErrorResponse(req, config, is_tls, 400, "invalid_method", "Only GET is supported");
@@ -1937,6 +1959,8 @@ http::response<http::string_body> handleShortenerRequest(
                 res.prepare_payload();
                 return res;
             }
+            emitClickEvent(req, config, slug, std::nullopt, 404);
+            return makeApiErrorResponse(req, config, is_tls, 404, "not_found", "Link not found");
         }
         return handleApplicationRequest(req, config, is_tls);
     }

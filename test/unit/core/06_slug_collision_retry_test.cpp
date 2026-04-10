@@ -2,8 +2,23 @@
 #define BOOST_TEST_MODULE SlugCollisionRetryTest
 #include <boost/test/unit_test.hpp>
 #include <chrono>
-#include "../../src/url_shortener.cpp"
+#include "../../../src/url_shortener.cpp"
 
+/**
+ * [Unit][Core] Generated slug collision retries are bounded.
+ *
+ * Scenario:
+ *   Given the repository already contains a generated candidate slug.
+ *   When generator repeatedly returns the same colliding slug.
+ *   Then generateUniqueSlug() gives up and returns no value.
+ *
+ * API/Feature covered:
+ *   - Generated slug collision handling and retry limits.
+ *
+ * If this breaks:
+ *   - Create flow may loop excessively or allow duplicate slugs.
+ *   - First check retry cap and collision existence checks.
+ */
 BOOST_AUTO_TEST_CASE(generated_slug_collision_retry_behavior)
 {
     const std::string collision_slug = "col" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count());

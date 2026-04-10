@@ -51,17 +51,32 @@ include(CTest)
 if(BUILD_TESTING)
   # ---- Stage 1 unit tests: 8 standalone executables ----
   set(STAGE1_UNIT_SOURCES
-      test/unit/01_url_validation_accept_test.cpp
-      test/unit/02_url_validation_reject_test.cpp
-      test/unit/03_url_normalization_test.cpp
-      test/unit/04_slug_accept_test.cpp
-      test/unit/05_slug_reject_test.cpp
-      test/unit/06_slug_collision_retry_test.cpp
-      test/unit/07_expiry_logic_test.cpp
-      test/unit/08_redirect_status_test.cpp
+      test/unit/core/01_url_validation_accept_test.cpp
+      test/unit/core/02_url_validation_reject_test.cpp
+      test/unit/core/03_url_normalization_test.cpp
+      test/unit/core/04_slug_accept_test.cpp
+      test/unit/core/05_slug_reject_test.cpp
+      test/unit/core/06_slug_collision_retry_test.cpp
+      test/unit/core/07_expiry_logic_test.cpp
+      test/unit/core/08_redirect_status_test.cpp
   )
 
-  foreach(unit_src IN LISTS STAGE1_UNIT_SOURCES)
+  set(STAGE2_LINK_MANAGEMENT_UNIT_SOURCES
+      test/unit/link_management/01_status_precedence_test.cpp
+      test/unit/link_management/02_tag_validation_test.cpp
+      test/unit/link_management/03_metadata_constraints_test.cpp
+      test/unit/link_management/04_campaign_validation_test.cpp
+      test/unit/link_management/05_reserved_slug_test.cpp
+      test/unit/link_management/06_hooks_default_behavior_test.cpp
+      test/unit/link_management/07_stats_increment_test.cpp
+  )
+
+  set(ALL_UNIT_SOURCES
+      ${STAGE1_UNIT_SOURCES}
+      ${STAGE2_LINK_MANAGEMENT_UNIT_SOURCES}
+  )
+
+  foreach(unit_src IN LISTS ALL_UNIT_SOURCES)
     get_filename_component(unit_name ${unit_src} NAME_WE)
     add_executable(${unit_name}
         ${CMAKE_CURRENT_SOURCE_DIR}/${unit_src}
@@ -84,17 +99,36 @@ if(BUILD_TESTING)
 
   # ---- Stage 1 integration tests: 8 standalone executables (Python scripts) ----
   set(STAGE1_INTEGRATION_SOURCES
-      test/integration/01_generated_slug_redirect_test.py
-      test/integration/02_custom_slug_get_by_id_slug_test.py
-      test/integration/03_duplicate_slug_conflict_test.py
-      test/integration/04_disabled_redirect_test.py
-      test/integration/05_expired_redirect_test.py
-      test/integration/06_missing_slug_not_found_test.py
-      test/integration/07_permanent_temporary_status_test.py
-      test/integration/08_short_url_base_domain_once_test.py
+      test/integration/core/01_generated_slug_redirect_test.py
+      test/integration/core/02_custom_slug_get_by_id_slug_test.py
+      test/integration/core/03_duplicate_slug_conflict_test.py
+      test/integration/core/04_disabled_redirect_test.py
+      test/integration/core/05_expired_redirect_test.py
+      test/integration/core/06_missing_slug_not_found_test.py
+      test/integration/core/07_permanent_temporary_status_test.py
+      test/integration/core/08_short_url_base_domain_once_test.py
   )
 
-  foreach(integration_src IN LISTS STAGE1_INTEGRATION_SOURCES)
+  set(STAGE2_LINK_MANAGEMENT_INTEGRATION_SOURCES
+      test/integration/link_management/01_create_with_management_fields_test.py
+      test/integration/link_management/02_disable_redirect_blocked_test.py
+      test/integration/link_management/03_enable_redirect_success_test.py
+      test/integration/link_management/04_soft_delete_management_visibility_test.py
+      test/integration/link_management/05_restore_redirect_success_test.py
+      test/integration/link_management/06_expired_redirect_blocked_test.py
+      test/integration/link_management/07_preview_status_matrix_test.py
+      test/integration/link_management/08_stats_endpoint_structure_test.py
+      test/integration/link_management/09_reserved_slug_conflict_test.py
+      test/integration/link_management/10_backward_compatibility_flow_test.py
+  )
+
+  set(ALL_INTEGRATION_SOURCES
+      ${STAGE1_INTEGRATION_SOURCES}
+      ${STAGE2_LINK_MANAGEMENT_INTEGRATION_SOURCES}
+      test/http_client_test/http_client_test.py
+  )
+
+  foreach(integration_src IN LISTS ALL_INTEGRATION_SOURCES)
     get_filename_component(integration_name ${integration_src} NAME_WE)
     add_test(
       NAME ${integration_name}
