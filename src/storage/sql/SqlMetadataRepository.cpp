@@ -9,19 +9,16 @@ SqlMetadataRepository::SqlMetadataRepository(std::shared_ptr<ISqlSessionFactory>
 {
 }
 
-bool SqlMetadataRepository::EnsureBootstrapped(RepoError* error) const
+bool SqlMetadataRepository::EnsureBootstrapped(ISqlSession& session, RepoError* error) const
 {
+    std::lock_guard<std::mutex> lock(bootstrap_mutex_);
     if (bootstrapped_) {
         if (error != nullptr) {
             *error = RepoError::none;
         }
         return true;
     }
-    auto session = session_factory_->Create(error);
-    if (!session) {
-        return false;
-    }
-    if (!session->Bootstrap(dialect_->BootstrapSchemaSql(), error)) {
+    if (!session.Bootstrap(dialect_->BootstrapSchemaSql(), error)) {
         return false;
     }
     bootstrapped_ = true;
@@ -39,11 +36,11 @@ bool SqlMetadataRepository::CreateLink(const CreateLinkRequest& request,
         }
         return false;
     }
-    if (!EnsureBootstrapped(error)) {
-        return false;
-    }
     auto session = session_factory_->Create(error);
     if (!session) {
+        return false;
+    }
+    if (!EnsureBootstrapped(*session, error)) {
         return false;
     }
     return session->InsertLink(dialect_->InsertSql(), mapper_->ToCreateRow(request, id, now), error);
@@ -52,11 +49,11 @@ bool SqlMetadataRepository::CreateLink(const CreateLinkRequest& request,
 std::optional<LinkRecord> SqlMetadataRepository::GetByShortCode(const std::string& short_code,
                                                                 RepoError* error) const
 {
-    if (!EnsureBootstrapped(error)) {
-        return std::nullopt;
-    }
     auto session = session_factory_->Create(error);
     if (!session) {
+        return std::nullopt;
+    }
+    if (!EnsureBootstrapped(*session, error)) {
         return std::nullopt;
     }
     auto row = session->SelectByShortCode(dialect_->SelectByShortCodeSql(), short_code, error);
@@ -72,11 +69,11 @@ std::optional<LinkRecord> SqlMetadataRepository::GetByShortCode(const std::strin
 
 bool SqlMetadataRepository::UpdateLink(const LinkRecord& record, RepoError* error)
 {
-    if (!EnsureBootstrapped(error)) {
-        return false;
-    }
     auto session = session_factory_->Create(error);
     if (!session) {
+        return false;
+    }
+    if (!EnsureBootstrapped(*session, error)) {
         return false;
     }
     return session->UpdateLink(dialect_->UpdateSql(), mapper_->ToUpdateRow(record), error);
@@ -84,11 +81,11 @@ bool SqlMetadataRepository::UpdateLink(const LinkRecord& record, RepoError* erro
 
 bool SqlMetadataRepository::DeleteLink(const std::string& short_code, RepoError* error)
 {
-    if (!EnsureBootstrapped(error)) {
-        return false;
-    }
     auto session = session_factory_->Create(error);
     if (!session) {
+        return false;
+    }
+    if (!EnsureBootstrapped(*session, error)) {
         return false;
     }
     return session->DeleteLink(dialect_->DeleteSql(), short_code, error);
@@ -96,11 +93,11 @@ bool SqlMetadataRepository::DeleteLink(const std::string& short_code, RepoError*
 
 std::vector<LinkRecord> SqlMetadataRepository::ListLinks(const ListLinksQuery& query, RepoError* error) const
 {
-    if (!EnsureBootstrapped(error)) {
-        return {};
-    }
     auto session = session_factory_->Create(error);
     if (!session) {
+        return {};
+    }
+    if (!EnsureBootstrapped(*session, error)) {
         return {};
     }
     auto rows = session->List(dialect_->ListSql(), query.owner, query.include_inactive, query.limit, query.offset, error);
@@ -118,11 +115,11 @@ std::vector<LinkRecord> SqlMetadataRepository::ListLinks(const ListLinksQuery& q
 
 bool SqlMetadataRepository::Exists(const std::string& short_code, RepoError* error) const
 {
-    if (!EnsureBootstrapped(error)) {
-        return false;
-    }
     auto session = session_factory_->Create(error);
     if (!session) {
+        return false;
+    }
+    if (!EnsureBootstrapped(*session, error)) {
         return false;
     }
     bool exists = false;

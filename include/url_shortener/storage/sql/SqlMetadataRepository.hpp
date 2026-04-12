@@ -1,6 +1,7 @@
 #pragma once
 
 #include <memory>
+#include <mutex>
 
 #include "url_shortener/storage/IMetadataRepository.hpp"
 #include "url_shortener/storage/sql/ISqlSessionFactory.hpp"
@@ -28,10 +29,11 @@ public:
     bool Exists(const std::string& short_code, RepoError* error = nullptr) const override;
 
 private:
-    bool EnsureBootstrapped(RepoError* error) const;
+    bool EnsureBootstrapped(ISqlSession& session, RepoError* error) const;
 
     std::shared_ptr<ISqlSessionFactory> session_factory_;
     std::shared_ptr<SqlDialect> dialect_;
     std::shared_ptr<SqlMetadataRowMapper> mapper_;
+    mutable std::mutex bootstrap_mutex_;
     mutable bool bootstrapped_ = false;
 };

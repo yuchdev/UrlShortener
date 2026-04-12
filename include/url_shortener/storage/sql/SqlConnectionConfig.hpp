@@ -7,13 +7,12 @@
 
 /**
  * @brief Backend-neutral SQL connection settings for metadata repositories.
+ *
+ * Only settings that are currently honored by the available SQL storage
+ * implementation are exposed here to avoid configuration drift.
  */
 struct SqlConnectionConfig {
     SqlBackendKind backend = SqlBackendKind::sqlite;
     std::string dsn;
-    std::chrono::milliseconds connect_timeout{5000};
-    std::chrono::milliseconds statement_timeout{5000};
     std::chrono::milliseconds busy_timeout{2500};
-    bool auto_bootstrap = true;
-    unsigned int retry_attempts = 0;
 };

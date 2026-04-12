@@ -1,14 +1,20 @@
 #include "url_shortener/storage/sqlite/SqliteSqlDialect.hpp"
 
-#include <fstream>
-#include <sstream>
-
 std::string SqliteSqlDialect::BootstrapSchemaSql() const
 {
-    std::ifstream file("src/storage/sqlite/sql/001_init_links.sql");
-    std::ostringstream buffer;
-    buffer << file.rdbuf();
-    return buffer.str();
+    return R"SQL(
+CREATE TABLE IF NOT EXISTS links (
+    id TEXT NOT NULL,
+    short_code TEXT PRIMARY KEY,
+    target_url TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    expires_at INTEGER,
+    is_active INTEGER NOT NULL,
+    owner_id TEXT,
+    attributes_json TEXT
+);
+)SQL";
 }
 
 std::string SqliteSqlDialect::InsertSql() const

@@ -7,6 +7,19 @@
 
 namespace {
 
+// Helper to expand an optional<T> into a value + soci::indicator pair.
+template <typename T>
+static void ToSociIndicator(const std::optional<T>& opt, T& value, soci::indicator& ind)
+{
+    if (opt.has_value()) {
+        value = *opt;
+        ind = soci::i_ok;
+    } else {
+        value = T{};
+        ind = soci::i_null;
+    }
+}
+
 class SqliteSession final : public ISqlSession {
 public:
     SqliteSession(std::string dsn, std::chrono::milliseconds busy_timeout, SqliteErrorMapper mapper)
@@ -30,17 +43,36 @@ public:
 
     bool InsertLink(const std::string& sql, const SqlRow& row, RepoError* error) override
     {
+        std::string id        = row.id.value_or("");
+        std::string short_code = row.short_code.value_or("");
+        std::string target_url = row.target_url.value_or("");
+        long long   created_at = row.created_at.value_or(0);
+        long long   updated_at = row.updated_at.value_or(0);
+        int         is_active  = row.is_active.value_or(0);
+
+        long long   expires_at_val = 0;
+        soci::indicator expires_at_ind = soci::i_null;
+        ToSociIndicator(row.expires_at, expires_at_val, expires_at_ind);
+
+        std::string owner_id_val;
+        soci::indicator owner_id_ind = soci::i_null;
+        ToSociIndicator(row.owner_id, owner_id_val, owner_id_ind);
+
+        std::string attrs_json_val;
+        soci::indicator attrs_json_ind = soci::i_null;
+        ToSociIndicator(row.attributes_json, attrs_json_val, attrs_json_ind);
+
         try {
             session_ << sql,
-                soci::use(*row.id, "id"),
-                soci::use(*row.short_code, "short_code"),
-                soci::use(*row.target_url, "target_url"),
-                soci::use(*row.created_at, "created_at"),
-                soci::use(*row.updated_at, "updated_at"),
-                soci::use(row.expires_at, "expires_at"),
-                soci::use(*row.is_active, "is_active"),
-                soci::use(row.owner_id, "owner_id"),
-                soci::use(row.attributes_json, "attributes_json");
+                soci::use(id,              "id"),
+                soci::use(short_code,      "short_code"),
+                soci::use(target_url,      "target_url"),
+                soci::use(created_at,      "created_at"),
+                soci::use(updated_at,      "updated_at"),
+                soci::use(expires_at_val,  expires_at_ind,  "expires_at"),
+                soci::use(is_active,       "is_active"),
+                soci::use(owner_id_val,    owner_id_ind,    "owner_id"),
+                soci::use(attrs_json_val,  attrs_json_ind,  "attributes_json");
             if (error) *error = RepoError::none;
             return true;
         } catch (const std::exception& ex) {
@@ -54,15 +86,15 @@ public:
                                             RepoError* error) override
     {
         try {
-            soci::row r;
-            soci::indicator ind = soci::i_ok;
-            session_ << sql, soci::use(short_code, "short_code"), soci::into(r, ind);
-            if (ind == soci::i_null) {
+            soci::rowset<soci::row> rs = (session_.prepare << sql,
+                soci::use(short_code, "short_code"));
+            auto it = rs.begin();
+            if (it == rs.end()) {
                 if (error) *error = RepoError::not_found;
                 return std::nullopt;
             }
             if (error) *error = RepoError::none;
-            return RowFromSoci(r);
+            return RowFromSoci(*it);
         } catch (const std::exception& ex) {
             if (error) *error = mapper_.MapException(ex);
             return std::nullopt;
@@ -71,15 +103,32 @@ public:
 
     bool UpdateLink(const std::string& sql, const SqlRow& row, RepoError* error) override
     {
+        std::string target_url = row.target_url.value_or("");
+        long long   updated_at = row.updated_at.value_or(0);
+        int         is_active  = row.is_active.value_or(0);
+        std::string short_code = row.short_code.value_or("");
+
+        long long   expires_at_val = 0;
+        soci::indicator expires_at_ind = soci::i_null;
+        ToSociIndicator(row.expires_at, expires_at_val, expires_at_ind);
+
+        std::string owner_id_val;
+        soci::indicator owner_id_ind = soci::i_null;
+        ToSociIndicator(row.owner_id, owner_id_val, owner_id_ind);
+
+        std::string attrs_json_val;
+        soci::indicator attrs_json_ind = soci::i_null;
+        ToSociIndicator(row.attributes_json, attrs_json_val, attrs_json_ind);
+
         try {
             session_ << sql,
-                soci::use(*row.target_url, "target_url"),
-                soci::use(*row.updated_at, "updated_at"),
-                soci::use(row.expires_at, "expires_at"),
-                soci::use(*row.is_active, "is_active"),
-                soci::use(row.owner_id, "owner_id"),
-                soci::use(row.attributes_json, "attributes_json"),
-                soci::use(*row.short_code, "short_code");
+                soci::use(target_url,     "target_url"),
+                soci::use(updated_at,     "updated_at"),
+                soci::use(expires_at_val, expires_at_ind, "expires_at"),
+                soci::use(is_active,      "is_active"),
+                soci::use(owner_id_val,   owner_id_ind,   "owner_id"),
+                soci::use(attrs_json_val, attrs_json_ind, "attributes_json"),
+                soci::use(short_code,     "short_code");
             int affected = 0;
             session_ << "SELECT changes();", soci::into(affected);
             if (affected == 0) {
@@ -127,13 +176,20 @@ public:
                              std::size_t offset,
                              RepoError* error) override
     {
+        std::string owner_val;
+        soci::indicator owner_ind = soci::i_null;
+        ToSociIndicator(owner, owner_val, owner_ind);
+        int include_inactive_int = include_inactive ? 1 : 0;
+        int limit_int  = static_cast<int>(limit);
+        int offset_int = static_cast<int>(offset);
+
         try {
             std::vector<SqlRow> rows;
             soci::rowset<soci::row> rs = (session_.prepare << sql,
-                soci::use(owner, "owner_id"),
-                soci::use(include_inactive ? 1 : 0, "include_inactive"),
-                soci::use(static_cast<int>(limit), "limit"),
-                soci::use(static_cast<int>(offset), "offset"));
+                soci::use(owner_val,          owner_ind, "owner_id"),
+                soci::use(include_inactive_int,           "include_inactive"),
+                soci::use(limit_int,                      "limit"),
+                soci::use(offset_int,                     "offset"));
             for (const auto& r : rs) {
                 rows.push_back(RowFromSoci(r));
             }
@@ -146,18 +202,41 @@ public:
     }
 
 private:
+    template <typename T>
+    static std::optional<T> GetOpt(const soci::row& r, const std::string& name)
+    {
+        if (r.get_indicator(name) == soci::i_null) {
+            return std::nullopt;
+        }
+        return r.get<T>(name);
+    }
+
+    // SQLite3 returns INTEGER columns as dt_integer (int) not dt_long_long.
+    // Use this helper to safely retrieve integer columns as long long.
+    static std::optional<long long> GetOptLL(const soci::row& r, const std::string& name)
+    {
+        if (r.get_indicator(name) == soci::i_null) {
+            return std::nullopt;
+        }
+        const auto& props = r.get_properties(name);
+        if (props.get_data_type() == soci::dt_long_long) {
+            return r.get<long long>(name);
+        }
+        return static_cast<long long>(r.get<int>(name));
+    }
+
     static SqlRow RowFromSoci(const soci::row& r)
     {
         SqlRow row;
-        row.id = r.get_indicator("id") == soci::i_null ? std::nullopt : std::optional<std::string>(r.get<std::string>("id"));
-        row.short_code = r.get_indicator("short_code") == soci::i_null ? std::nullopt : std::optional<std::string>(r.get<std::string>("short_code"));
-        row.target_url = r.get_indicator("target_url") == soci::i_null ? std::nullopt : std::optional<std::string>(r.get<std::string>("target_url"));
-        row.created_at = r.get_indicator("created_at") == soci::i_null ? std::nullopt : std::optional<long long>(r.get<long long>("created_at"));
-        row.updated_at = r.get_indicator("updated_at") == soci::i_null ? std::nullopt : std::optional<long long>(r.get<long long>("updated_at"));
-        row.expires_at = r.get_indicator("expires_at") == soci::i_null ? std::nullopt : std::optional<long long>(r.get<long long>("expires_at"));
-        row.is_active = r.get_indicator("is_active") == soci::i_null ? std::nullopt : std::optional<int>(r.get<int>("is_active"));
-        row.owner_id = r.get_indicator("owner_id") == soci::i_null ? std::nullopt : std::optional<std::string>(r.get<std::string>("owner_id"));
-        row.attributes_json = r.get_indicator("attributes_json") == soci::i_null ? std::nullopt : std::optional<std::string>(r.get<std::string>("attributes_json"));
+        row.id             = GetOpt<std::string>(r, "id");
+        row.short_code     = GetOpt<std::string>(r, "short_code");
+        row.target_url     = GetOpt<std::string>(r, "target_url");
+        row.created_at     = GetOptLL(r, "created_at");
+        row.updated_at     = GetOptLL(r, "updated_at");
+        row.expires_at     = GetOptLL(r, "expires_at");
+        row.is_active      = GetOpt<int>(r, "is_active");
+        row.owner_id       = GetOpt<std::string>(r, "owner_id");
+        row.attributes_json = GetOpt<std::string>(r, "attributes_json");
         return row;
     }
 

@@ -9,5 +9,5 @@ BOOST_AUTO_TEST_CASE(timestamp_roundtrip_epoch_seconds)
     BOOST_REQUIRE(repo->CreateLink(Req("abc123"), "id1", now));
     auto got = repo->GetByShortCode("abc123");
     BOOST_REQUIRE(got.has_value());
-    BOOST_TEST(got->created_at == now);
+    BOOST_CHECK(got->created_at == now);
 }

@@ -16,7 +16,6 @@ inline std::shared_ptr<SqlMetadataRepository> MakeSqliteRepo(const std::string& 
     SqlConnectionConfig cfg;
     cfg.backend = SqlBackendKind::sqlite;
     cfg.dsn = db.string();
-    cfg.auto_bootstrap = true;
 
     return std::make_shared<SqlMetadataRepository>(
         std::make_shared<SqliteSessionFactory>(cfg),
