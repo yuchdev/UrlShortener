@@ -29,6 +29,7 @@ The script installs:
   - `pkg-config`
   - `libssl-dev`
   - `libboost-all-dev`
+  - `libpq-dev`
   - `ca-certificates`
 - Required test dependencies:
   - `python3`
