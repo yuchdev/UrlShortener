@@ -3,6 +3,7 @@
 #include "metadata_contract_common.hpp"
 BOOST_AUTO_TEST_CASE(contract_get_unknown)
 {
-    auto h = MakeMetadataHarness();
+    for (auto& h : MakeMetadataHarnesses()) {
     BOOST_TEST(!h.repo->GetByShortCode("missing").has_value());
+}
 }
