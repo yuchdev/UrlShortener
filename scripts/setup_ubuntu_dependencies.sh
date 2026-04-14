@@ -22,6 +22,7 @@ readonly PACKAGES=(
   curl
   libssl-dev
   libboost-all-dev
+  libpq-dev
   python3
 )
 

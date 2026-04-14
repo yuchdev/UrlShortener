@@ -6,7 +6,7 @@
 #include "metadata_contract_common.hpp"
 BOOST_AUTO_TEST_CASE(contract_concurrent_create_one_wins)
 {
-    auto h = MakeMetadataHarness();
+    for (auto& h : MakeMetadataHarnesses()) {
     std::atomic<int> winners{0};
     std::vector<std::thread> threads;
     for (int i = 0; i < 32; ++i) {
@@ -18,4 +18,5 @@ BOOST_AUTO_TEST_CASE(contract_concurrent_create_one_wins)
     }
     for (auto& t : threads) { t.join(); }
     BOOST_TEST(winners.load() == 1);
+}
 }

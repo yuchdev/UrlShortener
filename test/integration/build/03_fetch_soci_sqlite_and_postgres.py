@@ -4,7 +4,7 @@ import subprocess
 import tempfile
 
 root = pathlib.Path(__file__).resolve().parents[3]
-build = pathlib.Path(tempfile.mkdtemp(prefix="soci_sql_backends_on_"))
+build = pathlib.Path(tempfile.mkdtemp(prefix="soci_fetch_sqlite_pg_"))
 
 proc = subprocess.run(
     ["cmake", "-S", str(root), "-B", str(build), "-DBUILD_TESTING=OFF"],
@@ -13,6 +13,7 @@ proc = subprocess.run(
 )
 assert proc.returncode == 0, proc.stderr
 cache = (build / "CMakeCache.txt").read_text()
+assert "soci_SOURCE_DIR" in cache or "FETCHCONTENT_SOURCE_DIR_SOCI" in cache
 assert "SOCI_SQLITE3:BOOL=ON" in cache or "WITH_SQLITE3:BOOL=ON" in cache
 assert "SOCI_POSTGRESQL:BOOL=ON" in cache or "WITH_POSTGRESQL:BOOL=ON" in cache
 print("ok")

@@ -1,10 +1,12 @@
-# Fetching SOCI via CMake
+# Fetching SOCI (SQLite + PostgreSQL)
 
-SOCI is fetched during configure using `FetchContent` in `cmake/FetchSOCI.cmake`.
+The build fetches a pinned SOCI revision via CMake FetchContent (`v4.0.3`).
 
-## Stage constraints
-- SQLite backend: ON
-- PostgreSQL backend: OFF
-- Other SOCI backends: OFF
+Enabled backends:
+- SQLite (`SOCI_SQLITE3=ON`)
+- PostgreSQL (`SOCI_POSTGRESQL=ON`)
 
-Configuration fails if required SOCI SQLite targets are missing or PostgreSQL is accidentally enabled.
+Disabled backends:
+- DB2, Firebird, MySQL, ODBC, Oracle
+
+The project fails configuration if either SQLite or PostgreSQL backend targets are missing.

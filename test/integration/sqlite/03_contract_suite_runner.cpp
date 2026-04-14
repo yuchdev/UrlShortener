@@ -4,7 +4,9 @@
 
 BOOST_AUTO_TEST_CASE(sqlite_contract_factory_smoke)
 {
-    auto h = MakeMetadataHarness();
+    auto harnesses = MakeMetadataHarnesses();
+    BOOST_REQUIRE(!harnesses.empty());
+    auto& h = harnesses[0];
     BOOST_REQUIRE(h.repo->CreateLink(BasicRequest("abc123"), "id1", h.clock->now()));
     BOOST_TEST(h.repo->Exists("abc123"));
 }
