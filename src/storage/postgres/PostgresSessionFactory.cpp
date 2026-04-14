@@ -26,7 +26,7 @@ static void ToSociIndicator(const std::optional<T>& opt, T& value, soci::indicat
 static std::string BuildPostgresConnectString(const SqlConnectionConfig& config)
 {
     std::string dsn = config.dsn;
-    dsn += " connect_timeout=" + std::to_string(std::max(1LL, config.connect_timeout.count() / 1000));
+    dsn += " connect_timeout=" + std::to_string(std::max(static_cast<long long>(1), static_cast<long long>(config.connect_timeout.count()) / 1000));
     if (config.application_name.has_value()) {
         dsn += " application_name=" + *config.application_name;
     }
@@ -200,7 +200,7 @@ private:
                     return false;
                 }
                 const RepoError mapped = mapper_.MapException(ex);
-                const bool transient = (mapped == RepoError::transient_failure || mapped == RepoError::timeout);
+                const bool transient = (mapped == RepoError::transient_failure);
                 if (!(retryable && transient && attempt < config_.max_retries)) {
                     if (error) *error = mapped;
                     return false;

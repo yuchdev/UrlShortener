@@ -17,7 +17,7 @@ RepoError PostgresErrorMapper::MapException(const std::exception& ex) const
     }
     if (msg.find("57014") != std::string::npos || msg.find("statement timeout") != std::string::npos ||
         msg.find("timeout") != std::string::npos || msg.find("canceling statement") != std::string::npos) {
-        return RepoError::timeout;
+        return RepoError::transient_failure;
     }
     if (msg.find("28P01") != std::string::npos || msg.find("password authentication failed") != std::string::npos) {
         return RepoError::permanent_failure;

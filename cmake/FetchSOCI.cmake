@@ -28,6 +28,8 @@ function(fetch_soci_sqlite_and_postgres)
 
   FetchContent_MakeAvailable(soci)
 
+  find_package(PostgreSQL REQUIRED)
+
   if(TARGET soci_core_static)
     target_include_directories(soci_core_static PUBLIC
         $<BUILD_INTERFACE:${soci_BINARY_DIR}/include>)
@@ -49,7 +51,8 @@ function(fetch_soci_sqlite_and_postgres)
 
   if(TARGET soci_postgresql_static)
     target_include_directories(soci_postgresql_static PUBLIC
-        $<BUILD_INTERFACE:${soci_BINARY_DIR}/include>)
+        $<BUILD_INTERFACE:${soci_BINARY_DIR}/include>
+        ${PostgreSQL_INCLUDE_DIRS})
     if(TARGET soci_core_static)
       target_link_libraries(soci_postgresql_static soci_core_static)
     endif()

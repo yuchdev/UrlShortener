@@ -7,12 +7,12 @@
 BOOST_AUTO_TEST_CASE(update_existing_record)
 {
     auto repo = SqlMetadataRepository(std::make_shared<FakeFactory>(), std::make_shared<PostgresSqlDialect>(), std::make_shared<SqlMetadataRowMapper>());
-    CreateLinkRequest req{"u1", "https://before"};
+    CreateLinkRequest req{"upd", "https://before"};
     RepoError err = RepoError::none;
     BOOST_REQUIRE(repo.CreateLink(req, "id-u1", std::chrono::system_clock::time_point{}, &err));
-    auto rec = repo.GetByShortCode("u1", &err);
+    auto rec = repo.GetByShortCode("upd", &err);
     rec->target_url = "https://after";
     BOOST_REQUIRE(repo.UpdateLink(*rec, &err));
-    auto check = repo.GetByShortCode("u1", &err);
+    auto check = repo.GetByShortCode("upd", &err);
     BOOST_TEST(check->target_url == "https://after");
 }
