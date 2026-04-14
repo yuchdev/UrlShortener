@@ -21,5 +21,5 @@ Migration assets are versioned under `db/migrations/postgres` with explicit up/d
 `PostgresErrorMapper` maps SQLSTATE/diagnostic text into repository taxonomy:
 - unique violation -> `already_exists`
 - serialization/deadlock/connection interruptions -> `transient_failure`
-- statement timeout/cancel -> `timeout`
+- statement timeout/cancel -> `transient_failure`
 - auth/config/schema errors -> `permanent_failure`

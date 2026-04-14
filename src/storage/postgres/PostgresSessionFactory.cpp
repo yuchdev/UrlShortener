@@ -26,7 +26,9 @@ static void ToSociIndicator(const std::optional<T>& opt, T& value, soci::indicat
 static std::string BuildPostgresConnectString(const SqlConnectionConfig& config)
 {
     std::string dsn = config.dsn;
-    dsn += " connect_timeout=" + std::to_string(std::max(static_cast<long long>(1), static_cast<long long>(config.connect_timeout.count()) / 1000));
+    // connect_timeout is in milliseconds; PostgreSQL expects seconds (minimum 1).
+    const auto connect_timeout_secs = std::max(1LL, config.connect_timeout.count() / 1000LL);
+    dsn += " connect_timeout=" + std::to_string(connect_timeout_secs);
     if (config.application_name.has_value()) {
         dsn += " application_name=" + *config.application_name;
     }
