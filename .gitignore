@@ -2,6 +2,7 @@
 .vs/
 .vscode/
 build/
+!test/integration/build/
 cmake/open-cpp-coverage.cmake
 cmake-build-*/
 prefix/
