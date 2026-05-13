@@ -20,6 +20,17 @@ find_package(Boost 1.74 REQUIRED COMPONENTS system program_options unit_test_fra
 find_package(OpenSSL REQUIRED)
 find_package(Threads REQUIRED)
 find_package(Python3 COMPONENTS Interpreter REQUIRED)
+find_library(HIREDIS_LIB hiredis)
+if(NOT HIREDIS_LIB)
+  include(FetchContent)
+  FetchContent_Declare(
+      hiredis
+      GIT_REPOSITORY https://github.com/redis/hiredis.git
+      GIT_TAG v1.2.0
+  )
+  FetchContent_MakeAvailable(hiredis)
+  set(HIREDIS_LIB hiredis)
+endif()
 include(cmake/FetchSOCI.cmake)
 fetch_soci_sqlite_and_postgres()
 
@@ -175,6 +186,24 @@ if(BUILD_TESTING)
       test/integration/storage/08_postgres_service_full_flow.cpp
   )
 
+  set(STAGE3_REDIS_UNIT_SOURCES
+      test/unit/storage/redis/01_cache_key_format.cpp
+      test/unit/storage/redis/02_cache_value_serialization.cpp
+      test/unit/storage/redis/03_cache_value_deserialization.cpp
+      test/unit/storage/redis/04_set_get_delete_commands.cpp
+      test/unit/storage/redis/05_ttl_conversion.cpp
+      test/unit/storage/redis/06_clear_by_prefix_strategy.cpp
+      test/unit/storage/redis/07_fail_open_error_mapping.cpp
+      test/unit/storage/redis/08_schema_version_compatibility.cpp
+  )
+
+  set(STAGE3_REDIS_INTEGRATION_SOURCES
+      test/integration/storage/09_cache_aside_with_redis.cpp
+      test/integration/storage/10_cache_invalidation_after_update_with_redis.cpp
+      test/integration/storage/11_cache_invalidation_after_delete_with_redis.cpp
+      test/integration/storage/12_inactive_and_expired_state_not_masked_by_stale_cache.cpp
+  )
+
   set(STAGE3_COMMON_CPP_SOURCES
       ${CMAKE_CURRENT_SOURCE_DIR}/src/core/LinkService.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/storage/inmemory/InMemoryMetadataRepository.cpp
@@ -190,6 +219,8 @@ if(BUILD_TESTING)
       ${CMAKE_CURRENT_SOURCE_DIR}/src/storage/postgres/PostgresSessionFactory.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/storage/postgres/PostgresErrorMapper.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/storage/postgres/PostgresMigrationRunner.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/storage/redis/RedisCacheStore.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/storage/redis/RedisCacheSerialization.cpp
   )
 
   set(ALL_UNIT_SOURCES
@@ -248,6 +279,7 @@ if(BUILD_TESTING)
           SOCI::soci_core
           SOCI::soci_sqlite3
           SOCI::soci_postgresql
+          ${HIREDIS_LIB}
       )
       add_test(NAME ${stage3_target} COMMAND ${stage3_target})
       set_tests_properties(${stage3_target} PROPERTIES LABELS "${label}")
@@ -259,10 +291,12 @@ if(BUILD_TESTING)
   register_stage3_cpp_tests(STAGE3_SQL_FOUNDATION_UNIT_SOURCES "unit")
   register_stage3_cpp_tests(STAGE3_SQLITE_UNIT_SOURCES         "unit")
   register_stage3_cpp_tests(STAGE3_PSQL_UNIT_SOURCES           "unit")
+  register_stage3_cpp_tests(STAGE3_REDIS_UNIT_SOURCES          "unit")
   register_stage3_cpp_tests(STAGE3_CONTRACT_METADATA_SOURCES   "contract")
   register_stage3_cpp_tests(STAGE3_STORAGE_INTEGRATION_SOURCES "integration")
   register_stage3_cpp_tests(STAGE3_SQLITE_INTEGRATION_SOURCES  "integration")
   register_stage3_cpp_tests(STAGE3_PSQL_INTEGRATION_SOURCES    "integration")
+  register_stage3_cpp_tests(STAGE3_REDIS_INTEGRATION_SOURCES   "integration")
   # ---- Stage 1 integration tests: 8 standalone executables (Python scripts) ----
   set(STAGE1_INTEGRATION_SOURCES
       test/integration/core/01_generated_slug_redirect_test.py
@@ -299,6 +333,9 @@ if(BUILD_TESTING)
       test/integration/psql/02_migration_up_down_smoke.py
       test/integration/psql/03_connection_loss_and_retry.py
       test/integration/psql/04_jsonb_roundtrip.py
+      test/integration/redis/01_set_get_delete_ttl.py
+      test/integration/redis/02_unavailable_redis_fail_open.py
+      test/integration/redis/03_serialization_version_compatibility.py
   )
 
   set(ALL_INTEGRATION_SOURCES
