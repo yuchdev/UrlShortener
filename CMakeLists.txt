@@ -20,7 +20,17 @@ find_package(Boost 1.74 REQUIRED COMPONENTS system program_options unit_test_fra
 find_package(OpenSSL REQUIRED)
 find_package(Threads REQUIRED)
 find_package(Python3 COMPONENTS Interpreter REQUIRED)
-find_library(HIREDIS_LIB hiredis REQUIRED)
+find_library(HIREDIS_LIB hiredis)
+if(NOT HIREDIS_LIB)
+  include(FetchContent)
+  FetchContent_Declare(
+      hiredis
+      GIT_REPOSITORY https://github.com/redis/hiredis.git
+      GIT_TAG v1.2.0
+  )
+  FetchContent_MakeAvailable(hiredis)
+  set(HIREDIS_LIB hiredis)
+endif()
 include(cmake/FetchSOCI.cmake)
 fetch_soci_sqlite_and_postgres()
 
