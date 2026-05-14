@@ -20,6 +20,16 @@ find_package(Boost 1.74 REQUIRED COMPONENTS system program_options unit_test_fra
 find_package(OpenSSL REQUIRED)
 find_package(Threads REQUIRED)
 find_package(Python3 COMPONENTS Interpreter REQUIRED)
+find_package(yaml-cpp CONFIG QUIET)
+if(NOT yaml-cpp_FOUND)
+  include(FetchContent)
+  FetchContent_Declare(
+      yaml-cpp
+      GIT_REPOSITORY https://github.com/jbeder/yaml-cpp.git
+      GIT_TAG 0.8.0
+  )
+  FetchContent_MakeAvailable(yaml-cpp)
+endif()
 find_library(HIREDIS_LIB hiredis)
 if(NOT HIREDIS_LIB)
   include(FetchContent)
@@ -207,6 +217,25 @@ if(BUILD_TESTING)
       test/unit/storage/redis/08_schema_version_compatibility.cpp
   )
 
+  set(STAGE3_CONFIG_UNIT_SOURCES
+      test/unit/config/01_parse_minimal_inmemory.cpp
+      test/unit/config/02_parse_sqlite_config.cpp
+      test/unit/config/03_parse_postgres_config.cpp
+      test/unit/config/04_parse_redis_cache_config.cpp
+      test/unit/config/05_invalid_backend_name.cpp
+      test/unit/config/06_missing_required_fields.cpp
+      test/unit/config/07_default_values.cpp
+      test/unit/config/08_factory_selects_correct_backend_types.cpp
+  )
+
+  set(STAGE3_CONFIG_INTEGRATION_SOURCES
+      test/integration/config/01_inmemory_inmemory_from_yaml.cpp
+      test/integration/config/02_sqlite_none_from_yaml.cpp
+      test/integration/config/03_postgres_redis_from_yaml.cpp
+      test/integration/config/04_invalid_config_startup_failure.cpp
+      test/integration/storage/14_backend_swap_by_config_only.cpp
+  )
+
   set(STAGE3_REDIS_INTEGRATION_SOURCES
       test/integration/storage/13_rate_limit_service_integration.cpp
       test/integration/storage/09_cache_aside_with_redis.cpp
@@ -233,6 +262,8 @@ if(BUILD_TESTING)
       ${CMAKE_CURRENT_SOURCE_DIR}/src/storage/redis/RedisCacheStore.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/storage/redis/RedisCacheSerialization.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/storage/redis/RedisRateLimiter.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/config/StorageConfig.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/composition/StorageFactory.cpp
   )
 
   set(ALL_UNIT_SOURCES
@@ -292,6 +323,7 @@ if(BUILD_TESTING)
           SOCI::soci_sqlite3
           SOCI::soci_postgresql
           ${HIREDIS_LIB}
+          yaml-cpp
       )
       add_test(NAME ${stage3_target} COMMAND ${stage3_target})
       set_tests_properties(${stage3_target} PROPERTIES LABELS "${label}")
