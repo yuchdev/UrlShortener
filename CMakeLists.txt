@@ -217,6 +217,13 @@ if(BUILD_TESTING)
       test/unit/storage/redis/08_schema_version_compatibility.cpp
   )
 
+  set(STAGE3_OBSERVABILITY_UNIT_SOURCES
+      test/unit/observability/01_repository_metrics_labels.cpp
+      test/unit/observability/02_cache_metrics_labels.cpp
+      test/unit/observability/03_startup_logging_redaction.cpp
+      test/unit/docs/01_configuration_examples_match_parser.cpp
+  )
+
   set(STAGE3_CONFIG_UNIT_SOURCES
       test/unit/config/01_parse_minimal_inmemory.cpp
       test/unit/config/02_parse_sqlite_config.cpp
@@ -264,6 +271,7 @@ if(BUILD_TESTING)
       ${CMAKE_CURRENT_SOURCE_DIR}/src/storage/redis/RedisRateLimiter.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/config/StorageConfig.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/composition/StorageFactory.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/observability/StorageObservability.cpp
   )
 
   set(ALL_UNIT_SOURCES
@@ -337,6 +345,7 @@ if(BUILD_TESTING)
   register_stage3_cpp_tests(STAGE3_PSQL_UNIT_SOURCES           "unit")
   register_stage3_cpp_tests(STAGE3_RATELIMITER_UNIT_SOURCES    "unit")
   register_stage3_cpp_tests(STAGE3_REDIS_UNIT_SOURCES          "unit")
+  register_stage3_cpp_tests(STAGE3_OBSERVABILITY_UNIT_SOURCES  "unit")
   register_stage3_cpp_tests(STAGE3_CONTRACT_METADATA_SOURCES   "contract")
   register_stage3_cpp_tests(STAGE3_STORAGE_INTEGRATION_SOURCES "integration")
   register_stage3_cpp_tests(STAGE3_SQLITE_INTEGRATION_SOURCES  "integration")
@@ -383,6 +392,11 @@ if(BUILD_TESTING)
       test/integration/redis/03_serialization_version_compatibility.py
       test/integration/redis/04_ratelimiter_fixed_window.py
       test/integration/redis/05_ratelimiter_concurrency.py
+      test/integration/ci/01_inmemory_job_runner.py
+      test/integration/ci/02_sqlite_job_runner.py
+      test/integration/ci/03_postgres_job_runner.py
+      test/integration/ci/04_redis_job_runner.py
+      test/integration/ci/05_full_storage_matrix.py
   )
 
   set(ALL_INTEGRATION_SOURCES
