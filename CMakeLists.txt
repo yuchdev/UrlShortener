@@ -20,7 +20,16 @@ find_package(Boost 1.74 REQUIRED COMPONENTS system program_options unit_test_fra
 find_package(OpenSSL REQUIRED)
 find_package(Threads REQUIRED)
 find_package(Python3 COMPONENTS Interpreter REQUIRED)
-find_package(yaml-cpp REQUIRED)
+find_package(yaml-cpp CONFIG QUIET)
+if(NOT yaml-cpp_FOUND)
+  include(FetchContent)
+  FetchContent_Declare(
+      yaml-cpp
+      GIT_REPOSITORY https://github.com/jbeder/yaml-cpp.git
+      GIT_TAG 0.8.0
+  )
+  FetchContent_MakeAvailable(yaml-cpp)
+endif()
 find_library(HIREDIS_LIB hiredis)
 if(NOT HIREDIS_LIB)
   include(FetchContent)
