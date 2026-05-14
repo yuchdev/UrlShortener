@@ -1,19 +1,23 @@
 #!/usr/bin/env python3
+from pathlib import Path
 import subprocess
+
+root = Path(__file__).resolve().parent
 jobs = [
-    "test/integration/ci/01_inmemory_job_runner.py",
-    "test/integration/ci/02_sqlite_job_runner.py",
-    "test/integration/ci/03_postgres_job_runner.py",
-    "test/integration/ci/04_redis_job_runner.py",
+    root / "01_inmemory_job_runner.py",
+    root / "02_sqlite_job_runner.py",
+    root / "03_postgres_job_runner.py",
+    root / "04_redis_job_runner.py",
 ]
 failed = []
 for job in jobs:
-    rc = subprocess.run(["python3", job], check=False).returncode
-    print(f"{job}: {'PASS' if rc==0 else 'FAIL'}")
+    rc = subprocess.run(["python3", str(job)], check=False).returncode
+    print(f"{job.name}: {'PASS' if rc==0 else 'FAIL'}")
     if rc != 0:
-        failed.append(job)
+        failed.append(job.name)
 if failed:
     print("FAILED JOBS:")
-    for j in failed: print(j)
+    for job_name in failed:
+        print(job_name)
     raise SystemExit(1)
 print("Storage matrix complete")
