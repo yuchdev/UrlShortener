@@ -186,6 +186,16 @@ if(BUILD_TESTING)
       test/integration/storage/08_postgres_service_full_flow.cpp
   )
 
+  set(STAGE3_RATELIMITER_UNIT_SOURCES
+      test/unit/storage/ratelimiter/01_allow_under_limit.cpp
+      test/unit/storage/ratelimiter/02_deny_over_limit.cpp
+      test/unit/storage/ratelimiter/03_boundary_at_exact_limit.cpp
+      test/unit/storage/ratelimiter/04_window_reset.cpp
+      test/unit/storage/ratelimiter/05_key_format.cpp
+      test/unit/storage/ratelimiter/06_error_mapping.cpp
+      test/unit/storage/ratelimiter/07_invalid_configuration.cpp
+  )
+
   set(STAGE3_REDIS_UNIT_SOURCES
       test/unit/storage/redis/01_cache_key_format.cpp
       test/unit/storage/redis/02_cache_value_serialization.cpp
@@ -198,6 +208,7 @@ if(BUILD_TESTING)
   )
 
   set(STAGE3_REDIS_INTEGRATION_SOURCES
+      test/integration/storage/13_rate_limit_service_integration.cpp
       test/integration/storage/09_cache_aside_with_redis.cpp
       test/integration/storage/10_cache_invalidation_after_update_with_redis.cpp
       test/integration/storage/11_cache_invalidation_after_delete_with_redis.cpp
@@ -221,6 +232,7 @@ if(BUILD_TESTING)
       ${CMAKE_CURRENT_SOURCE_DIR}/src/storage/postgres/PostgresMigrationRunner.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/storage/redis/RedisCacheStore.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/storage/redis/RedisCacheSerialization.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/storage/redis/RedisRateLimiter.cpp
   )
 
   set(ALL_UNIT_SOURCES
@@ -291,6 +303,7 @@ if(BUILD_TESTING)
   register_stage3_cpp_tests(STAGE3_SQL_FOUNDATION_UNIT_SOURCES "unit")
   register_stage3_cpp_tests(STAGE3_SQLITE_UNIT_SOURCES         "unit")
   register_stage3_cpp_tests(STAGE3_PSQL_UNIT_SOURCES           "unit")
+  register_stage3_cpp_tests(STAGE3_RATELIMITER_UNIT_SOURCES    "unit")
   register_stage3_cpp_tests(STAGE3_REDIS_UNIT_SOURCES          "unit")
   register_stage3_cpp_tests(STAGE3_CONTRACT_METADATA_SOURCES   "contract")
   register_stage3_cpp_tests(STAGE3_STORAGE_INTEGRATION_SOURCES "integration")
@@ -336,6 +349,8 @@ if(BUILD_TESTING)
       test/integration/redis/01_set_get_delete_ttl.py
       test/integration/redis/02_unavailable_redis_fail_open.py
       test/integration/redis/03_serialization_version_compatibility.py
+      test/integration/redis/04_ratelimiter_fixed_window.py
+      test/integration/redis/05_ratelimiter_concurrency.py
   )
 
   set(ALL_INTEGRATION_SOURCES
