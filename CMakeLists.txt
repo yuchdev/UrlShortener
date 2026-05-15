@@ -235,6 +235,15 @@ if(BUILD_TESTING)
       test/unit/config/08_factory_selects_correct_backend_types.cpp
   )
 
+
+  set(STAGE4_ANALYTICS_UNIT_SOURCES
+      test/unit/analytics/01_click_event_model_validation.cpp
+      test/unit/analytics/02_click_event_builder_required_fields.cpp
+      test/unit/analytics/03_click_event_sanitizer_limits.cpp
+      test/unit/analytics/04_client_id_hasher.cpp
+      test/unit/analytics/05_aggregate_query_validator.cpp
+  )
+
   set(STAGE3_CONFIG_INTEGRATION_SOURCES
       test/integration/config/01_inmemory_inmemory_from_yaml.cpp
       test/integration/config/02_sqlite_none_from_yaml.cpp
@@ -269,6 +278,14 @@ if(BUILD_TESTING)
       ${CMAKE_CURRENT_SOURCE_DIR}/src/storage/redis/RedisCacheStore.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/storage/redis/RedisCacheSerialization.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/storage/redis/RedisRateLimiter.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/analytics/AnalyticsConfig.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/analytics/AnalyticsError.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/analytics/ClickEvent.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/analytics/ClickEventSanitizer.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/analytics/ClientIdHasher.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/analytics/ClickEventBuilder.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/analytics/AggregateQuery.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/analytics/AggregateStats.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/config/StorageConfig.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/composition/StorageFactory.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/observability/StorageObservability.cpp
@@ -346,6 +363,7 @@ if(BUILD_TESTING)
   register_stage3_cpp_tests(STAGE3_RATELIMITER_UNIT_SOURCES    "unit")
   register_stage3_cpp_tests(STAGE3_REDIS_UNIT_SOURCES          "unit")
   register_stage3_cpp_tests(STAGE3_OBSERVABILITY_UNIT_SOURCES  "unit")
+  register_stage3_cpp_tests(STAGE4_ANALYTICS_UNIT_SOURCES      "unit")
   register_stage3_cpp_tests(STAGE3_CONTRACT_METADATA_SOURCES   "contract")
   register_stage3_cpp_tests(STAGE3_STORAGE_INTEGRATION_SOURCES "integration")
   register_stage3_cpp_tests(STAGE3_SQLITE_INTEGRATION_SOURCES  "integration")
