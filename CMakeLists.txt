@@ -242,6 +242,22 @@ if(BUILD_TESTING)
       test/unit/analytics/03_click_event_sanitizer_limits.cpp
       test/unit/analytics/04_client_id_hasher.cpp
       test/unit/analytics/05_aggregate_query_validator.cpp
+      test/unit/analytics/06_bounded_click_event_queue_basic.cpp
+      test/unit/analytics/07_bounded_click_event_queue_overflow.cpp
+      test/unit/analytics/08_analytics_service_failure_isolation.cpp
+      test/unit/analytics/09_analytics_metrics.cpp
+      test/unit/analytics/10_analytics_worker_batch_flush.cpp
+      test/unit/analytics/11_analytics_worker_interval_flush.cpp
+      test/unit/analytics/12_analytics_worker_retry_bounds.cpp
+      test/unit/http/analytics/03_redirect_analytics_hook.cpp
+  )
+
+  set(STAGE4_ANALYTICS_INTEGRATION_SOURCES
+      test/integration/cpp/analytics/01_redirect_success_emits_click_event.cpp
+      test/integration/cpp/analytics/02_redirect_not_found_emits_terminal_event.cpp
+      test/integration/cpp/analytics/03_repository_failure_does_not_break_redirect.cpp
+      test/integration/cpp/analytics/07_queue_saturation_preserves_redirect.cpp
+      test/integration/cpp/analytics/08_graceful_shutdown_stops_worker.cpp
   )
 
   set(STAGE3_CONFIG_INTEGRATION_SOURCES
@@ -286,6 +302,11 @@ if(BUILD_TESTING)
       ${CMAKE_CURRENT_SOURCE_DIR}/src/analytics/ClickEventBuilder.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/analytics/AggregateQuery.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/analytics/AggregateStats.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/analytics/BoundedClickEventQueue.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/analytics/AnalyticsMetrics.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/analytics/AnalyticsService.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/analytics/AnalyticsWorker.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/http/RedirectAnalyticsHook.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/config/StorageConfig.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/composition/StorageFactory.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/observability/StorageObservability.cpp
@@ -364,6 +385,7 @@ if(BUILD_TESTING)
   register_stage3_cpp_tests(STAGE3_REDIS_UNIT_SOURCES          "unit")
   register_stage3_cpp_tests(STAGE3_OBSERVABILITY_UNIT_SOURCES  "unit")
   register_stage3_cpp_tests(STAGE4_ANALYTICS_UNIT_SOURCES      "unit")
+  register_stage3_cpp_tests(STAGE4_ANALYTICS_INTEGRATION_SOURCES "integration")
   register_stage3_cpp_tests(STAGE3_CONTRACT_METADATA_SOURCES   "contract")
   register_stage3_cpp_tests(STAGE3_STORAGE_INTEGRATION_SOURCES "integration")
   register_stage3_cpp_tests(STAGE3_SQLITE_INTEGRATION_SOURCES  "integration")
