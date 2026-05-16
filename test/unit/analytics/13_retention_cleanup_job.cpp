@@ -33,7 +33,8 @@ BOOST_AUTO_TEST_CASE(enabled_retention_computes_cutoff)
     auto r = job.Run();
     BOOST_TEST(r.enabled);
     BOOST_TEST(repo.calls == 1);
-    BOOST_TEST((now - repo.cutoff) == std::chrono::hours(48));
+    const auto delta_hours = std::chrono::duration_cast<std::chrono::hours>(now - repo.cutoff).count();
+    BOOST_TEST(delta_hours == 48);
 }
 
 BOOST_AUTO_TEST_CASE(repository_failure_isolated)
