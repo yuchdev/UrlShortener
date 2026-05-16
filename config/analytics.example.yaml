@@ -1,0 +1,11 @@
+analytics:
+  enabled: true
+  batch_size: 100
+  flush_interval_ms: 1000
+  queue_capacity: 10000
+  retention_days: 30
+  storage_backend: sqlite # sqlite|postgres
+  sqlite:
+    path: ./var/analytics.db
+  postgres:
+    connection_string: postgresql://user:pass@localhost:5432/url_shortener
