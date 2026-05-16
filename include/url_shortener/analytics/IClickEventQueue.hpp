@@ -2,12 +2,24 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <ostream>
 
 #include "url_shortener/analytics/ClickEvent.hpp"
 
 namespace url_shortener::analytics {
 
 enum class EnqueueResult { Enqueued, DroppedFull };
+
+inline std::ostream& operator<<(std::ostream& os, const EnqueueResult value)
+{
+    switch (value) {
+    case EnqueueResult::Enqueued:
+        return os << "EnqueueResult::Enqueued";
+    case EnqueueResult::DroppedFull:
+        return os << "EnqueueResult::DroppedFull";
+    }
+    return os << "EnqueueResult(" << static_cast<int>(value) << ")";
+}
 
 struct QueueStats {
     std::size_t depth = 0;
