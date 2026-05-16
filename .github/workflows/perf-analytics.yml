@@ -1,0 +1,21 @@
+name: Analytics Performance (Non-blocking)
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 4 * * *'
+
+jobs:
+  perf-analytics:
+    runs-on: ubuntu-24.04
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        run: ./scripts/setup_ubuntu_dependencies.sh
+      - name: Configure
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+      - name: Build
+        run: cmake --build build
+      - name: Run perf-labelled tests
+        run: ctest --test-dir build --output-on-failure -L "perf" || true

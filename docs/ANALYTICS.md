@@ -1,28 +1,39 @@
-# Analytics Domain
+# Analytics
 
-## Event model
+## Event pipeline overview
+Redirect attempts are normalized into click events and enqueued on a bounded in-memory queue. Redirect handling never waits for persistence; a background worker drains batches to the configured repository.
 
-`ClickEvent` represents one redirect attempt with normalized fields: event id, timestamp, slug/link id, domain, status code, optional referrer/user-agent strings, and anonymized `client_id_hash`.
+## Availability guarantees
+- Redirect hot path is non-blocking with respect to analytics.
+- Queue overflow drops events (best-effort) and increments drop counters.
+- Worker/repository failures do not change redirect responses.
 
-The model intentionally does not include any raw client IP field.
+## Privacy model
+- Raw client IP is not persisted by default.
+- `client_id_hash` is produced via keyed hash (salted).
+- Salt rotation reduces long-lived linkability but breaks hash continuity across rotation boundaries.
 
-## Sanitization limits
+## Retention
+- `analytics.retention_days <= 0` disables cleanup.
+- Positive retention runs cleanup with cutoff `now(UTC) - retention_days`.
 
-Default limits:
-- referrer: 512 bytes
-- user-agent: 512 bytes
-- domain: 255 bytes
+## Metrics
+- `analytics_events_enqueued_total`
+- `analytics_events_dropped_total`
+- `analytics_events_persisted_total`
+- `analytics_worker_failures_total`
+- `analytics_queue_depth`
+- `analytics_enqueue_latency_us` (optional)
+- `analytics_retention_deleted_total` (optional)
+- `analytics_retention_failures_total` (optional)
 
-Sanitization removes ASCII control characters, trims surrounding whitespace, and deterministically truncates by byte length.
+## Stats endpoint example
+`GET /api/v1/links/{slug}/stats?from=1710000000&to=1710086400&bucket=hour`
 
-## Client hash derivation
+## Disabled mode
+When `analytics.enabled=false`, redirect behavior is unchanged, event recording is a no-op, and worker startup is skipped.
 
-`ClientIdHasher` derives `client_id_hash` by keyed HMAC-SHA256 over a normalized network identifier using a configured salt.
-Identical `(identifier, salt)` pairs produce stable hashes; salt rotation changes output.
-
-## Stage 04.3 stats endpoint
-
-- Endpoint: `GET /api/v1/links/{slug}/stats?from=<epoch_seconds>&to=<epoch_seconds>&bucket=hour|day|week`.
-- Unknown slug policy: returns `200` with zero-count aggregates.
-- Storage: analytics click events are stored in `click_events` with indexes on `(slug, occurred_at)`, `(slug, status_code)`, `(slug, domain)`.
-
+## Non-goals
+- Dashboarding
+- External warehouse export
+- Exactly-once delivery
