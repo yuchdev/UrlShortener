@@ -250,6 +250,13 @@ if(BUILD_TESTING)
       test/unit/analytics/11_analytics_worker_interval_flush.cpp
       test/unit/analytics/12_analytics_worker_retry_bounds.cpp
       test/unit/http/analytics/03_redirect_analytics_hook.cpp
+      test/unit/http/analytics/04_stats_handler_validation.cpp
+      test/unit/storage/memory/01_in_memory_click_event_repository.cpp
+      test/unit/storage/memory/02_in_memory_click_event_repository_buckets.cpp
+      test/unit/storage/memory/03_in_memory_click_event_repository_retention.cpp
+      test/unit/http/analytics/01_stats_handler_validation.cpp
+      test/unit/http/analytics/02_stats_handler_response_mapping.cpp
+      test/unit/storage/memory/16_in_memory_click_event_repository.cpp
   )
 
   set(STAGE4_ANALYTICS_INTEGRATION_SOURCES
@@ -258,6 +265,10 @@ if(BUILD_TESTING)
       test/integration/cpp/analytics/03_repository_failure_does_not_break_redirect.cpp
       test/integration/cpp/analytics/07_queue_saturation_preserves_redirect.cpp
       test/integration/cpp/analytics/08_graceful_shutdown_stops_worker.cpp
+      test/integration/cpp/analytics/04_stats_endpoint_returns_aggregates.cpp
+      test/integration/cpp/analytics/05_stats_endpoint_time_buckets.cpp
+      test/integration/cpp/storage/analytics_sqlite_repository_roundtrip.cpp
+      test/integration/cpp/storage/analytics_postgresql_repository_roundtrip.cpp
   )
 
   set(STAGE3_CONFIG_INTEGRATION_SOURCES
@@ -307,6 +318,9 @@ if(BUILD_TESTING)
       ${CMAKE_CURRENT_SOURCE_DIR}/src/analytics/AnalyticsService.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/analytics/AnalyticsWorker.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/http/RedirectAnalyticsHook.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/http/AnalyticsStatsHandler.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/storage/memory/InMemoryClickEventRepository.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/storage/sql/SqlClickEventRepository.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/config/StorageConfig.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/composition/StorageFactory.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/observability/StorageObservability.cpp
@@ -437,6 +451,11 @@ if(BUILD_TESTING)
       test/integration/ci/03_postgres_job_runner.py
       test/integration/ci/04_redis_job_runner.py
       test/integration/ci/05_full_storage_matrix.py
+      test/integration/py/test_analytics_redirect_success_event.py
+      test/integration/py/test_analytics_redirect_404_event.py
+      test/integration/py/test_analytics_stats_schema.py
+      test/integration/py/test_analytics_stats_validation.py
+      test/integration/py/test_analytics_time_buckets.py
   )
 
   set(ALL_INTEGRATION_SOURCES
