@@ -1,5 +1,13 @@
+import os
+import sys
 import unittest
-from test.integration.link_management.link_management_common import LinkManagementIntegrationBase, create_link, request
+
+CURRENT_DIR = os.path.dirname(__file__)
+LINK_MGMT_DIR = os.path.abspath(os.path.join(CURRENT_DIR, "..", "link_management"))
+if LINK_MGMT_DIR not in sys.path:
+    sys.path.insert(0, LINK_MGMT_DIR)
+
+from link_management_common import LinkManagementIntegrationBase, create_link, request
 class AnalyticsStatsSchema(LinkManagementIntegrationBase):
     port=38323
     def test_schema_fields(self):
