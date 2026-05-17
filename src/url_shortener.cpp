@@ -34,6 +34,7 @@
 #include <boost/beast/http.hpp>
 #include <url_shortener/url_shortener.h>
 #include <url_shortener/uri_map_singleton.h>
+#include <url_shortener/observability/LoggerFactory.h>
 #include <openssl/err.h>
 #include <openssl/hmac.h>
 #include <openssl/ssl.h>
@@ -1098,7 +1099,7 @@ void logStructured(const std::string& level, const std::string& msg, const std::
     for (const auto& [key, value] : fields) {
         out << ' ' << key << '=' << jsonString(sanitizeLogValue(value));
     }
-    std::cout << out.str() << '\n';
+    auto logger = url_shortener::observability::LoggerFactory::Component("http_server"); logger.info(msg, {});
 }
 
 bool isValidRequestId(const std::string& value, const uint32_t max_len)
@@ -2096,16 +2097,13 @@ private:
     {
         if (ec) {
             ++failure_counter_;
-            std::cerr << "TLS handshake failed: " << ec.message() << '\n';
+            logStructured("ERROR", "tls_handshake_failed", {{"component","tls"},{"error", ec.message()}});
             return;
         }
 
         ++success_counter_;
         auto* ssl_handle = stream_.native_handle();
-        std::cout << "TLS handshake success"
-                  << " | version=" << SSL_get_version(ssl_handle)
-                  << " | cipher=" << SSL_get_cipher_name(ssl_handle)
-                  << '\n';
+        logStructured("INFO", "tls_handshake_success", {{"component","tls"},{"version",SSL_get_version(ssl_handle)},{"cipher",SSL_get_cipher_name(ssl_handle)}});
 
         beast::get_lowest_layer(stream_).expires_after(request_timeout);
         http::async_read(stream_, buffer_, req_,
@@ -2295,13 +2293,13 @@ void HttpServer::run()
             });
         };
         (*do_accept_http)();
-        std::cout << "HTTP listener started on port " << config_.http_port << '\n';
+        logStructured("INFO", "http_listener_started", {{"component","http_server"},{"port", std::to_string(config_.http_port)}});
     }
 
     if (config_.tls.enabled) {
         tls_context_ = std::make_shared<ssl::context>(buildTlsContext());
         const auto days = certExpiryDaysRemaining(config_.tls.certificate_chain_file);
-        std::cout << "Certificate expires in " << days << " day(s)" << '\n';
+        logStructured("INFO", "tls_certificate_expiry", {{"component","tls"},{"days", std::to_string(days)}});
 
         https_acceptor_ = std::make_unique<tcp::acceptor>(io_context_, tcp::endpoint(tcp::v4(), config_.tls.port));
         auto do_accept_https = std::make_shared<std::function<void()>>();
@@ -2316,7 +2314,7 @@ void HttpServer::run()
             });
         };
         (*do_accept_https)();
-        std::cout << "HTTPS listener started on port " << config_.tls.port << '\n';
+        logStructured("INFO", "https_listener_started", {{"component","tls"},{"port", std::to_string(config_.tls.port)}});
     }
 }
 
@@ -2332,8 +2330,7 @@ void HttpServer::stop()
         https_acceptor_->close(ec);
     }
 
-    std::cout << "TLS metrics: success=" << tls_handshake_success_count_.load()
-              << " failure=" << tls_handshake_failure_count_.load() << '\n';
+    logStructured("INFO", "tls_metrics", {{"component","tls"},{"success", std::to_string(tls_handshake_success_count_.load())},{"failure", std::to_string(tls_handshake_failure_count_.load())}});
 }
 
 void HttpServer::reloadTlsContext()
