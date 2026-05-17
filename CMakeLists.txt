@@ -371,24 +371,24 @@ if(BUILD_TESTING)
 
 
 
-  # Helper macro to register Stage-3 C++ tests with unique target names (parent_dir__filename)
+  # Helper macro to register C++ tests with unique target names (parent_dir__filename)
   # and the appropriate CTest label so suites can be run independently.
-  macro(register_stage3_cpp_tests src_list label)
-    foreach(stage3_src IN LISTS ${src_list})
-      get_filename_component(stage3_name   ${stage3_src} NAME_WE)
-      get_filename_component(stage3_dir    ${stage3_src} DIRECTORY)
-      get_filename_component(stage3_parent ${stage3_dir} NAME)
-      set(stage3_target "${stage3_parent}__${stage3_name}")
-      add_executable(${stage3_target}
-          ${CMAKE_CURRENT_SOURCE_DIR}/${stage3_src}
+  macro(register_labeled_cpp_tests src_list label)
+    foreach(cpp_test_src IN LISTS ${src_list})
+      get_filename_component(cpp_test_name   ${cpp_test_src} NAME_WE)
+      get_filename_component(cpp_test_dir    ${cpp_test_src} DIRECTORY)
+      get_filename_component(cpp_test_parent ${cpp_test_dir} NAME)
+      set(cpp_test_target "${cpp_test_parent}__${cpp_test_name}")
+      add_executable(${cpp_test_target}
+          ${CMAKE_CURRENT_SOURCE_DIR}/${cpp_test_src}
           ${COMMON_CPP_SOURCES}
       )
-      target_compile_features(${stage3_target} PRIVATE cxx_std_17)
-      target_include_directories(${stage3_target} PRIVATE
+      target_compile_features(${cpp_test_target} PRIVATE cxx_std_17)
+      target_include_directories(${cpp_test_target} PRIVATE
           ${CMAKE_CURRENT_SOURCE_DIR}/include
           ${CMAKE_CURRENT_SOURCE_DIR}/test/contract/metadata
       )
-      target_link_libraries(${stage3_target}
+      target_link_libraries(${cpp_test_target}
         PRIVATE
           Boost::system
           Boost::program_options
@@ -402,26 +402,26 @@ if(BUILD_TESTING)
           ${HIREDIS_LIB}
           yaml-cpp
       )
-      add_test(NAME ${stage3_target} COMMAND ${stage3_target})
-      set_tests_properties(${stage3_target} PROPERTIES LABELS "${label}")
+      add_test(NAME ${cpp_test_target} COMMAND ${cpp_test_target})
+      set_tests_properties(${cpp_test_target} PROPERTIES LABELS "${label}")
     endforeach()
   endmacro()
 
-  register_stage3_cpp_tests(CORE_UNIT_SOURCES           "unit")
-  register_stage3_cpp_tests(INMEMORY_UNIT_SOURCES       "unit")
-  register_stage3_cpp_tests(SQL_FOUNDATION_UNIT_SOURCES "unit")
-  register_stage3_cpp_tests(SQLITE_UNIT_SOURCES         "unit")
-  register_stage3_cpp_tests(PSQL_UNIT_SOURCES           "unit")
-  register_stage3_cpp_tests(RATELIMITER_UNIT_SOURCES    "unit")
-  register_stage3_cpp_tests(REDIS_UNIT_SOURCES          "unit")
-  register_stage3_cpp_tests(OBSERVABILITY_UNIT_SOURCES  "unit")
-  register_stage3_cpp_tests(ANALYTICS_UNIT_SOURCES      "unit")
-  register_stage3_cpp_tests(ANALYTICS_INTEGRATION_SOURCES "integration")
-  register_stage3_cpp_tests(CONTRACT_METADATA_SOURCES   "contract")
-  register_stage3_cpp_tests(STORAGE_INTEGRATION_SOURCES "integration")
-  register_stage3_cpp_tests(SQLITE_INTEGRATION_SOURCES  "integration")
-  register_stage3_cpp_tests(PSQL_INTEGRATION_SOURCES    "integration")
-  register_stage3_cpp_tests(REDIS_INTEGRATION_SOURCES   "integration")
+  register_labeled_cpp_tests(CORE_UNIT_SOURCES           "unit")
+  register_labeled_cpp_tests(INMEMORY_UNIT_SOURCES       "unit")
+  register_labeled_cpp_tests(SQL_FOUNDATION_UNIT_SOURCES "unit")
+  register_labeled_cpp_tests(SQLITE_UNIT_SOURCES         "unit")
+  register_labeled_cpp_tests(PSQL_UNIT_SOURCES           "unit")
+  register_labeled_cpp_tests(RATELIMITER_UNIT_SOURCES    "unit")
+  register_labeled_cpp_tests(REDIS_UNIT_SOURCES          "unit")
+  register_labeled_cpp_tests(OBSERVABILITY_UNIT_SOURCES  "unit")
+  register_labeled_cpp_tests(ANALYTICS_UNIT_SOURCES      "unit")
+  register_labeled_cpp_tests(ANALYTICS_INTEGRATION_SOURCES "integration")
+  register_labeled_cpp_tests(CONTRACT_METADATA_SOURCES   "contract")
+  register_labeled_cpp_tests(STORAGE_INTEGRATION_SOURCES "integration")
+  register_labeled_cpp_tests(SQLITE_INTEGRATION_SOURCES  "integration")
+  register_labeled_cpp_tests(PSQL_INTEGRATION_SOURCES    "integration")
+  register_labeled_cpp_tests(REDIS_INTEGRATION_SOURCES   "integration")
   # ---- Stage 1 integration tests: 8 standalone executables (Python scripts) ----
   set(LEGACY_CORE_INTEGRATION_SOURCES
       test/integration/core/01_generated_slug_redirect_test.py
