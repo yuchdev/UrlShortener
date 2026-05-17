@@ -34,6 +34,7 @@
 #include <boost/beast/http.hpp>
 #include <url_shortener/url_shortener.h>
 #include <url_shortener/uri_map_singleton.h>
+#include <url_shortener/observability/LoggerFactory.h>
 #include <openssl/err.h>
 #include <openssl/hmac.h>
 #include <openssl/ssl.h>
