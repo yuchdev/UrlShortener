@@ -249,6 +249,9 @@ if(BUILD_TESTING)
       test/unit/analytics/10_analytics_worker_batch_flush.cpp
       test/unit/analytics/11_analytics_worker_interval_flush.cpp
       test/unit/analytics/12_analytics_worker_retry_bounds.cpp
+      test/unit/analytics/13_retention_cleanup_job.cpp
+      test/unit/analytics/14_analytics_config_loading.cpp
+      test/unit/analytics/15_analytics_disabled_mode.cpp
       test/unit/http/analytics/03_redirect_analytics_hook.cpp
       test/unit/http/analytics/04_stats_handler_validation.cpp
       test/unit/storage/memory/01_in_memory_click_event_repository.cpp
@@ -265,8 +268,11 @@ if(BUILD_TESTING)
       test/integration/cpp/analytics/03_repository_failure_does_not_break_redirect.cpp
       test/integration/cpp/analytics/07_queue_saturation_preserves_redirect.cpp
       test/integration/cpp/analytics/08_graceful_shutdown_stops_worker.cpp
+      test/integration/cpp/analytics/09_disabled_mode_no_worker_required.cpp
+      test/integration/cpp/analytics/10_configured_runtime_wiring.cpp
       test/integration/cpp/analytics/04_stats_endpoint_returns_aggregates.cpp
       test/integration/cpp/analytics/05_stats_endpoint_time_buckets.cpp
+      test/integration/cpp/analytics/06_retention_cleanup_deletes_old_events.cpp
       test/integration/cpp/storage/analytics_sqlite_repository_roundtrip.cpp
       test/integration/cpp/storage/analytics_postgresql_repository_roundtrip.cpp
   )
@@ -317,6 +323,7 @@ if(BUILD_TESTING)
       ${CMAKE_CURRENT_SOURCE_DIR}/src/analytics/AnalyticsMetrics.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/analytics/AnalyticsService.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/analytics/AnalyticsWorker.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/analytics/RetentionCleanupJob.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/http/RedirectAnalyticsHook.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/http/AnalyticsStatsHandler.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/storage/memory/InMemoryClickEventRepository.cpp
@@ -456,6 +463,10 @@ if(BUILD_TESTING)
       test/integration/py/test_analytics_stats_schema.py
       test/integration/py/test_analytics_stats_validation.py
       test/integration/py/test_analytics_time_buckets.py
+      test/integration/py/test_analytics_privacy_no_raw_ip.py
+      test/integration/py/test_analytics_queue_overflow.py
+      test/integration/py/test_analytics_retention_cleanup.py
+      test/integration/py/test_analytics_disabled_mode.py
   )
 
   set(ALL_INTEGRATION_SOURCES

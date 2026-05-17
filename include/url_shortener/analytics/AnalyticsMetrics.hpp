@@ -11,6 +11,8 @@ struct AnalyticsMetricNames {
     static constexpr const char* worker_failures_total = "analytics_worker_failures_total";
     static constexpr const char* queue_depth = "analytics_queue_depth";
     static constexpr const char* enqueue_latency_us = "analytics_enqueue_latency_us";
+    static constexpr const char* retention_deleted_total = "analytics_retention_deleted_total";
+    static constexpr const char* retention_failures_total = "analytics_retention_failures_total";
 };
 
 class IAnalyticsMetrics { public: virtual ~IAnalyticsMetrics() = default; virtual void OnEnqueued() noexcept = 0; virtual void OnDropped() noexcept = 0; virtual void OnPersisted(std::uint64_t count) noexcept = 0; virtual void OnWorkerFailure() noexcept = 0; virtual void SetQueueDepth(std::uint64_t depth) noexcept = 0; virtual void ObserveEnqueueLatencyUs(std::uint64_t) noexcept = 0; };
