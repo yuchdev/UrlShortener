@@ -3,12 +3,14 @@
 Defaults: `cache.backend=none`, `analytics.backend=noop`, `rate_limit.enabled=false`.
 
 ## In-memory metadata + no cache
+
 ```yaml
 metadata:
   backend: inmemory
 ```
 
 ## SQLite metadata + in-memory cache
+
 ```yaml
 metadata:
   backend: sqlite
@@ -18,6 +20,7 @@ cache:
 ```
 
 ## PostgreSQL metadata + Redis cache + Redis rate limiting
+
 ```yaml
 metadata:
   backend: postgres
@@ -35,6 +38,7 @@ rate_limit:
 ```
 
 Required fields:
+
 - `metadata.sqlite_path` when metadata backend is `sqlite`
 - `metadata.postgres_dsn` when metadata backend is `postgres`
 - `cache.redis_address` when cache backend is `redis`

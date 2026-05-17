@@ -101,6 +101,295 @@ Emit one completion log line per request with:
 - latency
 - backend/storage target identifier (if applicable)
 
+
+## 4.5 Detailed subtask — Configurable logging engine
+
+### 4.5.1 Objective
+
+Introduce a project-wide configurable logging engine based on a lightweight C++ logging library, and replace all direct writes to `stdout`/`stderr` with structured log entries.
+
+The implementation MUST make logging the only supported path for operational output. Existing usages of `std::cout`, `std::cerr`, `std::clog`, `printf`, `fprintf(stdout, ...)`, `fprintf(stderr, ...)`, `puts`, `perror`, and equivalent ad-hoc output helpers MUST be removed from production code or wrapped behind the logging abstraction.
+
+Recommended library: `spdlog` with `fmt` formatting support.
+
+Acceptable alternative: another lightweight C++ logging library may be used only if it provides level filtering, structured formatting, multiple sinks, low overhead, and straightforward CMake integration.
+
+### 4.5.2 Scope
+
+This subtask covers:
+
+- dependency integration for the chosen logging library
+- centralized logger wrapper and configuration model
+- component-specific logger creation
+- structured log field helpers
+- stdout/stderr/file sink configuration
+- replacement of all direct console output in production code
+- INFO/WARN/ERROR instrumentation across generic runtime events and failure paths
+- unit and integration tests for logging behavior
+- documentation of all logging configuration keys
+
+This subtask does not cover:
+
+- external log shipping agents
+- OpenTelemetry tracing backend integration
+- vendor-specific cloud logging configuration
+- semantic redesign of metrics or request ID handling beyond log field propagation
+
+### 4.5.3 Configuration keys
+
+Add logging configuration with the following keys:
+
+| Key | Type | Default | Description |
+|---|---:|---|---|
+| `log.enabled` | bool | `true` | Enables/disables runtime log emission. Fatal startup validation errors may still be printed through emergency fallback before logger initialization. |
+| `log.level` | enum | `info` | Minimum emitted level: `trace`, `debug`, `info`, `warn`, `error`, `fatal`, `off`. |
+| `log.format` | enum | `key_value` | Output format: `key_value`, `json`, or `plain` for local development. Production default should remain structured. |
+| `log.sink` | enum/list | `stderr` | Supported values: `stdout`, `stderr`, `file`, `syslog` where available. Multiple sinks may be supported if simple. |
+| `log.file.path` | string | empty | Required only when `log.sink` contains `file`. |
+| `log.file.max_size_mb` | integer | `100` | Max file size before rotation when file sink is enabled. |
+| `log.file.max_files` | integer | `5` | Number of rotated log files to keep. |
+| `log.flush.level` | enum | `error` | Flush immediately on this level or higher. |
+| `log.async` | bool | `false` | Optional async logging mode. Keep disabled unless queue behavior is tested. |
+| `log.async.queue_size` | integer | `8192` | Queue size for async mode. |
+| `log.redact_pii` | bool | `true` | Enables stricter sanitization for remote address, user agent, and user-controlled fields. |
+| `log.max_field_length` | integer | `512` | Truncates long user-controlled fields. |
+
+Configuration MUST be loadable from the same configuration sources used by the rest of the service. Invalid logging configuration MUST produce a clear startup error and a `FATAL` log entry if the logger has already been initialized.
+
+### 4.5.4 Required files and classes
+
+Create or update the following implementation files:
+
+| File | Responsibility |
+|---|---|
+| `include/url_shortener/observability/LogLevel.h` | Defines internal log level enum and conversion helpers. |
+| `include/url_shortener/observability/LoggingConfig.h` | Defines validated logging configuration structure. |
+| `include/url_shortener/observability/Logger.h` | Public logging facade used by production code. |
+| `include/url_shortener/observability/LogFields.h` | Helpers for common structured fields and safe field truncation/redaction. |
+| `include/url_shortener/observability/LoggerFactory.h` | Creates component loggers from global logging configuration. |
+| `src/observability/LogLevel.cpp` | Parses/serializes log levels. |
+| `src/observability/LoggingConfig.cpp` | Validates config values and applies defaults. |
+| `src/observability/Logger.cpp` | Implements project logging facade over the selected lightweight library. |
+| `src/observability/LogFields.cpp` | Implements structured field helpers, redaction, and truncation. |
+| `src/observability/LoggerFactory.cpp` | Initializes sinks, formatter, flush policy, and component logger instances. |
+| `src/observability/ConsoleOutputAudit.cpp` | Optional small helper/test-only target for detecting forbidden console output patterns if this fits the build layout. |
+| `docs/configuration.md` | Documents logging keys, defaults, examples, and operational notes. |
+| `docs/deployment.md` | Explains stdout/stderr structured logging behavior under systemd/container runtimes. |
+
+Suggested classes/interfaces:
+
+```cpp
+namespace url_shortener::observability {
+
+enum class LogLevel {
+    Trace,
+    Debug,
+    Info,
+    Warn,
+    Error,
+    Fatal,
+    Off
+};
+
+struct LoggingConfig {
+    bool enabled = true;
+    LogLevel level = LogLevel::Info;
+    LogFormat format = LogFormat::KeyValue;
+    std::vector<LogSink> sinks = {LogSink::Stderr};
+    std::optional<std::filesystem::path> file_path;
+    std::size_t file_max_size_bytes = 100 * 1024 * 1024;
+    std::size_t file_max_files = 5;
+    LogLevel flush_level = LogLevel::Error;
+    bool async = false;
+    std::size_t async_queue_size = 8192;
+    bool redact_pii = true;
+    std::size_t max_field_length = 512;
+};
+
+struct LogField {
+    std::string_view key;
+    std::string value;
+};
+
+class Logger {
+public:
+    void trace(std::string_view message, std::initializer_list<LogField> fields = {});
+    void debug(std::string_view message, std::initializer_list<LogField> fields = {});
+    void info(std::string_view message, std::initializer_list<LogField> fields = {});
+    void warn(std::string_view message, std::initializer_list<LogField> fields = {});
+    void error(std::string_view message, std::initializer_list<LogField> fields = {});
+    void fatal(std::string_view message, std::initializer_list<LogField> fields = {});
+};
+
+class LoggerFactory {
+public:
+    static void initialize(const LoggingConfig& config);
+    static Logger component(std::string_view component_name);
+    static void shutdown();
+};
+
+} // namespace url_shortener::observability
+```
+
+Exact names may be adjusted to the repository naming convention, but the implementation MUST preserve the architectural boundary: production code depends on the project facade, not directly on `spdlog` or another third-party logger.
+
+### 4.5.5 Output replacement rules
+
+Production code MUST NOT write directly to process output streams.
+
+Replace patterns as follows:
+
+| Existing pattern | Replacement |
+|---|---|
+| `std::cout << "server started"` | `logger.info("server_started", {...})` |
+| `std::cerr << "failed to bind"` | `logger.error("listener_bind_failed", {...})` |
+| `printf(...)` | appropriate `logger.info/debug/warn/error(...)` call |
+| `fprintf(stderr, ...)` | appropriate `logger.warn/error/fatal(...)` call |
+| `perror("...")` | `logger.error("operation_failed", {errno/code/message fields})` |
+| exception catch block printing to console | structured `ERROR` log with exception type/message and component |
+
+Allowed exceptions:
+
+- dedicated CLI tools may print intentional user-facing command output, but only if they are not part of server runtime paths
+- unit tests may write diagnostic output through the test framework
+- third-party code under dependency/vendor directories is excluded
+- emergency startup fallback may write a single minimal message to `stderr` only when logger initialization itself fails before any logger exists
+
+Add a CI/test guard that scans production source files and fails on forbidden console-output patterns outside the explicit allowlist.
+
+### 4.5.6 Required log events
+
+Add `INFO` logs for normal generic events:
+
+- configuration loaded successfully, with source and selected non-secret options
+- logger initialized, with level, format, and sink names
+- application startup begins/completes
+- selected storage backend and successful backend initialization
+- HTTP listener bind attempt and successful bind address/port
+- TLS enabled/disabled decision and successful certificate load/reload
+- graceful shutdown requested and completed
+- request completed, via access log entry described in section 4.4
+- background worker started/stopped, if Stage 04 analytics/background processing exists
+
+Add `WARN` logs for recoverable or suspicious situations:
+
+- malformed client request or validation failure
+- invalid inbound request ID regenerated by server
+- oversized user-controlled field truncated
+- optional config value invalid and defaulted, if defaulting is allowed
+- retryable backend timeout or slow operation above configured threshold
+- queue/backpressure condition that does not yet fail the process
+- TLS reload failed but previous certificate remains active
+
+Add `ERROR` logs for failed operations requiring operator attention:
+
+- backend connection failure or repository operation failure
+- unhandled exception converted to `500`
+- TLS handshake failure where reason is available
+- request handling failure caused by internal error
+- metrics/exporter failure if it prevents observability output but not request serving
+- file logger sink initialization/rotation failure after startup
+
+Add `FATAL` logs immediately before termination for unrecoverable cases:
+
+- invalid required configuration
+- failure to initialize all configured log sinks
+- failure to bind required listener
+- missing/unreadable TLS key/certificate when TLS is required
+- storage backend unavailable during mandatory startup readiness check
+
+### 4.5.7 Structured field requirements
+
+Each log event MUST include:
+
+- `ts`
+- `level`
+- `component`
+- `msg` or `event`
+
+When available, also include:
+
+- `request_id`
+- `operation_id`
+- `route`
+- `method`
+- `path`
+- `status`
+- `latency_ms`
+- `backend`
+- `error_code`
+- `exception_type`
+- `errno` or platform error code
+
+Do not log full request/response bodies by default. Payload snippets are allowed only at `DEBUG` level, must be truncated, and must pass redaction.
+
+### 4.5.8 Dependency and CMake requirements
+
+- Integrate the selected lightweight logging library through the repository's existing dependency strategy.
+- Prefer system/package dependency if the project already uses packaged dependencies; otherwise use CMake `FetchContent` or vendored dependency lock file consistently with repository policy.
+- Production source files MUST include only project logging headers, not third-party logger headers.
+- Add a CMake option if useful: `URL_SHORTENER_ENABLE_ASYNC_LOGGING` or equivalent.
+- Ensure logging builds on all supported platforms and compilers.
+
+### 4.5.9 Tests
+
+Add unit tests:
+
+- `LoggingConfigTest.UsesDefaultsWhenConfigOmitted`
+- `LoggingConfigTest.RejectsInvalidLevel`
+- `LoggingConfigTest.RejectsInvalidSinkCombination`
+- `LoggerTest.FiltersBelowConfiguredLevel`
+- `LoggerTest.EmitsInfoWarnErrorFatalLevels`
+- `LoggerTest.InjectsComponentAndCommonFields`
+- `LoggerTest.TruncatesLongUserControlledFields`
+- `LoggerTest.RedactsSensitiveFields`
+- `LoggerFactoryTest.CreatesComponentLogger`
+- `ConsoleOutputAuditTest.NoForbiddenConsoleOutputInProductionSources`
+
+Add integration tests:
+
+- `LoggingIntegration.StartupEmitsInfoEvents`
+- `LoggingIntegration.RequestCompletionProducesAccessLog`
+- `LoggingIntegration.ValidRequestIdAppearsInRequestLogs`
+- `LoggingIntegration.MalformedRequestProducesWarning`
+- `LoggingIntegration.BackendFailureProducesError`
+- `LoggingIntegration.FatalStartupFailureIsLoggedBeforeExit`
+- `LoggingIntegration.StdoutStderrOutputIsStructuredLogOnly`
+
+Integration tests SHOULD capture process output and assert that emitted lines are valid configured log format entries, not ad-hoc text.
+
+### 4.5.10 Migration checklist
+
+Implementation agent MUST audit and update:
+
+- server startup/shutdown code
+- configuration loader
+- HTTP request parser/dispatcher
+- route handlers
+- redirect/create/statistics operations
+- storage/repository backends
+- TLS initialization/reload paths
+- background workers/analytics queues if present
+- CLI/service entry points
+- exception handling boundaries
+- tests that previously expected text on stdout/stderr
+
+### 4.5.11 Acceptance criteria
+
+This subtask is complete only when:
+
+1. The service has one centralized logging facade and no production module logs directly through third-party APIs.
+2. Runtime logging behavior is configurable through documented config keys.
+3. All server-runtime writes to `stdout` and `stderr` happen through the logging engine.
+4. Production source code contains no unapproved `std::cout`, `std::cerr`, `std::clog`, `printf`, `fprintf`, `puts`, or `perror` usage.
+5. Generic lifecycle events produce `INFO` logs.
+6. Recoverable/suspicious situations produce `WARN` logs.
+7. Internal failures and operator-actionable failures produce `ERROR` logs.
+8. Unrecoverable startup/runtime failures produce `FATAL` logs before termination.
+9. Request completion logs include request correlation fields and match section 4.4.
+10. Logging unit and integration tests pass in CI.
+11. Documentation includes logging configuration, examples, and operational guidance for systemd/container log collection.
+
 ---
 
 ## 5. Correlation and Request IDs
@@ -325,7 +614,7 @@ Include:
 ## 10. Implementation Plan (Suggested Order)
 
 1. Introduce request context object containing request_id, start time, route label.
-2. Add logger abstraction with level filtering and structured fields.
+2. Complete Subtask 5.1: implement configurable logging engine, integrate lightweight logging library, replace direct stdout/stderr output with structured log entries, and add INFO/WARN/ERROR/FATAL instrumentation.
 3. Instrument request lifecycle completion logging.
 4. Add metrics registry and counters/histograms in request/TLS/backend paths.
 5. Normalize error handling and stable error response contract.

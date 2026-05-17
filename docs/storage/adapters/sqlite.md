@@ -1,4 +1,5 @@
 # SQLite Adapter
+
 Purpose: local/file-backed SQL metadata adapter.
 
 - Capabilities: full metadata contract, schema bootstrap, migrations.

@@ -1,4 +1,5 @@
 # PostgreSQL Adapter
+
 Purpose: authoritative production-grade metadata store.
 
 - Capabilities: full metadata contract, migration runner, retry-aware session factory.

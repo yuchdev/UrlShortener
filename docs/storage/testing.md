@@ -7,10 +7,12 @@
 Contract reuse: `test/contract/metadata/*` is executed by in-memory, SQLite, and Postgres runners.
 
 Local commands:
+
 - `ctest -L unit --output-on-failure`
 - `ctest -L contract --output-on-failure`
 - `ctest -L integration --output-on-failure`
 
 External services for full run:
+
 - PostgreSQL for psql integration suite
 - Redis for cache/rate-limit integration suite

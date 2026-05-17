@@ -1,4 +1,5 @@
 # Redis Adapter
+
 Purpose: optional cache and optional rate-limit backend.
 
 - Capabilities: cache set/get/delete/ttl, fixed-window rate-limit counters.

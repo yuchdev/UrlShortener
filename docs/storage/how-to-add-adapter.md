@@ -1,6 +1,7 @@
 # How to Add a New Adapter
 
 Checklist:
+
 1. Implement the relevant storage interface(s).
 2. Map backend errors into shared error taxonomy.
 3. Register backend in config parser/factory selection.
