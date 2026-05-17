@@ -29,5 +29,5 @@ BOOST_AUTO_TEST_CASE(disabled_service_is_noop_and_worker_does_not_start)
     BoundedClickEventQueue worker_queue(8);
     AnalyticsWorker worker(cfg, worker_queue, r, m);
     worker.Start();
-    BOOST_TEST(worker.State() == AnalyticsWorkerState::Stopped);
+    BOOST_TEST(static_cast<int>(worker.State()) == static_cast<int>(AnalyticsWorkerState::Stopped));
 }
