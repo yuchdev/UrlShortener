@@ -73,7 +73,7 @@ target_link_libraries(url_shortener
 include(CTest)
 if(BUILD_TESTING)
   # ---- Stage 1 unit tests: 8 standalone executables ----
-  set(STAGE1_UNIT_SOURCES
+  set(LEGACY_CORE_UNIT_SOURCES
       test/unit/core/01_url_validation_accept_test.cpp
       test/unit/core/02_url_validation_reject_test.cpp
       test/unit/core/03_url_normalization_test.cpp
@@ -84,7 +84,7 @@ if(BUILD_TESTING)
       test/unit/core/08_redirect_status_test.cpp
   )
 
-  set(STAGE2_LINK_MANAGEMENT_UNIT_SOURCES
+  set(LINK_MANAGEMENT_UNIT_SOURCES
       test/unit/link_management/01_status_precedence_test.cpp
       test/unit/link_management/02_tag_validation_test.cpp
       test/unit/link_management/03_metadata_constraints_test.cpp
@@ -94,7 +94,7 @@ if(BUILD_TESTING)
       test/unit/link_management/07_stats_increment_test.cpp
   )
 
-  set(STAGE3_CORE_UNIT_SOURCES
+  set(CORE_UNIT_SOURCES
       test/unit/core/01_result_error_taxonomy.cpp
       test/unit/core/02_link_record_validation.cpp
       test/unit/core/03_cache_value_model.cpp
@@ -102,7 +102,7 @@ if(BUILD_TESTING)
       test/unit/core/05_interface_smoke_compile.cpp
   )
 
-  set(STAGE3_INMEMORY_UNIT_SOURCES
+  set(INMEMORY_UNIT_SOURCES
       test/unit/storage/inmemory/01_create_and_get_roundtrip.cpp
       test/unit/storage/inmemory/02_duplicate_short_code.cpp
       test/unit/storage/inmemory/03_get_unknown.cpp
@@ -120,7 +120,7 @@ if(BUILD_TESTING)
       test/unit/storage/inmemory/15_rate_limit_allow_window.cpp
   )
 
-  set(STAGE3_CONTRACT_METADATA_SOURCES
+  set(CONTRACT_METADATA_SOURCES
       test/contract/metadata/01_create_get_roundtrip.cpp
       test/contract/metadata/02_duplicate_short_code.cpp
       test/contract/metadata/03_get_unknown.cpp
@@ -131,7 +131,7 @@ if(BUILD_TESTING)
       test/contract/metadata/08_concurrent_create_one_wins.cpp
   )
 
-  set(STAGE3_STORAGE_INTEGRATION_SOURCES
+  set(STORAGE_INTEGRATION_SOURCES
       test/integration/storage/01_inmemory_resolve_full_flow.cpp
       test/integration/storage/02_inmemory_cache_aside.cpp
       test/integration/storage/03_inmemory_cache_invalidation_after_update.cpp
@@ -141,7 +141,7 @@ if(BUILD_TESTING)
       test/integration/storage/07_sqlite_service_full_flow.cpp
   )
 
-  set(STAGE3_SQL_FOUNDATION_UNIT_SOURCES
+  set(SQL_FOUNDATION_UNIT_SOURCES
       test/unit/storage/sql/01_connection_config_defaults.cpp
       test/unit/storage/sql/02_backend_kind_selection.cpp
       test/unit/storage/sql/03_sqlite_dialect_schema_sql.cpp
@@ -153,7 +153,7 @@ if(BUILD_TESTING)
       test/unit/storage/sql/09_sql_repository_backend_switching.cpp
   )
 
-  set(STAGE3_SQLITE_UNIT_SOURCES
+  set(SQLITE_UNIT_SOURCES
       test/unit/storage/sqlite/01_schema_bootstrap.cpp
       test/unit/storage/sqlite/02_create_and_get_roundtrip.cpp
       test/unit/storage/sqlite/03_duplicate_short_code_maps_to_already_exists.cpp
@@ -170,11 +170,11 @@ if(BUILD_TESTING)
       test/unit/storage/sqlite/14_sql_repository_with_sqlite_backend.cpp
   )
 
-  set(STAGE3_SQLITE_INTEGRATION_SOURCES
+  set(SQLITE_INTEGRATION_SOURCES
       test/integration/sqlite/03_contract_suite_runner.cpp
   )
 
-  set(STAGE3_PSQL_UNIT_SOURCES
+  set(PSQL_UNIT_SOURCES
       test/unit/storage/psql/01_dsn_and_connection_options.cpp
       test/unit/storage/psql/02_create_and_get_roundtrip.cpp
       test/unit/storage/psql/03_duplicate_short_code_maps_to_already_exists.cpp
@@ -191,12 +191,12 @@ if(BUILD_TESTING)
       test/unit/storage/psql/14_sql_repository_with_postgres_backend.cpp
   )
 
-  set(STAGE3_PSQL_INTEGRATION_SOURCES
+  set(PSQL_INTEGRATION_SOURCES
       test/integration/psql/05_contract_suite_runner.cpp
       test/integration/storage/08_postgres_service_full_flow.cpp
   )
 
-  set(STAGE3_RATELIMITER_UNIT_SOURCES
+  set(RATELIMITER_UNIT_SOURCES
       test/unit/storage/ratelimiter/01_allow_under_limit.cpp
       test/unit/storage/ratelimiter/02_deny_over_limit.cpp
       test/unit/storage/ratelimiter/03_boundary_at_exact_limit.cpp
@@ -206,7 +206,7 @@ if(BUILD_TESTING)
       test/unit/storage/ratelimiter/07_invalid_configuration.cpp
   )
 
-  set(STAGE3_REDIS_UNIT_SOURCES
+  set(REDIS_UNIT_SOURCES
       test/unit/storage/redis/01_cache_key_format.cpp
       test/unit/storage/redis/02_cache_value_serialization.cpp
       test/unit/storage/redis/03_cache_value_deserialization.cpp
@@ -217,14 +217,14 @@ if(BUILD_TESTING)
       test/unit/storage/redis/08_schema_version_compatibility.cpp
   )
 
-  set(STAGE3_OBSERVABILITY_UNIT_SOURCES
+  set(OBSERVABILITY_UNIT_SOURCES
       test/unit/observability/01_repository_metrics_labels.cpp
       test/unit/observability/02_cache_metrics_labels.cpp
       test/unit/observability/03_startup_logging_redaction.cpp
       test/unit/docs/01_configuration_examples_match_parser.cpp
   )
 
-  set(STAGE3_CONFIG_UNIT_SOURCES
+  set(CONFIG_UNIT_SOURCES
       test/unit/config/01_parse_minimal_inmemory.cpp
       test/unit/config/02_parse_sqlite_config.cpp
       test/unit/config/03_parse_postgres_config.cpp
@@ -236,7 +236,7 @@ if(BUILD_TESTING)
   )
 
 
-  set(STAGE4_ANALYTICS_UNIT_SOURCES
+  set(ANALYTICS_UNIT_SOURCES
       test/unit/analytics/01_click_event_model_validation.cpp
       test/unit/analytics/02_click_event_builder_required_fields.cpp
       test/unit/analytics/03_click_event_sanitizer_limits.cpp
@@ -262,7 +262,7 @@ if(BUILD_TESTING)
       test/unit/storage/memory/16_in_memory_click_event_repository.cpp
   )
 
-  set(STAGE4_ANALYTICS_INTEGRATION_SOURCES
+  set(ANALYTICS_INTEGRATION_SOURCES
       test/integration/cpp/analytics/01_redirect_success_emits_click_event.cpp
       test/integration/cpp/analytics/02_redirect_not_found_emits_terminal_event.cpp
       test/integration/cpp/analytics/03_repository_failure_does_not_break_redirect.cpp
@@ -277,7 +277,7 @@ if(BUILD_TESTING)
       test/integration/cpp/storage/analytics_postgresql_repository_roundtrip.cpp
   )
 
-  set(STAGE3_CONFIG_INTEGRATION_SOURCES
+  set(CONFIG_INTEGRATION_SOURCES
       test/integration/config/01_inmemory_inmemory_from_yaml.cpp
       test/integration/config/02_sqlite_none_from_yaml.cpp
       test/integration/config/03_postgres_redis_from_yaml.cpp
@@ -285,7 +285,7 @@ if(BUILD_TESTING)
       test/integration/storage/14_backend_swap_by_config_only.cpp
   )
 
-  set(STAGE3_REDIS_INTEGRATION_SOURCES
+  set(REDIS_INTEGRATION_SOURCES
       test/integration/storage/13_rate_limit_service_integration.cpp
       test/integration/storage/09_cache_aside_with_redis.cpp
       test/integration/storage/10_cache_invalidation_after_update_with_redis.cpp
@@ -293,7 +293,7 @@ if(BUILD_TESTING)
       test/integration/storage/12_inactive_and_expired_state_not_masked_by_stale_cache.cpp
   )
 
-  set(STAGE3_COMMON_CPP_SOURCES
+  set(COMMON_CPP_SOURCES
       ${CMAKE_CURRENT_SOURCE_DIR}/src/core/LinkService.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/storage/inmemory/InMemoryMetadataRepository.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/storage/inmemory/InMemoryCacheStore.cpp
@@ -339,8 +339,8 @@ if(BUILD_TESTING)
   )
 
   set(ALL_UNIT_SOURCES
-      ${STAGE1_UNIT_SOURCES}
-      ${STAGE2_LINK_MANAGEMENT_UNIT_SOURCES}
+      ${LEGACY_CORE_UNIT_SOURCES}
+      ${LINK_MANAGEMENT_UNIT_SOURCES}
   )
 
   foreach(unit_src IN LISTS ALL_UNIT_SOURCES)
@@ -381,7 +381,7 @@ if(BUILD_TESTING)
       set(stage3_target "${stage3_parent}__${stage3_name}")
       add_executable(${stage3_target}
           ${CMAKE_CURRENT_SOURCE_DIR}/${stage3_src}
-          ${STAGE3_COMMON_CPP_SOURCES}
+          ${COMMON_CPP_SOURCES}
       )
       target_compile_features(${stage3_target} PRIVATE cxx_std_17)
       target_include_directories(${stage3_target} PRIVATE
@@ -407,23 +407,23 @@ if(BUILD_TESTING)
     endforeach()
   endmacro()
 
-  register_stage3_cpp_tests(STAGE3_CORE_UNIT_SOURCES           "unit")
-  register_stage3_cpp_tests(STAGE3_INMEMORY_UNIT_SOURCES       "unit")
-  register_stage3_cpp_tests(STAGE3_SQL_FOUNDATION_UNIT_SOURCES "unit")
-  register_stage3_cpp_tests(STAGE3_SQLITE_UNIT_SOURCES         "unit")
-  register_stage3_cpp_tests(STAGE3_PSQL_UNIT_SOURCES           "unit")
-  register_stage3_cpp_tests(STAGE3_RATELIMITER_UNIT_SOURCES    "unit")
-  register_stage3_cpp_tests(STAGE3_REDIS_UNIT_SOURCES          "unit")
-  register_stage3_cpp_tests(STAGE3_OBSERVABILITY_UNIT_SOURCES  "unit")
-  register_stage3_cpp_tests(STAGE4_ANALYTICS_UNIT_SOURCES      "unit")
-  register_stage3_cpp_tests(STAGE4_ANALYTICS_INTEGRATION_SOURCES "integration")
-  register_stage3_cpp_tests(STAGE3_CONTRACT_METADATA_SOURCES   "contract")
-  register_stage3_cpp_tests(STAGE3_STORAGE_INTEGRATION_SOURCES "integration")
-  register_stage3_cpp_tests(STAGE3_SQLITE_INTEGRATION_SOURCES  "integration")
-  register_stage3_cpp_tests(STAGE3_PSQL_INTEGRATION_SOURCES    "integration")
-  register_stage3_cpp_tests(STAGE3_REDIS_INTEGRATION_SOURCES   "integration")
+  register_stage3_cpp_tests(CORE_UNIT_SOURCES           "unit")
+  register_stage3_cpp_tests(INMEMORY_UNIT_SOURCES       "unit")
+  register_stage3_cpp_tests(SQL_FOUNDATION_UNIT_SOURCES "unit")
+  register_stage3_cpp_tests(SQLITE_UNIT_SOURCES         "unit")
+  register_stage3_cpp_tests(PSQL_UNIT_SOURCES           "unit")
+  register_stage3_cpp_tests(RATELIMITER_UNIT_SOURCES    "unit")
+  register_stage3_cpp_tests(REDIS_UNIT_SOURCES          "unit")
+  register_stage3_cpp_tests(OBSERVABILITY_UNIT_SOURCES  "unit")
+  register_stage3_cpp_tests(ANALYTICS_UNIT_SOURCES      "unit")
+  register_stage3_cpp_tests(ANALYTICS_INTEGRATION_SOURCES "integration")
+  register_stage3_cpp_tests(CONTRACT_METADATA_SOURCES   "contract")
+  register_stage3_cpp_tests(STORAGE_INTEGRATION_SOURCES "integration")
+  register_stage3_cpp_tests(SQLITE_INTEGRATION_SOURCES  "integration")
+  register_stage3_cpp_tests(PSQL_INTEGRATION_SOURCES    "integration")
+  register_stage3_cpp_tests(REDIS_INTEGRATION_SOURCES   "integration")
   # ---- Stage 1 integration tests: 8 standalone executables (Python scripts) ----
-  set(STAGE1_INTEGRATION_SOURCES
+  set(LEGACY_CORE_INTEGRATION_SOURCES
       test/integration/core/01_generated_slug_redirect_test.py
       test/integration/core/02_custom_slug_get_by_id_slug_test.py
       test/integration/core/03_duplicate_slug_conflict_test.py
@@ -434,7 +434,7 @@ if(BUILD_TESTING)
       test/integration/core/08_short_url_base_domain_once_test.py
   )
 
-  set(STAGE2_LINK_MANAGEMENT_INTEGRATION_SOURCES
+  set(LINK_MANAGEMENT_INTEGRATION_SOURCES
       test/integration/link_management/01_create_with_management_fields_test.py
       test/integration/link_management/02_disable_redirect_blocked_test.py
       test/integration/link_management/03_enable_redirect_success_test.py
@@ -447,7 +447,7 @@ if(BUILD_TESTING)
       test/integration/link_management/10_backward_compatibility_flow_test.py
   )
 
-  set(STAGE3_BUILD_INTEGRATION_SOURCES
+  set(BUILD_INTEGRATION_SOURCES
       test/integration/build/01_fetch_soci_sqlite_only.py
       test/integration/build/02_sqlite_backend_enabled.py
       test/integration/build/03_fetch_soci_sqlite_and_postgres.py
@@ -480,9 +480,9 @@ if(BUILD_TESTING)
   )
 
   set(ALL_INTEGRATION_SOURCES
-      ${STAGE1_INTEGRATION_SOURCES}
-      ${STAGE2_LINK_MANAGEMENT_INTEGRATION_SOURCES}
-      ${STAGE3_BUILD_INTEGRATION_SOURCES}
+      ${LEGACY_CORE_INTEGRATION_SOURCES}
+      ${LINK_MANAGEMENT_INTEGRATION_SOURCES}
+      ${BUILD_INTEGRATION_SOURCES}
   )
 
   foreach(integration_src IN LISTS ALL_INTEGRATION_SOURCES)
