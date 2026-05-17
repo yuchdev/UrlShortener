@@ -12,8 +12,8 @@ BOOST_AUTO_TEST_CASE(retention_deletes_only_old_events)
     InMemoryClickEventRepository repo;
     const auto now = std::chrono::system_clock::now();
 
-    ClickEvent old_e{}; old_e.slug="s"; old_e.domain="d"; old_e.client_id_hash="h"; old_e.final_status_code=302; old_e.occurred_at = now - std::chrono::hours(24*10);
-    ClickEvent new_e{}; new_e.slug="s"; new_e.domain="d"; new_e.client_id_hash="h"; new_e.final_status_code=302; new_e.occurred_at = now - std::chrono::hours(12);
+    ClickEvent old_e{}; old_e.slug="s"; old_e.domain="d"; old_e.client_id_hash="h"; old_e.status_code=302; old_e.occurred_at = now - std::chrono::hours(24*10);
+    ClickEvent new_e{}; new_e.slug="s"; new_e.domain="d"; new_e.client_id_hash="h"; new_e.status_code=302; new_e.occurred_at = now - std::chrono::hours(12);
     AnalyticsError err;
     BOOST_TEST(repo.InsertBatch({old_e, new_e}, &err));
 
@@ -26,5 +26,5 @@ BOOST_AUTO_TEST_CASE(retention_deletes_only_old_events)
     AggregateQuery q; q.slug = "s"; q.from = now - std::chrono::hours(24*30); q.to = now;
     AggregateStats stats;
     BOOST_TEST(repo.GetAggregateStats(q, &stats, &err));
-    BOOST_TEST(stats.total_clicks == 1u);
+    BOOST_TEST(stats.total_attempts == 1u);
 }
