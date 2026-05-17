@@ -3,9 +3,8 @@
  * @brief Legacy URI payload singleton implementation.
  */
 #include <fstream>
-#include <iostream>
-
 #include <url_shortener/uri_map_singleton.h>
+#include <url_shortener/observability/LoggerFactory.h>
 
 /**
  * @brief Return global singleton instance.
@@ -71,10 +70,10 @@ void UriMapSingleton::serialize(const std::string& filename) const
                  << "Data: " << cleaned_data << "\n"
                  << "RecordEnd\n"; // Use a unique marker for the end of each record
         }
-        std::cout << "Data serialized to " << filename << '\n';
+        auto lg = url_shortener::observability::LoggerFactory::Component("storage"); lg.info("data_serialized", {{"path", filename}});
     }
     else {
-        std::cerr << "Error opening file for serialization: " << filename << '\n';
+        auto lg = url_shortener::observability::LoggerFactory::Component("storage"); lg.error("serialize_open_failed", {{"path", filename}});
     }
 }
 
@@ -104,7 +103,7 @@ void UriMapSingleton::deserialize(const std::string& filename)
                     data_[uri] = std::make_pair(content_type, data);
                 }
                 else {
-                    std::cerr << "Error in deserialization: Incomplete record\n";
+                    auto lg = url_shortener::observability::LoggerFactory::Component("storage"); lg.fatal("deserialize_incomplete_record");
                     std::exit(EXIT_FAILURE);
                 }
                 // Reset variables for the next record
@@ -113,9 +112,9 @@ void UriMapSingleton::deserialize(const std::string& filename)
                 data.clear();
             }
         }
-        std::cout << "Data deserialized from " << filename << '\n';
+        auto lg = url_shortener::observability::LoggerFactory::Component("storage"); lg.info("data_deserialized", {{"path", filename}});
     }
     else {
-        std::cerr << "Error opening file for deserialization: " << filename << '\n';
+        auto lg = url_shortener::observability::LoggerFactory::Component("storage"); lg.error("deserialize_open_failed", {{"path", filename}});
     }
 }

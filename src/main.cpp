@@ -12,6 +12,7 @@
 
 #include <boost/asio.hpp>
 #include <url_shortener/cli/cli_parser.h>
+#include <url_shortener/observability/LoggerFactory.h>
 #include <url_shortener/url_shortener.h>
 #include <url_shortener/uri_map_singleton.h>
 
@@ -38,15 +39,18 @@ int main(int argc, char* argv[])
         }
 
         auto& config = parsed.config;
+        url_shortener::observability::LoggerFactory::Initialize({});
+        auto logger = url_shortener::observability::LoggerFactory::Component("main");
+        logger.info("startup_begin");
         net::io_context io_context;
         HttpServer server(io_context, config);
 
         if (fs::exists(uri_filename)) {
             UriMapSingleton::getInstance().deserialize(std::string(uri_filename));
-            std::cout << "Data loaded from " << uri_filename << '\n';
+            logger.info("data_loaded", {{"path", std::string(uri_filename)}});
         }
         else {
-            std::cout << "No existing data file found" << '\n';
+            logger.info("data_file_missing", {{"path", std::string(uri_filename)}});
         }
 
         server.run();
@@ -67,7 +71,7 @@ int main(int argc, char* argv[])
                     server.reloadTlsContext();
                 }
                 catch (const std::exception& ex) {
-                    std::cerr << "TLS reload failed: " << ex.what() << '\n';
+                    logger.error("tls_reload_failed", {{"error", ex.what()}});
                 }
                 signals.async_wait(*signal_handler);
                 return;
@@ -82,7 +86,7 @@ int main(int argc, char* argv[])
         io_context.run();
     }
     catch (const std::exception& e) {
-        std::cerr << "Exception: " << e.what() << '\n';
+        auto logger = url_shortener::observability::LoggerFactory::Component("main"); logger.fatal("unhandled_exception", {{"error", e.what()}});
         return 1;
     }
 
