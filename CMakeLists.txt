@@ -331,6 +331,11 @@ if(BUILD_TESTING)
       ${CMAKE_CURRENT_SOURCE_DIR}/src/config/StorageConfig.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/composition/StorageFactory.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/observability/StorageObservability.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/observability/LogLevel.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/observability/LoggingConfig.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/observability/LogFields.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/observability/Logger.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/observability/LoggerFactory.cpp
   )
 
   set(ALL_UNIT_SOURCES
@@ -343,6 +348,11 @@ if(BUILD_TESTING)
     add_executable(${unit_name}
         ${CMAKE_CURRENT_SOURCE_DIR}/${unit_src}
         ${CMAKE_CURRENT_SOURCE_DIR}/src/uri_map_singleton.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/observability/LogLevel.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/observability/LoggingConfig.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/observability/LogFields.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/observability/Logger.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/observability/LoggerFactory.cpp
     )
     target_compile_features(${unit_name} PRIVATE cxx_std_17)
     target_include_directories(${unit_name} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
