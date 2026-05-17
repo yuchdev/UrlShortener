@@ -73,7 +73,7 @@ target_link_libraries(url_shortener
 include(CTest)
 if(BUILD_TESTING)
   # ---- Stage 1 unit tests: 8 standalone executables ----
-  set(LEGACY_CORE_UNIT_SOURCES
+  set(CORE_BASIC_UNIT_SOURCES
       test/unit/core/01_url_validation_accept_test.cpp
       test/unit/core/02_url_validation_reject_test.cpp
       test/unit/core/03_url_normalization_test.cpp
@@ -339,7 +339,7 @@ if(BUILD_TESTING)
   )
 
   set(ALL_UNIT_SOURCES
-      ${LEGACY_CORE_UNIT_SOURCES}
+      ${CORE_BASIC_UNIT_SOURCES}
       ${LINK_MANAGEMENT_UNIT_SOURCES}
   )
 
