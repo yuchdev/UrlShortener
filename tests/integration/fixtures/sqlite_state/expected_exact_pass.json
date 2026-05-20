@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "description": "Exact short_links state",
+  "tables": {
+    "short_links": {
+      "mode": "exact",
+      "columns": ["short_code", "target_url", "created_by_user_id", "is_active"],
+      "order_by": ["short_code"],
+      "rows": [
+        {
+          "short_code": "abc123",
+          "target_url": "https://example.com",
+          "created_by_user_id": 1,
+          "is_active": 1
+        }
+      ]
+    }
+  }
+}
