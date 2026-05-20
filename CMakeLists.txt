@@ -293,7 +293,34 @@ if(BUILD_TESTING)
       test/integration/storage/12_inactive_and_expired_state_not_masked_by_stale_cache.cpp
   )
 
+  set(SECURITY_SOURCES
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/security/ControlSet.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/security/AccessGuard.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/security/PasswordHasher.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/security/TokenGenerator.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/security/AuthSession.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/security/UserCredentialsRepository.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/security/AuthSessionRepository.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/security/ServiceClient.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/security/ServiceClientRepository.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/security/AuthAuditLogRepository.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/security/FirstAdminBootstrap.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/security/UserManagementService.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/security/AuthBrokerService.cpp
+  )
+
+  set(SECURITY_UNIT_SOURCES
+      test/unit/security/01_control_set_test.cpp
+      test/unit/security/02_access_guard_test.cpp
+      test/unit/security/03_password_hasher_test.cpp
+      test/unit/security/04_token_generator_test.cpp
+      test/unit/security/05_first_admin_bootstrap_test.cpp
+      test/unit/security/06_user_management_service_test.cpp
+      test/unit/security/07_auth_broker_service_test.cpp
+  )
+
   set(COMMON_CPP_SOURCES
+      ${SECURITY_SOURCES}
       ${CMAKE_CURRENT_SOURCE_DIR}/src/core/LinkService.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/storage/inmemory/InMemoryMetadataRepository.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/storage/inmemory/InMemoryCacheStore.cpp
@@ -407,6 +434,7 @@ if(BUILD_TESTING)
     endforeach()
   endmacro()
 
+  register_labeled_cpp_tests(SECURITY_UNIT_SOURCES           "unit")
   register_labeled_cpp_tests(CORE_UNIT_SOURCES           "unit")
   register_labeled_cpp_tests(INMEMORY_UNIT_SOURCES       "unit")
   register_labeled_cpp_tests(SQL_FOUNDATION_UNIT_SOURCES "unit")
