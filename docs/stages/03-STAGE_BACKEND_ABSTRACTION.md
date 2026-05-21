@@ -388,7 +388,7 @@ Contract suite MUST be run identically for each backend.
 
 ### PostgreSQL
 
-Create directory `test/integration/psql` for these 3 tests
+Create directory `tests/integration/psql` for these 3 tests
 
 - migration up/down smoke
 - connection loss + transient retry behavior
@@ -396,14 +396,14 @@ Create directory `test/integration/psql` for these 3 tests
 
 ### SQLite
 
-Create directory `test/integration/sqlite` for these 2 tests
+Create directory `tests/integration/sqlite` for these 2 tests
 
 - DB file initialization
 - busy/lock behavior mapping
 
 ### Redis cache
 
-Create directory `test/integration/redis` for these 3 tests
+Create directory `tests/integration/redis` for these 3 tests
 
 - set/get/delete TTL behavior
 - unavailable Redis fail-open/fail-closed behavior
@@ -411,7 +411,7 @@ Create directory `test/integration/redis` for these 3 tests
 
 ## 8.3 Integration Tests  (each test is an executable or script)
 
-Create directory `test/integration/storage` for these 3 tests
+Create directory `tests/integration/storage` for these 3 tests
 
 - service-level tests proving backend agnosticism by swapping only configuration.
 - at least two full-path integration runs:

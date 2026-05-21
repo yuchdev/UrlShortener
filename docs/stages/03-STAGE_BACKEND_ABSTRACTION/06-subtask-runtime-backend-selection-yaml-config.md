@@ -83,19 +83,19 @@ At minimum support:
 - `include/.../config/StorageConfig.hpp`
 - `src/config/StorageConfig.cpp`
 - `src/composition/StorageFactory.cpp`
-- `test/unit/config/...`
-- `test/integration/config/...`
+- `tests/unit/config/...`
+- `tests/integration/config/...`
 - `docs/storage/configuration.md`
 
 ## Mandatory Unit Tests
-- `test/unit/config/01_parse_minimal_inmemory.cpp`
-- `test/unit/config/02_parse_sqlite_config.cpp`
-- `test/unit/config/03_parse_postgres_config.cpp`
-- `test/unit/config/04_parse_redis_cache_config.cpp`
-- `test/unit/config/05_invalid_backend_name.cpp`
-- `test/unit/config/06_missing_required_fields.cpp`
-- `test/unit/config/07_default_values.cpp`
-- `test/unit/config/08_factory_selects_correct_backend_types.cpp`
+- `tests/unit/config/01_parse_minimal_inmemory.cpp`
+- `tests/unit/config/02_parse_sqlite_config.cpp`
+- `tests/unit/config/03_parse_postgres_config.cpp`
+- `tests/unit/config/04_parse_redis_cache_config.cpp`
+- `tests/unit/config/05_invalid_backend_name.cpp`
+- `tests/unit/config/06_missing_required_fields.cpp`
+- `tests/unit/config/07_default_values.cpp`
+- `tests/unit/config/08_factory_selects_correct_backend_types.cpp`
 
 #### Required test cases
 **Correct cases**
@@ -112,11 +112,11 @@ At minimum support:
 - extra irrelevant config does not accidentally override selected backend
 
 ## Mandatory Integration Tests
-- `test/integration/config/01_inmemory_inmemory_from_yaml.cpp`
-- `test/integration/config/02_sqlite_none_from_yaml.cpp`
-- `test/integration/config/03_postgres_redis_from_yaml.cpp`
-- `test/integration/config/04_invalid_config_startup_failure.cpp`
-- `test/integration/storage/14_backend_swap_by_config_only.cpp`
+- `tests/integration/config/01_inmemory_inmemory_from_yaml.cpp`
+- `tests/integration/config/02_sqlite_none_from_yaml.cpp`
+- `tests/integration/config/03_postgres_redis_from_yaml.cpp`
+- `tests/integration/config/04_invalid_config_startup_failure.cpp`
+- `tests/integration/storage/14_backend_swap_by_config_only.cpp`
 
 #### Required integration scenarios
 **Correct cases**

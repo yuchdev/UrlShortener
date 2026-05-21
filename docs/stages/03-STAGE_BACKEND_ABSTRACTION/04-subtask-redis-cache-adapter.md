@@ -78,21 +78,21 @@ This subtask introduces an optional hot-path cache backend for redirect lookup o
 - `src/storage/redis/RedisCacheStore.cpp`
 - `include/.../storage/redis/RedisCacheStore.hpp`
 - `src/storage/redis/RedisCacheSerialization.cpp`
-- `test/unit/storage/redis/...`
-- `test/integration/redis/...`
-- `test/integration/storage/...`
+- `tests/unit/storage/redis/...`
+- `tests/integration/redis/...`
+- `tests/integration/storage/...`
 
 ## Mandatory Unit Tests
 
 ### Redis adapter unit tests
-- `test/unit/storage/redis/01_cache_key_format.cpp`
-- `test/unit/storage/redis/02_cache_value_serialization.cpp`
-- `test/unit/storage/redis/03_cache_value_deserialization.cpp`
-- `test/unit/storage/redis/04_set_get_delete_commands.cpp`
-- `test/unit/storage/redis/05_ttl_conversion.cpp`
-- `test/unit/storage/redis/06_clear_by_prefix_strategy.cpp`
-- `test/unit/storage/redis/07_fail_open_error_mapping.cpp`
-- `test/unit/storage/redis/08_schema_version_compatibility.cpp`
+- `tests/unit/storage/redis/01_cache_key_format.cpp`
+- `tests/unit/storage/redis/02_cache_value_serialization.cpp`
+- `tests/unit/storage/redis/03_cache_value_deserialization.cpp`
+- `tests/unit/storage/redis/04_set_get_delete_commands.cpp`
+- `tests/unit/storage/redis/05_ttl_conversion.cpp`
+- `tests/unit/storage/redis/06_clear_by_prefix_strategy.cpp`
+- `tests/unit/storage/redis/07_fail_open_error_mapping.cpp`
+- `tests/unit/storage/redis/08_schema_version_compatibility.cpp`
 
 #### Required test cases
 **Correct cases**
@@ -114,15 +114,15 @@ This subtask introduces an optional hot-path cache backend for redirect lookup o
 ## Mandatory Integration Tests
 
 ### Redis-specific integration tests
-- `test/integration/redis/01_set_get_delete_ttl.py`
-- `test/integration/redis/02_unavailable_redis_fail_open.py`
-- `test/integration/redis/03_serialization_version_compatibility.py`
+- `tests/integration/redis/01_set_get_delete_ttl.py`
+- `tests/integration/redis/02_unavailable_redis_fail_open.py`
+- `tests/integration/redis/03_serialization_version_compatibility.py`
 
 ### Service-level storage/cache integration tests
-- `test/integration/storage/09_cache_aside_with_redis.cpp`
-- `test/integration/storage/10_cache_invalidation_after_update_with_redis.cpp`
-- `test/integration/storage/11_cache_invalidation_after_delete_with_redis.cpp`
-- `test/integration/storage/12_inactive_and_expired_state_not_masked_by_stale_cache.cpp`
+- `tests/integration/storage/09_cache_aside_with_redis.cpp`
+- `tests/integration/storage/10_cache_invalidation_after_update_with_redis.cpp`
+- `tests/integration/storage/11_cache_invalidation_after_delete_with_redis.cpp`
+- `tests/integration/storage/12_inactive_and_expired_state_not_masked_by_stale_cache.cpp`
 
 #### Required integration scenarios
 **Correct cases**

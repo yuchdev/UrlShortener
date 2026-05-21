@@ -45,9 +45,9 @@ sudo apt-get install -y libsqlite3-dev
 
 Use these checks to validate build wiring:
 
-- `test/integration/build/02_sqlite_backend_enabled.py`
-- `test/integration/build/03_fetch_soci_sqlite_and_postgres.py`
-- `test/integration/build/04_postgres_backend_enabled.py`
+- `tests/integration/build/02_sqlite_backend_enabled.py`
+- `tests/integration/build/03_fetch_soci_sqlite_and_postgres.py`
+- `tests/integration/build/04_postgres_backend_enabled.py`
 
 These tests assert that:
 
