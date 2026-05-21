@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "description": "Analytics events contain creation event",
+  "tables": {
+    "analytics_events": {
+      "mode": "contains",
+      "columns": ["short_code", "event_type", "ip_address"],
+      "rows": [
+        {
+          "short_code": "abc123",
+          "event_type": "created",
+          "ip_address": "127.0.0.1"
+        }
+      ]
+    }
+  }
+}

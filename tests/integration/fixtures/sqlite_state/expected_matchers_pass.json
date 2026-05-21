@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "description": "Short link with matcher-based fields",
+  "tables": {
+    "short_links": {
+      "mode": "contains",
+      "columns": ["id", "short_code", "target_url", "created_at"],
+      "rows": [
+        {
+          "id": { "$gte": 1 },
+          "short_code": { "$regex": "^[a-z0-9]{6}$" },
+          "target_url": { "$contains": "example.com" },
+          "created_at": { "$not_null": true }
+        }
+      ]
+    }
+  }
+}

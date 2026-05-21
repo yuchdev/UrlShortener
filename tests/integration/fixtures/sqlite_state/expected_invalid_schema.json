@@ -1,0 +1,10 @@
+{
+  "version": 99,
+  "description": "Invalid schema - unsupported version",
+  "tables": {
+    "short_links": {
+      "mode": "exact",
+      "rows": []
+    }
+  }
+}
