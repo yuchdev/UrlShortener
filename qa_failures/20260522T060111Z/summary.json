@@ -1,6 +1,0 @@
-{
-  "status": "fail",
-  "operation": "db_expectation",
-  "database": "/tmp/pytest-of-runner/pytest-1/test_json_output_fail_is_valid0/test.sqlite",
-  "expectation": "/home/runner/work/UrlShortener/UrlShortener/tests/integration/fixtures/sqlite_state/expected_exact_fail.json"
-}
