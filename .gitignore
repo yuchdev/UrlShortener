@@ -56,3 +56,4 @@ __pycache__/
 qa_failures/
 qa/failures/*
 !qa/failures/.gitkeep
+qa/tmp/
