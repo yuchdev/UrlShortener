@@ -122,10 +122,10 @@ Health/readiness guidance:
 - liveness should avoid deep backend checks
 
 ## Mandatory Unit Tests
-- `test/unit/observability/01_repository_metrics_labels.cpp`
-- `test/unit/observability/02_cache_metrics_labels.cpp`
-- `test/unit/observability/03_startup_logging_redaction.cpp`
-- `test/unit/docs/01_configuration_examples_match_parser.cpp`
+- `tests/unit/observability/01_repository_metrics_labels.cpp`
+- `tests/unit/observability/02_cache_metrics_labels.cpp`
+- `tests/unit/observability/03_startup_logging_redaction.cpp`
+- `tests/unit/docs/01_configuration_examples_match_parser.cpp`
 
 #### Required test cases
 **Correct cases**
@@ -139,11 +139,11 @@ Health/readiness guidance:
 - doc examples do not drift from actual accepted config
 
 ## Mandatory Integration Tests
-- `test/integration/ci/01_inmemory_job_runner.py`
-- `test/integration/ci/02_sqlite_job_runner.py`
-- `test/integration/ci/03_postgres_job_runner.py`
-- `test/integration/ci/04_redis_job_runner.py`
-- `test/integration/ci/05_full_storage_matrix.py`
+- `tests/integration/ci/01_inmemory_job_runner.py`
+- `tests/integration/ci/02_sqlite_job_runner.py`
+- `tests/integration/ci/03_postgres_job_runner.py`
+- `tests/integration/ci/04_redis_job_runner.py`
+- `tests/integration/ci/05_full_storage_matrix.py`
 
 #### Required integration scenarios
 **Correct cases**

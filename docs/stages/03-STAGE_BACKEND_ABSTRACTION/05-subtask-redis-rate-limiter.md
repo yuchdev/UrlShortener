@@ -73,17 +73,17 @@ The implementation must document:
 - `src/storage/redis/RedisRateLimiter.cpp`
 - `include/.../storage/redis/RedisRateLimiter.hpp`
 - `src/storage/redis/lua/ratelimit.lua` (if Lua chosen)
-- `test/unit/storage/ratelimiter/...`
-- `test/integration/redis/...`
+- `tests/unit/storage/ratelimiter/...`
+- `tests/integration/redis/...`
 
 ## Mandatory Unit Tests
-- `test/unit/storage/ratelimiter/01_allow_under_limit.cpp`
-- `test/unit/storage/ratelimiter/02_deny_over_limit.cpp`
-- `test/unit/storage/ratelimiter/03_boundary_at_exact_limit.cpp`
-- `test/unit/storage/ratelimiter/04_window_reset.cpp`
-- `test/unit/storage/ratelimiter/05_key_format.cpp`
-- `test/unit/storage/ratelimiter/06_error_mapping.cpp`
-- `test/unit/storage/ratelimiter/07_invalid_configuration.cpp`
+- `tests/unit/storage/ratelimiter/01_allow_under_limit.cpp`
+- `tests/unit/storage/ratelimiter/02_deny_over_limit.cpp`
+- `tests/unit/storage/ratelimiter/03_boundary_at_exact_limit.cpp`
+- `tests/unit/storage/ratelimiter/04_window_reset.cpp`
+- `tests/unit/storage/ratelimiter/05_key_format.cpp`
+- `tests/unit/storage/ratelimiter/06_error_mapping.cpp`
+- `tests/unit/storage/ratelimiter/07_invalid_configuration.cpp`
 
 #### Required test cases
 **Correct cases**
@@ -102,9 +102,9 @@ The implementation must document:
 - concurrency model assumptions are explicit
 
 ## Mandatory Integration Tests
-- `test/integration/redis/04_ratelimiter_fixed_window.py`
-- `test/integration/redis/05_ratelimiter_concurrency.py`
-- `test/integration/storage/13_rate_limit_service_integration.cpp`
+- `tests/integration/redis/04_ratelimiter_fixed_window.py`
+- `tests/integration/redis/05_ratelimiter_concurrency.py`
+- `tests/integration/storage/13_rate_limit_service_integration.cpp`
 
 #### Required integration scenarios
 **Correct cases**

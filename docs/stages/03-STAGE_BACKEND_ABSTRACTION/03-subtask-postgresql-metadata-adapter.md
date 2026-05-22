@@ -236,17 +236,17 @@ Retry logic is optional unless required by current project conventions, but if i
 - `src/storage/postgres/PostgresMigrationRunner.cpp`
 - `db/migrations/postgres/001_create_links.up.sql`
 - `db/migrations/postgres/001_create_links.down.sql`
-- `test/unit/storage/psql/...`
-- `test/integration/psql/...`
+- `tests/unit/storage/psql/...`
+- `tests/integration/psql/...`
 
 If the repo’s preferred naming is `postgresql/` instead of `psql/`, or `db/sql/postgres/`, keep naming consistent with the repo while preserving the same responsibilities.
 
 ## Mandatory Unit Tests
 
 ### SQL dual-backend architecture tests
-- `test/unit/storage/sql/07_backend_registry_supports_sqlite_and_postgres.cpp`
-- `test/unit/storage/sql/08_postgres_config_roundtrip.cpp`
-- `test/unit/storage/sql/09_sql_repository_backend_switching.cpp`
+- `tests/unit/storage/sql/07_backend_registry_supports_sqlite_and_postgres.cpp`
+- `tests/unit/storage/sql/08_postgres_config_roundtrip.cpp`
+- `tests/unit/storage/sql/09_sql_repository_backend_switching.cpp`
 
 #### Required test cases
 **Correct cases**
@@ -260,20 +260,20 @@ If the repo’s preferred naming is `postgresql/` instead of `psql/`, or `db/sql
 - mixed/incoherent config is rejected
 
 ### PostgreSQL backend unit tests
-- `test/unit/storage/psql/01_dsn_and_connection_options.cpp`
-- `test/unit/storage/psql/02_create_and_get_roundtrip.cpp`
-- `test/unit/storage/psql/03_duplicate_short_code_maps_to_already_exists.cpp`
-- `test/unit/storage/psql/04_get_unknown_returns_empty.cpp`
-- `test/unit/storage/psql/05_update_existing.cpp`
-- `test/unit/storage/psql/06_delete_existing.cpp`
-- `test/unit/storage/psql/07_exists_consistency.cpp`
-- `test/unit/storage/psql/08_jsonb_attributes_roundtrip.cpp`
-- `test/unit/storage/psql/09_optional_fields_roundtrip.cpp`
-- `test/unit/storage/psql/10_error_mapping_transient_vs_permanent.cpp`
-- `test/unit/storage/psql/11_prepared_statement_registration.cpp`
-- `test/unit/storage/psql/12_retry_policy_bounds.cpp`
-- `test/unit/storage/psql/13_migration_runner_ordering.cpp`
-- `test/unit/storage/psql/14_sql_repository_with_postgres_backend.cpp`
+- `tests/unit/storage/psql/01_dsn_and_connection_options.cpp`
+- `tests/unit/storage/psql/02_create_and_get_roundtrip.cpp`
+- `tests/unit/storage/psql/03_duplicate_short_code_maps_to_already_exists.cpp`
+- `tests/unit/storage/psql/04_get_unknown_returns_empty.cpp`
+- `tests/unit/storage/psql/05_update_existing.cpp`
+- `tests/unit/storage/psql/06_delete_existing.cpp`
+- `tests/unit/storage/psql/07_exists_consistency.cpp`
+- `tests/unit/storage/psql/08_jsonb_attributes_roundtrip.cpp`
+- `tests/unit/storage/psql/09_optional_fields_roundtrip.cpp`
+- `tests/unit/storage/psql/10_error_mapping_transient_vs_permanent.cpp`
+- `tests/unit/storage/psql/11_prepared_statement_registration.cpp`
+- `tests/unit/storage/psql/12_retry_policy_bounds.cpp`
+- `tests/unit/storage/psql/13_migration_runner_ordering.cpp`
+- `tests/unit/storage/psql/14_sql_repository_with_postgres_backend.cpp`
 
 #### Required test cases
 **Correct cases**
@@ -301,14 +301,14 @@ If the repo’s preferred naming is `postgresql/` instead of `psql/`, or `db/sql
 ## Mandatory Contract Test Wiring
 
 Register PostgreSQL backend with the shared suite using the same universal SQL repository family:
-- `test/contract/metadata/01_create_get_roundtrip.cpp`
-- `test/contract/metadata/02_duplicate_short_code.cpp`
-- `test/contract/metadata/03_get_unknown.cpp`
-- `test/contract/metadata/04_update_existing.cpp`
-- `test/contract/metadata/05_delete_removes_record.cpp`
-- `test/contract/metadata/06_list_filtering_pagination.cpp`
-- `test/contract/metadata/07_expiry_semantics.cpp`
-- `test/contract/metadata/08_concurrent_create_one_wins.cpp`
+- `tests/contract/metadata/01_create_get_roundtrip.cpp`
+- `tests/contract/metadata/02_duplicate_short_code.cpp`
+- `tests/contract/metadata/03_get_unknown.cpp`
+- `tests/contract/metadata/04_update_existing.cpp`
+- `tests/contract/metadata/05_delete_removes_record.cpp`
+- `tests/contract/metadata/06_list_filtering_pagination.cpp`
+- `tests/contract/metadata/07_expiry_semantics.cpp`
+- `tests/contract/metadata/08_concurrent_create_one_wins.cpp`
 
 The contract factory registration must prove that:
 - in-memory backend still works,
@@ -319,8 +319,8 @@ The contract factory registration must prove that:
 ## Mandatory Integration Tests
 
 ### Build / dependency integration
-- `test/integration/build/03_fetch_soci_sqlite_and_postgres.py`
-- `test/integration/build/04_postgres_backend_enabled.py`
+- `tests/integration/build/03_fetch_soci_sqlite_and_postgres.py`
+- `tests/integration/build/04_postgres_backend_enabled.py`
 
 #### Required scenarios
 **Correct cases**
@@ -333,12 +333,12 @@ The contract factory registration must prove that:
 - build misconfiguration that disables PostgreSQL backend is caught
 
 ### PostgreSQL integration tests
-- `test/integration/psql/01_connectivity_smoke.py`
-- `test/integration/psql/02_migration_up_down_smoke.py`
-- `test/integration/psql/03_connection_loss_and_retry.py`
-- `test/integration/psql/04_jsonb_roundtrip.py`
-- `test/integration/psql/05_contract_suite_runner.cpp`
-- `test/integration/storage/08_postgres_service_full_flow.cpp`
+- `tests/integration/psql/01_connectivity_smoke.py`
+- `tests/integration/psql/02_migration_up_down_smoke.py`
+- `tests/integration/psql/03_connection_loss_and_retry.py`
+- `tests/integration/psql/04_jsonb_roundtrip.py`
+- `tests/integration/psql/05_contract_suite_runner.cpp`
+- `tests/integration/storage/08_postgres_service_full_flow.cpp`
 
 #### Required integration scenarios
 **Correct cases**

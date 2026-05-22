@@ -4,7 +4,7 @@
 - **Contract tests** validate common metadata behavior reused across backends.
 - **Integration tests** validate backend services and CI orchestration.
 
-Contract reuse: `test/contract/metadata/*` is executed by in-memory, SQLite, and Postgres runners.
+Contract reuse: `tests/contract/metadata/*` is executed by in-memory, SQLite, and Postgres runners.
 
 Local commands:
 

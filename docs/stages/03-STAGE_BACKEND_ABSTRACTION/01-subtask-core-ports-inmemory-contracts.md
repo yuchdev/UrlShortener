@@ -128,19 +128,19 @@ This subtask is the architectural pivot of Stage 03. After it lands, the service
 - `src/storage/inmemory/InMemoryCacheStore.cpp`
 - `src/storage/inmemory/InMemoryAnalyticsSink.cpp`
 - `src/storage/inmemory/InMemoryRateLimiter.cpp`
-- `test/unit/core/...`
-- `test/unit/storage/inmemory/...`
-- `test/contract/metadata/...`
-- `test/integration/storage/...`
+- `tests/unit/core/...`
+- `tests/unit/storage/inmemory/...`
+- `tests/contract/metadata/...`
+- `tests/integration/storage/...`
 
 ## Mandatory Unit Tests
 
 ### 1. Core model and interface tests
-- `test/unit/core/01_result_error_taxonomy.cpp`
-- `test/unit/core/02_link_record_validation.cpp`
-- `test/unit/core/03_cache_value_model.cpp`
-- `test/unit/core/04_link_access_event_model.cpp`
-- `test/unit/core/05_interface_smoke_compile.cpp`
+- `tests/unit/core/01_result_error_taxonomy.cpp`
+- `tests/unit/core/02_link_record_validation.cpp`
+- `tests/unit/core/03_cache_value_model.cpp`
+- `tests/unit/core/04_link_access_event_model.cpp`
+- `tests/unit/core/05_interface_smoke_compile.cpp`
 
 #### Required test cases
 **Correct cases**
@@ -157,15 +157,15 @@ This subtask is the architectural pivot of Stage 03. After it lands, the service
 - malformed attributes map does not crash serializers/equality helpers
 
 ### 2. In-memory metadata repository tests
-- `test/unit/storage/inmemory/01_create_and_get_roundtrip.cpp`
-- `test/unit/storage/inmemory/02_duplicate_short_code.cpp`
-- `test/unit/storage/inmemory/03_get_unknown.cpp`
-- `test/unit/storage/inmemory/04_update_existing.cpp`
-- `test/unit/storage/inmemory/05_delete_existing.cpp`
-- `test/unit/storage/inmemory/06_exists_consistency.cpp`
-- `test/unit/storage/inmemory/07_list_filtering_and_pagination.cpp`
-- `test/unit/storage/inmemory/08_expiry_semantics.cpp`
-- `test/unit/storage/inmemory/09_thread_safety_smoke.cpp`
+- `tests/unit/storage/inmemory/01_create_and_get_roundtrip.cpp`
+- `tests/unit/storage/inmemory/02_duplicate_short_code.cpp`
+- `tests/unit/storage/inmemory/03_get_unknown.cpp`
+- `tests/unit/storage/inmemory/04_update_existing.cpp`
+- `tests/unit/storage/inmemory/05_delete_existing.cpp`
+- `tests/unit/storage/inmemory/06_exists_consistency.cpp`
+- `tests/unit/storage/inmemory/07_list_filtering_and_pagination.cpp`
+- `tests/unit/storage/inmemory/08_expiry_semantics.cpp`
+- `tests/unit/storage/inmemory/09_thread_safety_smoke.cpp`
 
 #### Required test cases
 **Correct cases**
@@ -186,10 +186,10 @@ This subtask is the architectural pivot of Stage 03. After it lands, the service
 - concurrent reads while updating do not crash or corrupt memory
 
 ### 3. In-memory cache tests
-- `test/unit/storage/inmemory/10_cache_get_set_delete.cpp`
-- `test/unit/storage/inmemory/11_cache_ttl_lazy_eviction.cpp`
-- `test/unit/storage/inmemory/12_cache_clear_by_prefix.cpp`
-- `test/unit/storage/inmemory/13_cache_fail_open_behavior.cpp`
+- `tests/unit/storage/inmemory/10_cache_get_set_delete.cpp`
+- `tests/unit/storage/inmemory/11_cache_ttl_lazy_eviction.cpp`
+- `tests/unit/storage/inmemory/12_cache_clear_by_prefix.cpp`
+- `tests/unit/storage/inmemory/13_cache_fail_open_behavior.cpp`
 
 #### Required test cases
 **Correct cases**
@@ -205,7 +205,7 @@ This subtask is the architectural pivot of Stage 03. After it lands, the service
 - prefix clear with no matches is harmless
 
 ### 4. In-memory analytics tests
-- `test/unit/storage/inmemory/14_analytics_emit_and_flush.cpp`
+- `tests/unit/storage/inmemory/14_analytics_emit_and_flush.cpp`
 
 #### Required test cases
 **Correct cases**
@@ -218,7 +218,7 @@ This subtask is the architectural pivot of Stage 03. After it lands, the service
 - large number of events remains bounded if bounded queue chosen
 
 ### 5. In-memory rate limiter tests
-- `test/unit/storage/inmemory/15_rate_limit_allow_window.cpp`
+- `tests/unit/storage/inmemory/15_rate_limit_allow_window.cpp`
 
 #### Required test cases
 **Correct cases**
@@ -234,26 +234,26 @@ This subtask is the architectural pivot of Stage 03. After it lands, the service
 ## Mandatory Contract Tests
 
 Create reusable contract suite under:
-- `test/contract/metadata/01_create_get_roundtrip.cpp`
-- `test/contract/metadata/02_duplicate_short_code.cpp`
-- `test/contract/metadata/03_get_unknown.cpp`
-- `test/contract/metadata/04_update_existing.cpp`
-- `test/contract/metadata/05_delete_removes_record.cpp`
-- `test/contract/metadata/06_list_filtering_pagination.cpp`
-- `test/contract/metadata/07_expiry_semantics.cpp`
-- `test/contract/metadata/08_concurrent_create_one_wins.cpp`
+- `tests/contract/metadata/01_create_get_roundtrip.cpp`
+- `tests/contract/metadata/02_duplicate_short_code.cpp`
+- `tests/contract/metadata/03_get_unknown.cpp`
+- `tests/contract/metadata/04_update_existing.cpp`
+- `tests/contract/metadata/05_delete_removes_record.cpp`
+- `tests/contract/metadata/06_list_filtering_pagination.cpp`
+- `tests/contract/metadata/07_expiry_semantics.cpp`
+- `tests/contract/metadata/08_concurrent_create_one_wins.cpp`
 
 These tests must be written so later SQLite/PostgreSQL tasks can reuse them unchanged by providing only backend factory wiring.
 
 ## Mandatory Integration Tests
 
 ### Storage/service integration
-- `test/integration/storage/01_inmemory_resolve_full_flow.cpp`
-- `test/integration/storage/02_inmemory_cache_aside.cpp`
-- `test/integration/storage/03_inmemory_cache_invalidation_after_update.cpp`
-- `test/integration/storage/04_inmemory_cache_invalidation_after_delete.cpp`
-- `test/integration/storage/05_inmemory_redirect_visible_states.cpp`
-- `test/integration/storage/06_inmemory_analytics_best_effort.cpp`
+- `tests/integration/storage/01_inmemory_resolve_full_flow.cpp`
+- `tests/integration/storage/02_inmemory_cache_aside.cpp`
+- `tests/integration/storage/03_inmemory_cache_invalidation_after_update.cpp`
+- `tests/integration/storage/04_inmemory_cache_invalidation_after_delete.cpp`
+- `tests/integration/storage/05_inmemory_redirect_visible_states.cpp`
+- `tests/integration/storage/06_inmemory_analytics_best_effort.cpp`
 
 #### Required integration scenarios
 **Correct cases**

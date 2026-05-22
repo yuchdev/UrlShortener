@@ -227,21 +227,21 @@ The mapping mechanism must be designed so PostgreSQL can later reuse the same ma
 - `src/storage/sqlite/SqliteErrorMapper.cpp`
 - `src/storage/sqlite/sql/001_init_links.sql`
 - `cmake/FetchSOCI.cmake` (or repo-equivalent)
-- `test/unit/storage/sql/...`
-- `test/unit/storage/sqlite/...`
-- `test/integration/sqlite/...`
+- `tests/unit/storage/sql/...`
+- `tests/unit/storage/sqlite/...`
+- `tests/integration/sqlite/...`
 
 If the repo naming style prefers `db/` or `infra/persistence/`, match that style, but keep the same architectural split.
 
 ## Mandatory Unit Tests
 
 ### SQL foundation unit tests
-- `test/unit/storage/sql/01_connection_config_defaults.cpp`
-- `test/unit/storage/sql/02_backend_kind_selection.cpp`
-- `test/unit/storage/sql/03_sqlite_dialect_schema_sql.cpp`
-- `test/unit/storage/sql/04_row_mapper_roundtrip.cpp`
-- `test/unit/storage/sql/05_repository_uses_dialect_and_factory.cpp`
-- `test/unit/storage/sql/06_error_mapper_interface_contract.cpp`
+- `tests/unit/storage/sql/01_connection_config_defaults.cpp`
+- `tests/unit/storage/sql/02_backend_kind_selection.cpp`
+- `tests/unit/storage/sql/03_sqlite_dialect_schema_sql.cpp`
+- `tests/unit/storage/sql/04_row_mapper_roundtrip.cpp`
+- `tests/unit/storage/sql/05_repository_uses_dialect_and_factory.cpp`
+- `tests/unit/storage/sql/06_error_mapper_interface_contract.cpp`
 
 #### Required test cases
 **Correct cases**
@@ -258,20 +258,20 @@ If the repo naming style prefers `db/` or `infra/persistence/`, match that style
 - timestamp conversion boundaries are documented and tested
 
 ### SQLite backend unit tests
-- `test/unit/storage/sqlite/01_schema_bootstrap.cpp`
-- `test/unit/storage/sqlite/02_create_and_get_roundtrip.cpp`
-- `test/unit/storage/sqlite/03_duplicate_short_code_maps_to_already_exists.cpp`
-- `test/unit/storage/sqlite/04_get_unknown_returns_empty.cpp`
-- `test/unit/storage/sqlite/05_update_existing.cpp`
-- `test/unit/storage/sqlite/06_delete_existing.cpp`
-- `test/unit/storage/sqlite/07_exists_consistency.cpp`
-- `test/unit/storage/sqlite/08_attributes_json_roundtrip.cpp`
-- `test/unit/storage/sqlite/09_optional_fields_roundtrip.cpp`
-- `test/unit/storage/sqlite/10_timestamp_roundtrip.cpp`
-- `test/unit/storage/sqlite/11_busy_timeout_configuration.cpp`
-- `test/unit/storage/sqlite/12_error_mapping_generic_failure.cpp`
-- `test/unit/storage/sqlite/13_session_factory_builds_sqlite_session.cpp`
-- `test/unit/storage/sqlite/14_sql_repository_with_sqlite_backend.cpp`
+- `tests/unit/storage/sqlite/01_schema_bootstrap.cpp`
+- `tests/unit/storage/sqlite/02_create_and_get_roundtrip.cpp`
+- `tests/unit/storage/sqlite/03_duplicate_short_code_maps_to_already_exists.cpp`
+- `tests/unit/storage/sqlite/04_get_unknown_returns_empty.cpp`
+- `tests/unit/storage/sqlite/05_update_existing.cpp`
+- `tests/unit/storage/sqlite/06_delete_existing.cpp`
+- `tests/unit/storage/sqlite/07_exists_consistency.cpp`
+- `tests/unit/storage/sqlite/08_attributes_json_roundtrip.cpp`
+- `tests/unit/storage/sqlite/09_optional_fields_roundtrip.cpp`
+- `tests/unit/storage/sqlite/10_timestamp_roundtrip.cpp`
+- `tests/unit/storage/sqlite/11_busy_timeout_configuration.cpp`
+- `tests/unit/storage/sqlite/12_error_mapping_generic_failure.cpp`
+- `tests/unit/storage/sqlite/13_session_factory_builds_sqlite_session.cpp`
+- `tests/unit/storage/sqlite/14_sql_repository_with_sqlite_backend.cpp`
 
 #### Required test cases
 **Correct cases**
@@ -299,22 +299,22 @@ If the repo naming style prefers `db/` or `infra/persistence/`, match that style
 Register the SQLite-backed universal SQL repository with the shared suite from Subtask 01.
 
 The following files must execute against the SQLite backend factory:
-- `test/contract/metadata/01_create_get_roundtrip.cpp`
-- `test/contract/metadata/02_duplicate_short_code.cpp`
-- `test/contract/metadata/03_get_unknown.cpp`
-- `test/contract/metadata/04_update_existing.cpp`
-- `test/contract/metadata/05_delete_removes_record.cpp`
-- `test/contract/metadata/06_list_filtering_pagination.cpp`
-- `test/contract/metadata/07_expiry_semantics.cpp`
-- `test/contract/metadata/08_concurrent_create_one_wins.cpp`
+- `tests/contract/metadata/01_create_get_roundtrip.cpp`
+- `tests/contract/metadata/02_duplicate_short_code.cpp`
+- `tests/contract/metadata/03_get_unknown.cpp`
+- `tests/contract/metadata/04_update_existing.cpp`
+- `tests/contract/metadata/05_delete_removes_record.cpp`
+- `tests/contract/metadata/06_list_filtering_pagination.cpp`
+- `tests/contract/metadata/07_expiry_semantics.cpp`
+- `tests/contract/metadata/08_concurrent_create_one_wins.cpp`
 
 The factory registration must already use the new SQL architecture naming, not backend-specific repository names.
 
 ## Mandatory Integration Tests
 
 ### Build / dependency integration
-- `test/integration/build/01_fetch_soci_sqlite_only.py`
-- `test/integration/build/02_sqlite_backend_enabled.py`
+- `tests/integration/build/01_fetch_soci_sqlite_only.py`
+- `tests/integration/build/02_sqlite_backend_enabled.py`
 
 #### Required scenarios
 **Correct cases**
@@ -327,10 +327,10 @@ The factory registration must already use the new SQL architecture naming, not b
 - missing SQLite backend in SOCI configuration fails loudly
 
 ### SQLite backend integration tests
-- `test/integration/sqlite/01_db_file_initialization.py`
-- `test/integration/sqlite/02_busy_lock_behavior.py`
-- `test/integration/sqlite/03_contract_suite_runner.cpp`
-- `test/integration/storage/07_sqlite_service_full_flow.cpp`
+- `tests/integration/sqlite/01_db_file_initialization.py`
+- `tests/integration/sqlite/02_busy_lock_behavior.py`
+- `tests/integration/sqlite/03_contract_suite_runner.cpp`
+- `tests/integration/storage/07_sqlite_service_full_flow.cpp`
 
 #### Required integration scenarios
 **Correct cases**
