@@ -612,7 +612,7 @@ def _now_utc() -> str:
     return dt.datetime.now(tz=dt.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
 
 
-def _ensure_failure_tree(base_dir: Path) -> tuple[Path, Path, Path, Path]:
+def _ensure_failure_tree(base_dir: Path) -> tuple[Path, Path, Path, Path, Path]:
     run_dir = base_dir / _now_utc()
     logs_dir = run_dir / "logs"
     db_dir = run_dir / "database"
@@ -620,7 +620,7 @@ def _ensure_failure_tree(base_dir: Path) -> tuple[Path, Path, Path, Path]:
     stderr_dir = run_dir / "stderr"
     for path in (logs_dir, db_dir, stdout_dir, stderr_dir):
         path.mkdir(parents=True, exist_ok=True)
-    return run_dir, logs_dir, db_dir, stdout_dir
+    return run_dir, logs_dir, db_dir, stdout_dir, stderr_dir
 
 
 def _list_tables(conn: sqlite3.Connection) -> list[str]:
@@ -657,8 +657,7 @@ def _record_failure_artifacts(
     stdout_text: str = "",
     stderr_text: str = "",
 ) -> Path:
-    run_dir, logs_dir, db_dir, stdout_dir = _ensure_failure_tree(artifacts_root)
-    stderr_dir = run_dir / "stderr"
+    run_dir, logs_dir, db_dir, stdout_dir, stderr_dir = _ensure_failure_tree(artifacts_root)
 
     if db_path is not None:
         _snapshot_database(db_path, db_dir / "db_snapshot.json")
@@ -976,30 +975,38 @@ def main(argv: list[str] | None = None) -> int:
     log_path: Path | None = None
     if args.assert_port_open is not None:
         check_name = "assert_port_open"
-        check_fn = lambda: assert_port_open(args.assert_port_open)
+        def check_fn() -> tuple[bool, str]:
+            return assert_port_open(args.assert_port_open)
     elif args.assert_port_closed is not None:
         check_name = "assert_port_closed"
-        check_fn = lambda: assert_port_closed(args.assert_port_closed)
+        def check_fn() -> tuple[bool, str]:
+            return assert_port_closed(args.assert_port_closed)
     elif args.assert_http_status is not None:
         check_name = "assert_http_status"
         url, status = args.assert_http_status
-        check_fn = lambda: assert_http_status(url, int(status))
+        expected_status = int(status)
+        def check_fn() -> tuple[bool, str]:
+            return assert_http_status(url, expected_status)
     elif args.assert_redirect_target is not None:
         check_name = "assert_redirect_target"
         url, target = args.assert_redirect_target
-        check_fn = lambda: assert_redirect_target(url, target)
+        def check_fn() -> tuple[bool, str]:
+            return assert_redirect_target(url, target)
     elif args.assert_http_body_contains is not None:
         check_name = "assert_http_body_contains"
         url, text = args.assert_http_body_contains
-        check_fn = lambda: assert_http_body_contains(url, text)
+        def check_fn() -> tuple[bool, str]:
+            return assert_http_body_contains(url, text)
     elif args.assert_process_running is not None:
         check_name = "assert_process_running"
-        check_fn = lambda: assert_process_running(args.assert_process_running)
+        def check_fn() -> tuple[bool, str]:
+            return assert_process_running(args.assert_process_running)
     elif args.assert_log_contains is not None:
         check_name = "assert_log_contains"
         log_file, text = args.assert_log_contains
         log_path = Path(log_file)
-        check_fn = lambda: assert_log_contains(Path(log_file), text)
+        def check_fn() -> tuple[bool, str]:
+            return assert_log_contains(Path(log_file), text)
     else:
         print("ERROR: Internal CLI state error.", file=sys.stderr)
         return EXIT_ERROR
