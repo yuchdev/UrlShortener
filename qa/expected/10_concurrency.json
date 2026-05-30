@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "tables": {
+    "click_events": {
+      "mode": "contains",
+      "columns": ["id", "short_code", "ip"],
+      "rows": [
+        {
+          "id": "e0",
+          "short_code": "demo",
+          "ip": "127.0.0.1"
+        },
+        {
+          "id": "e4",
+          "short_code": "demo",
+          "ip": "127.0.0.1"
+        }
+      ]
+    }
+  }
+}

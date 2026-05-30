@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "tables": {
+    "app_users": {
+      "mode": "contains",
+      "columns": ["id", "username"],
+      "rows": [
+        {
+          "id": "u1",
+          "username": "admin"
+        }
+      ]
+    }
+  }
+}

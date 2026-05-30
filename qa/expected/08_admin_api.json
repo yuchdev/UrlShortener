@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "tables": {
+    "links": {
+      "mode": "contains",
+      "columns": ["short_code", "target_url", "status"],
+      "rows": [
+        {
+          "short_code": "demo",
+          "target_url": "https://example.com",
+          "status": "active"
+        }
+      ]
+    },
+    "click_events": {
+      "mode": "contains",
+      "columns": ["id", "short_code", "ip"],
+      "rows": [
+        {
+          "id": "e1",
+          "short_code": "demo",
+          "ip": "127.0.0.1"
+        }
+      ]
+    }
+  }
+}

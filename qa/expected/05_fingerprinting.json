@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "tables": {
+    "fingerprints": {
+      "mode": "contains",
+      "columns": ["id", "fingerprint", "suspicious"],
+      "rows": [
+        {
+          "id": "f1",
+          "fingerprint": "abc",
+          "suspicious": 0
+        },
+        {
+          "id": "f2",
+          "fingerprint": "abc",
+          "suspicious": 0
+        },
+        {
+          "id": "f3",
+          "fingerprint": "xyz",
+          "suspicious": 1
+        }
+      ]
+    }
+  }
+}

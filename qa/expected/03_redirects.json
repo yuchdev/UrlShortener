@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "tables": {
+    "links": {
+      "mode": "contains",
+      "columns": ["short_code", "status"],
+      "rows": [
+        {
+          "short_code": "demo",
+          "status": "active"
+        },
+        {
+          "short_code": "expired",
+          "status": "expired"
+        }
+      ]
+    }
+  }
+}

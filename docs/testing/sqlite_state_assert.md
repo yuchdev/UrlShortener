@@ -29,7 +29,7 @@ python -m tools.sqlite_state_assert \
   --expect tests/integration/expected/create_short_url.json
 ```
 
-### Required Arguments
+### Required Arguments (DB snapshot mode)
 
 | Argument   | Description                          |
 |------------|--------------------------------------|
@@ -42,6 +42,17 @@ python -m tools.sqlite_state_assert \
 |------------------|---------------------------------------|---------|
 | `--format text`  | Human-readable output (default).      | text    |
 | `--format json`  | Machine-readable JSON output.         |         |
+| `--reset-database` | Reset transient tables while preserving auth identity tables. | |
+| `--assert-port-open PORT` | Assert local TCP port is open. | |
+| `--assert-port-closed PORT` | Assert local TCP port is closed. | |
+| `--assert-http-status URL STATUS` | Assert URL returns specific status code. | |
+| `--assert-redirect-target URL TARGET` | Assert redirect Location target. | |
+| `--assert-http-body-contains URL TEXT` | Assert response body contains text. | |
+| `--assert-process-running NAME` | Assert process is running by name fragment. | |
+| `--assert-log-contains FILE TEXT` | Assert log file contains text. | |
+| `--retry-timeout-seconds` | Runtime assertion retry timeout. | 30 |
+| `--retry-initial-delay-seconds` | Runtime assertion initial delay for exponential backoff. | 0.25 |
+| `--failure-artifacts-dir` | Root directory for failure diagnostics. | qa_failures |
 
 ---
 
@@ -49,9 +60,27 @@ python -m tools.sqlite_state_assert \
 
 | Code | Meaning                                              |
 |------|------------------------------------------------------|
-| `0`  | All assertions passed.                               |
-| `1`  | One or more table assertions failed (data mismatch). |
-| `2`  | Error: missing file, invalid JSON, SQL error, etc.   |
+| `0`  | Assertion/reset operation passed.                     |
+| `1`  | Assertion failed.                                     |
+| `2`  | Error: invalid arguments, missing files, SQL/runtime errors. |
+
+---
+
+## Runtime Assertions and Reset Examples
+
+```bash
+# Reset transient DB tables
+python -m tools.sqlite_state_assert --db qa/tmp/qa.sqlite --reset-database
+
+# Network/runtime checks
+python -m tools.sqlite_state_assert --assert-port-open 8080
+python -m tools.sqlite_state_assert --assert-http-status http://127.0.0.1:8080/health 200
+python -m tools.sqlite_state_assert --assert-redirect-target http://127.0.0.1:8080/r/demo https://example.com
+python -m tools.sqlite_state_assert --assert-process-running url_shortener
+python -m tools.sqlite_state_assert --assert-log-contains qa/tmp/server.log "Server started"
+```
+
+On failure, diagnostics are stored under `qa_failures/<timestamp>/` with `summary.json`, database snapshot, and captured stdout/stderr/log artifacts.
 
 ---
 
@@ -282,7 +311,8 @@ Or run just the tool-specific tests:
 python -m pytest tests/unit/test_sqlite_state_assert_matchers.py \
                  tests/unit/test_sqlite_state_assert_compare.py \
                  tests/unit/test_sqlite_state_assert_json_validation.py \
-                 tests/integration/test_sqlite_state_assert_cli.py
+                 tests/integration/test_sqlite_state_assert_cli.py \
+                 tests/integration/test_sqlite_state_assert_runtime_cli.py
 ```
 
 ---

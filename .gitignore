@@ -51,3 +51,9 @@ uri.txt
 # Python
 __pycache__/
 *.pyc
+
+# QA runtime artifacts
+qa_failures/
+qa/failures/*
+!qa/failures/.gitkeep
+qa/tmp/

@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "tables": {
+    "links": {
+      "mode": "contains",
+      "columns": ["short_code", "target_url", "status"],
+      "rows": [
+        {
+          "short_code": "demo",
+          "target_url": "https://example.com",
+          "status": "active"
+        }
+      ]
+    }
+  }
+}
