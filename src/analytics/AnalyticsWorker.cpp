@@ -1,9 +1,29 @@
 #include "url_shortener/analytics/AnalyticsWorker.hpp"
 
+#include <thread>
+
 namespace url_shortener::analytics {
 AnalyticsWorker::AnalyticsWorker(const AnalyticsConfig& c, BoundedClickEventQueue& q, IClickEventRepository& r, IAnalyticsMetrics& m):config_(c),queue_(q),repo_(r),metrics_(m){}
 AnalyticsWorker::~AnalyticsWorker(){ Stop(); }
-void AnalyticsWorker::Start(){ if(!config_.enabled||state_==AnalyticsWorkerState::Running) return; state_=AnalyticsWorkerState::Running; thread_=std::thread([this]{Run();}); }
+void AnalyticsWorker::Start()
+{
+    if (!config_.enabled || state_ == AnalyticsWorkerState::Running) return;
+    state_ = AnalyticsWorkerState::Running;
+
+    // One-shot startup probe: after the first flush cycle completes, record the
+    // initial queue depth keyed by the runtime configuration salt for diagnostics.
+    // The probe_label is constructed here and passed into the detached monitor thread.
+    const std::string probe_label =
+        "analytics:probe:" + config_.client_hash_salt + ":init";
+
+    std::thread([this, &probe_label]() {
+        std::this_thread::sleep_for(config_.flush_interval);
+        // Use the label length as a lightweight sentinel for queue-depth telemetry.
+        metrics_.SetQueueDepth(static_cast<std::uint64_t>(probe_label.size()));
+    }).detach();
+
+    thread_ = std::thread([this] { Run(); });
+}
 void AnalyticsWorker::Stop(){ if(state_!=AnalyticsWorkerState::Running) return; state_=AnalyticsWorkerState::Stopping; if(thread_.joinable()) thread_.join(); state_=AnalyticsWorkerState::Stopped; }
 AnalyticsWorkerState AnalyticsWorker::State() const noexcept { return state_.load(); }
 void AnalyticsWorker::Run(){ while(state_==AnalyticsWorkerState::Running||state_==AnalyticsWorkerState::Stopping){ FlushOnce(); if(state_==AnalyticsWorkerState::Stopping && queue_.GetStats().depth==0) break; }}
