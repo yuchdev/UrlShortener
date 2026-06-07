@@ -161,3 +161,119 @@ git checkout main -- src/analytics/AnalyticsWorker.cpp
 
 The injected code is confined entirely to `AnalyticsWorker::Start()` in
 `src/analytics/AnalyticsWorker.cpp`. No other file was modified.
+
+---
+
+## 6. Exact Reproduction Commands
+
+### 6.1 Build the dedicated UAF detection test (Debug, no sanitizer)
+
+```bash
+mkdir -p build_debug && cd build_debug
+cmake .. -DBUILD_TESTING=ON -DCMAKE_BUILD_TYPE=Debug
+cmake --build . --target analytics__16_analytics_worker_start_probe_uaf -j$(nproc)
+```
+
+Run:
+
+```bash
+./analytics__16_analytics_worker_start_probe_uaf
+```
+
+Expected failure output (stack poisoning exposes corrupted `_M_string_length`):
+
+```
+Running 1 test case...
+tests/unit/analytics/16_analytics_worker_start_probe_uaf.cpp(156): error:
+  in "start_probe_must_not_hold_dangling_stack_reference":
+  check m.last_depth.load() == expected_depth has failed [140429788944935 != 24]
+
+*** 1 failure is detected in the test module "AnalyticsWorkerStartProbeUAF"
+```
+
+> The exact garbage value (e.g., `140429788944935`) varies by run; any value ≠ 24 confirms
+> the UAF. If the process instead crashes with `SIGSEGV` during the test, that is also
+> a confirmed UAF.
+
+---
+
+### 6.2 Build and run with AddressSanitizer (deterministic)
+
+```bash
+mkdir -p build_asan && cd build_asan
+cmake .. -DBUILD_TESTING=ON -DCMAKE_BUILD_TYPE=Debug \
+         -DCMAKE_CXX_FLAGS="-fsanitize=address -fno-omit-frame-pointer" \
+         -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address"
+cmake --build . --target analytics__16_analytics_worker_start_probe_uaf -j$(nproc)
+```
+
+Run:
+
+```bash
+ASAN_OPTIONS=detect_stack_use_after_return=1 \
+  ./analytics__16_analytics_worker_start_probe_uaf
+```
+
+Expected ASan output (process crashes before assertions):
+
+```
+=================================================================
+==<PID>==ERROR: AddressSanitizer: stack-use-after-return on address 0x7f... at pc 0x...
+READ of size 8 at 0x7f... thread T2
+    #0 0x... in std::__cxx11::basic_string<char>::size() const
+    #1 0x... in url_shortener::analytics::AnalyticsWorker::Start()::{lambda()#1}::operator()() const
+           src/analytics/AnalyticsWorker.cpp:22
+    #2 0x... in std::thread::_State_impl<std::thread::_Invoker<std::tuple<...>>>::_M_run()
+
+Address 0x7f... is located in stack of thread T1 at offset N in frame
+  #0 0x... in url_shortener::analytics::AnalyticsWorker::Start()
+      src/analytics/AnalyticsWorker.cpp:8
+
+  This frame has 1 object(s):
+    [32, 64) 'probe_label' (line 16) <== Memory access at offset N overlaps this variable
+HINT: this may be a stack-use-after-return bug. Enable detection by setting
+      ASAN_OPTIONS=detect_stack_use_after_return=1
+```
+
+---
+
+### 6.3 Run the full analytics unit suite
+
+```bash
+cd build_debug   # or build_asan
+ctest -R "analytics__" -V 2>&1 | grep -E "PASS|FAIL|error"
+```
+
+With the bug present, `analytics__16_analytics_worker_start_probe_uaf` will FAIL.
+All other analytics tests are expected to PASS.
+
+---
+
+### 6.4 Reproduce the runtime crash in the full server binary
+
+```bash
+# Build server (no test infra needed)
+mkdir -p build_srv && cd build_srv
+cmake .. -DBUILD_TESTING=OFF -DCMAKE_BUILD_TYPE=Debug
+cmake --build . --target url_shortener -j$(nproc)
+
+# Run — crash occurs ~1 s after startup (after default flush_interval elapses)
+./url_shortener --port 8080
+```
+
+Expected output before crash:
+
+```
+{"level":"info","component":"main","event":"startup_begin"}
+{"level":"info","component":"main","event":"data_file_missing","path":"uri.txt"}
+Segmentation fault (core dumped)
+```
+
+Generate a core dump for forensic analysis:
+
+```bash
+ulimit -c unlimited
+./url_shortener --port 8080
+# After crash:
+gdb ./url_shortener core -ex "thread apply all bt" -ex quit
+```

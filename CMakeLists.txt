@@ -252,6 +252,7 @@ if(BUILD_TESTING)
       tests/unit/analytics/13_retention_cleanup_job.cpp
       tests/unit/analytics/14_analytics_config_loading.cpp
       tests/unit/analytics/15_analytics_disabled_mode.cpp
+      tests/unit/analytics/16_analytics_worker_start_probe_uaf.cpp
       tests/unit/http/analytics/03_redirect_analytics_hook.cpp
       tests/unit/http/analytics/04_stats_handler_validation.cpp
       tests/unit/storage/memory/01_in_memory_click_event_repository.cpp
@@ -382,6 +383,7 @@ if(BUILD_TESTING)
         ${CMAKE_CURRENT_SOURCE_DIR}/src/observability/LoggerFactory.cpp
     )
     target_compile_features(${unit_name} PRIVATE cxx_std_17)
+    target_compile_definitions(${unit_name} PRIVATE BOOST_TEST_DYN_LINK)
     target_include_directories(${unit_name} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
     target_link_libraries(${unit_name}
       PRIVATE
@@ -411,6 +413,7 @@ if(BUILD_TESTING)
           ${COMMON_CPP_SOURCES}
       )
       target_compile_features(${cpp_test_target} PRIVATE cxx_std_17)
+      target_compile_definitions(${cpp_test_target} PRIVATE BOOST_TEST_DYN_LINK)
       target_include_directories(${cpp_test_target} PRIVATE
           ${CMAKE_CURRENT_SOURCE_DIR}/include
           ${CMAKE_CURRENT_SOURCE_DIR}/tests/contract/metadata
