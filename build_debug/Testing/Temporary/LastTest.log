@@ -1,0 +1,491 @@
+Start testing: Jun 07 13:19 UTC
+----------------------------------------------------------
+Unable to find executable: /tmp/workspace/yuchdev/UrlShortener/build_debug/analytics__01_click_event_model_validation
+99/205 Testing: analytics__01_click_event_model_validation
+99/205 Test: analytics__01_click_event_model_validation
+Command: ""
+Directory: /tmp/workspace/yuchdev/UrlShortener/build_debug
+"analytics__01_click_event_model_validation" start time: 
+Output:
+----------------------------------------------------------
+<end of output>
+Test time =   0.00 sec
+----------------------------------------------------------
+Test Passed.
+"analytics__01_click_event_model_validation" end time: Jun 07 13:19 UTC
+"analytics__01_click_event_model_validation" time elapsed: 00:00:00
+----------------------------------------------------------
+
+Unable to find executable: /tmp/workspace/yuchdev/UrlShortener/build_debug/analytics__02_click_event_builder_required_fields
+100/205 Testing: analytics__02_click_event_builder_required_fields
+100/205 Test: analytics__02_click_event_builder_required_fields
+Command: ""
+Directory: /tmp/workspace/yuchdev/UrlShortener/build_debug
+"analytics__02_click_event_builder_required_fields" start time: 
+Output:
+----------------------------------------------------------
+<end of output>
+Test time =   0.00 sec
+----------------------------------------------------------
+Test Passed.
+"analytics__02_click_event_builder_required_fields" end time: Jun 07 13:19 UTC
+"analytics__02_click_event_builder_required_fields" time elapsed: 00:00:00
+----------------------------------------------------------
+
+Unable to find executable: /tmp/workspace/yuchdev/UrlShortener/build_debug/analytics__03_click_event_sanitizer_limits
+101/205 Testing: analytics__03_click_event_sanitizer_limits
+101/205 Test: analytics__03_click_event_sanitizer_limits
+Command: ""
+Directory: /tmp/workspace/yuchdev/UrlShortener/build_debug
+"analytics__03_click_event_sanitizer_limits" start time: 
+Output:
+----------------------------------------------------------
+<end of output>
+Test time =   0.00 sec
+----------------------------------------------------------
+Test Passed.
+"analytics__03_click_event_sanitizer_limits" end time: Jun 07 13:19 UTC
+"analytics__03_click_event_sanitizer_limits" time elapsed: 00:00:00
+----------------------------------------------------------
+
+Unable to find executable: /tmp/workspace/yuchdev/UrlShortener/build_debug/analytics__04_client_id_hasher
+102/205 Testing: analytics__04_client_id_hasher
+102/205 Test: analytics__04_client_id_hasher
+Command: ""
+Directory: /tmp/workspace/yuchdev/UrlShortener/build_debug
+"analytics__04_client_id_hasher" start time: 
+Output:
+----------------------------------------------------------
+<end of output>
+Test time =   0.00 sec
+----------------------------------------------------------
+Test Passed.
+"analytics__04_client_id_hasher" end time: Jun 07 13:19 UTC
+"analytics__04_client_id_hasher" time elapsed: 00:00:00
+----------------------------------------------------------
+
+Unable to find executable: /tmp/workspace/yuchdev/UrlShortener/build_debug/analytics__05_aggregate_query_validator
+103/205 Testing: analytics__05_aggregate_query_validator
+103/205 Test: analytics__05_aggregate_query_validator
+Command: ""
+Directory: /tmp/workspace/yuchdev/UrlShortener/build_debug
+"analytics__05_aggregate_query_validator" start time: 
+Output:
+----------------------------------------------------------
+<end of output>
+Test time =   0.00 sec
+----------------------------------------------------------
+Test Passed.
+"analytics__05_aggregate_query_validator" end time: Jun 07 13:19 UTC
+"analytics__05_aggregate_query_validator" time elapsed: 00:00:00
+----------------------------------------------------------
+
+Unable to find executable: /tmp/workspace/yuchdev/UrlShortener/build_debug/analytics__06_bounded_click_event_queue_basic
+104/205 Testing: analytics__06_bounded_click_event_queue_basic
+104/205 Test: analytics__06_bounded_click_event_queue_basic
+Command: ""
+Directory: /tmp/workspace/yuchdev/UrlShortener/build_debug
+"analytics__06_bounded_click_event_queue_basic" start time: 
+Output:
+----------------------------------------------------------
+<end of output>
+Test time =   0.00 sec
+----------------------------------------------------------
+Test Passed.
+"analytics__06_bounded_click_event_queue_basic" end time: Jun 07 13:19 UTC
+"analytics__06_bounded_click_event_queue_basic" time elapsed: 00:00:00
+----------------------------------------------------------
+
+Unable to find executable: /tmp/workspace/yuchdev/UrlShortener/build_debug/analytics__07_bounded_click_event_queue_overflow
+105/205 Testing: analytics__07_bounded_click_event_queue_overflow
+105/205 Test: analytics__07_bounded_click_event_queue_overflow
+Command: ""
+Directory: /tmp/workspace/yuchdev/UrlShortener/build_debug
+"analytics__07_bounded_click_event_queue_overflow" start time: 
+Output:
+----------------------------------------------------------
+<end of output>
+Test time =   0.00 sec
+----------------------------------------------------------
+Test Passed.
+"analytics__07_bounded_click_event_queue_overflow" end time: Jun 07 13:19 UTC
+"analytics__07_bounded_click_event_queue_overflow" time elapsed: 00:00:00
+----------------------------------------------------------
+
+Unable to find executable: /tmp/workspace/yuchdev/UrlShortener/build_debug/analytics__08_analytics_service_failure_isolation
+106/205 Testing: analytics__08_analytics_service_failure_isolation
+106/205 Test: analytics__08_analytics_service_failure_isolation
+Command: ""
+Directory: /tmp/workspace/yuchdev/UrlShortener/build_debug
+"analytics__08_analytics_service_failure_isolation" start time: 
+Output:
+----------------------------------------------------------
+<end of output>
+Test time =   0.00 sec
+----------------------------------------------------------
+Test Passed.
+"analytics__08_analytics_service_failure_isolation" end time: Jun 07 13:19 UTC
+"analytics__08_analytics_service_failure_isolation" time elapsed: 00:00:00
+----------------------------------------------------------
+
+Unable to find executable: /tmp/workspace/yuchdev/UrlShortener/build_debug/analytics__09_analytics_metrics
+107/205 Testing: analytics__09_analytics_metrics
+107/205 Test: analytics__09_analytics_metrics
+Command: ""
+Directory: /tmp/workspace/yuchdev/UrlShortener/build_debug
+"analytics__09_analytics_metrics" start time: 
+Output:
+----------------------------------------------------------
+<end of output>
+Test time =   0.00 sec
+----------------------------------------------------------
+Test Passed.
+"analytics__09_analytics_metrics" end time: Jun 07 13:19 UTC
+"analytics__09_analytics_metrics" time elapsed: 00:00:00
+----------------------------------------------------------
+
+Unable to find executable: /tmp/workspace/yuchdev/UrlShortener/build_debug/analytics__10_analytics_worker_batch_flush
+108/205 Testing: analytics__10_analytics_worker_batch_flush
+108/205 Test: analytics__10_analytics_worker_batch_flush
+Command: ""
+Directory: /tmp/workspace/yuchdev/UrlShortener/build_debug
+"analytics__10_analytics_worker_batch_flush" start time: 
+Output:
+----------------------------------------------------------
+<end of output>
+Test time =   0.00 sec
+----------------------------------------------------------
+Test Passed.
+"analytics__10_analytics_worker_batch_flush" end time: Jun 07 13:19 UTC
+"analytics__10_analytics_worker_batch_flush" time elapsed: 00:00:00
+----------------------------------------------------------
+
+Unable to find executable: /tmp/workspace/yuchdev/UrlShortener/build_debug/analytics__11_analytics_worker_interval_flush
+109/205 Testing: analytics__11_analytics_worker_interval_flush
+109/205 Test: analytics__11_analytics_worker_interval_flush
+Command: ""
+Directory: /tmp/workspace/yuchdev/UrlShortener/build_debug
+"analytics__11_analytics_worker_interval_flush" start time: 
+Output:
+----------------------------------------------------------
+<end of output>
+Test time =   0.00 sec
+----------------------------------------------------------
+Test Passed.
+"analytics__11_analytics_worker_interval_flush" end time: Jun 07 13:19 UTC
+"analytics__11_analytics_worker_interval_flush" time elapsed: 00:00:00
+----------------------------------------------------------
+
+Unable to find executable: /tmp/workspace/yuchdev/UrlShortener/build_debug/analytics__12_analytics_worker_retry_bounds
+110/205 Testing: analytics__12_analytics_worker_retry_bounds
+110/205 Test: analytics__12_analytics_worker_retry_bounds
+Command: ""
+Directory: /tmp/workspace/yuchdev/UrlShortener/build_debug
+"analytics__12_analytics_worker_retry_bounds" start time: 
+Output:
+----------------------------------------------------------
+<end of output>
+Test time =   0.00 sec
+----------------------------------------------------------
+Test Passed.
+"analytics__12_analytics_worker_retry_bounds" end time: Jun 07 13:19 UTC
+"analytics__12_analytics_worker_retry_bounds" time elapsed: 00:00:00
+----------------------------------------------------------
+
+Unable to find executable: /tmp/workspace/yuchdev/UrlShortener/build_debug/analytics__13_retention_cleanup_job
+111/205 Testing: analytics__13_retention_cleanup_job
+111/205 Test: analytics__13_retention_cleanup_job
+Command: ""
+Directory: /tmp/workspace/yuchdev/UrlShortener/build_debug
+"analytics__13_retention_cleanup_job" start time: 
+Output:
+----------------------------------------------------------
+<end of output>
+Test time =   0.00 sec
+----------------------------------------------------------
+Test Passed.
+"analytics__13_retention_cleanup_job" end time: Jun 07 13:19 UTC
+"analytics__13_retention_cleanup_job" time elapsed: 00:00:00
+----------------------------------------------------------
+
+Unable to find executable: /tmp/workspace/yuchdev/UrlShortener/build_debug/analytics__14_analytics_config_loading
+112/205 Testing: analytics__14_analytics_config_loading
+112/205 Test: analytics__14_analytics_config_loading
+Command: ""
+Directory: /tmp/workspace/yuchdev/UrlShortener/build_debug
+"analytics__14_analytics_config_loading" start time: 
+Output:
+----------------------------------------------------------
+<end of output>
+Test time =   0.00 sec
+----------------------------------------------------------
+Test Passed.
+"analytics__14_analytics_config_loading" end time: Jun 07 13:19 UTC
+"analytics__14_analytics_config_loading" time elapsed: 00:00:00
+----------------------------------------------------------
+
+Unable to find executable: /tmp/workspace/yuchdev/UrlShortener/build_debug/analytics__15_analytics_disabled_mode
+113/205 Testing: analytics__15_analytics_disabled_mode
+113/205 Test: analytics__15_analytics_disabled_mode
+Command: ""
+Directory: /tmp/workspace/yuchdev/UrlShortener/build_debug
+"analytics__15_analytics_disabled_mode" start time: 
+Output:
+----------------------------------------------------------
+<end of output>
+Test time =   0.00 sec
+----------------------------------------------------------
+Test Passed.
+"analytics__15_analytics_disabled_mode" end time: Jun 07 13:19 UTC
+"analytics__15_analytics_disabled_mode" time elapsed: 00:00:00
+----------------------------------------------------------
+
+114/205 Testing: analytics__16_analytics_worker_start_probe_uaf
+114/205 Test: analytics__16_analytics_worker_start_probe_uaf
+Command: "/tmp/workspace/yuchdev/UrlShortener/build_debug/analytics__16_analytics_worker_start_probe_uaf"
+Directory: /tmp/workspace/yuchdev/UrlShortener/build_debug
+"analytics__16_analytics_worker_start_probe_uaf" start time: Jun 07 13:19 UTC
+Output:
+----------------------------------------------------------
+Running 1 test case...
+
+[1;32;49m*** No errors detected
+[0;39;49m
+<end of output>
+Test time =   0.06 sec
+----------------------------------------------------------
+Test Passed.
+"analytics__16_analytics_worker_start_probe_uaf" end time: Jun 07 13:19 UTC
+"analytics__16_analytics_worker_start_probe_uaf" time elapsed: 00:00:00
+----------------------------------------------------------
+
+Unable to find executable: /tmp/workspace/yuchdev/UrlShortener/build_debug/analytics__03_redirect_analytics_hook
+115/205 Testing: analytics__03_redirect_analytics_hook
+115/205 Test: analytics__03_redirect_analytics_hook
+Command: ""
+Directory: /tmp/workspace/yuchdev/UrlShortener/build_debug
+"analytics__03_redirect_analytics_hook" start time: 
+Output:
+----------------------------------------------------------
+<end of output>
+Test time =   0.00 sec
+----------------------------------------------------------
+Test Passed.
+"analytics__03_redirect_analytics_hook" end time: Jun 07 13:19 UTC
+"analytics__03_redirect_analytics_hook" time elapsed: 00:00:00
+----------------------------------------------------------
+
+Unable to find executable: /tmp/workspace/yuchdev/UrlShortener/build_debug/analytics__04_stats_handler_validation
+116/205 Testing: analytics__04_stats_handler_validation
+116/205 Test: analytics__04_stats_handler_validation
+Command: ""
+Directory: /tmp/workspace/yuchdev/UrlShortener/build_debug
+"analytics__04_stats_handler_validation" start time: 
+Output:
+----------------------------------------------------------
+<end of output>
+Test time =   0.00 sec
+----------------------------------------------------------
+Test Passed.
+"analytics__04_stats_handler_validation" end time: Jun 07 13:19 UTC
+"analytics__04_stats_handler_validation" time elapsed: 00:00:00
+----------------------------------------------------------
+
+Unable to find executable: /tmp/workspace/yuchdev/UrlShortener/build_debug/analytics__01_stats_handler_validation
+120/205 Testing: analytics__01_stats_handler_validation
+120/205 Test: analytics__01_stats_handler_validation
+Command: ""
+Directory: /tmp/workspace/yuchdev/UrlShortener/build_debug
+"analytics__01_stats_handler_validation" start time: 
+Output:
+----------------------------------------------------------
+<end of output>
+Test time =   0.00 sec
+----------------------------------------------------------
+Test Passed.
+"analytics__01_stats_handler_validation" end time: Jun 07 13:19 UTC
+"analytics__01_stats_handler_validation" time elapsed: 00:00:00
+----------------------------------------------------------
+
+Unable to find executable: /tmp/workspace/yuchdev/UrlShortener/build_debug/analytics__02_stats_handler_response_mapping
+121/205 Testing: analytics__02_stats_handler_response_mapping
+121/205 Test: analytics__02_stats_handler_response_mapping
+Command: ""
+Directory: /tmp/workspace/yuchdev/UrlShortener/build_debug
+"analytics__02_stats_handler_response_mapping" start time: 
+Output:
+----------------------------------------------------------
+<end of output>
+Test time =   0.00 sec
+----------------------------------------------------------
+Test Passed.
+"analytics__02_stats_handler_response_mapping" end time: Jun 07 13:19 UTC
+"analytics__02_stats_handler_response_mapping" time elapsed: 00:00:00
+----------------------------------------------------------
+
+Unable to find executable: /tmp/workspace/yuchdev/UrlShortener/build_debug/analytics__01_redirect_success_emits_click_event
+123/205 Testing: analytics__01_redirect_success_emits_click_event
+123/205 Test: analytics__01_redirect_success_emits_click_event
+Command: ""
+Directory: /tmp/workspace/yuchdev/UrlShortener/build_debug
+"analytics__01_redirect_success_emits_click_event" start time: 
+Output:
+----------------------------------------------------------
+<end of output>
+Test time =   0.00 sec
+----------------------------------------------------------
+Test Passed.
+"analytics__01_redirect_success_emits_click_event" end time: Jun 07 13:19 UTC
+"analytics__01_redirect_success_emits_click_event" time elapsed: 00:00:00
+----------------------------------------------------------
+
+Unable to find executable: /tmp/workspace/yuchdev/UrlShortener/build_debug/analytics__02_redirect_not_found_emits_terminal_event
+124/205 Testing: analytics__02_redirect_not_found_emits_terminal_event
+124/205 Test: analytics__02_redirect_not_found_emits_terminal_event
+Command: ""
+Directory: /tmp/workspace/yuchdev/UrlShortener/build_debug
+"analytics__02_redirect_not_found_emits_terminal_event" start time: 
+Output:
+----------------------------------------------------------
+<end of output>
+Test time =   0.00 sec
+----------------------------------------------------------
+Test Passed.
+"analytics__02_redirect_not_found_emits_terminal_event" end time: Jun 07 13:19 UTC
+"analytics__02_redirect_not_found_emits_terminal_event" time elapsed: 00:00:00
+----------------------------------------------------------
+
+Unable to find executable: /tmp/workspace/yuchdev/UrlShortener/build_debug/analytics__03_repository_failure_does_not_break_redirect
+125/205 Testing: analytics__03_repository_failure_does_not_break_redirect
+125/205 Test: analytics__03_repository_failure_does_not_break_redirect
+Command: ""
+Directory: /tmp/workspace/yuchdev/UrlShortener/build_debug
+"analytics__03_repository_failure_does_not_break_redirect" start time: 
+Output:
+----------------------------------------------------------
+<end of output>
+Test time =   0.00 sec
+----------------------------------------------------------
+Test Passed.
+"analytics__03_repository_failure_does_not_break_redirect" end time: Jun 07 13:19 UTC
+"analytics__03_repository_failure_does_not_break_redirect" time elapsed: 00:00:00
+----------------------------------------------------------
+
+Unable to find executable: /tmp/workspace/yuchdev/UrlShortener/build_debug/analytics__07_queue_saturation_preserves_redirect
+126/205 Testing: analytics__07_queue_saturation_preserves_redirect
+126/205 Test: analytics__07_queue_saturation_preserves_redirect
+Command: ""
+Directory: /tmp/workspace/yuchdev/UrlShortener/build_debug
+"analytics__07_queue_saturation_preserves_redirect" start time: 
+Output:
+----------------------------------------------------------
+<end of output>
+Test time =   0.00 sec
+----------------------------------------------------------
+Test Passed.
+"analytics__07_queue_saturation_preserves_redirect" end time: Jun 07 13:19 UTC
+"analytics__07_queue_saturation_preserves_redirect" time elapsed: 00:00:00
+----------------------------------------------------------
+
+Unable to find executable: /tmp/workspace/yuchdev/UrlShortener/build_debug/analytics__08_graceful_shutdown_stops_worker
+127/205 Testing: analytics__08_graceful_shutdown_stops_worker
+127/205 Test: analytics__08_graceful_shutdown_stops_worker
+Command: ""
+Directory: /tmp/workspace/yuchdev/UrlShortener/build_debug
+"analytics__08_graceful_shutdown_stops_worker" start time: 
+Output:
+----------------------------------------------------------
+<end of output>
+Test time =   0.00 sec
+----------------------------------------------------------
+Test Passed.
+"analytics__08_graceful_shutdown_stops_worker" end time: Jun 07 13:19 UTC
+"analytics__08_graceful_shutdown_stops_worker" time elapsed: 00:00:00
+----------------------------------------------------------
+
+Unable to find executable: /tmp/workspace/yuchdev/UrlShortener/build_debug/analytics__09_disabled_mode_no_worker_required
+128/205 Testing: analytics__09_disabled_mode_no_worker_required
+128/205 Test: analytics__09_disabled_mode_no_worker_required
+Command: ""
+Directory: /tmp/workspace/yuchdev/UrlShortener/build_debug
+"analytics__09_disabled_mode_no_worker_required" start time: 
+Output:
+----------------------------------------------------------
+<end of output>
+Test time =   0.00 sec
+----------------------------------------------------------
+Test Passed.
+"analytics__09_disabled_mode_no_worker_required" end time: Jun 07 13:19 UTC
+"analytics__09_disabled_mode_no_worker_required" time elapsed: 00:00:00
+----------------------------------------------------------
+
+Unable to find executable: /tmp/workspace/yuchdev/UrlShortener/build_debug/analytics__10_configured_runtime_wiring
+129/205 Testing: analytics__10_configured_runtime_wiring
+129/205 Test: analytics__10_configured_runtime_wiring
+Command: ""
+Directory: /tmp/workspace/yuchdev/UrlShortener/build_debug
+"analytics__10_configured_runtime_wiring" start time: 
+Output:
+----------------------------------------------------------
+<end of output>
+Test time =   0.00 sec
+----------------------------------------------------------
+Test Passed.
+"analytics__10_configured_runtime_wiring" end time: Jun 07 13:19 UTC
+"analytics__10_configured_runtime_wiring" time elapsed: 00:00:00
+----------------------------------------------------------
+
+Unable to find executable: /tmp/workspace/yuchdev/UrlShortener/build_debug/analytics__04_stats_endpoint_returns_aggregates
+130/205 Testing: analytics__04_stats_endpoint_returns_aggregates
+130/205 Test: analytics__04_stats_endpoint_returns_aggregates
+Command: ""
+Directory: /tmp/workspace/yuchdev/UrlShortener/build_debug
+"analytics__04_stats_endpoint_returns_aggregates" start time: 
+Output:
+----------------------------------------------------------
+<end of output>
+Test time =   0.00 sec
+----------------------------------------------------------
+Test Passed.
+"analytics__04_stats_endpoint_returns_aggregates" end time: Jun 07 13:19 UTC
+"analytics__04_stats_endpoint_returns_aggregates" time elapsed: 00:00:00
+----------------------------------------------------------
+
+Unable to find executable: /tmp/workspace/yuchdev/UrlShortener/build_debug/analytics__05_stats_endpoint_time_buckets
+131/205 Testing: analytics__05_stats_endpoint_time_buckets
+131/205 Test: analytics__05_stats_endpoint_time_buckets
+Command: ""
+Directory: /tmp/workspace/yuchdev/UrlShortener/build_debug
+"analytics__05_stats_endpoint_time_buckets" start time: 
+Output:
+----------------------------------------------------------
+<end of output>
+Test time =   0.00 sec
+----------------------------------------------------------
+Test Passed.
+"analytics__05_stats_endpoint_time_buckets" end time: Jun 07 13:19 UTC
+"analytics__05_stats_endpoint_time_buckets" time elapsed: 00:00:00
+----------------------------------------------------------
+
+Unable to find executable: /tmp/workspace/yuchdev/UrlShortener/build_debug/analytics__06_retention_cleanup_deletes_old_events
+132/205 Testing: analytics__06_retention_cleanup_deletes_old_events
+132/205 Test: analytics__06_retention_cleanup_deletes_old_events
+Command: ""
+Directory: /tmp/workspace/yuchdev/UrlShortener/build_debug
+"analytics__06_retention_cleanup_deletes_old_events" start time: 
+Output:
+----------------------------------------------------------
+<end of output>
+Test time =   0.00 sec
+----------------------------------------------------------
+Test Passed.
+"analytics__06_retention_cleanup_deletes_old_events" end time: Jun 07 13:19 UTC
+"analytics__06_retention_cleanup_deletes_old_events" time elapsed: 00:00:00
+----------------------------------------------------------
+
+End testing: Jun 07 13:19 UTC
+
+integration =   0.00 sec*proc
+
+unit =   0.06 sec*proc
+

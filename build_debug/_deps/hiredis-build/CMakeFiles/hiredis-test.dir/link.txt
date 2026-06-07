@@ -1,0 +1,1 @@
+/usr/bin/cc -g -rdynamic -Wl,--dependency-file=CMakeFiles/hiredis-test.dir/link.d "CMakeFiles/hiredis-test.dir/test.c.o" -o hiredis-test  -Wl,-rpath,/tmp/workspace/yuchdev/UrlShortener/build_debug/_deps/hiredis-build libhiredisd.so.1.1.0

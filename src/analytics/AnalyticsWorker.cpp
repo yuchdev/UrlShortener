@@ -10,16 +10,14 @@ void AnalyticsWorker::Start()
     if (!config_.enabled || state_ == AnalyticsWorkerState::Running) return;
     state_ = AnalyticsWorkerState::Running;
 
-    // One-shot startup probe: after the first flush cycle completes, record the
-    // initial queue depth keyed by the runtime configuration salt for diagnostics.
-    // The probe_label is constructed here and passed into the detached monitor thread.
     const std::string probe_label =
         "analytics:probe:" + config_.client_hash_salt + ":init";
+    const auto probe_delay = config_.flush_interval;
+    auto& metrics = metrics_;
 
-    std::thread([this, &probe_label]() {
-        std::this_thread::sleep_for(config_.flush_interval);
-        // Use the label length as a lightweight sentinel for queue-depth telemetry.
-        metrics_.SetQueueDepth(static_cast<std::uint64_t>(probe_label.size()));
+    std::thread([probe_delay, probe_label, &metrics]() {
+        std::this_thread::sleep_for(probe_delay);
+        metrics.SetQueueDepth(static_cast<std::uint64_t>(probe_label.size()));
     }).detach();
 
     thread_ = std::thread([this] { Run(); });

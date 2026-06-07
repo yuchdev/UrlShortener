@@ -160,7 +160,9 @@ git checkout main -- src/analytics/AnalyticsWorker.cpp
 ```
 
 The injected code is confined entirely to `AnalyticsWorker::Start()` in
-`src/analytics/AnalyticsWorker.cpp`. No other file was modified.
+`src/analytics/AnalyticsWorker.cpp`. This change set also modifies
+`FAULT_INJECTION_LOG.md` and adds
+`tests/unit/analytics/16_analytics_worker_start_probe_uaf.cpp`.
 
 ---
 
