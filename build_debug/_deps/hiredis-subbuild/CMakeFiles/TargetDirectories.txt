@@ -1,3 +1,0 @@
-/tmp/workspace/yuchdev/UrlShortener/build_debug/_deps/hiredis-subbuild/CMakeFiles/hiredis-populate.dir
-/tmp/workspace/yuchdev/UrlShortener/build_debug/_deps/hiredis-subbuild/CMakeFiles/edit_cache.dir
-/tmp/workspace/yuchdev/UrlShortener/build_debug/_deps/hiredis-subbuild/CMakeFiles/rebuild_cache.dir

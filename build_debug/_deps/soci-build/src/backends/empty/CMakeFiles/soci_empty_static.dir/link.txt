@@ -1,2 +1,0 @@
-/usr/bin/ar qc ../../../../../lib/libsoci_empty.a CMakeFiles/soci_empty_static.dir/blob.cpp.o CMakeFiles/soci_empty_static.dir/factory.cpp.o "CMakeFiles/soci_empty_static.dir/row-id.cpp.o" CMakeFiles/soci_empty_static.dir/session.cpp.o "CMakeFiles/soci_empty_static.dir/standard-into-type.cpp.o" "CMakeFiles/soci_empty_static.dir/standard-use-type.cpp.o" CMakeFiles/soci_empty_static.dir/statement.cpp.o "CMakeFiles/soci_empty_static.dir/vector-into-type.cpp.o" "CMakeFiles/soci_empty_static.dir/vector-use-type.cpp.o"
-/usr/bin/ranlib ../../../../../lib/libsoci_empty.a
