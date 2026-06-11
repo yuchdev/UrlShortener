@@ -48,6 +48,26 @@ namespace ssl = net::ssl;
 
 namespace {
 
+// Portable UTC time conversion helpers.
+// POSIX provides timegm/gmtime_r; MSVC provides _mkgmtime/gmtime_s (note reversed args).
+inline std::time_t timegm_utc(std::tm* tm)
+{
+#if defined(_WIN32)
+    return _mkgmtime(tm);
+#else
+    return timegm(tm);
+#endif
+}
+
+inline void gmtime_utc(const std::time_t* t, std::tm* tm)
+{
+#if defined(_WIN32)
+    gmtime_s(tm, t);
+#else
+    gmtime_r(t, tm);
+#endif
+}
+
 constexpr auto request_timeout = std::chrono::seconds(30);
 constexpr std::string_view shortener_api_prefix = "/api/v1/links";
 constexpr std::string_view shortener_api_compat_prefix = "/api/v1/short-urls";
@@ -841,7 +861,7 @@ std::optional<std::chrono::system_clock::time_point> parseRfc3339Zulu(const std:
     if (in.fail()) {
         return std::nullopt;
     }
-    return std::chrono::system_clock::from_time_t(timegm(&tm));
+    return std::chrono::system_clock::from_time_t(timegm_utc(&tm));
 }
 
 bool isExpired(const std::optional<std::string>& expires_at)
@@ -1012,7 +1032,7 @@ std::string currentTimestamp()
     const auto now = std::chrono::system_clock::now();
     const std::time_t now_time = std::chrono::system_clock::to_time_t(now);
     std::tm tm{};
-    gmtime_r(&now_time, &tm);
+    gmtime_utc(&now_time, &tm);
     std::ostringstream out;
     out << std::put_time(&tm, "%Y-%m-%dT%H:%M:%SZ");
     return out.str();
@@ -1028,7 +1048,7 @@ std::string formatTimestamp(const std::chrono::system_clock::time_point time_poi
 {
     const std::time_t ts = std::chrono::system_clock::to_time_t(time_point);
     std::tm tm{};
-    gmtime_r(&ts, &tm);
+    gmtime_utc(&ts, &tm);
     std::ostringstream out;
     out << std::put_time(&tm, "%Y-%m-%dT%H:%M:%SZ");
     return out.str();
