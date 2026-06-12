@@ -32,7 +32,6 @@ Install tools with Homebrew:
 
 ```bash
 brew install cmake ninja boost openssl python
-cmake -S . -B cmake-build
 ```
 
 If CMake cannot locate OpenSSL/Boost automatically, set `CMAKE_PREFIX_PATH` to your Homebrew prefix before configuring.
@@ -40,12 +39,10 @@ If CMake cannot locate OpenSSL/Boost automatically, set `CMAKE_PREFIX_PATH` to y
 ### Windows
 
 ```powershell
-git clone git@github.com:yuchdev/UrlShortener.git
-cd UrlShortener
 $env:VCPKG_ROOT="C:\Program Files\Microsoft Visual Studio\2022\Community\VC\vcpkg\"
-vcpkg install --triplet x64-windows
-cmake -S . -B cmake-build -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_ROOT\scripts\buildsystems\vcpkg.cmake" -DVCPKG_TARGET_TRIPLET=x64-windows
-cmake --build cmake-build --target url_shortener
+mkdir cmake-build && cd cmake-build
+cmake .. -DCMAKE_TOOLCHAIN_FILE="C:\Program Files\Microsoft Visual Studio\2022\Community\VC\vcpkg\scripts\buildsystems\vcpkg.cmake" -DVCPKG_TARGET_TRIPLET=x64-windows
+cmake --build . --target url_shortener
 ```
 
 ## Run

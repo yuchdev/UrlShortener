@@ -1,4 +1,16 @@
 cmake_minimum_required(VERSION 3.25)
+
+# ---- vcpkg toolchain selection ----
+if(NOT CMAKE_TOOLCHAIN_FILE AND NOT DEFINED ENV{VCPKG_ROOT})
+  message(FATAL_ERROR "Neither CMAKE_TOOLCHAIN_FILE nor VCPKG_ROOT environment variable is set. "
+                      "Please provide an absolute path to the vcpkg toolchain file using "
+                      "-DCMAKE_TOOLCHAIN_FILE=... or set the VCPKG_ROOT environment variable.")
+endif()
+
+if(NOT CMAKE_TOOLCHAIN_FILE AND DEFINED ENV{VCPKG_ROOT})
+  set(CMAKE_TOOLCHAIN_FILE "$ENV{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake" CACHE FILEPATH "vcpkg toolchain file")
+endif()
+
 include(cmake/prelude.cmake)
 
 project(
