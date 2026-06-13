@@ -24,6 +24,7 @@ function(fetch_soci_sqlite_and_postgres)
     GIT_REPOSITORY https://github.com/SOCI/soci.git
     GIT_TAG v4.1.2
     GIT_SHALLOW TRUE
+    GIT_SUBMODULES ""
   )
 
   FetchContent_MakeAvailable(soci)
