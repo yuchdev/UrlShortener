@@ -30,9 +30,9 @@ assert configure.returncode == 0, configure.stderr
 
 cache = (probe_build / "CMakeCache.txt").read_text()
 assert "FETCHCONTENT_SOURCE_DIR_SOCI" in cache
-assert "SOCI_SQLITE3:BOOL=ON" in cache or "WITH_SQLITE3:BOOL=ON" in cache
-assert "SOCI_POSTGRESQL:BOOL=ON" in cache or "WITH_POSTGRESQL:BOOL=ON" in cache
-assert "SOCI_MYSQL:BOOL=OFF" in cache or "WITH_MYSQL:BOOL=OFF" in cache
-assert "SOCI_ODBC:BOOL=OFF" in cache or "WITH_ODBC:BOOL=OFF" in cache
+assert any(token in cache for token in ("SOCI_SQLITE3:BOOL=ON", "SOCI_SQLITE3:STRING=ON", "WITH_SQLITE3:BOOL=ON", "WITH_SQLITE3:STRING=ON"))
+assert any(token in cache for token in ("SOCI_POSTGRESQL:BOOL=ON", "SOCI_POSTGRESQL:STRING=ON", "WITH_POSTGRESQL:BOOL=ON", "WITH_POSTGRESQL:STRING=ON"))
+assert any(token in cache for token in ("SOCI_MYSQL:BOOL=OFF", "SOCI_MYSQL:STRING=OFF", "WITH_MYSQL:BOOL=OFF", "WITH_MYSQL:STRING=OFF"))
+assert any(token in cache for token in ("SOCI_ODBC:BOOL=OFF", "SOCI_ODBC:STRING=OFF", "WITH_ODBC:BOOL=OFF", "WITH_ODBC:STRING=OFF"))
 
 print("ok")

@@ -28,7 +28,7 @@ proc = subprocess.run(
 )
 assert proc.returncode == 0, proc.stderr
 cache = (probe_build / "CMakeCache.txt").read_text()
-assert "SOCI_POSTGRESQL:BOOL=ON" in cache or "WITH_POSTGRESQL:BOOL=ON" in cache
+assert any(token in cache for token in ("SOCI_POSTGRESQL:BOOL=ON", "SOCI_POSTGRESQL:STRING=ON", "WITH_POSTGRESQL:BOOL=ON", "WITH_POSTGRESQL:STRING=ON"))
 assert "PostgreSQL_INCLUDE_DIR:PATH=" in cache
 assert "PostgreSQL_LIBRARY_RELEASE:FILEPATH=" in cache
 print("ok")

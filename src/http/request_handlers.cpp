@@ -129,7 +129,54 @@ static std::string serializeLink(const Link& link, const std::string& short_url)
          << ",\"updated_at\":" << url_shortener::jsonString(link.updated_at)
          << ",\"status\":" << url_shortener::jsonString(url_shortener::linkStatusToString(url_shortener::resolveLinkStatus(link)))
          << ",\"redirect_type\":" << url_shortener::jsonString(url_shortener::redirectTypeToString(link.redirect_type))
-         << ",\"stats\":{"
+         << ",\"tags\":[";
+    for (size_t i = 0; i < link.tags.size(); ++i) {
+        if (i > 0) {
+            body << ',';
+        }
+        body << url_shortener::jsonString(link.tags[i]);
+    }
+    body << "],\"metadata\":{";
+    if (!link.metadata.empty()) {
+        std::vector<std::pair<std::string, std::string>> metadata_items(link.metadata.begin(), link.metadata.end());
+        std::sort(metadata_items.begin(), metadata_items.end(), [](const auto& lhs, const auto& rhs) {
+            return lhs.first < rhs.first;
+        });
+        for (size_t i = 0; i < metadata_items.size(); ++i) {
+            if (i > 0) {
+                body << ',';
+            }
+            body << url_shortener::jsonString(metadata_items[i].first)
+                 << ':'
+                 << url_shortener::jsonString(metadata_items[i].second);
+        }
+    }
+    body << "},\"campaign\":";
+    if (link.campaign.has_value()) {
+        body << '{';
+        bool first = true;
+        const auto appendCampaignField = [&](const char* key, const std::optional<std::string>& value) {
+            if (!value.has_value()) {
+                return;
+            }
+            if (!first) {
+                body << ',';
+            }
+            first = false;
+            body << url_shortener::jsonString(key) << ':' << url_shortener::jsonString(*value);
+        };
+        appendCampaignField("name", link.campaign->name);
+        appendCampaignField("source", link.campaign->source);
+        appendCampaignField("medium", link.campaign->medium);
+        appendCampaignField("term", link.campaign->term);
+        appendCampaignField("content", link.campaign->content);
+        appendCampaignField("id", link.campaign->id);
+        body << '}';
+    }
+    else {
+        body << "null";
+    }
+    body << ",\"stats\":{"
          << "\"total_redirects\":" << link.stats.total_redirects
          << ",\"redirects_24h\":" << link.stats.redirects_24h
          << ",\"redirects_7d\":" << link.stats.redirects_7d
@@ -925,7 +972,8 @@ http::response<http::string_body> handleShortenerRequest(
                 emitClickEvent(req, config, slug, link, 404);
                 return makeApiErrorResponse(req, config, is_tls, 404, "not_found", "Link not found");
             }
-            return handleApplicationRequest(req, config, is_tls);
+            emitClickEvent(req, config, slug, std::nullopt, 404);
+            return makeApiErrorResponse(req, config, is_tls, 404, "not_found", "Link not found");
         }
     }
 
