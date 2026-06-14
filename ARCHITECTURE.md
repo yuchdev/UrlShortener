@@ -10,7 +10,7 @@ The service is a single-process asynchronous network server built with a modular
 - **Security**: OpenSSL-backed TLS context for HTTPS.
 - **Core**: Domain types (`Link`, `ClickEvent`) and utilities in `include/url_shortener/core/`.
 - **HTTP**: Server, session handling, and request processing in `include/url_shortener/http/`.
-- **Storage**: Pluggable repository interface (`ILinkRepository`) with in-memory implementation in `include/url_shortener/storage/`.
+- **Storage**: Pluggable metadata repository (`IMetadataRepository`) and cache interface (`ILinkCacheStore`) with in-memory implementations in `include/url_shortener/storage/`.
 - **Analytics**: Asynchronous event queue for tracking redirect performance in `include/url_shortener/analytics/`.
 
 Data flow:
@@ -19,7 +19,7 @@ Data flow:
 2. `HttpServer` is constructed and starts HTTP/HTTPS accept loops.
 3. For each connection, a session (`PlainSession` or `TlsSession`) handles requests asynchronously.
 4. Request handlers in `request_handlers.cpp` dispatch to appropriate domain logic.
-5. Storage calls are handled by the active `ILinkRepository`.
+5. Storage calls are handled by the active `IMetadataRepository` implementation.
 6. Analytics events are enqueued to `BoundedClickEventQueue` for background processing.
 
 ## 2) Source layout

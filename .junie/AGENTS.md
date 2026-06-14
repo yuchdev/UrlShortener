@@ -60,7 +60,7 @@ Observed result: `100% tests passed, 0 tests failed out of 1`.
 
 - Keep C++ standard compatibility at C++17.
 - Prefer small, targeted builds and test runs due the large number of executable test targets.
-- Repository contains both legacy monolithic implementation (`src/url_shortener.cpp`) and modularized components under `src/storage`, `src/analytics`, `src/http`, `src/observability`; preserve existing local style in touched module.
+- Repository is modularized under `src/storage`, `src/analytics`, `src/http`, `src/observability`, `src/core`, `src/security`, `src/config`, and `src/composition`; preserve existing local style in touched module.
 - Existing codebase conventions to keep:
   - explicit, descriptive test names with numeric prefixes (`01_...`, `02_...`) for order/readability;
   - CMake lists grouped by subsystem and then registered centrally.

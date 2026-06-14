@@ -77,7 +77,7 @@ bool isExpired(const std::optional<std::string>& expires_at)
     if (!ts.has_value()) {
         return false;
     }
-    return *ts < std::chrono::system_clock::now();
+    return *ts <= std::chrono::system_clock::now();
 }
 
 std::string trim(const std::string& value)
@@ -628,14 +628,14 @@ bool validateTags(std::vector<std::string>& tags)
     for (const auto& raw_tag : tags) {
         std::string tag = trim(raw_tag);
         if (tag.empty()) {
-            continue;
+            return false;
         }
         if (tag.size() > 32) {
             return false;
         }
 
         for (char c : tag) {
-            if (!std::isalnum(static_cast<unsigned char>(c)) && c != '-' && c != '_') {
+            if (!std::isalnum(static_cast<unsigned char>(c)) && c != ':' && c != '-' && c != '_') {
                 return false;
             }
         }

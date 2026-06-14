@@ -95,7 +95,6 @@ target_link_libraries(url_shortener
 
 # ---- Tests ----
 include(CTest)
-if(BUILD_TESTING)
   # ---- Stage 1 unit tests: 8 standalone executables ----
   set(CORE_BASIC_UNIT_SOURCES
       tests/unit/core/01_url_validation_accept_test.cpp
@@ -414,6 +413,7 @@ if(BUILD_TESTING)
         yaml-cpp::yaml-cpp
   )
 
+  if(BUILD_TESTING)
   set(ALL_UNIT_SOURCES
       ${CORE_BASIC_UNIT_SOURCES}
       ${LINK_MANAGEMENT_UNIT_SOURCES}

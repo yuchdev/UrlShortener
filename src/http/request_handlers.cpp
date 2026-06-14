@@ -123,7 +123,7 @@ static std::string serializeLink(const Link& link, const std::string& short_url)
     std::ostringstream body;
     body << "{\"id\":" << url_shortener::jsonString(link.id)
          << ",\"slug\":" << url_shortener::jsonString(link.slug)
-         << ",\"target_url\":" << url_shortener::jsonString(link.target_url)
+         << ",\"url\":" << url_shortener::jsonString(link.target_url)
          << ",\"short_url\":" << url_shortener::jsonString(short_url)
          << ",\"created_at\":" << url_shortener::jsonString(link.created_at)
          << ",\"updated_at\":" << url_shortener::jsonString(link.updated_at)
