@@ -2,7 +2,9 @@
 #define BOOST_TEST_MODULE SlugCollisionRetryTest
 #include <boost/test/unit_test.hpp>
 #include <chrono>
-#include "../../../src/url_shortener.cpp"
+#include <url_shortener/url_shortener.h>
+
+using namespace url_shortener;
 
 /**
  * [Unit][Core] Generated slug collision retries are bounded.

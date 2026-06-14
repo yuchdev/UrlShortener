@@ -1,7 +1,9 @@
 /** @file 02_url_validation_reject_test.cpp @brief Unit test: invalid/unsafe schemes are rejected. */
 #define BOOST_TEST_MODULE UrlValidationRejectTest
 #include <boost/test/unit_test.hpp>
-#include "../../../src/url_shortener.cpp"
+#include <url_shortener/url_shortener.h>
+
+using namespace url_shortener;
 
 /**
  * [Unit][Core] URL validation rejects malformed and unsafe inputs.

@@ -1,5 +1,12 @@
 #include "url_shortener/storage/redis/RedisRateLimiter.hpp"
 
+// struct timeval lives in <winsock2.h> on Windows and <sys/time.h> on POSIX.
+#if defined(_WIN32)
+#include <winsock2.h>
+#else
+#include <sys/time.h>
+#endif
+
 #if __has_include(<hiredis/hiredis.h>)
 #include <hiredis/hiredis.h>
 #elif __has_include(<hiredis.h>)
@@ -65,14 +72,14 @@ RateLimitDecision RedisRateLimiter::Allow(const std::string& key, uint64_t limit
     const auto now = std::chrono::system_clock::now();
     if (key.empty()) {
         if (error) *error = RateLimitError::invalid_key;
-        return {.allowed = false, .remaining = 0, .reset_at = now};
+        return {false, 0, now};
     }
     if (window.count() <= 0) {
         if (error) *error = RateLimitError::invalid_policy;
-        return {.allowed = false, .remaining = 0, .reset_at = now};
+        return {false, 0, now};
     }
     if (!EnsureConnected(error)) {
-        return {.allowed = false, .remaining = 0, .reset_at = now};
+        return {false, 0, now};
     }
 
     const auto redis_key = ComposeKey(config_.key_prefix, config_.scope, key);
@@ -84,7 +91,7 @@ RateLimitDecision RedisRateLimiter::Allow(const std::string& key, uint64_t limit
     if (reply == nullptr || reply->type != REDIS_REPLY_ARRAY || reply->elements < 3) {
         if (error) *error = RateLimitError::unavailable;
         if (reply) freeReplyObject(reply);
-        return {.allowed = false, .remaining = 0, .reset_at = now};
+        return {false, 0, now};
     }
 
     const bool allowed = reply->element[0]->integer == 1;
@@ -95,5 +102,5 @@ RateLimitDecision RedisRateLimiter::Allow(const std::string& key, uint64_t limit
 
     freeReplyObject(reply);
     if (error) *error = RateLimitError::none;
-    return {.allowed = allowed && limit > 0, .remaining = remaining, .reset_at = reset_at};
+    return {allowed && limit > 0, remaining, reset_at};
 }

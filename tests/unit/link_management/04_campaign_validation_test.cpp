@@ -1,7 +1,9 @@
 /** @file 04_campaign_validation_test.cpp @brief Unit test: campaign fields obey per-field length constraints. */
 #define BOOST_TEST_MODULE LinkManagementCampaignValidationTest
 #include <boost/test/unit_test.hpp>
-#include "../../../src/url_shortener.cpp"
+#include <url_shortener/url_shortener.h>
+
+using namespace url_shortener;
 
 /**
  * [Unit][Link Management] Campaign field length validation works.

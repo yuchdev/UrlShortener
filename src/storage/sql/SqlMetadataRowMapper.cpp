@@ -39,9 +39,10 @@ bool DeserializePayload(const std::string& text, std::string* id, std::map<std::
     boost::property_tree::read_json(iss, root);
     *id = root.get<std::string>("id");
     attrs->clear();
-    const auto& attrs_tree = root.get_child("attributes", boost::property_tree::ptree{});
-    for (const auto& kv : attrs_tree) {
-        attrs->insert_or_assign(kv.first, kv.second.get_value<std::string>());
+    if (const auto attrs_tree = root.get_child_optional("attributes")) {
+        for (const auto& kv : *attrs_tree) {
+            attrs->insert_or_assign(kv.first, kv.second.get_value<std::string>());
+        }
     }
     return true;
 }

@@ -16,6 +16,8 @@
 #include <url_shortener/url_shortener.h>
 #include <url_shortener/uri_map_singleton.h>
 
+using namespace url_shortener;
+
 namespace fs = std::filesystem;
 namespace net = boost::asio;
 constexpr std::string_view uri_filename = "uri.txt";

@@ -14,6 +14,9 @@ The project requires:
 - Boost (with `system`, `program_options`, `unit_test_framework`)
 - OpenSSL
 - Python 3 (for integration tests)
+- Visual Studio 2022 (for Windows)
+
+## Build
 
 ### Linux (Ubuntu 24.04/22.04)
 
@@ -35,33 +38,11 @@ If CMake cannot locate OpenSSL/Boost automatically, set `CMAKE_PREFIX_PATH` to y
 
 ### Windows
 
-Install:
-
-- Visual Studio 2022 (Desktop development with C++)
-- CMake 3.25+
-- Ninja
-- Python 3
-- Boost and OpenSSL (for example via vcpkg)
-
-Example with vcpkg:
-
 ```powershell
-vcpkg install boost-system boost-program-options boost-test openssl
-cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE=C:/path/to/vcpkg/scripts/buildsystems/vcpkg.cmake
-```
-
-## Setup workspace
-
-```bash
-git clone <your-fork-or-repo-url> UrlShortener
-cd UrlShortener
-```
-
-## Build with CMake
-
-```bash
-cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
-cmake --build build --target url_shortener
+$env:VCPKG_ROOT="C:\Program Files\Microsoft Visual Studio\2022\Community\VC\vcpkg\"
+mkdir cmake-build && cd cmake-build
+cmake .. -DCMAKE_TOOLCHAIN_FILE="C:\Program Files\Microsoft Visual Studio\2022\Community\VC\vcpkg\scripts\buildsystems\vcpkg.cmake" -DVCPKG_TARGET_TRIPLET=x64-windows
+cmake --build . --target url_shortener
 ```
 
 ## Run

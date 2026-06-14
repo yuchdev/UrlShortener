@@ -15,14 +15,14 @@ RateLimitDecision InMemoryRateLimiter::Allow(const std::string& key,
         if (error != nullptr) {
             *error = RateLimitError::invalid_key;
         }
-        return {.allowed = false, .remaining = 0, .reset_at = now};
+        return {false, 0, now};
     }
 
     if (window.count() <= 0) {
         if (error != nullptr) {
             *error = RateLimitError::invalid_policy;
         }
-        return {.allowed = false, .remaining = 0, .reset_at = now};
+        return {false, 0, now};
     }
 
     std::lock_guard lock(mutex_);
@@ -36,12 +36,12 @@ RateLimitDecision InMemoryRateLimiter::Allow(const std::string& key,
         if (error != nullptr) {
             *error = RateLimitError::none;
         }
-        return {.allowed = false, .remaining = 0, .reset_at = bucket.reset_at};
+        return {false, 0, bucket.reset_at};
     }
 
     ++bucket.count;
     if (error != nullptr) {
         *error = RateLimitError::none;
     }
-    return {.allowed = true, .remaining = limit - bucket.count, .reset_at = bucket.reset_at};
+    return {true, limit - bucket.count, bucket.reset_at};
 }
