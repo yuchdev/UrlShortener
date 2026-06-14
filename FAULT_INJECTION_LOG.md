@@ -126,6 +126,7 @@ powershell -Command "$path = 'HKLM:\SOFTWARE\Microsoft\Windows\Windows Error Rep
 
 ```bash
 # Run with analytics enabled (default) and pipe all streams to a log file
+cd RelWithDebInfo
 ./url_shortener --port 8080 > server_ubuntu.log 2>&1
 
 ```
