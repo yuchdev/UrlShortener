@@ -1,15 +1,19 @@
 # Fault Injection Log — Aegis SWR Forensic Analyzer
 
-**Branch:** `feature/fault-injection-aegis`  
-**Target file:** `src/analytics/AnalyticsWorker.cpp`  
-**Bug archetype:** Asynchronous Lambda Reference Capture (Use-After-Free)  
+**Branch:** `feature/fault-injection-aegis`
+
+**Target file:** `src/analytics/AnalyticsWorker.cpp`
+
+**Bug archetype:** Asynchronous Lambda Reference Capture (Use-After-Free)
+
 **Severity:** Fatal — produces `SIGSEGV` (or heap corruption leading to `std::terminate`)
 
 ---
 
 ## 1. Injection Location
 
-**File:** `src/analytics/AnalyticsWorker.cpp`  
+**File:** `src/analytics/AnalyticsWorker.cpp`
+
 **Function:** `AnalyticsWorker::Start()`
 
 ```cpp
@@ -38,11 +42,9 @@ void AnalyticsWorker::Start()
 
 ### What goes wrong
 
-`probe_label` is a `std::string` local variable with **automatic (stack) storage duration** in
-`AnalyticsWorker::Start()`. Its lifetime ends when `Start()` returns.
+`probe_label` is a `std::string` local variable with **automatic (stack) storage duration** in `AnalyticsWorker::Start()`. Its lifetime ends when `Start()` returns.
 
-The lambda **captures `probe_label` by reference** (`[this, &probe_label]`). The `std::thread` is
-immediately `.detach()`-ed, making it fully independent of `Start()`'s call frame.
+The lambda **captures `probe_label` by reference** (`[this, &probe_label]`). The `std::thread` is immediately `.detach()`-ed, making it fully independent of `Start()`'s call frame.
 
 **Execution timeline:**
 
@@ -62,7 +64,7 @@ T+Nms   SIGSEGV / heap-use-after-free / memory corruption
 ### Why it is elusive
 
 | Property | Detail |
-|---|---|
+| --- | --- |
 | **Delayed trigger** | Crash occurs ≈ `flush_interval` (default 1 s) after `Start()` is called, not at startup. |
 | **Race-dependent** | If the stack frame of `Start()` is not reused before the thread wakes up, the corrupted read may silently return a stale (but non-trapping) value, deferring the crash further or masking it entirely. |
 | **Salt-dependent** | `probe_label` overflows SSO only when `client_hash_salt` is non-empty. With an empty salt the string `"analytics:probe::init"` is 21 characters — still above the libstdc++ SSO threshold of 15, so the heap path is always taken in practice. |
@@ -76,66 +78,115 @@ T+Nms   SIGSEGV / heap-use-after-free / memory corruption
 The crash fires when **all** of the following conditions are met simultaneously:
 
 1. `AnalyticsConfig::enabled == true` (default).
-2. `AnalyticsWorker::Start()` is called (happens at server startup when the analytics subsystem
-   is initialized in the composition root).
-3. The analytics worker survives for at least `flush_interval` milliseconds after `Start()` returns
-   (default: the first 1 000 ms of server lifetime).
+2. `AnalyticsWorker::Start()` is called (happens at server startup when the analytics subsystem is initialized in the composition root).
+3. The analytics worker survives for at least `flush_interval` milliseconds after `Start()` returns (default: the first 1 000 ms of server lifetime).
 4. The OS thread scheduler has not yet terminated the detached thread before it wakes.
 
-In a normal server run with the default configuration **all four conditions are met every time
-the server starts with analytics enabled**, making the crash nearly deterministic in a
-non-optimized build. In an optimized (`-O2`/`-O3`) production build compiler reuse of the stack
-frame is more aggressive, so the crash window is wider and the symptom may manifest as silent
-heap corruption several seconds later rather than an immediate segfault.
+In a normal server run with the default configuration **all four conditions are met every time the server starts with analytics enabled**, making the crash nearly deterministic in a non-optimized build. In an optimized (`-O2`/`-O3`) production build compiler reuse of the stack frame is more aggressive, so the crash window is wider and the symptom may manifest as silent heap corruption several seconds later rather than an immediate segfault.
 
 ---
 
 ## 4. Steps to Reproduce (STR)
 
-### Prerequisites
+### Prerequisites & Environment Setup
+
+To closely simulate a production environment where aggressive compiler optimizations accelerate stack frame reuse, compile the binary using Release with Debug Information (`RelWithDebInfo`). This creates the optimized execution paths while generating full debug symbols (`.pdb` on Windows or embedded symbols on Ubuntu) for forensic logging.
+
+#### Ubuntu (Linux) Setup
 
 ```bash
-# Build with Debug symbols (recommended for clear stack traces)
-mkdir -p build && cd build
-cmake .. -DCMAKE_BUILD_TYPE=Debug -DBUILD_TESTING=OFF
+# Build with Release optimizations and embedded debug symbols
+mkdir -p build_release && cd build_release
+cmake .. -DCMAKE_BUILD_TYPE=RelWithDebInfo -DBUILD_TESTING=OFF
 cmake --build . -j$(nproc)
+
+# Enable core dumps for the current shell session
+ulimit -c unlimited
+
 ```
 
-### Minimal reproduction
+#### Windows (MSVC) Setup
+
+```cmd
+:: Generate build files and compile the Release configuration with PDB symbols
+mkdir build_release && cd build_release
+cmake .. -DBUILD_TESTING=OFF
+cmake --build . --config RelWithDebInfo
+
+:: Configure Windows Error Reporting (WER) to save local crash dumps (Run PowerShell as Admin)
+powershell -Command "$path = 'HKLM:\SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps\url_shortener.exe'; if (-not (Test-Path $path)) { New-Item -Path $path -Force }; New-ItemProperty -Path $path -Name 'DumpFolder' -Value 'C:\CrashDumps' -PropertyType ExpandString -Force; New-ItemProperty -Path $path -Name 'DumpType' -Value 2 -PropertyType DWord -Force; New-Item -ItemType Directory -Force -Path 'C:\CrashDumps'"
+
+```
+
+---
+
+### Minimal Reproduction & Forensic Collection
+
+#### Execution on Ubuntu
 
 ```bash
-# Run with analytics enabled (default) — crash expected ~1 second after startup
-./url_shortener --port 8080
+# Run with analytics enabled (default) and pipe all streams to a log file
+./url_shortener --port 8080 > server_ubuntu.log 2>&1
+
 ```
 
-Expected output before crash:
+Expected log output inside `server_ubuntu.log` before the crash:
 
 ```
 {"level":"info","component":"main","event":"startup_begin"}
 {"level":"info","component":"main","event":"data_file_missing","path":"uri.txt"}
-# ... server starts, accepts connections ...
-# ~1 second later:
-Segmentation fault (core dumped)
+
 ```
+
+*The application will abort within ~1 second due to a `SIGSEGV`.*
+
+Extract the core dump file if managed by `systemd-coredump`:
+
+```bash
+coredumpctl dump url_shortener -o url_shortener_ubuntu.core
+
+```
+
+#### Execution on Windows
+
+```cmd
+:: Run the optimized executable and capture standard outputs
+url_shortener.exe --port 8080 > server_windows.log 2>&1
+
+```
+
+*The application will crash silently with an Access Violation code (`0xC0000005`).*
+
+Collect the forensic crash dump and symbols from their respective paths:
+
+* **Log file:** `server_windows.log`
+* **Symbols:** `build_release\RelWithDebInfo\url_shortener.pdb`
+* **Crash Dump:** `C:\CrashDumps\url_shortener.exe.<PID>.dmp`
+
+---
 
 ### Forced / accelerated reproduction
 
-Set `flush_interval` to a very short value via config to shorten the crash window to
-milliseconds:
+Set `flush_interval` to a very short value via config to shorten the crash window to milliseconds:
 
 ```bash
 # If a config file is supported, set analytics.flush_interval_ms = 10
 ./url_shortener --config /path/to/config.json
+
 ```
+
+---
 
 ### With AddressSanitizer (deterministic)
 
 ```bash
-cmake .. -DCMAKE_BUILD_TYPE=Debug \
+# Build with optimized RelWithDebInfo flags combined with AddressSanitizer
+cmake .. -DCMAKE_BUILD_TYPE=RelWithDebInfo \
          -DCMAKE_CXX_FLAGS="-fsanitize=address -fno-omit-frame-pointer" \
          -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address"
 cmake --build . -j$(nproc)
 ./url_shortener --port 8080
+
 ```
 
 ASan output (immediate, deterministic):
@@ -147,6 +198,7 @@ READ of size 8 at 0x... thread T2
     #1 0x... in url_shortener::analytics::AnalyticsWorker::Start()::{lambda()#1}::operator()() const
        src/analytics/AnalyticsWorker.cpp:22
     #2 0x... in std::thread::_State_impl<...>::_M_run()
+
 ```
 
 ---
@@ -159,10 +211,7 @@ git revert <commit-hash>
 git checkout main -- src/analytics/AnalyticsWorker.cpp
 ```
 
-The injected code is confined entirely to `AnalyticsWorker::Start()` in
-`src/analytics/AnalyticsWorker.cpp`. This change set also modifies
-`FAULT_INJECTION_LOG.md` and adds
-`tests/unit/analytics/16_analytics_worker_start_probe_uaf.cpp`.
+The injected code is confined entirely to `AnalyticsWorker::Start()` in `src/analytics/AnalyticsWorker.cpp`. This change set also modifies `FAULT_INJECTION_LOG.md` and adds `tests/unit/analytics/16_analytics_worker_start_probe_uaf.cpp`.
 
 ---
 
@@ -193,9 +242,7 @@ tests/unit/analytics/16_analytics_worker_start_probe_uaf.cpp(156): error:
 *** 1 failure is detected in the test module "AnalyticsWorkerStartProbeUAF"
 ```
 
-> The exact garbage value (e.g., `140429788944935`) varies by run; any value ≠ 24 confirms
-> the UAF. If the process instead crashes with `SIGSEGV` during the test, that is also
-> a confirmed UAF.
+> The exact garbage value (e.g., `140429788944935`) varies by run; any value ≠ 24 confirms the UAF. If the process instead crashes with `SIGSEGV` during the test, that is also a confirmed UAF.
 
 ---
 
@@ -246,8 +293,7 @@ cd build_debug   # or build_asan
 ctest -R "analytics__" -V 2>&1 | grep -E "PASS|FAIL|error"
 ```
 
-With the bug present, `analytics__16_analytics_worker_start_probe_uaf` will FAIL.
-All other analytics tests are expected to PASS.
+With the bug present, `analytics__16_analytics_worker_start_probe_uaf` will FAIL. All other analytics tests are expected to PASS.
 
 ---
 
