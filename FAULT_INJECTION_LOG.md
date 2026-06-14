@@ -96,7 +96,7 @@ To closely simulate a production environment where aggressive compiler optimizat
 
 ```bash
 # Build with Release optimizations and embedded debug symbols
-mkdir -p build_release && cd build_release
+mkdir -p cmake-build && cd cmake-build
 cmake .. -DCMAKE_BUILD_TYPE=RelWithDebInfo -DBUILD_TESTING=OFF
 cmake --build . -j$(nproc)
 
@@ -109,9 +109,9 @@ ulimit -c unlimited
 
 ```cmd
 :: Generate build files and compile the Release configuration with PDB symbols
-mkdir build_release && cd build_release
-cmake .. -DBUILD_TESTING=OFF
-cmake --build . --config RelWithDebInfo
+mkdir cmake-build && cd cmake-build
+cmake .. -G "Visual Studio 17 2022" -A x64 -DBUILD_TESTING=OFF -DCMAKE_TOOLCHAIN_FILE="C:\Program Files\Microsoft Visual Studio\2022\Community\VC\vcpkg\scripts\buildsystems\vcpkg.cmake" -DVCPKG_TARGET_TRIPLET=x64-windows
+cmake --build . --config RelWithDebInfo --target url_shortener
 
 :: Configure Windows Error Reporting (WER) to save local crash dumps (Run PowerShell as Admin)
 powershell -Command "$path = 'HKLM:\SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps\url_shortener.exe'; if (-not (Test-Path $path)) { New-Item -Path $path -Force }; New-ItemProperty -Path $path -Name 'DumpFolder' -Value 'C:\CrashDumps' -PropertyType ExpandString -Force; New-ItemProperty -Path $path -Name 'DumpType' -Value 2 -PropertyType DWord -Force; New-Item -ItemType Directory -Force -Path 'C:\CrashDumps'"
@@ -160,7 +160,7 @@ url_shortener.exe --port 8080 > server_windows.log 2>&1
 Collect the forensic crash dump and symbols from their respective paths:
 
 * **Log file:** `server_windows.log`
-* **Symbols:** `build_release\RelWithDebInfo\url_shortener.pdb`
+* **Symbols:** `cmake-build\RelWithDebInfo\url_shortener.pdb`
 * **Crash Dump:** `C:\CrashDumps\url_shortener.exe.<PID>.dmp`
 
 ---
