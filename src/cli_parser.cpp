@@ -384,7 +384,7 @@ ParseResult CliParser::parse(int argc, char* argv[]) const
     }
 
     if (!tls_client_auth_str.empty()) {
-        cfg.tls.client_auth_mode = parseClientAuthMode(tls_client_auth_str);
+        cfg.tls.client_auth_mode = url_shortener::parseClientAuthMode(tls_client_auth_str);
     }
 
     if (!shortener_allow_private_targets_str.empty()) {

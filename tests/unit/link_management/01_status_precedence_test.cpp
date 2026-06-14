@@ -1,7 +1,9 @@
 /** @file 01_status_precedence_test.cpp @brief Unit test: lifecycle status precedence resolves deleted > disabled > expired > active. */
 #define BOOST_TEST_MODULE LinkManagementStatusPrecedenceTest
 #include <boost/test/unit_test.hpp>
-#include "../../../src/url_shortener.cpp"
+#include <url_shortener/url_shortener.h>
+
+using namespace url_shortener;
 
 /**
  * [Unit][Link Management] Lifecycle status precedence is deterministic.

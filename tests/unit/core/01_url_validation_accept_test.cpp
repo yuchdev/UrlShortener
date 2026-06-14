@@ -1,7 +1,9 @@
 /** @file 01_url_validation_accept_test.cpp @brief Unit test: valid http/https absolute URLs are accepted. */
 #define BOOST_TEST_MODULE UrlValidationAcceptTest
 #include <boost/test/unit_test.hpp>
-#include "../../../src/url_shortener.cpp"
+#include <url_shortener/url_shortener.h>
+
+using namespace url_shortener;
 
 /**
  * [Unit][Core] URL validation accepts safe absolute HTTP(S) targets.

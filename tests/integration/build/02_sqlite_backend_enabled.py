@@ -13,6 +13,6 @@ proc = subprocess.run(
 )
 assert proc.returncode == 0, proc.stderr
 cache = (build / "CMakeCache.txt").read_text()
-assert "SOCI_SQLITE3:BOOL=ON" in cache or "WITH_SQLITE3:BOOL=ON" in cache
-assert "SOCI_POSTGRESQL:BOOL=ON" in cache or "WITH_POSTGRESQL:BOOL=ON" in cache
+assert any(token in cache for token in ("SOCI_SQLITE3:BOOL=ON", "SOCI_SQLITE3:STRING=ON", "WITH_SQLITE3:BOOL=ON", "WITH_SQLITE3:STRING=ON"))
+assert any(token in cache for token in ("SOCI_POSTGRESQL:BOOL=ON", "SOCI_POSTGRESQL:STRING=ON", "WITH_POSTGRESQL:BOOL=ON", "WITH_POSTGRESQL:STRING=ON"))
 print("ok")

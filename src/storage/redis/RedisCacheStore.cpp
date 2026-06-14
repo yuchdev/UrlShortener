@@ -1,5 +1,12 @@
 #include "url_shortener/storage/redis/RedisCacheStore.hpp"
 
+// struct timeval lives in <winsock2.h> on Windows and <sys/time.h> on POSIX.
+#if defined(_WIN32)
+#include <winsock2.h>
+#else
+#include <sys/time.h>
+#endif
+
 #if __has_include(<hiredis/hiredis.h>)
 #include <hiredis/hiredis.h>
 #elif __has_include(<hiredis.h>)

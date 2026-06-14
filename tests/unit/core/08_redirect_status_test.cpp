@@ -1,7 +1,10 @@
 /** @file 08_redirect_status_test.cpp @brief Unit test: redirect status selection from redirect type. */
 #define BOOST_TEST_MODULE RedirectStatusTest
 #include <boost/test/unit_test.hpp>
-#include "../../../src/url_shortener.cpp"
+#include <url_shortener/url_shortener.h>
+
+using namespace url_shortener;
+namespace http = boost::beast::http;
 
 /**
  * [Unit][Core] Redirect status maps correctly from redirect type.
