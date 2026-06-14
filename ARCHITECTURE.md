@@ -1,49 +1,60 @@
 # Architecture
 
-This document describes the **current** project structure and runtime architecture, plus how it maps to the planned low-latency URL shortener direction.
+This document describes the project structure and modular runtime architecture of the low-latency URL shortener.
 
-## 1) High-level architecture (current)
+## 1) High-level architecture
 
-The service is a single-process asynchronous network server:
+The service is a single-process asynchronous network server built with a modular design:
 
 - **Transport/runtime**: Boost.Asio + Boost.Beast.
 - **Security**: OpenSSL-backed TLS context for HTTPS.
-- **Application logic**: request routing + handlers in `src/url_shortener.cpp`.
-- **Storage**: process-local singleton map (`UriMapSingleton`) with best-effort file persistence (`uri.txt`) at shutdown.
+- **Core**: Domain types (`Link`, `ClickEvent`) and utilities in `include/url_shortener/core/`.
+- **HTTP**: Server, session handling, and request processing in `include/url_shortener/http/`.
+- **Storage**: Pluggable repository interface (`ILinkRepository`) with in-memory implementation in `include/url_shortener/storage/`.
+- **Analytics**: Asynchronous event queue for tracking redirect performance in `include/url_shortener/analytics/`.
 
-Data flow today:
+Data flow:
 
 1. `main.cpp` parses CLI flags into `ServerConfig`.
 2. `HttpServer` is constructed and starts HTTP/HTTPS accept loops.
-3. For each connection, a session reads one request, builds one response, and closes.
-4. Request handlers dispatch to:
-   - Stage-2 shortener routes (`/api/v1/short-urls`, `/r/{code}`), or
-   - legacy key-value URI routes (`/{uri}`).
-5. Storage calls go through `UriMapSingleton`.
+3. For each connection, a session (`PlainSession` or `TlsSession`) handles requests asynchronously.
+4. Request handlers in `request_handlers.cpp` dispatch to appropriate domain logic.
+5. Storage calls are handled by the active `ILinkRepository`.
+6. Analytics events are enqueued to `BoundedClickEventQueue` for background processing.
 
 ## 2) Source layout
 
 ```text
 .
 ├── include/url_shortener/
-│   ├── url_shortener.h          # public server/tls config + HttpServer interface
-│   └── uri_map_singleton.h    # in-memory singleton storage interface
+│   ├── core/
+│   │   ├── types.h              # domain models and enums
+│   │   ├── config.h             # server and TLS configuration structs
+│   │   └── utils.h              # string, time, and validation helpers
+│   ├── http/
+│   │   ├── http_server.h        # main server lifecycle
+│   │   ├── http_session.h       # async session handling
+│   │   └── request_handlers.h   # HTTP routing and logic
+│   ├── storage/
+│   │   └── link_repository.h    # repository interface and singleton
+│   ├── analytics/
+│   │   └── click_event_queue.h  # metrics collection queue
+│   └── url_shortener.h          # public facade (includes modular headers)
 ├── src/
-│   ├── main.cpp               # process entrypoint, args, signals, persistence lifecycle
-│   ├── url_shortener.cpp        # protocol handling, routing, TLS setup, sessions
-│   └── uri_map_singleton.cpp  # storage implementation + file serialize/deserialize
-├── test/http_client_test/
-│   └── http_client_test.py    # integration checks (HTTP/HTTPS behavior)
-├── docs/roadmap/
-│   ├── 01-STAGE_URL_SHORTENER_CORE.md
-│   ├── 01-STAGE_HTTPS_IMPLEMENTATION_REPORT.md
-│   ├── 02-STAGE_API_IMPLEMENTATION_REPORT.md
-│   └── 02-STAGE_LINK_MANAGEMENT_FEATURES.md
-├── STAGE_03_TECHNICAL_SPEC.md
-├── STAGE_04_TECHNICAL_SPEC.md
-├── STAGE_05_TECHNICAL_SPEC.md
-├── CMakeLists.txt
-└── sources.cmake
+│   ├── core/
+│   │   └── utils.cpp            # utility implementations
+│   ├── http/
+│   │   ├── http_server.cpp
+│   │   ├── http_session.cpp
+│   │   └── request_handlers.cpp
+│   ├── storage/
+│   │   └── link_repository.cpp
+│   ├── analytics/
+│   │   └── click_event_queue.cpp
+│   └── main.cpp                 # process entrypoint
+├── tests/
+│   └── unit/                    # modular unit tests
+└── ARCHITECTURE.md
 ```
 
 ## 3) Runtime components
@@ -51,82 +62,28 @@ Data flow today:
 ### 3.1 Entrypoint and lifecycle (`src/main.cpp`)
 
 Responsibilities:
-
-- Parse CLI options into `ServerConfig` + `TlsConfig`.
+- Parse CLI options into `ServerConfig`.
 - Initialize `boost::asio::io_context`.
-- Restore persisted in-memory map from `uri.txt` (if present).
-- Start HTTP/HTTPS listeners via `HttpServer::run()`.
-- Handle process signals:
-  - `SIGINT`/`SIGTERM`: stop server, persist map, stop io context.
-  - `SIGHUP` (unix): reload TLS context.
+- Restore persisted data if applicable.
+- Manage process signals (`SIGINT`, `SIGTERM`, `SIGHUP`).
 
-### 3.2 Server and networking (`src/url_shortener.cpp`)
+### 3.2 Server and sessions (`src/http/`)
 
-Responsibilities:
+The `HttpServer` manages the lifecycle of listeners. It spawns `PlainSession` or `TlsSession` objects which handle the asynchronous read/write loop for each connection.
 
-- Build and validate TLS context.
-- Start accept loops for HTTP and optional HTTPS.
-- Spawn session objects (`PlainSession`, `TlsSession`) per accepted socket.
-- Parse HTTP requests and construct responses.
-- Route requests between shortener endpoints and legacy storage endpoints.
+### 3.3 Request Handling
 
-Notable behavior:
+`handleShortenerRequest` provides the primary API for:
+- Link creation and management (`/api/v1/links`).
+- Redirect resolution (`/r/{slug}` or root redirects).
+- System health and metrics (`/healthz`, `/metrics`).
 
-- Optional HTTP-to-HTTPS redirect mode.
-- Optional HSTS on TLS responses.
-- TLS handshake success/failure counters, emitted during shutdown.
+### 3.4 Storage and Analytics
 
-### 3.3 Request handling model
-
-`handleShortenerRequest(...)` handles:
-
-- `POST /api/v1/short-urls`
-- `GET /api/v1/short-urls/{code}`
-- `DELETE /api/v1/short-urls/{code}`
-- `GET /r/{code}`
-
-Fallback dispatch goes to `handleApplicationRequest(...)` for legacy `GET/POST/DELETE /{uri}` map operations.
-
-### 3.4 Storage (`UriMapSingleton`)
-
-Current storage model:
-
-- `std::unordered_map<std::string, std::pair<std::string, std::string>>`
-- keys are URI-like strings.
-- shortener records are stored under `/r/{code}` path keys with JSON payload body strings.
-- serialized to plain text file format with a simple marker (`RecordEnd`).
-
-Concurrency/performance implications:
-
-- Singleton map is not protected by mutexes in current implementation.
-- Data is process-local and non-shared across instances.
-- Suitable for early-stage prototypes but not for horizontally scaled production.
+Domain logic interacts with storage through the `linkRepository()` singleton. Performance-sensitive metrics are offloaded to the `analyticsQueue()` to ensure low-latency redirect responses.
 
 ## 4) Build/test system
 
-- CMake-based build (`CMakeLists.txt`, `sources.cmake`).
-- Boost bootstrap helper scripts (`boost.sh`, `boost.cmd`, `cmake/fetch-boost.cmake`).
-- Basic Python integration test script in `test/http_client_test/http_client_test.py`.
-
-## 5) Architectural gaps vs low-latency target
-
-To reach the intended low-latency shortener architecture, key changes are expected:
-
-- Introduce explicit `Link` domain model and repository abstraction.
-- Replace singleton map with thread-safe storage interface (in-memory + pluggable durable backend).
-- Move from ad-hoc JSON string parsing to robust serialization/validation strategy.
-- Add dedicated redirect fast path with measured latency budgets.
-- Add metrics/tracing and repeatable performance tests in CI.
-
-## 6) Suggested near-term evolution path
-
-1. **Domain boundary extraction**
-   - Create `Link`, validator, slug policy, and repository interface.
-2. **Storage abstraction**
-   - Keep in-memory adapter first, then add durable adapter behind the same interface.
-3. **Routing split**
-   - Separate legacy key-value routes from shortener routes into explicit modules.
-4. **Latency hardening**
-   - Add benchmark harness and optimize redirect path for allocations/locks.
-5. **Ops hardening**
-   - Expand observability, health checks, and rollout safety knobs.
+- CMake-based build using `sources.cmake` to manage the modular file list.
+- Comprehensive unit test suite covering core utilities, validation, and link management.
+- Integration tests via Python script for full-stack verification.

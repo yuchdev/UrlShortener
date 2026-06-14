@@ -2,7 +2,9 @@
 #define BOOST_TEST_MODULE LinkManagementTagValidationTest
 #include <boost/test/unit_test.hpp>
 #include <vector>
-#include "../../../src/url_shortener.cpp"
+#include <url_shortener/url_shortener.h>
+
+using namespace url_shortener;
 
 /**
  * [Unit][Link Management] Tag validation enforces normalization and constraints.

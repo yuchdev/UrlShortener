@@ -1,8 +1,13 @@
 set(URL_SHORTENER_CPP
         ${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/cli_parser.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/url_shortener.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/uri_map_singleton.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/core/utils.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/analytics/click_event_queue.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/storage/link_repository.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/http/http_server.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/http/request_handlers.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/http/http_session.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/observability/LogLevel.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/observability/LoggingConfig.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/observability/LogFields.cpp
@@ -13,6 +18,13 @@ set(URL_SHORTENER_CPP
 set(URL_SHORTENER_H
         ${CMAKE_CURRENT_SOURCE_DIR}/include/url_shortener/url_shortener.h
         ${CMAKE_CURRENT_SOURCE_DIR}/include/url_shortener/uri_map_singleton.h
+        ${CMAKE_CURRENT_SOURCE_DIR}/include/url_shortener/core/types.h
+        ${CMAKE_CURRENT_SOURCE_DIR}/include/url_shortener/core/utils.h
+        ${CMAKE_CURRENT_SOURCE_DIR}/include/url_shortener/analytics/click_event_queue.h
+        ${CMAKE_CURRENT_SOURCE_DIR}/include/url_shortener/storage/link_repository.h
+        ${CMAKE_CURRENT_SOURCE_DIR}/include/url_shortener/http/http_server.h
+        ${CMAKE_CURRENT_SOURCE_DIR}/include/url_shortener/http/request_handlers.h
+        ${CMAKE_CURRENT_SOURCE_DIR}/include/url_shortener/http/http_session.h
         ${CMAKE_CURRENT_SOURCE_DIR}/include/url_shortener/cli/cli_parser.h
         ${CMAKE_CURRENT_SOURCE_DIR}/include/url_shortener/observability/LogLevel.h
         ${CMAKE_CURRENT_SOURCE_DIR}/include/url_shortener/observability/LoggingConfig.h

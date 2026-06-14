@@ -41,16 +41,21 @@ if(NOT yaml-cpp_FOUND)
   )
   FetchContent_MakeAvailable(yaml-cpp)
 endif()
-find_library(HIREDIS_LIB hiredis)
-if(NOT HIREDIS_LIB)
-  include(FetchContent)
-  FetchContent_Declare(
-      hiredis
-      GIT_REPOSITORY https://github.com/redis/hiredis.git
-      GIT_TAG v1.2.0
-  )
-  FetchContent_MakeAvailable(hiredis)
-  set(HIREDIS_LIB hiredis)
+find_package(hiredis CONFIG QUIET)
+if(hiredis_FOUND)
+  set(HIREDIS_LIB hiredis::hiredis)
+else()
+  find_library(HIREDIS_LIB hiredis)
+  if(NOT HIREDIS_LIB)
+    include(FetchContent)
+    FetchContent_Declare(
+        hiredis
+        GIT_REPOSITORY https://github.com/redis/hiredis.git
+        GIT_TAG v1.2.0
+    )
+    FetchContent_MakeAvailable(hiredis)
+    set(HIREDIS_LIB hiredis)
+  endif()
 endif()
 include(cmake/FetchSOCI.cmake)
 fetch_soci_sqlite_and_postgres()
@@ -58,13 +63,16 @@ fetch_soci_sqlite_and_postgres()
 # ---- Declare executable ----
 include(sources.cmake)
 
-add_executable(url_shortener ${URL_SHORTENER_SOURCES})
+add_executable(url_shortener ${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp)
 add_executable(url_shortener::exe ALIAS url_shortener)
 
 set_property(TARGET url_shortener PROPERTY OUTPUT_NAME url_shortener)
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 
 target_compile_features(url_shortener PRIVATE cxx_std_17)
+if(MSVC)
+    target_compile_options(url_shortener PRIVATE /bigobj)
+endif()
 
 if(MSVC)
     add_compile_options(/bigobj)
@@ -82,11 +90,8 @@ target_include_directories(url_shortener
 
 target_link_libraries(url_shortener
     PRIVATE
-        Boost::system
-        Boost::program_options
+        url_shortener_common
         OpenSSL::SSL
-        OpenSSL::Crypto
-        Threads::Threads
 )
 
 # ---- Tests ----
@@ -341,6 +346,14 @@ if(BUILD_TESTING)
 
   set(COMMON_CPP_SOURCES
       ${SECURITY_SOURCES}
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/cli_parser.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/uri_map_singleton.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/core/utils.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/analytics/click_event_queue.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/storage/link_repository.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/http/http_server.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/http/request_handlers.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/http/http_session.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/core/LinkService.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/storage/inmemory/InMemoryMetadataRepository.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/storage/inmemory/InMemoryCacheStore.cpp
@@ -385,6 +398,23 @@ if(BUILD_TESTING)
       ${CMAKE_CURRENT_SOURCE_DIR}/src/observability/LoggerFactory.cpp
   )
 
+  add_library(url_shortener_common STATIC ${COMMON_CPP_SOURCES})
+  target_compile_features(url_shortener_common PRIVATE cxx_std_17)
+  target_include_directories(url_shortener_common PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+  target_link_libraries(url_shortener_common
+    PUBLIC
+        Boost::system
+        Boost::program_options
+        OpenSSL::SSL
+        OpenSSL::Crypto
+        Threads::Threads
+        SOCI::soci_core
+        SOCI::soci_sqlite3
+        SOCI::soci_postgresql
+        ${HIREDIS_LIB}
+        yaml-cpp::yaml-cpp
+  )
+
   set(ALL_UNIT_SOURCES
       ${CORE_BASIC_UNIT_SOURCES}
       ${LINK_MANAGEMENT_UNIT_SOURCES}
@@ -394,23 +424,13 @@ if(BUILD_TESTING)
     get_filename_component(unit_name ${unit_src} NAME_WE)
     add_executable(${unit_name}
         ${CMAKE_CURRENT_SOURCE_DIR}/${unit_src}
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/uri_map_singleton.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/observability/LogLevel.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/observability/LoggingConfig.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/observability/LogFields.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/observability/Logger.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/observability/LoggerFactory.cpp
     )
     target_compile_features(${unit_name} PRIVATE cxx_std_17)
     target_include_directories(${unit_name} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
     target_link_libraries(${unit_name}
       PRIVATE
-        Boost::system
-        Boost::program_options
+        url_shortener_common
         Boost::unit_test_framework
-        OpenSSL::SSL
-        OpenSSL::Crypto
-        Threads::Threads
     )
     add_test(NAME ${unit_name} COMMAND ${unit_name})
     set_tests_properties(${unit_name} PROPERTIES LABELS "unit")
@@ -428,7 +448,6 @@ if(BUILD_TESTING)
       set(cpp_test_target "${cpp_test_parent}__${cpp_test_name}")
       add_executable(${cpp_test_target}
           ${CMAKE_CURRENT_SOURCE_DIR}/${cpp_test_src}
-          ${COMMON_CPP_SOURCES}
       )
       target_compile_features(${cpp_test_target} PRIVATE cxx_std_17)
       target_include_directories(${cpp_test_target} PRIVATE
@@ -437,17 +456,8 @@ if(BUILD_TESTING)
       )
       target_link_libraries(${cpp_test_target}
         PRIVATE
-          Boost::system
-          Boost::program_options
+          url_shortener_common
           Boost::unit_test_framework
-          OpenSSL::SSL
-          OpenSSL::Crypto
-          Threads::Threads
-          SOCI::soci_core
-          SOCI::soci_sqlite3
-          SOCI::soci_postgresql
-          ${HIREDIS_LIB}
-          yaml-cpp
       )
       add_test(NAME ${cpp_test_target} COMMAND ${cpp_test_target})
       set_tests_properties(${cpp_test_target} PROPERTIES LABELS "${label}")
