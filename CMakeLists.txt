@@ -70,9 +70,6 @@ set_property(TARGET url_shortener PROPERTY OUTPUT_NAME url_shortener)
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 
 target_compile_features(url_shortener PRIVATE cxx_std_17)
-if(MSVC)
-    target_compile_options(url_shortener PRIVATE /bigobj)
-endif()
 
 if(MSVC)
     add_compile_options(/bigobj)

@@ -4,6 +4,7 @@
 #include <url_shortener/core/utils.h>
 #include <url_shortener/core/config.h>
 #include <algorithm>
+#include <cctype>
 #include <chrono>
 #include <iomanip>
 #include <random>
@@ -14,6 +15,8 @@
 #include <openssl/evp.h>
 
 namespace url_shortener {
+
+namespace http = boost::beast::http;
 
 std::time_t timegm_utc(std::tm* tm)
 {
@@ -602,6 +605,86 @@ LinkStatus resolveLinkStatus(const Link& link)
         return LinkStatus::expired;
     }
     return LinkStatus::active;
+}
+
+boost::beast::http::status redirectStatusFor(const Link& link)
+{
+    return link.redirect_type == RedirectType::permanent
+        ? boost::beast::http::status::moved_permanently
+        : boost::beast::http::status::found;
+}
+
+// Validation and Guard hooks
+bool validateTags(std::vector<std::string>& tags)
+{
+    if (tags.size() > 20) {
+        return false;
+    }
+
+    std::vector<std::string> normalized;
+    normalized.reserve(tags.size());
+    std::unordered_set<std::string> seen;
+
+    for (const auto& raw_tag : tags) {
+        std::string tag = trim(raw_tag);
+        if (tag.empty()) {
+            continue;
+        }
+        if (tag.size() > 32) {
+            return false;
+        }
+
+        for (char c : tag) {
+            if (!std::isalnum(static_cast<unsigned char>(c)) && c != '-' && c != '_') {
+                return false;
+            }
+        }
+
+        if (seen.insert(tag).second) {
+            normalized.push_back(tag);
+        }
+    }
+
+    tags = std::move(normalized);
+    return true;
+}
+
+bool validateMetadata(const std::unordered_map<std::string, std::string>& metadata)
+{
+    if (metadata.size() > 50) {
+        return false;
+    }
+    for (const auto& [key, value] : metadata) {
+        if (key.empty() || key.size() > 64 || value.size() > 512) {
+            return false;
+        }
+    }
+    return true;
+}
+
+static bool validateCampaignField(const std::optional<std::string>& field)
+{
+    return !field.has_value() || field->size() <= 128;
+}
+
+bool validateCampaign(const std::optional<Link::Campaign>& campaign)
+{
+    if (!campaign.has_value()) {
+        return true;
+    }
+    const auto& c = *campaign;
+    return validateCampaignField(c.name) && validateCampaignField(c.source) && validateCampaignField(c.medium)
+        && validateCampaignField(c.term) && validateCampaignField(c.content) && validateCampaignField(c.id);
+}
+
+bool passwordGuardCheck(const Link&, const boost::beast::http::request<boost::beast::http::string_body>&)
+{
+    return true;
+}
+
+bool rateLimitGuardAllow(const Link&, const boost::beast::http::request<boost::beast::http::string_body>&)
+{
+    return true;
 }
 
 } // namespace url_shortener

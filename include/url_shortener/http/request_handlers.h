@@ -5,16 +5,14 @@
 #include <atomic>
 #include <mutex>
 #include <map>
+#include <functional>
 #include <boost/beast/http.hpp>
 #include <boost/asio/ssl/context.hpp>
 #include <url_shortener/core/types.h>
 #include <url_shortener/core/config.h>
+#include <url_shortener/core/utils.h>
 
 namespace url_shortener {
-
-namespace beast = boost::beast;
-namespace http = beast::http;
-namespace ssl = boost::asio::ssl;
 
 struct RequestContext
 {
@@ -39,41 +37,45 @@ MetricsRegistry& metricsRegistry();
 
 std::string renderMetrics();
 
-http::response<http::string_body> makeResponse(
-    const http::request<http::string_body>& req,
+boost::beast::http::response<boost::beast::http::string_body> makeResponse(
+    const boost::beast::http::request<boost::beast::http::string_body>& req,
     const ServerConfig& config,
     const bool is_tls,
     const unsigned int status,
     const std::string& body,
     const std::string& content_type);
 
-http::response<http::string_body> makeApiErrorResponse(
-    const http::request<http::string_body>& req,
+boost::beast::http::response<boost::beast::http::string_body> makeApiErrorResponse(
+    const boost::beast::http::request<boost::beast::http::string_body>& req,
     const ServerConfig& config,
     const bool is_tls,
     const unsigned status,
     const std::string& code,
     const std::string& message);
 
-http::response<http::string_body> makeRedirectResponse(
-    const http::request<http::string_body>& req,
+boost::beast::http::response<boost::beast::http::string_body> makeRedirectResponse(
+    const boost::beast::http::request<boost::beast::http::string_body>& req,
     const ServerConfig& config);
 
-http::response<http::string_body> handleShortenerRequest(
-    const http::request<http::string_body>& req,
+boost::beast::http::response<boost::beast::http::string_body> handleShortenerRequest(
+    const boost::beast::http::request<boost::beast::http::string_body>& req,
     const ServerConfig& config,
     const bool is_tls);
 
-http::response<http::string_body> handleApplicationRequest(
-    const http::request<http::string_body>& req,
+boost::beast::http::response<boost::beast::http::string_body> handleApplicationRequest(
+    const boost::beast::http::request<boost::beast::http::string_body>& req,
     const ServerConfig& config,
     const bool is_tls);
+
+std::optional<std::string> generateUniqueSlug(
+    const ServerConfig& config,
+    const std::function<std::string(uint32_t)>& generator = url_shortener::generateSlug);
 
 // Helpers for sessions and server
-std::string resolveRequestId(const http::request<http::string_body>& req, const ServerConfig& config);
-std::string requestIdFromRequest(const http::request<http::string_body>& req);
+std::string resolveRequestId(const boost::beast::http::request<boost::beast::http::string_body>& req, const ServerConfig& config);
+std::string requestIdFromRequest(const boost::beast::http::request<boost::beast::http::string_body>& req);
 std::string routeLabelFor(const std::string& target);
-void recordHttpMetric(const http::request<http::string_body>& req, const std::string& route_label, const unsigned status);
+void recordHttpMetric(const boost::beast::http::request<boost::beast::http::string_body>& req, const std::string& route_label, const unsigned status);
 void logStructured(const std::string& level, const std::string& msg, const std::map<std::string, std::string>& fields);
 void configureTlsVersion(boost::asio::ssl::context& context, const std::string& min_version);
 uint64_t certExpiryDaysRemaining(const std::string& cert_path);

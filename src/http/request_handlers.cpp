@@ -8,6 +8,8 @@
 #include <openssl/x509.h>
 #include <openssl/pem.h>
 #include <algorithm>
+#include <functional>
+#include <cctype>
 #include <filesystem>
 #include <iomanip>
 #include <random>
@@ -28,12 +30,6 @@ static constexpr std::string_view short_redirect_prefix = "/r/";
 static constexpr std::string_view request_id_header = "X-Request-Id";
 static constexpr std::string_view internal_request_id_header = "X-Internal-Request-Id";
 
-static http::status redirectStatusFor(const Link& link)
-{
-    return link.redirect_type == RedirectType::permanent
-        ? http::status::moved_permanently
-        : http::status::found;
-}
 
 static std::string sanitizeLogValue(std::string value)
 {
@@ -193,60 +189,10 @@ static std::optional<Link::Campaign> extractCampaign(const std::string& body)
     return campaign;
 }
 
-static bool validateTags(const std::vector<std::string>& tags)
-{
-    if (tags.size() > 20) {
-        return false;
-    }
-    for (const auto& tag : tags) {
-        if (tag.empty() || tag.size() > 32) {
-            return false;
-        }
-    }
-    return true;
-}
 
-static bool validateMetadata(const std::unordered_map<std::string, std::string>& metadata)
-{
-    if (metadata.size() > 50) {
-        return false;
-    }
-    for (const auto& [key, value] : metadata) {
-        if (key.empty() || key.size() > 64 || value.size() > 512) {
-            return false;
-        }
-    }
-    return true;
-}
-
-static bool validateCampaignField(const std::optional<std::string>& field)
-{
-    return !field.has_value() || field->size() <= 128;
-}
-
-static bool validateCampaign(const std::optional<Link::Campaign>& campaign)
-{
-    if (!campaign.has_value()) {
-        return true;
-    }
-    const auto& c = *campaign;
-    return validateCampaignField(c.name) && validateCampaignField(c.source) && validateCampaignField(c.medium)
-        && validateCampaignField(c.term) && validateCampaignField(c.content) && validateCampaignField(c.id);
-}
-
-static bool passwordGuardCheck(const Link&, const http::request<http::string_body>&)
-{
-    return true;
-}
-
-static bool rateLimitGuardAllow(const Link&, const http::request<http::string_body>&)
-{
-    return true;
-}
-
-static std::optional<std::string> generateUniqueSlug(
+std::optional<std::string> generateUniqueSlug(
     const ServerConfig& config,
-    const std::function<std::string(uint32_t)>& generator = url_shortener::generateSlug)
+    const std::function<std::string(uint32_t)>& generator)
 {
     for (int attempt = 0; attempt < 20; ++attempt) {
         const auto candidate = generator(config.shortener_generated_slug_length);

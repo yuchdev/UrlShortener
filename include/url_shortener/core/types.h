@@ -5,6 +5,7 @@
 #include <optional>
 #include <unordered_map>
 #include <cstdint>
+#include <ostream>
 
 namespace url_shortener {
 
@@ -14,6 +15,16 @@ enum class RedirectType
     permanent
 };
 
+inline std::ostream& operator<<(std::ostream& os, const RedirectType value)
+{
+    switch (value) {
+    case RedirectType::permanent: os << "permanent"; break;
+    case RedirectType::temporary: os << "temporary"; break;
+    default: os << "unknown"; break;
+    }
+    return os;
+}
+
 enum class LinkStatus
 {
     active,
@@ -22,6 +33,18 @@ enum class LinkStatus
     deleted
 };
 
+inline std::ostream& operator<<(std::ostream& os, const LinkStatus value)
+{
+    switch (value) {
+    case LinkStatus::deleted: os << "deleted"; break;
+    case LinkStatus::disabled: os << "disabled"; break;
+    case LinkStatus::expired: os << "expired"; break;
+    case LinkStatus::active: os << "active"; break;
+    default: os << "unknown"; break;
+    }
+    return os;
+}
+
 enum class RepoError
 {
     not_found,
@@ -29,6 +52,18 @@ enum class RepoError
     transient_failure,
     permanent_failure
 };
+
+inline std::ostream& operator<<(std::ostream& os, const RepoError value)
+{
+    switch (value) {
+    case RepoError::not_found: os << "not_found"; break;
+    case RepoError::already_exists: os << "already_exists"; break;
+    case RepoError::transient_failure: os << "transient_failure"; break;
+    case RepoError::permanent_failure: os << "permanent_failure"; break;
+    default: os << "unknown"; break;
+    }
+    return os;
+}
 
 struct Link
 {

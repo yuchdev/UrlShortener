@@ -7,9 +7,16 @@
 #include <boost/beast/http.hpp>
 #include <boost/asio/dispatch.hpp>
 #include <boost/asio/strand.hpp>
+#include <openssl/ssl.h>
 #include <chrono>
 
 namespace url_shortener {
+
+namespace beast = boost::beast;
+namespace http = beast::http;
+namespace net = boost::asio;
+using tcp = net::ip::tcp;
+namespace ssl = net::ssl;
 
 namespace {
 constexpr auto request_timeout = std::chrono::seconds(30);

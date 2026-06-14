@@ -5,6 +5,7 @@
 #include <vector>
 #include <unordered_map>
 #include <ctime>
+#include <chrono>
 #include <boost/beast/http.hpp>
 #include <url_shortener/core/types.h>
 #include <url_shortener/core/config.h>
@@ -12,7 +13,6 @@
 namespace url_shortener {
 
 // Forward declaration
-namespace http = boost::beast::http;
 
 // Time utilities
 std::time_t timegm_utc(std::tm* tm);
@@ -45,8 +45,8 @@ std::string hashClientIdentifier(const std::string& raw_client, const std::strin
 
 // HTTP helpers
 std::optional<std::string> headerString(
-    const http::request<http::string_body>& req,
-    const http::field field,
+    const boost::beast::http::request<boost::beast::http::string_body>& req,
+    const boost::beast::http::field field,
     const size_t max_len);
 
 // JSON helpers
@@ -68,5 +68,13 @@ std::string linkStatusToString(const LinkStatus status);
 
 // Link utilities
 LinkStatus resolveLinkStatus(const Link& link);
+boost::beast::http::status redirectStatusFor(const Link& link);
+
+// Validation and Guard hooks
+bool validateTags(std::vector<std::string>& tags);
+bool validateMetadata(const std::unordered_map<std::string, std::string>& metadata);
+bool validateCampaign(const std::optional<Link::Campaign>& campaign);
+bool passwordGuardCheck(const Link& link, const boost::beast::http::request<boost::beast::http::string_body>& req);
+bool rateLimitGuardAllow(const Link& link, const boost::beast::http::request<boost::beast::http::string_body>& req);
 
 } // namespace url_shortener
