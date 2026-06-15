@@ -462,3 +462,83 @@ thread_ = std::thread([this] { Run(); });
 **`src/main.cpp`** — remove the analytics worker startup block (after `server.run()`),
 remove the two analytics includes at the top of the file.
 
+---
+
+## 8. Dump Collection Setup
+
+The crash triggered by §7 terminates via `STATUS_FAST_FAIL` (`0xC0000409`).
+This exception code bypasses Windows Error Reporting entirely — a WER-only setup
+produces a 0-byte dump file. ProcDump must be used instead.
+
+### 8.1 One-step setup script
+
+Run from the repository root (no arguments needed for defaults):
+
+```powershell
+.\setup_dump_collection.ps1
+```
+
+The script:
+1. **Configures WER LocalDumps** (auto-elevates via UAC) for SEH-based crashes.
+2. **Downloads ProcDump** to `C:\Tools` if not already present.
+3. **Prints the exact capture command** for `url_shortener.exe`.
+
+Options:
+
+| Parameter | Default | Purpose |
+|---|---|---|
+| `-DumpDir` | `%LOCALAPPDATA%\CrashDumps` | Directory where dumps are written |
+| `-ToolsDir` | `C:\Tools` | Where `procdump64.exe` is installed |
+| `-DumpCount` | `5` | How many WER dumps to retain |
+| `-SkipWer` | off | Skip WER registry step (no UAC needed) |
+
+```powershell
+# Example: custom dump dir, no UAC prompt
+.\setup_dump_collection.ps1 -DumpDir D:\Dumps -SkipWer
+```
+
+### 8.2 Capturing the §7 crash
+
+After running `setup_dump_collection.ps1`, capture the crash with:
+
+```powershell
+C:\Tools\procdump64.exe -accepteula -e 1 -ma `
+    -x "$env:LOCALAPPDATA\CrashDumps" `
+    ".\cmake-build\RelWithDebInfo\url_shortener.exe" "--http-port" "8080"
+```
+
+Expected console output:
+
+```
+[HH:MM:SS] Unhandled: C0000409
+[HH:MM:SS] Dump 1 initiated: url_shortener.exe_YYMMDD_HHMMSS.dmp
+[HH:MM:SS] Dump 1 complete: ~32 MB written
+```
+
+### 8.3 Verifying a collected dump
+
+```powershell
+Get-ChildItem "$env:LOCALAPPDATA\CrashDumps" -Filter "*.dmp" |
+    Select-Object Name, LastWriteTime, @{N="MB";E={[math]::Round($_.Length/1MB,1)}}
+```
+
+A valid dump is **≥ 30 MB** (full minidump with heap).  
+A 0-byte file indicates WER fired but `STATUS_FAST_FAIL` prevented writing — use ProcDump.
+
+### 8.4 Analysing the dump
+
+**WinDbg:**
+```
+windbg -z <path-to>.dmp
+!analyze -v
+~*kv
+```
+
+Expected crashing frame: `std::thread::~thread` called from
+`url_shortener::analytics::AnalyticsWorker::Start` on a joinable `queue_probe` thread.
+
+**Visual Studio:** File → Open → File → select `.dmp` → Debug with Native Only.  
+Requires `cmake-build\RelWithDebInfo\url_shortener.pdb` to be present for source mapping.
+
+For full dump-type reference and Linux core dump instructions see `CRASH_DUMP_GUIDE.md`.
+
