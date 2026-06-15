@@ -4,7 +4,37 @@
 
 **Target file:** `src/analytics/AnalyticsWorker.cpp`
 
-**Bug archetype:** Asynchronous Lambda Reference Capture (Use-After-Free)
+---
+
+## ⚠ Forensic Addendum — Why Original Bug Did Not Crash
+
+**Date:** 2026-06-15  
+**Finding author:** Investigation of `feature/fault-injection-aegis`
+
+### Root cause 1 (primary): `AnalyticsWorker` not wired into the server binary
+
+`AnalyticsWorker::Start()` is never called during server startup.  
+`main.cpp` instantiates only `HttpServer`; it has no reference to `AnalyticsWorker`.  
+No code in `src/` outside of `src/analytics/AnalyticsWorker.cpp` itself instantiates or
+starts a worker. The fault injection can only manifest inside unit tests, not in the
+live server process.
+
+### Root cause 2 (secondary): probe capture was silently patched to by-value
+
+The injection log below specifies `[this, &probe_label]` (reference capture — UAF).  
+The actual committed code uses `[probe_delay, probe_label, &metrics]` (value capture
+for `probe_label` — no UAF). Whether this was an oversight during injection or a
+subsequent hotfix, the lambda no longer holds a dangling reference.
+
+### Resolution
+
+The `probe_label` fix (value capture) is retained. A **replacement subtle bug** of a
+different thread-safety archetype has been introduced in `Start()` to satisfy the
+forensic exercise. See **Section 7** below.
+
+---
+
+**Original Bug archetype:** Asynchronous Lambda Reference Capture (Use-After-Free)
 
 **Severity:** Fatal — produces `SIGSEGV` (or heap corruption leading to `std::terminate`)
 
@@ -326,3 +356,109 @@ ulimit -c unlimited
 # After crash:
 gdb ./url_shortener core -ex "thread apply all bt" -ex quit
 ```
+
+---
+
+## 7. Replacement Bug — Unjoined Local Thread (`std::terminate` on `Start()` return)
+
+**Date injected:** 2026-06-15  
+**Archetype:** Joinable Thread Destructor (`std::terminate`)  
+**Severity:** Fatal — `std::terminate()` → `std::abort()` / `STATUS_FAST_FAIL (0xC0000409)`
+
+### 7.1 Injected code (in `AnalyticsWorker::Start()`)
+
+```cpp
+// One-shot startup validation: verify the queue is in a consistent state
+// before the persistent worker takes over.
+std::thread queue_probe([this]() {
+    metrics_.SetQueueDepth(queue_.GetStats().depth);
+});
+
+thread_ = std::thread([this] { Run(); });
+// ← Start() returns here.  queue_probe goes out of scope.
+// std::thread::~thread() is called on a joinable thread → std::terminate().
+```
+
+### 7.2 Root-cause analysis
+
+In C++, destroying a `std::thread` object while it is **joinable** calls `std::terminate()`.
+A thread remains joinable from the moment it is constructed until `join()` or `detach()` is
+explicitly called — **even if its thread function has already returned**.
+
+`queue_probe` is a local variable in `Start()`. Its thread function is a trivial one-liner
+that likely completes in microseconds. But `queue_probe` is **never joined or detached**.
+When `Start()` returns, `queue_probe`'s destructor runs. Since `queue_probe.joinable()` is
+`true`, `std::terminate()` is invoked, which calls `std::abort()`.
+
+The crash is **100% deterministic** — it fires every time `Start()` returns, regardless of
+whether the thread function has actually finished executing.
+
+**Relationship to server wiring (`main.cpp`):**  
+`AnalyticsWorker::Start()` is now called from the server startup path in `main.cpp`,
+immediately after `HttpServer::run()` posts the HTTP listener. The startup sequence
+logs `http_listener_started`, then crashes before the `io_context.run()` event loop starts.
+
+### 7.3 Execution timeline
+
+```
+T+0ms   server.run() → HTTP listener starts → logs "http_listener_started"
+T+0ms   analytics_worker.Start() called
+T+0ms     state_ = Running
+T+0ms     detached probe thread spawned (sleeps flush_interval, irrelevant)
+T+0ms     queue_probe thread created (joinable) — thread function may complete immediately
+T+0ms     thread_ = std::thread([this] { Run(); })
+T+0ms   Start() body ends, function prepares to return
+T+0ms   ~std::thread() called on local queue_probe
+           queue_probe.joinable() == true (even if thread function already finished)
+           → std::terminate() → std::abort()
+T+0ms   Process terminates (STATUS_FAST_FAIL / SIGABRT)
+```
+
+### 7.4 Why it is elusive
+
+| Property | Detail |
+|---|---|
+| **Looks like defensive code** | `queue_probe` is introduced as a "startup validation" step; the thread function is a harmless queue depth read. Reviewers see intent, not a bug. |
+| **No join/detach is easy to miss** | Every other `std::thread` in `Start()` is properly handled (`.detach()` on the probe, `thread_ =` for the worker). The omission of `queue_probe.join()` looks like an oversight in otherwise careful code. |
+| **Thread may finish before destructor** | The `queue_probe` function runs in microseconds. A reader might reason: "it'll finish before `Start()` returns, so the destructor will see a finished thread — that's fine." But `joinable()` stays `true` regardless. |
+| **No compiler warning** | `-Wall`, `-Wextra`, `-Wthread-safety` produce no diagnostic for an unjoined `std::thread`. |
+| **Crash is immediate and reproducible** | Unlike the original probe UAF (which needed 1 second for the thread to sleep), this crash fires instantly and consistently every time. |
+
+### 7.5 Expected output before crash
+
+```
+ts=...Z level=INFO component=main msg=startup_begin
+ts=...Z level=INFO component=main msg=data_loaded path=uri.txt
+ts=...Z level=INFO component=http_server msg=http_listener_started
+[std::terminate → process exit -1073740791 (0xC0000409 STATUS_FAST_FAIL) on Windows]
+[std::terminate → SIGABRT on Linux]
+```
+
+### 7.6 Reproduce
+
+```powershell
+# Windows (RelWithDebInfo)
+.\cmake-build\RelWithDebInfo\url_shortener.exe --http-port 8080
+# → immediate crash after http_listener_started log line
+```
+
+```bash
+# Linux (RelWithDebInfo)
+cmake -S . -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo
+cmake --build build --target url_shortener
+./build/url_shortener --http-port 8080
+# → SIGABRT immediately after http_listener_started
+```
+
+### 7.7 Revert
+
+Two files must be reverted together:
+
+**`src/analytics/AnalyticsWorker.cpp`** — remove `queue_probe`, restore:
+```cpp
+thread_ = std::thread([this] { Run(); });
+```
+
+**`src/main.cpp`** — remove the analytics worker startup block (after `server.run()`),
+remove the two analytics includes at the top of the file.
+

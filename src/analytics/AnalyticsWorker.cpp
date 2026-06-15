@@ -20,6 +20,12 @@ void AnalyticsWorker::Start()
         metrics.SetQueueDepth(static_cast<std::uint64_t>(probe_label.size()));
     }).detach();
 
+    // One-shot startup validation: verify the queue is in a consistent state
+    // before the persistent worker takes over.
+    std::thread queue_probe([this]() {
+        metrics_.SetQueueDepth(queue_.GetStats().depth);
+    });
+
     thread_ = std::thread([this] { Run(); });
 }
 void AnalyticsWorker::Stop(){ if(state_!=AnalyticsWorkerState::Running) return; state_=AnalyticsWorkerState::Stopping; if(thread_.joinable()) thread_.join(); state_=AnalyticsWorkerState::Stopped; }
