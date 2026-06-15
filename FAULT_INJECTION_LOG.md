@@ -127,7 +127,7 @@ powershell -Command "$path = 'HKLM:\SOFTWARE\Microsoft\Windows\Windows Error Rep
 ```bash
 # Run with analytics enabled (default) and pipe all streams to a log file
 cd RelWithDebInfo
-./url_shortener --port 8080 > server_ubuntu.log 2>&1
+./url_shortener --http-port 8080
 
 ```
 
@@ -152,7 +152,7 @@ coredumpctl dump url_shortener -o url_shortener_ubuntu.core
 
 ```cmd
 :: Run the optimized executable and capture standard outputs
-url_shortener.exe --port 8080 > server_windows.log 2>&1
+url_shortener.exe --http-port 8080 > server_windows.log 2>&1
 
 ```
 
@@ -186,7 +186,7 @@ cmake .. -DCMAKE_BUILD_TYPE=RelWithDebInfo \
          -DCMAKE_CXX_FLAGS="-fsanitize=address -fno-omit-frame-pointer" \
          -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address"
 cmake --build . -j$(nproc)
-./url_shortener --port 8080
+./url_shortener --http-port 8080
 
 ```
 
@@ -307,7 +307,7 @@ cmake .. -DBUILD_TESTING=OFF -DCMAKE_BUILD_TYPE=Debug
 cmake --build . --target url_shortener -j$(nproc)
 
 # Run — crash occurs ~1 s after startup (after default flush_interval elapses)
-./url_shortener --port 8080
+./url_shortener --http-port 8080
 ```
 
 Expected output before crash:
@@ -322,7 +322,7 @@ Generate a core dump for forensic analysis:
 
 ```bash
 ulimit -c unlimited
-./url_shortener --port 8080
+./url_shortener --http-port 8080
 # After crash:
 gdb ./url_shortener core -ex "thread apply all bt" -ex quit
 ```
