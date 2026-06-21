@@ -8,33 +8,80 @@ The intended direction is to evolve this service into a **low-latency URL shorte
 
 The project requires:
 
-- C++17 compiler
+- C++17 compiler (GCC 9+, Clang 12+, or Apple Clang)
 - CMake 3.25+
 - Ninja (recommended generator)
-- Boost (with `system`, `program_options`, `unit_test_framework`)
+- Boost 1.74+ (with `system`, `program_options`, `unit_test_framework`)
 - OpenSSL
+- SQLite 3 development headers
+- PostgreSQL client development headers (`libpq`)
 - Python 3 (for integration tests)
-- Visual Studio 2022 (for Windows)
+- Visual Studio 2022 + vcpkg (Windows only)
+
+A few dependencies are fetched and built automatically at configure time via
+CMake `FetchContent`, so you do **not** need to install them yourself:
+
+- `yaml-cpp` (used unless a system package is found)
+- `hiredis` (used unless a system package is found)
+- `SOCI` (SQLite + PostgreSQL backends; always fetched)
+
+The first configure therefore clones and builds these from source and will take
+noticeably longer than subsequent builds.
 
 ## Build
 
-### Linux (Ubuntu 24.04/22.04)
+The build is a standard out-of-source CMake build. After installing the
+platform dependencies below, configure and build with:
+
+```bash
+cmake -B build -G Ninja
+cmake --build build
+```
+
+The server binary is produced at `build/url_shortener`.
+
+### Linux (Ubuntu 24.04 / 22.04)
+
+Install dependencies with the helper script:
 
 ```bash
 ./scripts/setup_ubuntu_dependencies.sh
 ```
 
-See `docs/setup/UBUNTU.md` for package details and troubleshooting.
+Or install them manually:
+
+```bash
+sudo apt-get update
+sudo apt-get install -y build-essential cmake ninja-build git pkg-config ca-certificates curl \
+    libssl-dev libboost-all-dev libsqlite3-dev libpq-dev python3
+```
+
+Then configure and build:
+
+```bash
+cmake -B build -G Ninja
+cmake --build build
+```
 
 ### macOS
 
-Install tools with Homebrew:
+Install the toolchain and libraries with Homebrew:
 
 ```bash
-brew install cmake ninja boost openssl python
+brew install cmake ninja boost openssl@3 sqlite libpq python
 ```
 
-If CMake cannot locate OpenSSL/Boost automatically, set `CMAKE_PREFIX_PATH` to your Homebrew prefix before configuring.
+OpenSSL and `libpq` are keg-only on macOS, so CMake may not find them
+automatically. Point CMake at the Homebrew prefixes when configuring:
+
+```bash
+mkdir cmake-build && cd cmake-build
+cmake .. -G Ninja -DCMAKE_PREFIX_PATH="$(brew --prefix openssl@3);$(brew --prefix libpq);$(brew --prefix sqlite)"
+cmake --build .
+```
+
+On Apple Silicon the Homebrew prefix is `/opt/homebrew`; on Intel Macs it is
+`/usr/local`. `brew --prefix` resolves this for you.
 
 ### Windows
 
@@ -350,4 +397,4 @@ ctest --test-dir build --output-on-failure
 - `ARCHITECTURE.md` - current architecture and layout.
 - `docs/storage/overview.md` - Stage 03 storage abstraction (scope 1) overview.
 - `docs/stages/` - staged specification documents.
-- `docs/setup/UBUNTU.md` - Ubuntu dependency/bootstrap guide.
+- `scripts/setup_ubuntu_dependencies.sh` - Ubuntu dependency bootstrap.
