@@ -5,6 +5,8 @@
 #include <url_shortener/analytics/click_event_queue.h>
 #include <url_shortener/uri_map_singleton.h>
 #include <url_shortener/observability/LoggerFactory.h>
+#include "url_shortener/storage/memory/InMemoryClickEventRepository.hpp"
+#include "url_shortener/http/AnalyticsStatsHandler.hpp"
 #include <openssl/x509.h>
 #include <openssl/pem.h>
 #include <algorithm>
@@ -29,6 +31,22 @@ static constexpr std::string_view shortener_api_compat_prefix = "/api/v1/short-u
 static constexpr std::string_view short_redirect_prefix = "/r/";
 static constexpr std::string_view request_id_header = "X-Request-Id";
 static constexpr std::string_view internal_request_id_header = "X-Internal-Request-Id";
+
+static storage::memory::InMemoryClickEventRepository& analyticsClickRepository() {
+    static storage::memory::InMemoryClickEventRepository instance;
+    return instance;
+}
+
+static std::string getQueryParam(const std::string& query_string, const std::string& key) {
+    const std::string prefix = key + "=";
+    const auto pos = query_string.find(prefix);
+    if (pos == std::string::npos) return {};
+    const auto val_start = pos + prefix.size();
+    const auto val_end = query_string.find('&', val_start);
+    return val_end == std::string::npos
+        ? query_string.substr(val_start)
+        : query_string.substr(val_start, val_end - val_start);
+}
 
 
 static std::string sanitizeLogValue(std::string value)
@@ -101,6 +119,18 @@ static void emitClickEvent(
     const std::string forwarded_for = req.base().count("X-Forwarded-For") ? std::string(req.base().at("X-Forwarded-For")) : "";
     const std::string client_source = forwarded_for.empty() ? "unknown" : url_shortener::clampString(forwarded_for, 128);
     event.client_id_hash = url_shortener::hashClientIdentifier(client_source, config.analytics_client_hash_salt);
+
+    analytics::ClickEvent analytics_event;
+    analytics_event.event_id = event.event_id;
+    analytics_event.occurred_at = std::chrono::system_clock::now();
+    analytics_event.slug = slug;
+    analytics_event.link_id = link.has_value() ? link->id : std::string{};
+    analytics_event.domain = event.domain;
+    analytics_event.status_code = status_code;
+    analytics_event.referrer = event.referrer.value_or(std::string{});
+    analytics_event.user_agent = event.user_agent.value_or(std::string{});
+    analytics_event.client_id_hash = event.client_id_hash;
+    analyticsClickRepository().InsertBatch({std::move(analytics_event)}, nullptr);
 
     (void)analyticsQueue(config).tryEnqueue(std::move(event));
 }
@@ -525,9 +555,12 @@ http::response<http::string_body> handleShortenerRequest(
 
     if (target.rfind(std::string(shortener_api_prefix) + '/', 0) == 0) {
         const std::string resource = target.substr(std::string(shortener_api_prefix).size() + 1);
-        const auto action_pos = resource.find('/');
-        const std::string slug = action_pos == std::string::npos ? resource : resource.substr(0, action_pos);
-        const std::string action = action_pos == std::string::npos ? "" : resource.substr(action_pos + 1);
+        const auto qs_pos = resource.find('?');
+        const std::string resource_path = qs_pos == std::string::npos ? resource : resource.substr(0, qs_pos);
+        const std::string query_string = qs_pos == std::string::npos ? std::string{} : resource.substr(qs_pos + 1);
+        const auto action_pos = resource_path.find('/');
+        const std::string slug = action_pos == std::string::npos ? resource_path : resource_path.substr(0, action_pos);
+        const std::string action = action_pos == std::string::npos ? "" : resource_path.substr(action_pos + 1);
 
         if (slug.empty()) {
             return makeApiErrorResponse(req, config, is_tls, 404, "not_found", "Link not found");
@@ -586,6 +619,17 @@ http::response<http::string_body> handleShortenerRequest(
         if (action == "stats") {
             if (req.method() != http::verb::get) {
                 return makeApiErrorResponse(req, config, is_tls, 400, "invalid_method", "Only GET is supported");
+            }
+            const std::string from_param = getQueryParam(query_string, "from");
+            const std::string to_param = getQueryParam(query_string, "to");
+            const std::string bucket_param = getQueryParam(query_string, "bucket");
+            if (!from_param.empty() && !to_param.empty() && !bucket_param.empty()) {
+                http::AnalyticsStatsHandler stats_handler(analyticsClickRepository());
+                std::string body;
+                int status = 500;
+                stats_handler.Handle(slug, from_param, to_param, bucket_param, &body, &status,
+                                     requestIdFromRequest(req));
+                return makeResponse(req, config, is_tls, static_cast<unsigned>(status), body, "application/json");
             }
             const auto link = url_shortener::getLinkForRead(slug);
             if (!link.has_value()) {
