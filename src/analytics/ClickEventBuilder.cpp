@@ -13,7 +13,8 @@ bool ClickEventBuilder::Build(const RedirectEventContext& context, const Sanitiz
         return false;
     }
     ClickEvent e;
-    e.event_id = boost::uuids::to_string(boost::uuids::random_generator()());
+    thread_local static boost::uuids::random_generator uuid_gen;
+    e.event_id = boost::uuids::to_string(uuid_gen());
     e.occurred_at = context.occurred_at;
     e.slug = context.slug;
     e.link_id = context.link_id;
