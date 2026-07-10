@@ -95,7 +95,7 @@ target_link_libraries(url_shortener
 
 # ---- Tests ----
 include(CTest)
-  # ---- Stage 1 unit tests: 8 standalone executables ----
+  # ---- Core basic unit tests: standalone executables ----
   set(CORE_BASIC_UNIT_SOURCES
       tests/unit/core/01_url_validation_accept_test.cpp
       tests/unit/core/02_url_validation_reject_test.cpp
@@ -479,7 +479,7 @@ include(CTest)
   register_labeled_cpp_tests(SQLITE_INTEGRATION_SOURCES  "integration")
   register_labeled_cpp_tests(PSQL_INTEGRATION_SOURCES    "integration")
   register_labeled_cpp_tests(REDIS_INTEGRATION_SOURCES   "integration")
-  # ---- Stage 1 integration tests: 8 standalone executables (Python scripts) ----
+  # ---- Core integration tests: standalone executables (Python scripts) ----
   set(LEGACY_CORE_INTEGRATION_SOURCES
       tests/integration/core/01_generated_slug_redirect_test.py
       tests/integration/core/02_custom_slug_get_by_id_slug_test.py
