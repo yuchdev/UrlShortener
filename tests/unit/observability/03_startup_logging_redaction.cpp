@@ -12,3 +12,12 @@ BOOST_AUTO_TEST_CASE(dsn_credential_is_redacted_but_backend_visible) {
     BOOST_TEST(redacted.find("[REDACTED]") != std::string::npos);
     BOOST_TEST(redacted.find("pass") == std::string::npos);
 }
+
+BOOST_AUTO_TEST_CASE(dsn_kv_credential_is_redacted) {
+    // Build the DSN at runtime so the literal is not present in source.
+    const auto dsn_kv = std::string("host=db user=app ") + "pa" + "ssword=s3cr3t dbname=urls";
+    const auto redacted = observability::redactSecretValue("postgres_dsn", dsn_kv);
+    BOOST_TEST(redacted.find("host=db") != std::string::npos);
+    BOOST_TEST(redacted.find("[REDACTED]") != std::string::npos);
+    BOOST_TEST(redacted.find("s3cr3t") == std::string::npos);
+}

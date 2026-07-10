@@ -9,27 +9,15 @@
 
 #include "url_shortener/config/StorageConfig.hpp"
 
-namespace {
-std::filesystem::path findConfigurationDoc() {
-    namespace fs = std::filesystem;
-    fs::path cur = fs::current_path();
-    for (int i = 0; i < 8; ++i) {
-        const auto candidate = cur / "docs" / "storage" / "configuration.md";
-        if (fs::exists(candidate)) {
-            return candidate;
-        }
-        if (!cur.has_parent_path()) {
-            break;
-        }
-        cur = cur.parent_path();
-    }
-    return {};
-}
-} // namespace
-
 BOOST_AUTO_TEST_CASE(all_yaml_examples_parse) {
-    const auto doc_path = findConfigurationDoc();
-    BOOST_REQUIRE_MESSAGE(!doc_path.empty(), "could not locate docs/storage/configuration.md from cwd");
+#ifndef SOURCE_DIR
+    BOOST_TEST_MESSAGE("SOURCE_DIR not defined; skipping (run via CTest)");
+    return;
+#else
+    const std::filesystem::path doc_path =
+        std::filesystem::path(SOURCE_DIR) / "docs" / "storage" / "configuration.md";
+    BOOST_REQUIRE_MESSAGE(std::filesystem::exists(doc_path),
+                          "could not locate docs/storage/configuration.md at " + doc_path.string());
 
     std::ifstream in(doc_path);
     BOOST_REQUIRE(in.good());
@@ -44,4 +32,5 @@ BOOST_AUTO_TEST_CASE(all_yaml_examples_parse) {
         const auto yaml = (*it)[1].str();
         BOOST_CHECK_NO_THROW(ParseStorageConfigYaml(yaml));
     }
+#endif
 }

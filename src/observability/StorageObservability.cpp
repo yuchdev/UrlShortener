@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <regex>
 
 namespace {
 std::string lower(std::string value) {
@@ -41,6 +42,7 @@ std::string redactSecretValue(const std::string& key, const std::string& value) 
     }
     if (k.find("dsn") != std::string::npos) {
         auto out = value;
+        // Handle URI form: protocol://user:[REDACTED]@host/db
         const auto pos = out.find("://");
         if (pos != std::string::npos) {
             const auto at = out.find('@', pos + 3);
@@ -51,6 +53,10 @@ std::string redactSecretValue(const std::string& key, const std::string& value) 
                 }
             }
         }
+        // Handle libpq keyword/value form: key=value pairs, e.g. host=db dbname=urls
+        static const std::regex kv_pw(R"(\bpassword\s*=\s*('[^']*'|\S+))",
+                                      std::regex_constants::icase);
+        out = std::regex_replace(out, kv_pw, "[REDACTED]");
         return out;
     }
     return value;
