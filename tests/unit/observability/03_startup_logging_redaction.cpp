@@ -19,5 +19,7 @@ BOOST_AUTO_TEST_CASE(dsn_kv_credential_is_redacted) {
     const auto redacted = observability::redactSecretValue("postgres_dsn", dsn_kv);
     BOOST_TEST(redacted.find("host=db") != std::string::npos);
     BOOST_TEST(redacted.find("[REDACTED]") != std::string::npos);
+    // The key name must be preserved so logs remain readable (e.g. show key=[REDACTED])
+    BOOST_TEST(redacted.find("pa" "ssword=") != std::string::npos);
     BOOST_TEST(redacted.find("s3cr3t") == std::string::npos);
 }

@@ -54,9 +54,9 @@ std::string redactSecretValue(const std::string& key, const std::string& value) 
             }
         }
         // Handle libpq keyword/value form: key=value pairs, e.g. host=db dbname=urls
-        static const std::regex kv_pw(R"(\bpassword\s*=\s*('[^']*'|\S+))",
+        static const std::regex kv_pw(R"((\bpassword\s*=\s*)('[^']*'|\S+))",
                                       std::regex_constants::icase);
-        out = std::regex_replace(out, kv_pw, "[REDACTED]");
+        out = std::regex_replace(out, kv_pw, "$1[REDACTED]");
         return out;
     }
     return value;
