@@ -480,6 +480,27 @@ include(CTest)
   register_labeled_cpp_tests(PSQL_INTEGRATION_SOURCES    "integration")
   register_labeled_cpp_tests(REDIS_INTEGRATION_SOURCES   "integration")
   # ---- Core integration tests: standalone executables (Python scripts) ----
+
+  if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/test/cli_parser_test/cli_parser_test.cpp)
+    add_executable(cli_parser_test
+        ${CMAKE_CURRENT_SOURCE_DIR}/test/cli_parser_test/cli_parser_test.cpp
+    )
+    target_compile_features(cli_parser_test PRIVATE cxx_std_17)
+    target_include_directories(cli_parser_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+    target_link_libraries(cli_parser_test
+      PRIVATE
+        Boost::system
+        Boost::program_options
+        Boost::unit_test_framework
+        OpenSSL::SSL
+        OpenSSL::Crypto
+        Threads::Threads
+    )
+    add_test(NAME cli_parser_test COMMAND cli_parser_test)
+    set_tests_properties(cli_parser_test PROPERTIES LABELS "unit")
+  endif()
+
+  # ---- Stage 1 integration tests: 8 standalone executables (Python scripts) ----
   set(LEGACY_CORE_INTEGRATION_SOURCES
       tests/integration/core/01_generated_slug_redirect_test.py
       tests/integration/core/02_custom_slug_get_by_id_slug_test.py
@@ -554,6 +575,18 @@ include(CTest)
       LABELS "integration"
     )
   endforeach()
+
+  if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/test/http_client_test/http_client_test.py)
+    add_test(
+      NAME http_client_test
+      COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/http_client_test/http_client_test.py
+    )
+    set_tests_properties(http_client_test PROPERTIES
+      ENVIRONMENT "SIMPLE_HTTP_BIN=$<TARGET_FILE:url_shortener>"
+      TIMEOUT 180
+      LABELS "integration"
+    )
+  endif()
 endif()
 
 # ---- Install rules ----
