@@ -8,7 +8,7 @@ void AnalyticsService::RecordRedirectAttempt(const RedirectEventContext& context
     const auto started = std::chrono::steady_clock::now();
     ClickEvent event; AnalyticsError err;
     try {
-        if (!ClickEventBuilder::Build(context, config_.sanitization, ClientIdHashConfig{config_.client_hash_salt, config_.production_mode, 64}, &event, &err)) return;
+        if (!ClickEventBuilder::Build(context, config_.sanitization, ClientIdHashConfig{config_.client_hash_salt, !config_.production_mode, 64}, &event, &err)) return;
         const auto result = queue_.TryEnqueue(std::move(event));
         if (result == EnqueueResult::Enqueued) metrics_.OnEnqueued(); else metrics_.OnDropped();
         metrics_.SetQueueDepth(queue_.GetStats().depth);
