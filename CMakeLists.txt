@@ -95,7 +95,7 @@ target_link_libraries(url_shortener
 
 # ---- Tests ----
 include(CTest)
-  # ---- Stage 1 unit tests: 8 standalone executables ----
+  # ---- Core basic unit tests: standalone executables ----
   set(CORE_BASIC_UNIT_SOURCES
       tests/unit/core/01_url_validation_accept_test.cpp
       tests/unit/core/02_url_validation_reject_test.cpp
@@ -479,6 +479,7 @@ include(CTest)
   register_labeled_cpp_tests(SQLITE_INTEGRATION_SOURCES  "integration")
   register_labeled_cpp_tests(PSQL_INTEGRATION_SOURCES    "integration")
   register_labeled_cpp_tests(REDIS_INTEGRATION_SOURCES   "integration")
+  # ---- Core integration tests: standalone executables (Python scripts) ----
 
   if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/test/cli_parser_test/cli_parser_test.cpp)
     add_executable(cli_parser_test
