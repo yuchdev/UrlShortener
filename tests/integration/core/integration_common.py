@@ -12,10 +12,11 @@ def find_server_path():
     if env_bin and os.path.exists(env_bin):
         return env_bin
 
+    script_dir = os.path.dirname(os.path.abspath(__file__))
     candidates = [
-        os.path.abspath("../../build/url_shortener"),
-        os.path.abspath("../../cmake-build-debug/url_shortener"),
-        os.path.abspath("../../cmake-build-release/url_shortener"),
+        os.path.abspath(os.path.join(script_dir, "..", "..", "build", "url_shortener")),
+        os.path.abspath(os.path.join(script_dir, "..", "..", "cmake-build-debug", "url_shortener")),
+        os.path.abspath(os.path.join(script_dir, "..", "..", "cmake-build-release", "url_shortener")),
     ]
     for candidate in candidates:
         if os.path.exists(candidate):
@@ -33,14 +34,14 @@ class ServerHarness:
     def start(self):
         self.process = subprocess.Popen(
             [find_server_path()] + self.args,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
         )
         time.sleep(1.5)
         if self.process.poll() is not None:
-            out, err = self.process.communicate(timeout=2)
-            raise RuntimeError(f"Server failed to start\nstdout={out}\nstderr={err}")
+            raise RuntimeError(
+                f"Server failed to start (exit code {self.process.returncode})"
+            )
 
     def stop(self):
         if self.process and self.process.poll() is None:

@@ -25,12 +25,12 @@ def worker(stop_at, url, expected):
     """Issue repeated GET requests until stop time and collect matching-status latencies."""
     latencies = []
     total = 0
+    opener = urllib.request.build_opener(urllib.request.HTTPRedirectHandler())
     while time.time() < stop_at:
         start = time.perf_counter()
         code = 0
         try:
             req = urllib.request.Request(url, method="GET")
-            opener = urllib.request.build_opener(urllib.request.HTTPRedirectHandler())
             with opener.open(req, timeout=2.0) as resp:
                 code = resp.status
         except urllib.error.HTTPError as err:
