@@ -15,7 +15,7 @@ The project requires:
 - OpenSSL
 - SQLite 3 development headers
 - PostgreSQL client development headers (`libpq`)
-- Python 3 (for integration tests)
+- Python 3 (required by CMake during configure/build; also used for integration tests)
 - Visual Studio 2022 + vcpkg (Windows only)
 
 A few dependencies are fetched and built automatically at configure time via
