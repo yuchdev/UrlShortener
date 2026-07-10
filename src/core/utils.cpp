@@ -176,14 +176,27 @@ bool isPrivateHost(const std::string& host)
         || lower_host.find(".local") != std::string::npos) {
         return true;
     }
-    return lower_host == "localhost" || lower_host == "::1" || lower_host.rfind("127.", 0) == 0
-        || lower_host.rfind("10.", 0) == 0 || lower_host.rfind("192.168.", 0) == 0
-        || lower_host.rfind("169.254.", 0) == 0 || lower_host.rfind("172.16.", 0) == 0
-        || lower_host.rfind("172.17.", 0) == 0 || lower_host.rfind("172.18.", 0) == 0
-        || lower_host.rfind("172.19.", 0) == 0 || lower_host.rfind("172.2", 0) == 0
-        || lower_host.rfind("172.30.", 0) == 0 || lower_host.rfind("172.31.", 0) == 0
-        || lower_host.rfind("fc", 0) == 0 || lower_host.rfind("fd", 0) == 0
-        || lower_host.rfind("fe80:", 0) == 0;
+    // Strip surrounding brackets from IPv6 addresses (e.g., "[fd00::1]" -> "fd00::1")
+    // so that private/link-local prefix checks work correctly for bracketed hosts.
+    const std::string effective_host =
+        (!lower_host.empty() && lower_host.front() == '[' && lower_host.back() == ']')
+            ? lower_host.substr(1, lower_host.size() - 2)
+            : lower_host;
+
+    return effective_host == "localhost" || effective_host == "::1"
+        || effective_host.rfind("127.", 0) == 0
+        || effective_host.rfind("10.", 0) == 0 || effective_host.rfind("192.168.", 0) == 0
+        || effective_host.rfind("169.254.", 0) == 0 || effective_host.rfind("172.16.", 0) == 0
+        || effective_host.rfind("172.17.", 0) == 0 || effective_host.rfind("172.18.", 0) == 0
+        || effective_host.rfind("172.19.", 0) == 0 || effective_host.rfind("172.20.", 0) == 0
+        || effective_host.rfind("172.21.", 0) == 0 || effective_host.rfind("172.22.", 0) == 0
+        || effective_host.rfind("172.23.", 0) == 0 || effective_host.rfind("172.24.", 0) == 0
+        || effective_host.rfind("172.25.", 0) == 0 || effective_host.rfind("172.26.", 0) == 0
+        || effective_host.rfind("172.27.", 0) == 0 || effective_host.rfind("172.28.", 0) == 0
+        || effective_host.rfind("172.29.", 0) == 0 || effective_host.rfind("172.30.", 0) == 0
+        || effective_host.rfind("172.31.", 0) == 0
+        || effective_host.rfind("fc", 0) == 0 || effective_host.rfind("fd", 0) == 0
+        || effective_host.rfind("fe80:", 0) == 0;
 }
 
 std::optional<std::string> normalizeTargetUrl(const std::string& input_url, const ServerConfig& config)
@@ -253,13 +266,22 @@ std::string normalizeAndValidateBaseDomain(const std::string& raw_domain)
     if (scheme != "http" && scheme != "https") {
         throw std::runtime_error("SHORTENER_BASE_DOMAIN scheme must be http or https");
     }
-
-    while (!authority_and_rest.empty() && authority_and_rest.back() == '/') {
-        authority_and_rest.pop_back();
+    if (authority_and_rest.find('@') != std::string::npos) {
+        throw std::runtime_error("SHORTENER_BASE_DOMAIN must not include userinfo");
     }
-    const auto sep = authority_and_rest.find_first_of("/?#");
-    if (sep != std::string::npos) {
+    if (authority_and_rest.find_first_of("?#") != std::string::npos) {
         throw std::runtime_error("SHORTENER_BASE_DOMAIN must not include path, query, or fragment");
+    }
+    const auto slash = authority_and_rest.find('/');
+    if (slash != std::string::npos) {
+        const bool trailing_slashes_only = std::all_of(
+            authority_and_rest.begin() + static_cast<std::string::difference_type>(slash),
+            authority_and_rest.end(),
+            [](char c) { return c == '/'; });
+        if (!trailing_slashes_only) {
+            throw std::runtime_error("SHORTENER_BASE_DOMAIN must not include path, query, or fragment");
+        }
+        authority_and_rest.erase(slash);
     }
     if (authority_and_rest.empty()) {
         throw std::runtime_error("SHORTENER_BASE_DOMAIN host is required");

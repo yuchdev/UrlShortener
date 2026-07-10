@@ -5,6 +5,7 @@
 #include <url_shortener/cli/cli_parser.h>
 
 #include <cstdlib>
+#include <limits>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -82,12 +83,30 @@ ParseResult CliParser::parse(int argc, char* argv[]) const
     if (const char* env = std::getenv("SHORTENER_DEFAULT_EXPIRY_SECONDS");
         env != nullptr)
     {
-        cfg.shortener_default_expiry_seconds = static_cast<uint32_t>(std::stoul(env));
+        try {
+            const auto val = std::stoul(env);
+            if (val > std::numeric_limits<uint32_t>::max()) {
+                throw std::out_of_range("value exceeds uint32 max");
+            }
+            cfg.shortener_default_expiry_seconds = static_cast<uint32_t>(val);
+        } catch (const std::exception& e) {
+            throw std::runtime_error(
+                std::string("SHORTENER_DEFAULT_EXPIRY_SECONDS: ") + e.what());
+        }
     }
     if (const char* env = std::getenv("SHORTENER_GENERATED_SLUG_LENGTH");
         env != nullptr)
     {
-        cfg.shortener_generated_slug_length = static_cast<uint32_t>(std::stoul(env));
+        try {
+            const auto val = std::stoul(env);
+            if (val > std::numeric_limits<uint32_t>::max()) {
+                throw std::out_of_range("value exceeds uint32 max");
+            }
+            cfg.shortener_generated_slug_length = static_cast<uint32_t>(val);
+        } catch (const std::exception& e) {
+            throw std::runtime_error(
+                std::string("SHORTENER_GENERATED_SLUG_LENGTH: ") + e.what());
+        }
     }
     if (const char* env = std::getenv("SHORTENER_ALLOW_PRIVATE_TARGETS");
         env != nullptr)
