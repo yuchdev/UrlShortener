@@ -555,6 +555,7 @@ include(CTest)
       tests/integration/py/test_analytics_time_buckets.py
       tests/integration/py/test_analytics_privacy_no_raw_ip.py
       tests/integration/py/test_analytics_queue_overflow.py
+      tests/integration/py/test_analytics_failure_isolation.py
       tests/integration/py/test_analytics_retention_cleanup.py
       tests/integration/py/test_analytics_disabled_mode.py
   )

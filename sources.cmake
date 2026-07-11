@@ -17,6 +17,7 @@ set(URL_SHORTENER_CPP
         ${CMAKE_CURRENT_SOURCE_DIR}/src/analytics/AnalyticsService.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/analytics/AnalyticsWorker.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/analytics/RetentionCleanupJob.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/http/RedirectAnalyticsHook.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/storage/link_repository.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/http/http_server.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/http/request_handlers.cpp

@@ -19,6 +19,9 @@ public:
 
     bool WaitDequeue(ClickEvent& out, std::chrono::milliseconds timeout) noexcept;
 
+    /** @brief Wake any thread blocked in WaitDequeue so that a stopping worker exits promptly. */
+    void NotifyStop() noexcept;
+
 private:
     const std::size_t capacity_;
     mutable std::mutex mutex_;
@@ -26,6 +29,7 @@ private:
     std::deque<ClickEvent> queue_;
     std::uint64_t enqueued_total_ = 0;
     std::uint64_t dropped_total_ = 0;
+    bool stop_ = false;
 };
 
 } // namespace url_shortener::analytics
