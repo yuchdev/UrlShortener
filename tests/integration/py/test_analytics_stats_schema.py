@@ -1,5 +1,6 @@
 import os
 import sys
+import time
 import unittest
 
 CURRENT_DIR = os.path.dirname(__file__)
@@ -13,8 +14,12 @@ class AnalyticsStatsSchema(LinkManagementIntegrationBase):
     def test_schema_fields(self):
         create_link(self.port,"anx02","https://example.com")
         request(self.port,"GET","/anx02")
-        status,payload,_=request(self.port,"GET","/api/v1/links/anx02/stats")
+        now = int(time.time())
+        status,payload,_=request(
+            self.port,"GET",
+            f"/api/v1/links/anx02/stats?from=0&to={now + 3600}&bucket=hour"
+        )
         self.assertEqual(200,status)
-        for k in ['slug','total_redirects','redirects_24h','redirects_7d']:
+        for k in ['slug','total_attempts','successful_redirects','time_buckets']:
             self.assertIn(f'"{k}"',payload)
 if __name__=='__main__': unittest.main()

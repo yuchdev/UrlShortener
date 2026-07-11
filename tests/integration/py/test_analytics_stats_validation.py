@@ -1,5 +1,6 @@
 import os
 import sys
+import time
 import unittest
 
 CURRENT_DIR = os.path.dirname(__file__)
@@ -11,6 +12,12 @@ from link_management_common import LinkManagementIntegrationBase, request
 class AnalyticsStatsValidation(LinkManagementIntegrationBase):
     port=38324
     def test_unknown_slug_policy(self):
-        status,_,_=request(self.port,"GET","/api/v1/links/nope/stats")
-        self.assertIn(status,[200,404])
+        now = int(time.time())
+        status, payload, _ = request(
+            self.port, "GET",
+            f"/api/v1/links/nope/stats?from=0&to={now + 3600}&bucket=hour"
+        )
+        self.assertEqual(200, status)
+        self.assertIn('"slug"', payload)
+        self.assertIn('"total_attempts"', payload)
 if __name__=='__main__': unittest.main()

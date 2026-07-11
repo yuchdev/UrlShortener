@@ -1,5 +1,6 @@
 import os
 import sys
+import time
 import unittest
 
 CURRENT_DIR = os.path.dirname(__file__)
@@ -13,7 +14,12 @@ class AnalyticsTimeBuckets(LinkManagementIntegrationBase):
     def test_time_bucket_payload(self):
         create_link(self.port,"anx03","https://example.com")
         request(self.port,"GET","/anx03")
-        status,payload,_=request(self.port,"GET","/api/v1/links/anx03/stats")
+        now = int(time.time())
+        status,payload,_=request(
+            self.port,"GET",
+            f"/api/v1/links/anx03/stats?from=0&to={now + 3600}&bucket=hour"
+        )
         self.assertEqual(200,status)
-        self.assertIn('"created_at"',payload)
+        self.assertIn('"time_buckets"',payload)
+        self.assertIn('"bucket_start"',payload)
 if __name__=='__main__': unittest.main()
