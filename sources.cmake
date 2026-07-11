@@ -4,6 +4,19 @@ set(URL_SHORTENER_CPP
         ${CMAKE_CURRENT_SOURCE_DIR}/src/uri_map_singleton.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/core/utils.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/analytics/click_event_queue.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/analytics/AnalyticsConfig.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/analytics/AnalyticsError.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/analytics/ClickEvent.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/analytics/ClickEventSanitizer.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/analytics/ClientIdHasher.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/analytics/ClickEventBuilder.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/analytics/AggregateQuery.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/analytics/AggregateStats.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/analytics/BoundedClickEventQueue.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/analytics/AnalyticsMetrics.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/analytics/AnalyticsService.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/analytics/AnalyticsWorker.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/analytics/RetentionCleanupJob.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/storage/link_repository.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/http/http_server.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/http/request_handlers.cpp

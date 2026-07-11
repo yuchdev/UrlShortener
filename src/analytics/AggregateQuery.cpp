@@ -22,8 +22,7 @@ bool AggregateQueryValidator::Validate(AggregateQuery* query, AnalyticsError* er
         if (error) { error->code = AnalyticsErrorCode::validation; error->message = "from > to"; }
         return false;
     }
-    const auto days = std::chrono::duration_cast<std::chrono::hours>(query->to - query->from).count() / 24;
-    if (days > 366) {
+    if (query->to - query->from > std::chrono::hours(366 * 24)) {
         if (error) { error->code = AnalyticsErrorCode::validation; error->message = "range too large"; }
         return false;
     }
