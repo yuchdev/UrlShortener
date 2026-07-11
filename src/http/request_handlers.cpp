@@ -22,7 +22,7 @@
 #include <map>
 
 namespace beast = boost::beast;
-namespace http = beast::http;
+namespace bhttp = beast::http;
 
 namespace url_shortener {
 
@@ -89,7 +89,7 @@ static std::string statusClass(const unsigned status)
 }
 
 static void emitClickEvent(
-    const http::request<http::string_body>& req,
+    const bhttp::request<bhttp::string_body>& req,
     const ServerConfig& config,
     const std::string& slug,
     const std::optional<Link>& link,
@@ -107,14 +107,14 @@ static void emitClickEvent(
         event.link_id = link->id;
     }
 
-    std::string host = req.base().count(http::field::host) ? std::string(req.base().at(http::field::host)) : "";
+    std::string host = req.base().count(bhttp::field::host) ? std::string(req.base().at(bhttp::field::host)) : "";
     if (const auto pos = host.find(':'); pos != std::string::npos) {
         host = host.substr(0, pos);
     }
     event.domain = url_shortener::clampString(host, 255);
     event.status_code = status_code;
-    event.referrer = url_shortener::headerString(req, http::field::referer, 512);
-    event.user_agent = url_shortener::headerString(req, http::field::user_agent, 512);
+    event.referrer = url_shortener::headerString(req, bhttp::field::referer, 512);
+    event.user_agent = url_shortener::headerString(req, bhttp::field::user_agent, 512);
 
     const std::string forwarded_for = req.base().count("X-Forwarded-For") ? std::string(req.base().at("X-Forwarded-For")) : "";
     const std::string client_source = forwarded_for.empty() ? "unknown" : url_shortener::clampString(forwarded_for, 128);
@@ -136,7 +136,7 @@ static void emitClickEvent(
 }
 
 static std::string makeShortUrl(
-    const http::request<http::string_body>&,
+    const bhttp::request<bhttp::string_body>&,
     const ServerConfig& config,
     const bool,
     const std::string& slug)
@@ -280,7 +280,7 @@ std::optional<std::string> generateUniqueSlug(
     return std::nullopt;
 }
 
-std::string resolveRequestId(const http::request<http::string_body>& req, const ServerConfig& config)
+std::string resolveRequestId(const bhttp::request<bhttp::string_body>& req, const ServerConfig& config)
 {
     const std::string incoming = std::string(req[request_id_header]);
     if (isValidRequestId(incoming, config.request_id_max_length)) {
@@ -294,7 +294,7 @@ std::string resolveRequestId(const http::request<http::string_body>& req, const 
     return generateRequestId();
 }
 
-std::string requestIdFromRequest(const http::request<http::string_body>& req)
+std::string requestIdFromRequest(const bhttp::request<bhttp::string_body>& req)
 {
     const std::string internal = std::string(req[internal_request_id_header]);
     if (!internal.empty()) {
@@ -326,7 +326,7 @@ std::string routeLabelFor(const std::string& target)
     return "app";
 }
 
-void recordHttpMetric(const http::request<http::string_body>& req, const std::string& route_label, const unsigned status)
+void recordHttpMetric(const bhttp::request<bhttp::string_body>& req, const std::string& route_label, const unsigned status)
 {
     auto& metrics = metricsRegistry();
     const std::string key = "method=" + std::string(req.method_string()) + ",route=" + route_label + ",status_class=" + statusClass(status);
@@ -415,23 +415,23 @@ std::string renderMetrics()
     return out.str();
 }
 
-http::response<http::string_body> makeResponse(
-    const http::request<http::string_body>& req,
+bhttp::response<bhttp::string_body> makeResponse(
+    const bhttp::request<bhttp::string_body>& req,
     const ServerConfig& config,
     const bool is_tls,
     const unsigned status,
     const std::string& body,
     const std::string& content_type)
 {
-    http::response<http::string_body> res{static_cast<http::status>(status), req.version()};
-    res.set(http::field::server, "simple-http");
+    bhttp::response<bhttp::string_body> res{static_cast<bhttp::status>(status), req.version()};
+    res.set(bhttp::field::server, "simple-http");
     res.keep_alive(false);
     if (!content_type.empty()) {
-        res.set(http::field::content_type, content_type);
+        res.set(bhttp::field::content_type, content_type);
     }
 
     if (is_tls && config.hsts_max_age.has_value()) {
-        res.set(http::field::strict_transport_security,
+        res.set(bhttp::field::strict_transport_security,
             "max-age=" + std::to_string(*config.hsts_max_age) + "; includeSubDomains");
     }
 
@@ -447,8 +447,8 @@ http::response<http::string_body> makeResponse(
     return res;
 }
 
-http::response<http::string_body> makeApiErrorResponse(
-    const http::request<http::string_body>& req,
+bhttp::response<bhttp::string_body> makeApiErrorResponse(
+    const bhttp::request<bhttp::string_body>& req,
     const ServerConfig& config,
     const bool is_tls,
     const unsigned status,
@@ -464,11 +464,11 @@ http::response<http::string_body> makeApiErrorResponse(
     return makeResponse(req, config, is_tls, status, body.str(), "application/json");
 }
 
-http::response<http::string_body> makeRedirectResponse(
-    const http::request<http::string_body>& req,
+bhttp::response<bhttp::string_body> makeRedirectResponse(
+    const bhttp::request<bhttp::string_body>& req,
     const ServerConfig& config)
 {
-    std::string host = req[http::field::host].empty() ? "localhost" : std::string(req[http::field::host]);
+    std::string host = req[bhttp::field::host].empty() ? "localhost" : std::string(req[bhttp::field::host]);
     host = stripPort(host);
 
     std::ostringstream location;
@@ -478,23 +478,23 @@ http::response<http::string_body> makeRedirectResponse(
     }
     location << req.target();
 
-    http::response<http::string_body> res{http::status::permanent_redirect, req.version()};
-    res.set(http::field::location, location.str());
-    res.set(http::field::content_type, "text/plain");
+    bhttp::response<bhttp::string_body> res{bhttp::status::permanent_redirect, req.version()};
+    res.set(bhttp::field::location, location.str());
+    res.set(bhttp::field::content_type, "text/plain");
     res.set(request_id_header, requestIdFromRequest(req));
     res.body() = "Use HTTPS\n";
     res.prepare_payload();
     return res;
 }
 
-http::response<http::string_body> handleApplicationRequest(
-    const http::request<http::string_body>& req,
+bhttp::response<bhttp::string_body> handleApplicationRequest(
+    const bhttp::request<bhttp::string_body>& req,
     const ServerConfig& config,
     const bool is_tls)
 {
     const auto uri = std::string(req.target());
 
-    if (req.method() == http::verb::get) {
+    if (req.method() == bhttp::verb::get) {
         auto data = UriMapSingleton::getInstance().getData(uri);
         if (data.has_value()) {
             return makeResponse(req, config, is_tls, 200, data->first + "\n", data->second);
@@ -502,15 +502,15 @@ http::response<http::string_body> handleApplicationRequest(
         return makeResponse(req, config, is_tls, 404, "URI not found\n", "text/plain");
     }
 
-    if (req.method() == http::verb::post) {
-        const auto content_type = req[http::field::content_type].empty()
+    if (req.method() == bhttp::verb::post) {
+        const auto content_type = req[bhttp::field::content_type].empty()
             ? "application/octet-stream"
-            : std::string(req[http::field::content_type]);
+            : std::string(req[bhttp::field::content_type]);
         UriMapSingleton::getInstance().saveData(uri, req.body(), content_type);
         return makeResponse(req, config, is_tls, 200, "URI saved\n", "text/plain");
     }
 
-    if (req.method() == http::verb::delete_) {
+    if (req.method() == bhttp::verb::delete_) {
         if (UriMapSingleton::getInstance().deleteData(uri)) {
             return makeResponse(req, config, is_tls, 200, "Data deleted\n", "text/plain");
         }
@@ -520,29 +520,29 @@ http::response<http::string_body> handleApplicationRequest(
     return makeResponse(req, config, is_tls, 400, "Invalid method\n", "text/plain");
 }
 
-http::response<http::string_body> handleShortenerRequest(
-    const http::request<http::string_body>& req,
+bhttp::response<bhttp::string_body> handleShortenerRequest(
+    const bhttp::request<bhttp::string_body>& req,
     const ServerConfig& config,
     const bool is_tls)
 {
     const auto target = std::string(req.target());
 
     if (target == "/healthz" || target == "/readyz") {
-        if (req.method() != http::verb::get) {
+        if (req.method() != bhttp::verb::get) {
             return makeApiErrorResponse(req, config, is_tls, 400, "invalid_method", "Only GET is supported");
         }
         return makeResponse(req, config, is_tls, 200, "ok\n", "text/plain");
     }
 
     if (target == "/metrics") {
-        if (req.method() != http::verb::get) {
+        if (req.method() != bhttp::verb::get) {
             return makeApiErrorResponse(req, config, is_tls, 400, "invalid_method", "Only GET is supported");
         }
         return makeResponse(req, config, is_tls, 200, renderMetrics(), "text/plain");
     }
 
     if (target.rfind(std::string(shortener_api_prefix) + "/id/", 0) == 0) {
-        if (req.method() != http::verb::get) {
+        if (req.method() != bhttp::verb::get) {
             return makeApiErrorResponse(req, config, is_tls, 400, "invalid_method", "Only GET is supported");
         }
         const std::string id = target.substr(std::string(shortener_api_prefix).size() + 4);
@@ -567,7 +567,7 @@ http::response<http::string_body> handleShortenerRequest(
         }
 
         if (action == "preview") {
-            if (req.method() != http::verb::get) {
+            if (req.method() != bhttp::verb::get) {
                 return makeApiErrorResponse(req, config, is_tls, 400, "invalid_method", "Only GET is supported");
             }
             const auto link = url_shortener::getLinkForRead(slug);
@@ -600,7 +600,7 @@ http::response<http::string_body> handleShortenerRequest(
         }
 
         if (action == "qr" || action == "routing") {
-            if (req.method() != http::verb::get) {
+            if (req.method() != bhttp::verb::get) {
                 return makeApiErrorResponse(req, config, is_tls, 400, "invalid_method", "Only GET is supported");
             }
             const auto link = url_shortener::getLinkForRead(slug);
@@ -617,7 +617,7 @@ http::response<http::string_body> handleShortenerRequest(
         }
 
         if (action == "stats") {
-            if (req.method() != http::verb::get) {
+            if (req.method() != bhttp::verb::get) {
                 return makeApiErrorResponse(req, config, is_tls, 400, "invalid_method", "Only GET is supported");
             }
             const std::string from_param = getQueryParam(query_string, "from");
@@ -652,7 +652,7 @@ http::response<http::string_body> handleShortenerRequest(
         }
 
         if (action == "enable" || action == "disable" || action == "restore") {
-            if (req.method() != http::verb::post) {
+            if (req.method() != bhttp::verb::post) {
                 return makeApiErrorResponse(req, config, is_tls, 400, "invalid_method", "Only POST is supported");
             }
             auto link = url_shortener::getLinkForRead(slug);
@@ -674,7 +674,7 @@ http::response<http::string_body> handleShortenerRequest(
         }
 
         if (action.empty()) {
-            if (req.method() == http::verb::get) {
+            if (req.method() == bhttp::verb::get) {
                 const auto link = url_shortener::getLinkForRead(slug);
                 if (!link.has_value()) {
                     return makeApiErrorResponse(req, config, is_tls, 404, "not_found", "Link not found");
@@ -682,7 +682,7 @@ http::response<http::string_body> handleShortenerRequest(
                 return makeResponse(req, config, is_tls, 200, serializeLink(*link, makeShortUrl(req, config, is_tls, link->slug)), "application/json");
             }
 
-            if (req.method() == http::verb::delete_) {
+            if (req.method() == bhttp::verb::delete_) {
                 auto link = url_shortener::getLinkForRead(slug);
                 if (!link.has_value()) {
                     return makeApiErrorResponse(req, config, is_tls, 404, "not_found", "Link not found");
@@ -693,7 +693,7 @@ http::response<http::string_body> handleShortenerRequest(
                 return makeResponse(req, config, is_tls, 200, serializeLink(*link, makeShortUrl(req, config, is_tls, link->slug)), "application/json");
             }
 
-            if (req.method() == http::verb::patch) {
+            if (req.method() == bhttp::verb::patch) {
                 auto link = url_shortener::getLinkForRead(slug);
                 if (!link.has_value()) {
                     return makeApiErrorResponse(req, config, is_tls, 404, "not_found", "Link not found");
@@ -770,7 +770,7 @@ http::response<http::string_body> handleShortenerRequest(
     }
 
     if (target.rfind(std::string(shortener_api_compat_prefix) + '/', 0) == 0) {
-        if (req.method() != http::verb::get) {
+        if (req.method() != bhttp::verb::get) {
             return makeApiErrorResponse(req, config, is_tls, 400, "invalid_method", "Only GET is supported");
         }
         const std::string slug = target.substr(std::string(shortener_api_compat_prefix).size() + 1);
@@ -782,7 +782,7 @@ http::response<http::string_body> handleShortenerRequest(
     }
 
     if (target == shortener_api_prefix || target == shortener_api_compat_prefix) {
-        if (req.method() != http::verb::post) {
+        if (req.method() != bhttp::verb::post) {
             return makeApiErrorResponse(req, config, is_tls, 400, "invalid_method", "Only POST is supported");
         }
 
@@ -922,7 +922,7 @@ http::response<http::string_body> handleShortenerRequest(
     }
 
     if (target.rfind(std::string(short_redirect_prefix), 0) == 0) {
-        if (req.method() != http::verb::get) {
+        if (req.method() != bhttp::verb::get) {
             return makeApiErrorResponse(req, config, is_tls, 400, "invalid_method", "Only GET is supported for redirects");
         }
         const std::string slug = target.substr(short_redirect_prefix.size());
@@ -964,9 +964,9 @@ http::response<http::string_body> handleShortenerRequest(
         const auto redirect_status = redirectStatusFor(*link);
         emitClickEvent(req, config, slug, link, static_cast<uint16_t>(redirect_status));
 
-        http::response<http::string_body> res{redirect_status, req.version()};
-        res.set(http::field::server, "simple-http");
-        res.set(http::field::location, link->target_url);
+        bhttp::response<bhttp::string_body> res{redirect_status, req.version()};
+        res.set(bhttp::field::server, "simple-http");
+        res.set(bhttp::field::location, link->target_url);
         res.set(request_id_header, requestIdFromRequest(req));
         res.keep_alive(false);
         res.prepare_payload();
@@ -974,7 +974,7 @@ http::response<http::string_body> handleShortenerRequest(
     }
 
     if (target.size() > 1 && target[0] == '/' && target.rfind("/api/", 0) != 0) {
-        if (req.method() != http::verb::get) {
+        if (req.method() != bhttp::verb::get) {
             return handleApplicationRequest(req, config, is_tls);
         }
         const std::string slug = target.substr(1);
@@ -993,9 +993,9 @@ http::response<http::string_body> handleShortenerRequest(
                     const auto redirect_status = redirectStatusFor(*link);
                     emitClickEvent(req, config, slug, link, static_cast<uint16_t>(redirect_status));
 
-                    http::response<http::string_body> res{redirect_status, req.version()};
-                    res.set(http::field::server, "simple-http");
-                    res.set(http::field::location, link->target_url);
+                    bhttp::response<bhttp::string_body> res{redirect_status, req.version()};
+                    res.set(bhttp::field::server, "simple-http");
+                    res.set(bhttp::field::location, link->target_url);
                     res.set(request_id_header, requestIdFromRequest(req));
                     res.keep_alive(false);
                     res.prepare_payload();
