@@ -20,3 +20,9 @@ BOOST_AUTO_TEST_CASE(production_empty_salt_rejected)
     AnalyticsConfig cfg; cfg.production_mode = true; cfg.client_hash_salt.clear();
     BOOST_TEST(!cfg.Validate());
 }
+
+BOOST_AUTO_TEST_CASE(non_production_empty_salt_rejected)
+{
+    AnalyticsConfig cfg; cfg.production_mode = false; cfg.client_hash_salt.clear();
+    BOOST_TEST(!cfg.Validate());
+}

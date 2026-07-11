@@ -472,6 +472,8 @@ include(CTest)
   register_labeled_cpp_tests(RATELIMITER_UNIT_SOURCES    "unit")
   register_labeled_cpp_tests(REDIS_UNIT_SOURCES          "unit")
   register_labeled_cpp_tests(OBSERVABILITY_UNIT_SOURCES  "unit")
+  target_compile_definitions(docs__01_configuration_examples_match_parser
+      PRIVATE SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
   register_labeled_cpp_tests(ANALYTICS_UNIT_SOURCES      "unit")
   register_labeled_cpp_tests(ANALYTICS_INTEGRATION_SOURCES "integration")
   register_labeled_cpp_tests(CONTRACT_METADATA_SOURCES   "contract")
