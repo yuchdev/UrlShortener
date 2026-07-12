@@ -30,10 +30,11 @@ BOOST_AUTO_TEST_CASE(builder_failure_and_overflow_are_swallowed)
 {
     AnalyticsConfig cfg; cfg.enabled = true; cfg.client_hash_salt = "salt";
     StubQueue q; CountingMetrics m; AnalyticsService svc(cfg, q, m);
-    RedirectEventContext bad; bad.slug=""; bad.domain="d"; bad.final_status_code=302; bad.client_network_identifier="id";
+    const auto now = std::chrono::system_clock::now();
+    RedirectEventContext bad; bad.slug=""; bad.domain="d"; bad.final_status_code=302; bad.client_network_identifier="id"; bad.occurred_at = now;
     BOOST_CHECK_NO_THROW(svc.RecordRedirectAttempt(bad));
     q.result = EnqueueResult::DroppedFull;
-    RedirectEventContext good; good.slug="s"; good.domain="d"; good.final_status_code=302; good.client_network_identifier="id";
+    RedirectEventContext good; good.slug="s"; good.domain="d"; good.final_status_code=302; good.client_network_identifier="id"; good.occurred_at = now;
     BOOST_CHECK_NO_THROW(svc.RecordRedirectAttempt(good));
     BOOST_TEST(m.drop == 1);
 }
