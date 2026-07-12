@@ -1,0 +1,48 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          { "type": "command", "command": "python .claude/hooks/session_start.py" }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Write|Edit|MultiEdit",
+        "hooks": [
+          { "type": "command", "command": "python .claude/hooks/secret_scan.py" }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          { "type": "command", "command": "python .claude/hooks/guard_bash.py" }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit|MultiEdit",
+        "hooks": [
+          { "type": "command", "command": "python .claude/hooks/post_edit_format.py" },
+          { "type": "command", "command": "python .claude/hooks/doc_link_check.py" }
+        ]
+      },
+      {
+        "matcher": "mcp__github__.*",
+        "hooks": [
+          { "type": "command", "command": "python .claude/hooks/github_audit.py" }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          { "type": "command", "command": "python .claude/hooks/run_tests.py" },
+          { "type": "command", "command": "python .claude/hooks/doc_link_check.py" }
+        ]
+      }
+    ]
+  }
+}
