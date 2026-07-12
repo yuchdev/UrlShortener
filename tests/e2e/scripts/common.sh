@@ -1,18 +1,18 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-DB_PATH="qa/tmp/qa.sqlite"
-LOG_PATH="qa/tmp/server.log"
-PID_PATH="qa/tmp/mock_service.pid"
+DB_PATH="tests/e2e/tmp/qa.sqlite"
+LOG_PATH="tests/e2e/tmp/server.log"
+PID_PATH="tests/e2e/tmp/mock_service.pid"
 
-mkdir -p qa/tmp qa/failures
+mkdir -p tests/e2e/tmp tests/e2e/failures
 
 init_db() {
   python3 - <<'PY'
 import sqlite3
 from pathlib import Path
 
-db = Path("qa/tmp/qa.sqlite")
+db = Path("tests/e2e/tmp/qa.sqlite")
 db.parent.mkdir(parents=True, exist_ok=True)
 conn = sqlite3.connect(str(db))
 conn.executescript(
@@ -35,7 +35,7 @@ reset_db() {
 
 start_service() {
   : > "$LOG_PATH"
-  python3 qa/scripts/mock_service.py > qa/tmp/service.stdout 2> qa/tmp/service.stderr &
+  python3 tests/e2e/scripts/mock_service.py > tests/e2e/tmp/service.stdout 2> tests/e2e/tmp/service.stderr &
   echo $! > "$PID_PATH"
   python3 -m tools.sqlite_state_assert --assert-port-open 18080 >/dev/null
 }
@@ -47,7 +47,7 @@ from pathlib import Path
 import os
 import signal
 
-pid_path = Path("qa/tmp/mock_service.pid")
+pid_path = Path("tests/e2e/tmp/mock_service.pid")
 if pid_path.exists():
     pid = int(pid_path.read_text(encoding="utf-8").strip())
     try:

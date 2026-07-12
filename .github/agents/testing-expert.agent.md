@@ -27,7 +27,7 @@ must be rigorous. Follow `docs/agent/testing-requirements.md`.
 - **Integration** (`tests/integration/`, label `integration`): real components
   wired together with externals faked or a temp SQLite — full resolve flow,
   cache-aside + invalidation, analytics best-effort, backend swap by config.
-- **E2E / smoke**: the QA shell scenarios under `qa/scripts/sections/` and the
+- **E2E / smoke**: the QA shell scenarios under `tests/e2e/scripts/sections/` and the
   Python HTTP integration tests under `tests/integration/` driving a live server.
 
 ### 2. Test quality & maintainability

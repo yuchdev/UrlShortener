@@ -20,13 +20,13 @@ else
   SECTIONS=("${DEFAULT_SECTIONS[@]}")
 fi
 
-mkdir -p qa/failures
-SUMMARY="qa/failures/summary.txt"
+mkdir -p tests/e2e/failures
+SUMMARY="tests/e2e/failures/summary.txt"
 : > "$SUMMARY"
 
 for section in "${SECTIONS[@]}"; do
   echo "Running ${section}"
-  if bash qa/scripts/run_section.sh "$section"; then
+  if bash tests/e2e/scripts/run_section.sh "$section"; then
     echo "${section}: PASS" | tee -a "$SUMMARY"
   else
     echo "${section}: FAIL" | tee -a "$SUMMARY"

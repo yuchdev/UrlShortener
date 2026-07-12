@@ -3,7 +3,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 import json
 from pathlib import Path
 
-LOG = Path("qa/tmp/server.log")
+LOG = Path("tests/e2e/tmp/server.log")
 LOG.parent.mkdir(parents=True, exist_ok=True)
 
 

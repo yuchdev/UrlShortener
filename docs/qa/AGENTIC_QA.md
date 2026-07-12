@@ -5,18 +5,18 @@
 The QA system is split into:
 
 - section specs in `docs/qa/sections/*.md`
-- executable section scripts in `qa/scripts/sections/*.sh`
-- expected DB snapshots in `qa/expected/*.json`
-- orchestration scripts in `qa/scripts/run_section.sh` and `qa/scripts/run_all_sections.sh`
+- executable section scripts in `tests/e2e/scripts/sections/*.sh`
+- expected DB snapshots in `tests/e2e/expected/*.json`
+- orchestration scripts in `tests/e2e/scripts/run_section.sh` and `tests/e2e/scripts/run_all_sections.sh`
 - assertion engine in `tools/sqlite_state_assert.py`
 
 Each section is isolated and runs its own full lifecycle.
 
 ## Execution model
 
-- Run one section: `bash qa/scripts/run_section.sh 03_redirects`
-- Run all sections: `bash qa/scripts/run_all_sections.sh`
-- Partial run: `QA_SECTIONS="01_server_boot,03_redirects" bash qa/scripts/run_all_sections.sh`
+- Run one section: `bash tests/e2e/scripts/run_section.sh 03_redirects`
+- Run all sections: `bash tests/e2e/scripts/run_all_sections.sh`
+- Partial run: `QA_SECTIONS="01_server_boot,03_redirects" bash tests/e2e/scripts/run_all_sections.sh`
 
 ## Test lifecycle
 
@@ -57,7 +57,7 @@ Runtime assertions retry with exponential backoff for up to 30 seconds by defaul
 
 ## Expected logging
 
-Sections must write service logs to `qa/failures/<section>/` (or another explicit path), and use `--assert-log-contains` for key milestones like service startup and critical actions.
+Sections must write service logs to `tests/e2e/failures/<section>/` (or another explicit path), and use `--assert-log-contains` for key milestones like service startup and critical actions.
 
 ## Agent execution guidance
 

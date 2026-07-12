@@ -323,7 +323,7 @@ clock.advance(std::chrono::seconds(3600)); // advance time
 
 **Contract tests** (`tests/contract/metadata/`) — backend-agnostic correctness suite. Run against any `IMetadataRepository` implementation. SQLite and PostgreSQL run these via `tests/integration/sqlite/03_contract_suite_runner.cpp` and `tests/integration/psql/05_contract_suite_runner.cpp`.
 
-**QA scripts** (`qa/scripts/sections/`) — shell-based end-to-end scenarios: server boot, URL creation, redirects, expiration, fingerprinting, authentication, permissions, admin API, error handling, concurrency. Run with `qa/scripts/run_all_sections.sh` against a live server.
+**E2E scripts** (`tests/e2e/scripts/sections/`) — shell-based end-to-end scenarios: server boot, URL creation, redirects, expiration, fingerprinting, authentication, permissions, admin API, error handling, concurrency. Run with `tests/e2e/scripts/run_all_sections.sh` against a live server.
 
 ## Database migrations
 

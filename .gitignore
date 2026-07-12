@@ -52,8 +52,8 @@ uri.txt
 __pycache__/
 *.pyc
 
-# QA runtime artifacts
+# E2E runtime artifacts
 qa_failures/
-qa/failures/*
-!qa/failures/.gitkeep
-qa/tmp/
+tests/e2e/failures/*
+!tests/e2e/failures/.gitkeep
+tests/e2e/tmp/

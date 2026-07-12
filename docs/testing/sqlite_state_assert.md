@@ -70,14 +70,14 @@ python -m tools.sqlite_state_assert \
 
 ```bash
 # Reset transient DB tables
-python -m tools.sqlite_state_assert --db qa/tmp/qa.sqlite --reset-database
+python -m tools.sqlite_state_assert --db tests/e2e/tmp/qa.sqlite --reset-database
 
 # Network/runtime checks
 python -m tools.sqlite_state_assert --assert-port-open 8080
 python -m tools.sqlite_state_assert --assert-http-status http://127.0.0.1:8080/health 200
 python -m tools.sqlite_state_assert --assert-redirect-target http://127.0.0.1:8080/r/demo https://example.com
 python -m tools.sqlite_state_assert --assert-process-running url_shortener
-python -m tools.sqlite_state_assert --assert-log-contains qa/tmp/server.log "Server started"
+python -m tools.sqlite_state_assert --assert-log-contains tests/e2e/tmp/server.log "Server started"
 ```
 
 On failure, diagnostics are stored under `qa_failures/<timestamp>/` with `summary.json`, database snapshot, and captured stdout/stderr/log artifacts.
