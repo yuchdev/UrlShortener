@@ -1,6 +1,7 @@
 #include "url_shortener/storage/sql/SqlClickEventRepository.hpp"
 
 #include <chrono>
+#include <cstdint>
 
 #include <soci/soci.h>
 #include <soci/sqlite3/soci-sqlite3.h>
@@ -132,26 +133,26 @@ bool SqlClickEventRepository::GetAggregateStats(
 
         // Build WHERE clause; use integer epoch for SQLite, to_timestamp() for PostgreSQL.
         const std::string ts_cond = is_postgres_
-            ? "occurred_at >= to_timestamp(:from) AND occurred_at < to_timestamp(:to)"
-            : "occurred_at >= :from AND occurred_at < :to";
+            ? "occurred_at >= to_timestamp(:from_ts) AND occurred_at < to_timestamp(:to_ts)"
+            : "occurred_at >= :from_ts AND occurred_at < :to_ts";
         const std::string slug_clause = query.slug ? " AND slug = :slug" : "";
         const std::string slug_val    = query.slug ? *query.slug : "";
         const std::string base_where  = "WHERE " + ts_cond + slug_clause;
 
         // Helper: execute a COUNT(*) query
-        auto count_query = [&](const std::string& extra_where) -> long long {
-            long long cnt = 0;
-            const std::string sql = "SELECT COUNT(*) FROM click_events " + base_where + extra_where;
+        auto count_query = [&](const std::string& extra_where) -> std::int64_t {
+            std::string cnt_text = "0";
+            const std::string sql = "SELECT CAST(COUNT(*) AS TEXT) FROM click_events " + base_where + extra_where;
             if (query.slug) {
                 session_ << sql,
-                    soci::use(from_e, "from"), soci::use(to_e, "to"),
-                    soci::use(slug_val, "slug"), soci::into(cnt);
+                    soci::use(from_e, "from_ts"), soci::use(to_e, "to_ts"),
+                    soci::use(slug_val, "slug"), soci::into(cnt_text);
             } else {
                 session_ << sql,
-                    soci::use(from_e, "from"), soci::use(to_e, "to"),
-                    soci::into(cnt);
+                    soci::use(from_e, "from_ts"), soci::use(to_e, "to_ts"),
+                    soci::into(cnt_text);
             }
-            return cnt;
+            return static_cast<std::int64_t>(std::stoll(cnt_text));
         };
 
         stats->total_attempts     = static_cast<uint64_t>(count_query(""));
@@ -161,18 +162,19 @@ bool SqlClickEventRepository::GetAggregateStats(
         // Counts by status code
         {
             const std::string sql =
-                "SELECT status_code, COUNT(*) AS cnt FROM click_events "
+                "SELECT CAST(status_code AS TEXT) AS status_code, "
+                "CAST(COUNT(*) AS TEXT) AS cnt FROM click_events "
                 + base_where + " GROUP BY status_code";
             soci::rowset<soci::row> rs = query.slug
                 ? (session_.prepare << sql,
-                   soci::use(from_e, "from"), soci::use(to_e, "to"),
+                   soci::use(from_e, "from_ts"), soci::use(to_e, "to_ts"),
                    soci::use(slug_val, "slug"))
                 : (session_.prepare << sql,
-                   soci::use(from_e, "from"), soci::use(to_e, "to"));
+                   soci::use(from_e, "from_ts"), soci::use(to_e, "to_ts"));
             for (const auto& r : rs) {
                 analytics::StatusCodeCount sc;
-                sc.status_code = static_cast<uint16_t>(r.get<int>("status_code"));
-                sc.count       = static_cast<uint64_t>(r.get<long long>("cnt"));
+                sc.status_code = static_cast<uint16_t>(std::stoll(r.get<std::string>("status_code")));
+                sc.count       = static_cast<uint64_t>(std::stoll(r.get<std::string>("cnt")));
                 stats->status_code_counts.push_back(sc);
             }
         }
@@ -180,18 +182,18 @@ bool SqlClickEventRepository::GetAggregateStats(
         // Counts by domain
         {
             const std::string sql =
-                "SELECT domain, COUNT(*) AS cnt FROM click_events "
+                "SELECT domain, CAST(COUNT(*) AS TEXT) AS cnt FROM click_events "
                 + base_where + " GROUP BY domain";
             soci::rowset<soci::row> rs = query.slug
                 ? (session_.prepare << sql,
-                   soci::use(from_e, "from"), soci::use(to_e, "to"),
+                   soci::use(from_e, "from_ts"), soci::use(to_e, "to_ts"),
                    soci::use(slug_val, "slug"))
                 : (session_.prepare << sql,
-                   soci::use(from_e, "from"), soci::use(to_e, "to"));
+                   soci::use(from_e, "from_ts"), soci::use(to_e, "to_ts"));
             for (const auto& r : rs) {
                 analytics::DomainCount dc;
                 dc.domain = r.get<std::string>("domain");
-                dc.count  = static_cast<uint64_t>(r.get<long long>("cnt"));
+                dc.count  = static_cast<uint64_t>(std::stoll(r.get<std::string>("cnt")));
                 stats->domain_counts.push_back(dc);
             }
         }
@@ -202,22 +204,23 @@ bool SqlClickEventRepository::GetAggregateStats(
                 ? 3600LL
                 : (*query.bucket == analytics::AggregateBucket::day ? 86400LL : 604800LL);
             const std::string sql =
-                "SELECT (occurred_at / :w) * :w AS bucket_start, COUNT(*) AS cnt "
+                "SELECT CAST((occurred_at / :w) * :w AS TEXT) AS bucket_start, "
+                "CAST(COUNT(*) AS TEXT) AS cnt "
                 "FROM click_events " + base_where
                 + " GROUP BY bucket_start ORDER BY bucket_start";
             soci::rowset<soci::row> rs = query.slug
                 ? (session_.prepare << sql,
                    soci::use(width, "w"),
-                   soci::use(from_e, "from"), soci::use(to_e, "to"),
+                   soci::use(from_e, "from_ts"), soci::use(to_e, "to_ts"),
                    soci::use(slug_val, "slug"))
                 : (session_.prepare << sql,
                    soci::use(width, "w"),
-                   soci::use(from_e, "from"), soci::use(to_e, "to"));
+                   soci::use(from_e, "from_ts"), soci::use(to_e, "to_ts"));
             for (const auto& r : rs) {
                 analytics::TimeBucketCount tb;
-                long long bs = r.get<long long>("bucket_start");
+                std::int64_t bs = static_cast<std::int64_t>(std::stoll(r.get<std::string>("bucket_start")));
                 tb.bucket_start = from_epoch_ll(bs);
-                tb.count        = static_cast<uint64_t>(r.get<long long>("cnt"));
+                tb.count        = static_cast<uint64_t>(std::stoll(r.get<std::string>("cnt")));
                 stats->time_buckets.push_back(tb);
             }
         }
