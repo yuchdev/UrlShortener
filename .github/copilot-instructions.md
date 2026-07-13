@@ -28,7 +28,7 @@ Auto-fetched dependencies (do not install manually): `yaml-cpp`, `hiredis`, `SOC
 
 ## Testing
 
-Tests are registered via `add_test` in `CMakeLists.txt` and grouped by CTest labels: `unit`, `integration`, `contract`.
+Tests are registered via `add_test` in `CMakeLists.txt` and grouped by CTest labels: `unit`, `contract` (backend-agnostic "mock"/fake suites), `integration`, and `e2e` (shell-based scenario tests under `tests/e2e/scripts/`, registered only on non-Windows hosts with a `bash` interpreter — toggle with `-DURLSHORTENER_ENABLE_E2E_TESTS=OFF`).
 
 **Always use `--test-dir` pointing to the existing build directory.**
 
@@ -42,10 +42,17 @@ Run by label:
 ctest --test-dir "C:\Users\atatat\Projects\UrlShortener\cmake-build-debug-visual-studio" -C Debug -L unit --output-on-failure
 ```
 
-Run all tests:
+Run **every category** (unit + mock/contract + integration + e2e) in a single command via a label union regex:
+```powershell
+ctest --test-dir "C:\Users\atatat\Projects\UrlShortener\cmake-build-debug-visual-studio" -C Debug -L "unit|contract|integration|e2e" --output-on-failure
+```
+
+Run all tests (equivalent, no label filter):
 ```powershell
 ctest --test-dir "C:\Users\atatat\Projects\UrlShortener\cmake-build-debug-visual-studio" -C Debug --output-on-failure
 ```
+
+> Note: `e2e` tests require a POSIX shell, `python3`, and Linux runtime facilities (`/proc`, `os.kill`); they register and pass on the Ubuntu CI runner, not on native Windows. The `e2e` CTest entries invoke the same `tests/e2e/scripts/run_section.sh` used by the `e2e-tests.yml` pipeline.
 
 ### Test target naming
 

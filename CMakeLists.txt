@@ -590,6 +590,52 @@ include(CTest)
       LABELS "integration"
     )
   endif()
+
+  # ---- E2E shell scenario tests (label "e2e") ----
+  # The section scripts under tests/e2e/scripts/ are POSIX-shell + live-service
+  # scenarios (they read /proc and drive a background HTTP service), so they are
+  # registered only on non-Windows hosts where a bash interpreter is available.
+  # Each section binds the same fixed port and shares tests/e2e/tmp, so they are
+  # marked RUN_SERIAL to prevent parallel interference. Registering them here lets
+  # a single ctest invocation cover every category, e.g.:
+  #   ctest -L "unit|contract|integration|e2e"
+  option(URLSHORTENER_ENABLE_E2E_TESTS
+      "Register shell-based e2e scenario tests with CTest" ON)
+  if(URLSHORTENER_ENABLE_E2E_TESTS AND NOT CMAKE_HOST_WIN32)
+    find_program(BASH_EXECUTABLE bash)
+    if(BASH_EXECUTABLE)
+      set(E2E_SECTIONS
+          01_server_boot
+          02_create_short_url
+          03_redirects
+          04_expiration
+          05_fingerprinting
+          06_authentication
+          07_permissions
+          08_admin_api
+          09_error_handling
+          10_concurrency
+      )
+      foreach(e2e_section IN LISTS E2E_SECTIONS)
+        add_test(
+          NAME e2e_${e2e_section}
+          COMMAND ${BASH_EXECUTABLE}
+                  ${CMAKE_CURRENT_SOURCE_DIR}/tests/e2e/scripts/run_section.sh
+                  ${e2e_section}
+          WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+        )
+        set_tests_properties(e2e_${e2e_section} PROPERTIES
+          LABELS "e2e"
+          RUN_SERIAL TRUE
+          TIMEOUT 120
+        )
+      endforeach()
+    else()
+      message(STATUS
+          "URLSHORTENER_ENABLE_E2E_TESTS is ON but no bash interpreter was found; "
+          "skipping e2e CTest registration.")
+    endif()
+  endif()
 endif()
 
 # ---- Install rules ----
