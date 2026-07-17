@@ -150,18 +150,22 @@ other test.
 
 ## 5. Building the tests
 
-### Windows (CLion / Visual Studio — this workspace)
+### Windows (Visual Studio)
 
-Requires vcpkg (set `VCPKG_ROOT` or pass `-DCMAKE_TOOLCHAIN_FILE`). Use the
-existing CLion build directory and always pass `-C Debug` (multi-config
-generator):
+Requires vcpkg (set `VCPKG_ROOT` or pass `-DCMAKE_TOOLCHAIN_FILE`). Follow the
+README workflow and always pass `-C Debug` when running tests because Visual
+Studio is a multi-config generator:
 
 ```powershell
+mkdir cmake-build
+cd cmake-build
+cmake .. -G "Visual Studio 17 2022" -DCMAKE_TOOLCHAIN_FILE="C:\Program Files\Microsoft Visual Studio\2022\Community\VC\vcpkg\scripts\buildsystems\vcpkg.cmake" -DVCPKG_TARGET_TRIPLET=x64-windows
+
 # Build the whole test tree via the shared library + individual targets
-cmake --build "C:\Users\atatat\Projects\UrlShortener\cmake-build-debug-visual-studio" --config Debug
+cmake --build . --config Debug
 
 # Or build a single target before running it
-cmake --build "C:\Users\atatat\Projects\UrlShortener\cmake-build-debug-visual-studio" --target inmemory__01_create_and_get_roundtrip --config Debug
+cmake --build . --target inmemory__01_create_and_get_roundtrip --config Debug
 ```
 
 ### Linux / macOS (generic, as CI does)
@@ -176,17 +180,17 @@ cmake --build build
 ## 6. Running the tests
 
 Always point `--test-dir` at the build directory. On Windows add `-C Debug`.
-Examples below use the CLion build dir; substitute `build` on Linux.
+Examples below use `cmake-build`; substitute `build` on Linux.
 
 ```powershell
 # One test by exact name
-ctest --test-dir "...\cmake-build-debug-visual-studio" -C Debug -R "^08_redirect_status_test$" --output-on-failure
+ctest --test-dir cmake-build -C Debug -R "^08_redirect_status_test$" --output-on-failure
 
 # One category by label
-ctest --test-dir "...\cmake-build-debug-visual-studio" -C Debug -L unit        --output-on-failure
-ctest --test-dir "...\cmake-build-debug-visual-studio" -C Debug -L contract    --output-on-failure
-ctest --test-dir "...\cmake-build-debug-visual-studio" -C Debug -L integration --output-on-failure
-ctest --test-dir "...\cmake-build-debug-visual-studio" -C Debug -L e2e         --output-on-failure
+ctest --test-dir cmake-build -C Debug -L unit        --output-on-failure
+ctest --test-dir cmake-build -C Debug -L contract    --output-on-failure
+ctest --test-dir cmake-build -C Debug -L integration --output-on-failure
+ctest --test-dir cmake-build -C Debug -L e2e         --output-on-failure
 ```
 
 ### Run every category in a single command
@@ -194,7 +198,7 @@ ctest --test-dir "...\cmake-build-debug-visual-studio" -C Debug -L e2e         -
 Use a label-union regex to run unit + mock/contract + integration + e2e at once:
 
 ```powershell
-ctest --test-dir "...\cmake-build-debug-visual-studio" -C Debug -L "unit|contract|integration|e2e" --output-on-failure
+ctest --test-dir cmake-build -C Debug -L "unit|contract|integration|e2e" --output-on-failure
 ```
 
 ```bash
@@ -260,8 +264,8 @@ and configure with Ninja/Release. Because CI jobs select by `-L`, adding the
    inherit it, rather than to a single backend suite.
 4. **Build the single target, then run by exact name**:
    ```powershell
-   cmake --build "...\cmake-build-debug-visual-studio" --target <target> --config Debug
-   ctest --test-dir "...\cmake-build-debug-visual-studio" -C Debug -R "^<test_name>$" --output-on-failure
+   cmake --build cmake-build --target <target> --config Debug
+   ctest --test-dir cmake-build -C Debug -R "^<test_name>$" --output-on-failure
    ```
 5. **Verify the category still passes** with `-L <label>`, and confirm coverage
    against [`docs/agent/testing-requirements.md`](../agent/testing-requirements.md).

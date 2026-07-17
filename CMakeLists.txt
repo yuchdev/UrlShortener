@@ -59,6 +59,19 @@ else()
     set(HIREDIS_LIB hiredis)
   endif()
 endif()
+# ---- MSVC compile flags (must precede FetchSOCI so /FS reaches soci_core targets) ----
+# /FS  - Force Synchronous PDB Writes: prevents C1041 when MSBuild compiles
+#         multiple translation units of soci_core in parallel on the same .pdb file.
+# /bigobj - required for Boost headers that exceed the default 65535 section limit.
+if(MSVC)
+    add_compile_options(/FS /bigobj)
+    add_compile_definitions(
+        _WIN32_WINNT=0x0A00
+        WIN32_LEAN_AND_MEAN
+        NOMINMAX
+    )
+endif()
+
 include(cmake/FetchSOCI.cmake)
 fetch_soci_sqlite_and_postgres()
 
@@ -72,16 +85,6 @@ set_property(TARGET url_shortener PROPERTY OUTPUT_NAME url_shortener)
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 
 target_compile_features(url_shortener PRIVATE cxx_std_17)
-
-if(MSVC)
-    add_compile_options(/bigobj)
-    add_compile_definitions(
-        _WIN32_WINNT=0x0A00
-        WIN32_LEAN_AND_MEAN
-        NOMINMAX
-    )
-endif()
-
 target_include_directories(url_shortener
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/include
@@ -115,6 +118,27 @@ include(CTest)
       tests/unit/link_management/05_reserved_slug_test.cpp
       tests/unit/link_management/06_hooks_default_behavior_test.cpp
       tests/unit/link_management/07_stats_increment_test.cpp
+  )
+
+  set(HTTP_UNIT_SOURCES
+      tests/unit/http/01_route_registry.cpp
+      tests/unit/http/02_endpoint_matrix_characterization.cpp
+      tests/unit/http/03_method_and_error_characterization.cpp
+      tests/unit/http/04_redirect_fallback_characterization.cpp
+      tests/unit/http/05_route_context.cpp
+      tests/unit/http/06_router_matcher.cpp
+      tests/unit/http/07_router_dispatch.cpp
+      tests/unit/http/08_router_registry_consistency.cpp
+      tests/unit/http/09_observability_handlers.cpp
+      tests/unit/http/10_link_handlers.cpp
+      tests/unit/http/11_compatibility_handlers.cpp
+      tests/unit/http/12_prefixed_redirect_handler.cpp
+      tests/unit/http/13_root_redirect_handler.cpp
+      tests/unit/http/14_fallback_handler.cpp
+  )
+
+  set(DOCS_UNIT_SOURCES
+      tests/unit/docs/02_route_registry_docs.cpp
   )
 
   set(CORE_UNIT_SOURCES
@@ -352,6 +376,14 @@ include(CTest)
       ${CMAKE_CURRENT_SOURCE_DIR}/src/http/http_server.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/http/request_handlers.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/http/http_session.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/http/RouteRegistry.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/http/Router.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/http/RouterBuilder.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/http/handlers/ObservabilityHandlers.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/http/handlers/LinkHandlers.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/http/handlers/CompatibilityHandlers.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/http/handlers/RedirectHandlers.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/http/handlers/FallbackHandlers.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/core/LinkService.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/storage/inmemory/InMemoryMetadataRepository.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/storage/inmemory/InMemoryCacheStore.cpp
@@ -413,10 +445,18 @@ include(CTest)
         yaml-cpp::yaml-cpp
   )
 
+  add_executable(route_registry_dump
+      ${CMAKE_CURRENT_SOURCE_DIR}/tools/route_registry_dump.cpp
+  )
+  target_compile_features(route_registry_dump PRIVATE cxx_std_17)
+  target_include_directories(route_registry_dump PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+  target_link_libraries(route_registry_dump PRIVATE url_shortener_common)
+
   if(BUILD_TESTING)
   set(ALL_UNIT_SOURCES
       ${CORE_BASIC_UNIT_SOURCES}
       ${LINK_MANAGEMENT_UNIT_SOURCES}
+      ${HTTP_UNIT_SOURCES}
   )
 
   foreach(unit_src IN LISTS ALL_UNIT_SOURCES)
@@ -472,6 +512,7 @@ include(CTest)
   register_labeled_cpp_tests(RATELIMITER_UNIT_SOURCES    "unit")
   register_labeled_cpp_tests(REDIS_UNIT_SOURCES          "unit")
   register_labeled_cpp_tests(OBSERVABILITY_UNIT_SOURCES  "unit")
+  register_labeled_cpp_tests(DOCS_UNIT_SOURCES           "unit")
   target_compile_definitions(docs__01_configuration_examples_match_parser
       PRIVATE SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
   register_labeled_cpp_tests(ANALYTICS_UNIT_SOURCES      "unit")
@@ -573,8 +614,9 @@ include(CTest)
       COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/${integration_src}
     )
     set_tests_properties(${integration_name} PROPERTIES
-      ENVIRONMENT "SIMPLE_HTTP_BIN=$<TARGET_FILE:url_shortener>"
-      TIMEOUT 180
+      ENVIRONMENT
+        "SIMPLE_HTTP_BIN=$<TARGET_FILE:url_shortener>;URLSHORTENER_CMAKE_TOOLCHAIN_FILE=${CMAKE_TOOLCHAIN_FILE};URLSHORTENER_CTEST_CONFIG=$<CONFIG>;URLSHORTENER_VCPKG_INSTALLED_DIR=${VCPKG_INSTALLED_DIR};URLSHORTENER_VCPKG_TARGET_TRIPLET=${VCPKG_TARGET_TRIPLET}"
+      TIMEOUT 600
       LABELS "integration"
     )
   endforeach()

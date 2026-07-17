@@ -4,18 +4,21 @@
 
 This project requires vcpkg on Windows. `CMakeLists.txt` fails fast if neither `CMAKE_TOOLCHAIN_FILE` nor `VCPKG_ROOT` is set.
 
-**In this workspace**, use the existing CLion CMake profile and build directory:
-- Profile: `Debug-Visual Studio`
-- Build dir: `C:\Users\atatat\Projects\UrlShortener\cmake-build-debug-visual-studio`
+Use the README Windows workflow with a normal out-of-source `cmake-build`
+directory:
+
+```powershell
+cmake -S . -B cmake-build -G "Visual Studio 17 2022" -DCMAKE_TOOLCHAIN_FILE="C:\Program Files\Microsoft Visual Studio\2022\Community\VC\vcpkg\scripts\buildsystems\vcpkg.cmake" -DVCPKG_TARGET_TRIPLET=x64-windows
+```
 
 Build the main binary:
 ```powershell
-cmake --build "C:\Users\atatat\Projects\UrlShortener\cmake-build-debug-visual-studio" --target url_shortener --config Debug
+cmake --build cmake-build --target url_shortener --config Debug
 ```
 
 Build a specific test target before running it:
 ```powershell
-cmake --build "C:\Users\atatat\Projects\UrlShortener\cmake-build-debug-visual-studio" --target <target_name> --config Debug
+cmake --build cmake-build --target <target_name> --config Debug
 ```
 
 On Linux/macOS (generic):
@@ -34,22 +37,22 @@ Tests are registered via `add_test` in `CMakeLists.txt` and grouped by CTest lab
 
 Run a single test by exact name:
 ```powershell
-ctest --test-dir "C:\Users\atatat\Projects\UrlShortener\cmake-build-debug-visual-studio" -C Debug -R "^<test_name>$" --output-on-failure
+ctest --test-dir cmake-build -C Debug -R "^<test_name>$" --output-on-failure
 ```
 
 Run by label:
 ```powershell
-ctest --test-dir "C:\Users\atatat\Projects\UrlShortener\cmake-build-debug-visual-studio" -C Debug -L unit --output-on-failure
+ctest --test-dir cmake-build -C Debug -L unit --output-on-failure
 ```
 
 Run **every category** (unit + mock/contract + integration + e2e) in a single command via a label union regex:
 ```powershell
-ctest --test-dir "C:\Users\atatat\Projects\UrlShortener\cmake-build-debug-visual-studio" -C Debug -L "unit|contract|integration|e2e" --output-on-failure
+ctest --test-dir cmake-build -C Debug -L "unit|contract|integration|e2e" --output-on-failure
 ```
 
 Run all tests (equivalent, no label filter):
 ```powershell
-ctest --test-dir "C:\Users\atatat\Projects\UrlShortener\cmake-build-debug-visual-studio" -C Debug --output-on-failure
+ctest --test-dir cmake-build -C Debug --output-on-failure
 ```
 
 > Note: `e2e` tests require a POSIX shell, `python3`, and Linux runtime facilities (`/proc`, `os.kill`); they register and pass on the Ubuntu CI runner, not on native Windows. The `e2e` CTest entries invoke the same `tests/e2e/scripts/run_section.sh` used by the `e2e-tests.yml` pipeline.
@@ -75,7 +78,8 @@ Single-binary async HTTP/HTTPS server (Boost.Asio + Boost.Beast + OpenSSL).
 **Runtime data flow:**
 1. `src/main.cpp` parses CLI flags into `ServerConfig`, initializes `io_context`, and signals (`SIGINT`/`SIGTERM`/`SIGHUP`).
 2. `HttpServer` (`src/http/`) accepts connections and spawns `PlainSession` or `TlsSession` per connection.
-3. `handleShortenerRequest` in `src/http/request_handlers.cpp` dispatches all routes.
+3. `handleShortenerRequest` in `src/http/request_handlers.cpp` delegates to the
+   application `Router`; `RouterBuilder` registers route-specific handlers.
 4. `LinkService` (`src/core/`) coordinates redirect resolution through `IMetadataRepository`, `ICacheStore`, and `IAnalyticsSink`.
 5. `BoundedClickEventQueue` receives analytics events non-blocking (drop-on-overflow); `AnalyticsWorker` drains the queue to `IClickEventRepository` in the background.
 6. `StorageFactory` (`src/composition/`) constructs all storage adapters from `StorageConfig` at startup.
@@ -117,7 +121,11 @@ Single-binary async HTTP/HTTPS server (Boost.Asio + Boost.Beast + OpenSSL).
 
 **`HttpServer`** manages HTTP and HTTPS acceptors, `run()`/`stop()` lifecycle, and `reloadTlsContext()` (triggered by `SIGHUP`).
 
-**`handleShortenerRequest`** is the single entry point for all HTTP routing. It calls `handleApplicationRequest` which dispatches to route-specific handlers. Route labelling (`routeLabelFor`) normalizes paths with slugs/IDs into stable metric keys.
+**`handleShortenerRequest`** is the single entry point for HTTP routing and
+delegates to the application `Router`. `RouterBuilder` registers handlers from
+`src/http/handlers/`, and `RouteRegistry` is the source of truth for route
+metadata, stable labels, operation IDs, compatibility aliases, placeholders, and
+generated API docs (`docs/api/README.md`).
 
 **`RequestContext`** carries `request_id`, `route_label`, and `started_at` through the request lifecycle. `X-Request-Id` is accepted from callers (validated/length-bounded) or generated if absent.
 

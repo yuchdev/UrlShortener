@@ -16,5 +16,8 @@ patterns = "|".join([
     "05_ratelimiter_concurrency",
     "storage__13_",
 ])
-res = subprocess.run(["ctest", "-R", patterns, "--output-on-failure"], check=False)
+ctest_args = ["ctest", "-R", patterns, "--output-on-failure"]
+if os.getenv("URLSHORTENER_CTEST_CONFIG"):
+    ctest_args[1:1] = ["-C", os.environ["URLSHORTENER_CTEST_CONFIG"]]
+res = subprocess.run(ctest_args, check=False)
 raise SystemExit(res.returncode)

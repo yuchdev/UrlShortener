@@ -86,9 +86,8 @@ On Apple Silicon the Homebrew prefix is `/opt/homebrew`; on Intel Macs it is
 ### Windows
 
 ```powershell
-$env:VCPKG_ROOT="C:\Program Files\Microsoft Visual Studio\2022\Community\VC\vcpkg\"
 mkdir cmake-build && cd cmake-build
-cmake .. -DCMAKE_TOOLCHAIN_FILE="C:\Program Files\Microsoft Visual Studio\2022\Community\VC\vcpkg\scripts\buildsystems\vcpkg.cmake" -DVCPKG_TARGET_TRIPLET=x64-windows
+cmake .. -G "Visual Studio 17 2022" -DCMAKE_TOOLCHAIN_FILE="C:\Program Files\Microsoft Visual Studio\2022\Community\VC\vcpkg\scripts\buildsystems\vcpkg.cmake" -DVCPKG_TARGET_TRIPLET=x64-windows
 cmake --build . --target url_shortener
 ```
 
@@ -175,6 +174,8 @@ curl -i http://localhost:8000/api/v1/links/docs/stats
 - Redirect stats are **provisional operational counters** in the current in-memory implementation and may reset on process restart/state loss.
 - Old clients using existing create/read/redirect flows continue to work; new lifecycle operations live under `/api/v1/links/{slug}/...`.
 - Placeholder extension routes for future work are available at `GET /api/v1/links/{slug}/qr` and `GET /api/v1/links/{slug}/routing`, both currently returning `501 feature_not_enabled`.
+- The C++ `RouteRegistry` is the source of truth for the API inventory. A
+  generated Markdown reference is maintained at [`docs/api/README.md`](docs/api/README.md).
 
 ## Current state
 
@@ -185,19 +186,18 @@ curl -i http://localhost:8000/api/v1/links/docs/stats
 - Optional HTTP -> HTTPS redirect (`308`).
 - TLS hardening controls (TLS version/ciphers/curves/session config), optional mTLS, and SIGHUP TLS context reload.
 - Shortener API:
-  - `POST /api/v1/short-urls` create mapping (custom or generated code).
-  - `GET /r/{code}` resolve + redirect (`302`).
-  - `GET /api/v1/short-urls/{code}` read metadata.
-  - `DELETE /api/v1/short-urls/{code}` delete mapping.
-- In-memory data storage persisted to local `uri.txt` on shutdown and loaded on startup.
+  - Canonical link management under `/api/v1/links`.
+  - Compatibility create/read aliases under `/api/v1/short-urls`.
+  - Redirects via `GET /{slug}` and compatibility `GET /r/{slug}`.
+  - URI-store fallback routes for legacy arbitrary paths.
+- Router-backed dispatch with route metadata in `RouteRegistry`.
+- API reference generated from route metadata in `docs/api/README.md`.
 
 ### Current limitations
 
-- No dedicated Link domain model yet (records are stored as JSON strings in a generic URI map).
-- No pluggable storage abstraction yet (only singleton in-memory map).
 - No latency-focused benchmark + profiling loop committed as part of CI.
 - Minimal JSON parsing/validation strategy (string scanning) suitable for early stage but not ideal for long-term correctness/performance.
-- No production observability stack (only startup/shutdown logs and handshake counters).
+- Production observability is still intentionally lightweight.
 
 That means:
 
@@ -211,10 +211,6 @@ That means:
 
 Your actual bottlenecks are elsewhere:
 
-* storage is still a process-local singleton
-* records are stored as ad-hoc JSON strings
-* thread safety is incomplete
-* repository/domain boundaries are not extracted yet
 * redirect fast path is not yet optimized/measured
 
 Those are much more important than whether the API is “pure REST” or whether you adopt another RPC style. The architecture doc explicitly calls out storage abstraction, robust serialization, redirect fast path, and metrics as the next gaps to close. 

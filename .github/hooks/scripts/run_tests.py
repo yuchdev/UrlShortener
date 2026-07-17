@@ -18,8 +18,8 @@ when the stop was itself triggered by a prior stop-hook block
 (``stop_hook_active``).
 
 Configuration via environment:
-  * ``URLSHORTENER_BUILD_DIR``  - build directory to use (default: the CLion
-    profile dir ``cmake-build-debug-visual-studio``, then ``build``).
+  * ``URLSHORTENER_BUILD_DIR``  - build directory to use (default:
+    ``cmake-build``, then ``build``).
   * ``URLSHORTENER_SKIP_TESTS=1`` - skip the whole gate for a known-WIP session.
 
 If the build directory or the cmake/ctest runners are unavailable, the gate
@@ -36,7 +36,7 @@ from _common import REPO_ROOT, allow, append_log, block_stop, read_event
 
 TIMEOUT_SECONDS = 900
 CXX_SUFFIXES = {".c", ".cc", ".cpp", ".cxx", ".h", ".hh", ".hpp", ".hxx", ".ipp", ".inl"}
-BUILD_DIR_CANDIDATES = ("cmake-build-debug-visual-studio", "build", "cmake-build-debug")
+BUILD_DIR_CANDIDATES = ("cmake-build", "build")
 
 
 def _run(cmd: list[str]) -> Optional[subprocess.CompletedProcess[str]]:

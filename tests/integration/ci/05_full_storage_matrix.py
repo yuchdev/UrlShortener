@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from pathlib import Path
 import subprocess
+import sys
 
 root = Path(__file__).resolve().parent
 jobs = [
@@ -11,7 +12,7 @@ jobs = [
 ]
 failed = []
 for job in jobs:
-    rc = subprocess.run(["python3", str(job)], check=False).returncode
+    rc = subprocess.run([sys.executable, str(job)], check=False).returncode
     print(f"{job.name}: {'PASS' if rc==0 else 'FAIL'}")
     if rc != 0:
         failed.append(job.name)

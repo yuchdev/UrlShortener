@@ -18,7 +18,9 @@ Data flow:
 1. `main.cpp` parses CLI flags into `ServerConfig`.
 2. `HttpServer` is constructed and starts HTTP/HTTPS accept loops.
 3. For each connection, a session (`PlainSession` or `TlsSession`) handles requests asynchronously.
-4. Request handlers in `request_handlers.cpp` dispatch to appropriate domain logic.
+4. `handleShortenerRequest()` delegates to the application `Router`; route
+   handlers in `src/http/handlers/` own observability, link, compatibility,
+   redirect, and fallback behavior.
 5. Storage calls are handled by the active `IMetadataRepository` implementation.
 6. Analytics events are enqueued to `BoundedClickEventQueue` for background processing.
 
@@ -34,7 +36,10 @@ Data flow:
 │   ├── http/
 │   │   ├── http_server.h        # main server lifecycle
 │   │   ├── http_session.h       # async session handling
-│   │   └── request_handlers.h   # HTTP routing and logic
+│   │   ├── RouteRegistry.hpp     # route metadata source of truth
+│   │   ├── Router.hpp            # small in-process router
+│   │   ├── handlers/             # route-specific handlers
+│   │   └── request_handlers.h    # HTTP entry point and shared helpers
 │   ├── storage/
 │   │   └── link_repository.h    # repository interface and singleton
 │   ├── analytics/
@@ -71,12 +76,21 @@ Responsibilities:
 
 The `HttpServer` manages the lifecycle of listeners. It spawns `PlainSession` or `TlsSession` objects which handle the asynchronous read/write loop for each connection.
 
-### 3.3 Request Handling
+### 3.3 Request handling and route metadata
 
-`handleShortenerRequest` provides the primary API for:
-- Link creation and management (`/api/v1/links`).
-- Redirect resolution (`/r/{slug}` or root redirects).
-- System health and metrics (`/healthz`, `/metrics`).
+`handleShortenerRequest()` is intentionally thin and dispatches through the
+application `Router`. `RouterBuilder` registers routes in priority order:
+observability, canonical `/api/v1/links`, compatibility `/api/v1/short-urls`,
+redirects, then generic URI-store fallback.
+
+`RouteRegistry` is the C++ source of truth for route inventory, labels,
+operation IDs, compatibility aliases, placeholder routes, and generated API
+documentation. The checked-in API reference lives at `docs/api/README.md`.
+
+Redirect handlers for `GET /{slug}` and `GET /r/{slug}` remain a protected fast
+path: validate slug, read link, evaluate state, update stats/analytics
+best-effort, and return the redirect response. Management-plane logic stays in
+the `/api/v1/links` handlers.
 
 ### 3.4 Storage and Analytics
 

@@ -58,8 +58,8 @@ must be rigorous. Follow `docs/agent/testing-requirements.md`.
   one test):
 
   ```powershell
-  cmake --build "C:\Users\atatat\Projects\UrlShortener\cmake-build-debug-visual-studio" --target <target> --config Debug
-  ctest --test-dir "C:\Users\atatat\Projects\UrlShortener\cmake-build-debug-visual-studio" -C Debug -R "^<test>$" --output-on-failure
+  cmake --build cmake-build --target <target> --config Debug
+  ctest --test-dir cmake-build -C Debug -R "^<test>$" --output-on-failure
   ```
 
 - **Coverage** (Linux/gcc-clang builds): configure with the coverage preset, then

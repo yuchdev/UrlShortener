@@ -5,7 +5,9 @@ build/
 build_test/
 !tests/integration/build/
 cmake/open-cpp-coverage.cmake
+cmake-build/
 cmake-build-*/
+__cmake_systeminformation/
 prefix/
 
 # User-specific

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Integration check that SOCI is fetched with both SQLite and PostgreSQL enabled."""
 
+import os
 import pathlib
 import subprocess
 import tempfile
@@ -21,8 +22,22 @@ fetch_soci_sqlite_and_postgres()
     + "\n"
 )
 
+cmake_args = ["cmake", "-S", str(probe_src), "-B", str(probe_build)]
+if os.getenv("URLSHORTENER_CMAKE_TOOLCHAIN_FILE"):
+    cmake_args.append(
+        f"-DCMAKE_TOOLCHAIN_FILE={os.environ['URLSHORTENER_CMAKE_TOOLCHAIN_FILE']}"
+    )
+if os.getenv("URLSHORTENER_VCPKG_INSTALLED_DIR"):
+    cmake_args.append(
+        f"-DVCPKG_INSTALLED_DIR={os.environ['URLSHORTENER_VCPKG_INSTALLED_DIR']}"
+    )
+if os.getenv("URLSHORTENER_VCPKG_TARGET_TRIPLET"):
+    cmake_args.append(
+        f"-DVCPKG_TARGET_TRIPLET={os.environ['URLSHORTENER_VCPKG_TARGET_TRIPLET']}"
+    )
+
 configure = subprocess.run(
-    ["cmake", "-S", str(probe_src), "-B", str(probe_build)],
+    cmake_args,
     capture_output=True,
     text=True,
 )

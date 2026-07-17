@@ -62,6 +62,8 @@ boost::beast::http::response<boost::beast::http::string_body> handleShortenerReq
     const ServerConfig& config,
     const bool is_tls);
 
+/// Implements the legacy URI-store fallback. Router fallback handlers wrap this
+/// function so the storage behavior remains centralized during route migration.
 boost::beast::http::response<boost::beast::http::string_body> handleApplicationRequest(
     const boost::beast::http::request<boost::beast::http::string_body>& req,
     const ServerConfig& config,

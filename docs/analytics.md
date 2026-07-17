@@ -36,6 +36,9 @@ Redirect attempts are normalized into click events and enqueued on a bounded in-
 
 `GET /api/v1/links/{slug}/stats?from=1710000000&to=1710086400&bucket=hour`
 
+The stats endpoint is registered in the C++ `RouteRegistry`, which is the source
+of truth for generated HTTP API documentation in `docs/api/README.md`.
+
 ## Disabled mode
 
 When `analytics.enabled=false`, redirect behavior is unchanged, event recording is a no-op, and worker startup is skipped.

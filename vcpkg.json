@@ -9,6 +9,7 @@
     "boost-property-tree",
     "boost-program-options",
     "boost-test",
+    "boost-uuid",
     "openssl",
     "yaml-cpp",
     "hiredis",

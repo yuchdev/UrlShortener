@@ -3,19 +3,23 @@
 ## Build & Configuration (project-specific)
 
 - This project requires a vcpkg toolchain at configure time; `CMakeLists.txt` fails fast if neither `CMAKE_TOOLCHAIN_FILE` nor `VCPKG_ROOT` is set.
-- In this workspace, use the existing CLion CMake profile and build directory only:
-  - Profile: `Debug-Visual Studio`
-  - Build dir: `C:\Users\atatat\Projects\UrlShortener\cmake-build-debug-visual-studio`
+- On Windows, follow the README workflow with a normal out-of-source
+  `cmake-build` directory:
+
+```powershell
+cmake -S . -B cmake-build -G "Visual Studio 17 2022" -DCMAKE_TOOLCHAIN_FILE="C:\Program Files\Microsoft Visual Studio\2022\Community\VC\vcpkg\scripts\buildsystems\vcpkg.cmake" -DVCPKG_TARGET_TRIPLET=x64-windows
+```
+
 - Targeted build command pattern (avoid full rebuilds when iterating on one area):
 
 ```powershell
-cmake --build "C:\Users\atatat\Projects\UrlShortener\cmake-build-debug-visual-studio" --target <target_name> --config Debug
+cmake --build cmake-build --target <target_name> --config Debug
 ```
 
 - Main app target:
 
 ```powershell
-cmake --build "C:\Users\atatat\Projects\UrlShortener\cmake-build-debug-visual-studio" --target url_shortener --config Debug
+cmake --build cmake-build --target url_shortener --config Debug
 ```
 
 ## Testing workflow
@@ -27,13 +31,13 @@ cmake --build "C:\Users\atatat\Projects\UrlShortener\cmake-build-debug-visual-st
 - Run a single test by exact name:
 
 ```powershell
-ctest --test-dir "C:\Users\atatat\Projects\UrlShortener\cmake-build-debug-visual-studio" -C Debug -R "^<test_name>$" --output-on-failure
+ctest --test-dir cmake-build -C Debug -R "^<test_name>$" --output-on-failure
 ```
 
 - Run by label:
 
 ```powershell
-ctest --test-dir "C:\Users\atatat\Projects\UrlShortener\cmake-build-debug-visual-studio" -C Debug -L unit --output-on-failure
+ctest --test-dir cmake-build -C Debug -L unit --output-on-failure
 ```
 
 ### Verified example (executed)
@@ -41,8 +45,8 @@ ctest --test-dir "C:\Users\atatat\Projects\UrlShortener\cmake-build-debug-visual
 The following sequence was validated in this environment:
 
 ```powershell
-cmake --build "C:\Users\atatat\Projects\UrlShortener\cmake-build-debug-visual-studio" --target 01_url_validation_accept_test --config Debug
-ctest --test-dir "C:\Users\atatat\Projects\UrlShortener\cmake-build-debug-visual-studio" -C Debug -R "^01_url_validation_accept_test$" --output-on-failure
+cmake --build cmake-build --target 01_url_validation_accept_test --config Debug
+ctest --test-dir cmake-build -C Debug -R "^01_url_validation_accept_test$" --output-on-failure
 ```
 
 Observed result: `100% tests passed, 0 tests failed out of 1`.

@@ -28,8 +28,8 @@ OpenSSL stack.
    full-rebuild when iterating:
 
    ```powershell
-   cmake --build "C:\Users\atatat\Projects\UrlShortener\cmake-build-debug-visual-studio" --target <target> --config Debug
-   ctest --test-dir "C:\Users\atatat\Projects\UrlShortener\cmake-build-debug-visual-studio" -C Debug -L unit --output-on-failure
+   cmake --build cmake-build --target <target> --config Debug
+   ctest --test-dir cmake-build -C Debug -L unit --output-on-failure
    ```
 
    On Linux/CI the equivalent is `cmake -B build -G Ninja && cmake --build build`
@@ -63,7 +63,7 @@ do not hand-fight it:
 
 ```powershell
 clang-format -i <changed files>
-clang-tidy <file> -p "C:\Users\atatat\Projects\UrlShortener\cmake-build-debug-visual-studio"
+clang-tidy <file> -p cmake-build
 ```
 
 ### Patterns (as used in this codebase)
