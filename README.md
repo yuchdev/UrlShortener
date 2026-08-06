@@ -390,7 +390,8 @@ ctest --test-dir build --output-on-failure
 
 ## Repo guides
 
-- `ARCHITECTURE.md` - current architecture and layout.
+- `ARCHITECTURE.md` — high-level architecture overview; detailed specs in [`docs/adr/`](docs/adr/).
+- `docs/adr/` — Architecture Decision Records (system architecture, backend topology, performance contract, security model, SQL persistence).
 - `docs/storage/overview.md` - Stage 03 storage abstraction (scope 1) overview.
 - `docs/stages/` - staged specification documents.
 - `scripts/setup_ubuntu_dependencies.sh` - Ubuntu dependency bootstrap.

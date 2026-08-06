@@ -309,6 +309,22 @@ include(CTest)
       tests/unit/storage/memory/16_in_memory_click_event_repository.cpp
   )
 
+  # ---- App-layer unit tests (LinkCommandService + serializers) ----
+  set(APP_UNIT_SOURCES
+      tests/unit/app/01_link_command_service_create_happy_path.cpp
+      tests/unit/app/02_link_command_service_create_invalid_url.cpp
+      tests/unit/app/03_link_command_service_create_reserved_slug.cpp
+      tests/unit/app/04_link_command_service_create_slug_conflict.cpp
+      tests/unit/app/05_link_command_service_create_explicit_slug.cpp
+      tests/unit/app/06_link_command_service_get_by_slug.cpp
+      tests/unit/app/07_link_command_service_get_not_found.cpp
+      tests/unit/app/08_link_command_service_get_by_id.cpp
+      tests/unit/app/09_link_command_service_stats_delegates_to_reader.cpp
+      tests/unit/app/10_link_command_service_stats_reader_error_propagated.cpp
+      tests/unit/app/11_serialize_link_view_json_fields.cpp
+      tests/unit/app/12_serialize_link_stats_json_fields.cpp
+  )
+
   set(ANALYTICS_INTEGRATION_SOURCES
       tests/integration/cpp/analytics/01_redirect_success_emits_click_event.cpp
       tests/integration/cpp/analytics/02_redirect_not_found_emits_terminal_event.cpp
@@ -418,6 +434,9 @@ include(CTest)
       ${CMAKE_CURRENT_SOURCE_DIR}/src/http/AnalyticsStatsHandler.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/storage/memory/InMemoryClickEventRepository.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/storage/sql/SqlClickEventRepository.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/app/LinkCommandService.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/app/LegacyAdapters.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/composition/LinkCommandServiceFactory.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/config/StorageConfig.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/composition/StorageFactory.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/observability/StorageObservability.cpp
@@ -522,6 +541,30 @@ include(CTest)
   register_labeled_cpp_tests(SQLITE_INTEGRATION_SOURCES  "integration")
   register_labeled_cpp_tests(PSQL_INTEGRATION_SOURCES    "integration")
   register_labeled_cpp_tests(REDIS_INTEGRATION_SOURCES   "integration")
+
+  # ---- App-layer unit tests: dedicated loop with tests/unit/app include dir ----
+  # These tests use AppTestFakes.hpp from tests/unit/app/, so the test directory
+  # must be on the include path (the generic macro uses tests/contract/metadata).
+  foreach(app_unit_src IN LISTS APP_UNIT_SOURCES)
+    get_filename_component(app_test_name   ${app_unit_src} NAME_WE)
+    set(app_test_target "app__${app_test_name}")
+    add_executable(${app_test_target}
+        ${CMAKE_CURRENT_SOURCE_DIR}/${app_unit_src}
+    )
+    target_compile_features(${app_test_target} PRIVATE cxx_std_17)
+    target_include_directories(${app_test_target} PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/unit/app
+    )
+    target_link_libraries(${app_test_target}
+      PRIVATE
+        url_shortener_common
+        Boost::unit_test_framework
+    )
+    add_test(NAME ${app_test_target} COMMAND ${app_test_target})
+    set_tests_properties(${app_test_target} PROPERTIES LABELS "unit")
+  endforeach()
+
   # ---- Core integration tests: standalone executables (Python scripts) ----
 
   if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/test/cli_parser_test/cli_parser_test.cpp)
@@ -601,6 +644,20 @@ include(CTest)
       tests/integration/py/test_analytics_disabled_mode.py
   )
 
+  # ---- CLI integration tests (spawn binary in one-shot CLI mode) ----
+  set(CLI_INTEGRATION_SOURCES
+      tests/integration/cli/01_link_create_returns_json.py
+      tests/integration/cli/02_link_create_custom_slug_in_output.py
+      tests/integration/cli/03_link_create_then_get_persists_state.py
+      tests/integration/cli/04_cli_exits_no_listening_port.py
+      tests/integration/cli/05_link_get_not_found_exits_nonzero.py
+      tests/integration/cli/06_link_create_invalid_url_rejected.py
+      tests/integration/cli/07_link_create_reserved_slug_rejected.py
+      tests/integration/cli/08_link_stats_empty_on_fresh_link.py
+      tests/integration/cli/09_link_stats_invalid_time_window.py
+      tests/integration/cli/10_server_mode_unchanged_by_cli.py
+  )
+
   set(ALL_INTEGRATION_SOURCES
       ${LEGACY_CORE_INTEGRATION_SOURCES}
       ${LINK_MANAGEMENT_INTEGRATION_SOURCES}
@@ -617,6 +674,21 @@ include(CTest)
       ENVIRONMENT
         "SIMPLE_HTTP_BIN=$<TARGET_FILE:url_shortener>;URLSHORTENER_CMAKE_TOOLCHAIN_FILE=${CMAKE_TOOLCHAIN_FILE};URLSHORTENER_CTEST_CONFIG=$<CONFIG>;URLSHORTENER_VCPKG_INSTALLED_DIR=${VCPKG_INSTALLED_DIR};URLSHORTENER_VCPKG_TARGET_TRIPLET=${VCPKG_TARGET_TRIPLET}"
       TIMEOUT 600
+      LABELS "integration"
+    )
+  endforeach()
+
+  # ---- CLI integration tests (one-shot CLI mode; no server port needed) ----
+  foreach(cli_src IN LISTS CLI_INTEGRATION_SOURCES)
+    get_filename_component(cli_test_name ${cli_src} NAME_WE)
+    add_test(
+      NAME cli_${cli_test_name}
+      COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/${cli_src}
+    )
+    set_tests_properties(cli_${cli_test_name} PROPERTIES
+      ENVIRONMENT
+        "SIMPLE_HTTP_BIN=$<TARGET_FILE:url_shortener>"
+      TIMEOUT 60
       LABELS "integration"
     )
   endforeach()
@@ -670,6 +742,30 @@ include(CTest)
           LABELS "e2e"
           RUN_SERIAL TRUE
           TIMEOUT 120
+        )
+      endforeach()
+
+      # ---- CLI e2e sections (standalone; no mock service; real binary) ----
+      # These sections run the actual url_shortener binary in one-shot CLI mode
+      # and assert stdout JSON and exit behaviour.  They are independent of the
+      # mock HTTP service sections above.
+      set(E2E_CLI_SECTIONS
+          11_cli_link_create
+          12_cli_link_get
+          13_cli_no_server_socket
+      )
+      foreach(cli_section IN LISTS E2E_CLI_SECTIONS)
+        add_test(
+          NAME e2e_${cli_section}
+          COMMAND ${BASH_EXECUTABLE}
+                  ${CMAKE_CURRENT_SOURCE_DIR}/tests/e2e/scripts/sections/${cli_section}.sh
+          WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+        )
+        set_tests_properties(e2e_${cli_section} PROPERTIES
+          ENVIRONMENT "URLSHORTENER_BIN=$<TARGET_FILE:url_shortener>"
+          LABELS "e2e"
+          RUN_SERIAL TRUE
+          TIMEOUT 30
         )
       endforeach()
     else()

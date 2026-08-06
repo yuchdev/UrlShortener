@@ -16,8 +16,8 @@ documentation that is wrong is a hazard.
 
 - Author net-new `docs/` content for features, subsystems, or APIs that have no
   existing coverage.
-- Produce the initial component `README`, `docs/api.md`, `docs/architecture.md`,
-  and equivalent guides whenever a new component ships.
+- Produce the initial component `README`, `docs/api.md`, and equivalent
+  architecture guides in `docs/adr/` whenever a new component ships.
 - Document new HTTP routes by reading the Boost.Beast request handlers directly
   (there is **no runtime schema generator** - the API surface is defined in C++
   handler code, not a framework's introspection). For each route capture: method
@@ -109,7 +109,8 @@ cmake --build --preset <preset>
 ## Configuration
 ## Documentation
 
-- [Architecture](/docs/architecture.md)
+- [Architecture](/ARCHITECTURE.md)
+- [ADR Index](/docs/adr/)
 - [Coding guardrails](/docs/agent/coding-guardrails.md)
 - [Testing requirements](/docs/agent/testing-requirements.md)
 ```

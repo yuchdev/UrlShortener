@@ -1,67 +1,113 @@
-# Agentic QA Specification
+# End-to-End Test Plan
 
-## QA architecture
+## Purpose
 
-The QA system is split into:
+The e2e suite is the executable analog for manual QA scenarios. Each scenario
+is documented in `docs/testing/e2e_testing/sections/` and implemented by a
+matching script in `tests/e2e/scripts/sections/`.
 
-- section specs in `docs/qa/sections/*.md`
-- executable section scripts in `tests/e2e/scripts/sections/*.sh`
-- expected DB snapshots in `tests/e2e/expected/*.json`
-- orchestration scripts in `tests/e2e/scripts/run_section.sh` and `tests/e2e/scripts/run_all_sections.sh`
-- assertion engine in `tools/sqlite_state_assert.py`
+The suite covers both application modes:
 
-Each section is isolated and runs its own full lifecycle.
+- **Service scenarios** start a test service, execute REST-like operations, and
+  assert runtime and persisted state.
+- **CLI scenarios** execute the built `url_shortener` binary as a one-shot
+  command, assert console output and state, and verify the HTTP server is not
+  started.
 
-## Execution model
+## Architecture
 
-- Run one section: `bash tests/e2e/scripts/run_section.sh 03_redirects`
-- Run all sections: `bash tests/e2e/scripts/run_all_sections.sh`
-- Partial run: `QA_SECTIONS="01_server_boot,03_redirects" bash tests/e2e/scripts/run_all_sections.sh`
+| Concern | Location |
+|---|---|
+| Manual section specs | `docs/testing/e2e_testing/sections/*.md` |
+| Executable section scripts | `tests/e2e/scripts/sections/*.sh` |
+| Section runner | `tests/e2e/scripts/run_section.sh` |
+| Multi-section runner | `tests/e2e/scripts/run_all_sections.sh` |
+| Expected state snapshots | `tests/e2e/expected/*.json` |
+| Runtime/database assertion helper | `tools/sqlite_state_assert.py` |
+| Failure artifacts | `tests/e2e/failures/` |
+| Runtime scratch | `tests/e2e/tmp/` |
 
-## Test lifecycle
+## Scenario catalogue
 
-Each section follows mandatory phases:
+| Section | Manual spec | Executable analog | Category |
+|---|---|---|---|
+| 01 | `sections/01_server_boot.md` | `tests/e2e/scripts/sections/01_server_boot.sh` | Service lifecycle |
+| 02 | `sections/02_create_short_url.md` | `tests/e2e/scripts/sections/02_create_short_url.sh` | REST create |
+| 03 | `sections/03_redirects.md` | `tests/e2e/scripts/sections/03_redirects.sh` | Redirects |
+| 04 | `sections/04_expiration.md` | `tests/e2e/scripts/sections/04_expiration.sh` | Expiration |
+| 05 | `sections/05_fingerprinting.md` | `tests/e2e/scripts/sections/05_fingerprinting.sh` | Privacy/fingerprinting |
+| 06 | `sections/06_authentication.md` | `tests/e2e/scripts/sections/06_authentication.sh` | Authentication |
+| 07 | `sections/07_permissions.md` | `tests/e2e/scripts/sections/07_permissions.sh` | Authorization |
+| 08 | `sections/08_admin_api.md` | `tests/e2e/scripts/sections/08_admin_api.sh` | Admin API |
+| 09 | `sections/09_error_handling.md` | `tests/e2e/scripts/sections/09_error_handling.sh` | Error handling |
+| 10 | `sections/10_concurrency.md` | `tests/e2e/scripts/sections/10_concurrency.sh` | Concurrency |
+| 11 | `sections/11_cli_link_create.md` | `tests/e2e/scripts/sections/11_cli_link_create.sh` | CLI create |
+| 12 | `sections/12_cli_link_get.md` | `tests/e2e/scripts/sections/12_cli_link_get.sh` | CLI persisted read |
+| 13 | `sections/13_cli_no_server_socket.md` | `tests/e2e/scripts/sections/13_cli_no_server_socket.sh` | CLI/server separation |
 
-1. reset environment (`--reset-database`)
-2. start services
-3. runtime readiness assertion (port/process/http)
-4. execute scenario actions
-5. verify database snapshot (`--expect`)
-6. verify runtime assertions again
-7. cleanup (stop processes + reset DB)
+## Standard lifecycle
 
-## Snapshot and assertion philosophy
+Service sections follow this lifecycle:
 
-- DB correctness is validated by deterministic JSON snapshots (`mode=exact` or `mode=contains`).
-- Runtime correctness is validated with helper runtime assertions:
-  - port open/closed
-  - HTTP status/body/redirect target
-  - process running
-  - log content
-- Assertions are explicit in every section and are CLI-only.
+1. Reset runtime state and database.
+2. Start the section service or mock service.
+3. Assert readiness with port/process/HTTP checks.
+4. Execute scenario actions.
+5. Assert persisted database state with expected snapshots when applicable.
+6. Assert runtime state again.
+7. Stop processes and clean scratch state.
 
-## Reset philosophy
+CLI sections follow this lifecycle:
 
-`--reset-database` keeps credential/auth identity tables (for example `app_users`) and removes transient tables (links, analytics, fingerprints, sessions, temporary runtime data).
+1. Resolve the built `url_shortener` binary from `URLSHORTENER_BIN` or a known
+   build location.
+2. Create an isolated temporary working directory when persistence is part of
+   the scenario.
+3. Execute a one-shot command.
+4. Assert exit code and stdout JSON.
+5. Execute follow-up commands when the scenario validates persisted state.
+6. Assert no server socket remains open for command-mode separation scenarios.
+7. Remove temporary state.
 
-## Failure interpretation
+## Execution
 
-Any failed assertion is terminal for that section. The helper emits failure artifacts under timestamped folders in `qa_failures/` (or configured failure dir), including summary JSON and available DB/log/stdout/stderr diagnostics.
+Run one section:
 
-## Retry behavior
+```bash
+bash tests/e2e/scripts/run_section.sh 03_redirects
+bash tests/e2e/scripts/run_section.sh 11_cli_link_create
+```
 
-Runtime assertions retry with exponential backoff for up to 30 seconds by default:
+Run selected sections:
 
-- `--retry-timeout-seconds` (default `30`)
-- `--retry-initial-delay-seconds` (default `0.25`)
+```bash
+QA_SECTIONS="01_server_boot,03_redirects,11_cli_link_create" \
+  bash tests/e2e/scripts/run_all_sections.sh
+```
 
-## Expected logging
+Run all CTest-registered e2e tests:
 
-Sections must write service logs to `tests/e2e/failures/<section>/` (or another explicit path), and use `--assert-log-contains` for key milestones like service startup and critical actions.
+```bash
+ctest --test-dir build -L e2e --output-on-failure
+```
 
-## Agent execution guidance
+On Windows, native e2e execution is not expected. Use the Ubuntu CI runner or a
+POSIX-compatible environment with Bash and Python 3.
 
-- Run sections independently while iterating on one area.
-- Keep runs idempotent by always resetting DB before and after a section.
-- Do not assume shared state between sections.
-- On failure, inspect `summary.json` first, then DB snapshot and logs.
+## Assertion rules
+
+- Assert exact status codes, response fields, JSON keys, and persisted state.
+- Prefer deterministic expected snapshots for database state.
+- Avoid sleeps except short bounded waits around process/socket teardown.
+- Do not require external services or network access outside loopback and the
+  section-owned mock services.
+- Do not log or assert on secrets, DSNs, tokens, private keys, or analytics
+  salts.
+- Any manual scenario added to this document must include a corresponding
+  executable script in `tests/e2e/scripts/sections/`.
+
+## Failure handling
+
+Failed sections are terminal. The runner writes summaries and section artifacts
+under `tests/e2e/failures/`. Inspect the section summary first, then stdout,
+stderr, logs, and database snapshots.

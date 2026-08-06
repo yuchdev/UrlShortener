@@ -113,6 +113,11 @@ as route declarations; they are implicit in nested `action` parsing.
 
 ### 4.3 RouteRegistry slice already completed
 
+All REST API endpoints are enumerated in
+`src/http/RouteRegistry.cpp::registeredRoutes()`. The public declaration lives
+in `include/url_shortener/http/RouteRegistry.hpp`, and callers access the
+immutable endpoint matrix through `registeredRoutes()`.
+
 The registry currently provides:
 
 ```cpp
@@ -122,6 +127,14 @@ struct RouteDescriptor
     std::string path_pattern;
     std::string route_label;
     std::string summary;
+    std::vector<std::string> tags;
+    std::string operation_id;
+    std::vector<RouteParameterDoc> path_parameters;
+    std::vector<RouteParameterDoc> query_parameters;
+    std::string request_body_description;
+    std::vector<RouteResponseDoc> responses;
+    bool compatibility_alias;
+    bool placeholder;
 };
 
 const std::vector<RouteDescriptor>& registeredRoutes();
@@ -129,8 +142,9 @@ std::string routeLabelForTarget(const std::string& target);
 ```
 
 This is useful but incomplete. `registeredRoutes()` enumerates the endpoint
-matrix, while dispatch still lives in the old branch chain. The next stages
-should make dispatch and handler extraction consume the same route concepts.
+matrix and documentation metadata, while dispatch still lives in the old branch
+chain. The next stages should make dispatch and handler extraction consume the
+same route concepts.
 
 ## 5. Framework and dependency decision
 
