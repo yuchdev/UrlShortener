@@ -8,7 +8,6 @@
     "boost-beast",
     "boost-property-tree",
     "boost-program-options",
-    "boost-test",
     "boost-uuid",
     "openssl",
     "yaml-cpp",
@@ -16,5 +15,13 @@
     "libpq",
     "sqlite3"
   ],
+  "features": {
+    "tests": {
+      "description": "Build unit tests",
+      "dependencies": [
+        "boost-test"
+      ]
+    }
+  },
   "builtin-baseline": "32305df7d0b9a308e6ac454dd98ebfe550342c09"
 }
