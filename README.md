@@ -209,6 +209,7 @@ Choose the triplet for your machine:
 
 ```bash
 mkdir cmake-build && cd cmake-build
+vcpkg install --triplet arm64-osx
 cmake .. -G Ninja -DCMAKE_TOOLCHAIN_FILE=~/.vcpkg/scripts/buildsystems/vcpkg.cmake -DVCPKG_TARGET_TRIPLET=arm64-osx
 cmake --build .
 ```
@@ -217,6 +218,7 @@ cmake --build .
 
 ```
 mkdir cmake-build && cd cmake-build
+vcpkg install --triplet x64-osx
 cmake .. -G Ninja -DCMAKE_TOOLCHAIN_FILE=~/.vcpkg/scripts/buildsystems/vcpkg.cmake -DVCPKG_TARGET_TRIPLET=x64-osx
 cmake --build .
 ```
@@ -232,6 +234,7 @@ take several minutes; subsequent builds use the local binary cache and are fast.
 
 ```powershell
 mkdir cmake-build && cd cmake-build
+vcpkg install --triplet x64-windows
 cmake .. -G "Visual Studio 17 2022" -DCMAKE_TOOLCHAIN_FILE="C:\Program Files\Microsoft Visual Studio\2022\Community\VC\vcpkg\scripts\buildsystems\vcpkg.cmake" -DVCPKG_TARGET_TRIPLET=x64-windows
 cmake --build . --target url_shortener
 ```
@@ -241,25 +244,25 @@ cmake --build . --target url_shortener
 ### Show all options
 
 ```bash
-./build/url_shortener --help
+./cmake-build/url_shortener --help
 ```
 
 ### HTTP only
 
 ```bash
-./build/url_shortener
+./cmake-build/url_shortener
 ```
 
 ### HTTP only on a custom port (positional shorthand)
 
 ```bash
-./build/url_shortener 9090
+./cmake-build/url_shortener 9090
 ```
 
 ### HTTPS enabled
 
 ```bash
-./build/url_shortener \
+./cmake-build/url_shortener \
   --http-port 8080 \
   --tls-enabled true \
   --https-port 8443 \
@@ -528,7 +531,7 @@ Current config knobs:
 ## Tests
 
 ```bash
-ctest --test-dir build --output-on-failure
+ctest --test-dir cmake-build --output-on-failure
 ```
 
 (Direct invocation still works: `python3 test/http_client_test/http_client_test.py`.)
