@@ -34,8 +34,9 @@ The build is a standard out-of-source CMake build. After installing the
 platform dependencies below, configure and build with:
 
 ```bash
-cmake -B build -G Ninja
-cmake --build build
+mkdir cmake-build && cd cmake-build
+cmake .. -G Ninja
+cmake --build .
 ```
 
 The server binary is produced at `build/url_shortener`.
@@ -59,29 +60,173 @@ sudo apt-get install -y build-essential cmake ninja-build git pkg-config ca-cert
 Then configure and build:
 
 ```bash
-cmake -B build -G Ninja
-cmake --build build
+mkdir cmake-build && cd cmake-build
+cmake .. -G Ninja
+cmake --build .
 ```
 
 ### macOS
 
-Install the toolchain and libraries with Homebrew:
+Three dependency-management strategies are supported. **Homebrew** is the most
+native and common macOS developer option. **MacPorts** is suitable if you already
+maintain a MacPorts tree. **vcpkg** gives the strongest cross-platform
+reproducibility and mirrors the Windows CI workflow exactly.
+
+Choose exactly **one** strategy and avoid mixing packages from different managers:
+duplicate Boost or OpenSSL installations will confuse CMake's library discovery.
+
+#### Option A — Homebrew (recommended)
+
+**Install prerequisites**
 
 ```bash
-brew install cmake ninja boost openssl@3 sqlite libpq python
+brew install cmake ninja boost openssl@3 libpq sqlite python3
 ```
 
-OpenSSL and `libpq` are keg-only on macOS, so CMake may not find them
-automatically. Point CMake at the Homebrew prefixes when configuring:
+**Configure and build**
+
+`openssl@3`, `libpq`, and `sqlite` are keg-only on macOS, so CMake will not find
+them on the default system search path. Point CMake at all relevant Homebrew
+prefixes at once:
 
 ```bash
 mkdir cmake-build && cd cmake-build
-cmake .. -G Ninja -DCMAKE_PREFIX_PATH="$(brew --prefix openssl@3);$(brew --prefix libpq);$(brew --prefix sqlite)"
+cmake .. -G Ninja -DCMAKE_PREFIX_PATH="$(brew --prefix boost);$(brew --prefix openssl@3);$(brew --prefix libpq);$(brew --prefix sqlite)"
 cmake --build .
 ```
 
+**Boost component-config workaround (CMake 4.x)**
+
+Homebrew's Boost installation provides a top-level `BoostConfig.cmake` but may
+omit the per-component config files (`boost_systemConfig.cmake`, etc.). With
+CMake 4.x the configure step fails with something like:
+
+```
+Could not find a package configuration file provided by "boost_system"
+...
+  /usr/local/lib/cmake/Boost-1.90.0/boost_systemConfig.cmake
+```
+
+Add `-DBoost_NO_BOOST_CMAKE=ON` to bypass `BoostConfig.cmake` and fall back to
+library-filename–based discovery:
+
+```bash
+mkdir cmake-build && cd cmake-build
+cmake .. -G Ninja -DCMAKE_PREFIX_PATH="$(brew --prefix boost);$(brew --prefix openssl@3);$(brew --prefix libpq);$(brew --prefix sqlite)" -DBoost_NO_BOOST_CMAKE=ON
+cmake --build .
+```
+
+**Architecture note**
+
 On Apple Silicon the Homebrew prefix is `/opt/homebrew`; on Intel Macs it is
-`/usr/local`. `brew --prefix` resolves this for you.
+`/usr/local`. `brew --prefix <formula>` resolves the correct path for you in the
+terminal and in shell scripts.
+
+**CLion guidance**
+
+CLion's **CMake Profile → CMake options** field does **not** execute shell
+substitutions, so entering `$(brew --prefix openssl@3)` passes that literal
+string to CMake and fails. Use one of the following approaches instead.
+
+*Concrete paths (simplest).* Run `brew --prefix <formula>` in a terminal to get
+the actual path for your machine, then paste it. Common values:
+
+| Formula     | Apple Silicon                 | Intel Mac                  |
+|-------------|-------------------------------|----------------------------|
+| `boost`     | `/opt/homebrew/opt/boost`     | `/usr/local/opt/boost`     |
+| `openssl@3` | `/opt/homebrew/opt/openssl@3` | `/usr/local/opt/openssl@3` |
+| `libpq`     | `/opt/homebrew/opt/libpq`     | `/usr/local/opt/libpq`     |
+| `sqlite`    | `/opt/homebrew/opt/sqlite`    | `/usr/local/opt/sqlite`    |
+
+Paste as a single **CMake options** value (semicolons, no line breaks). Apple
+Silicon example:
+
+```
+-DCMAKE_PREFIX_PATH=/opt/homebrew/opt/boost;/opt/homebrew/opt/openssl@3;/opt/homebrew/opt/libpq;/opt/homebrew/opt/sqlite -DBoost_NO_BOOST_CMAKE=ON
+```
+
+Replace `/opt/homebrew` with `/usr/local` on an Intel Mac.
+
+*Environment variable (portable).* In CLion's CMake Profile, open the
+**Environment** section and add:
+
+```
+HOMEBREW_PREFIX=/opt/homebrew
+```
+
+Then reference it in the **CMake options** field:
+
+```
+-DCMAKE_PREFIX_PATH=$ENV{HOMEBREW_PREFIX}/opt/boost;$ENV{HOMEBREW_PREFIX}/opt/openssl@3;$ENV{HOMEBREW_PREFIX}/opt/libpq;$ENV{HOMEBREW_PREFIX}/opt/sqlite -DBoost_NO_BOOST_CMAKE=ON
+```
+
+#### Option B — MacPorts
+
+Suitable if you already manage a MacPorts installation. Adjust the PostgreSQL
+version suffix to what MacPorts currently provides:
+
+```bash
+sudo port install cmake ninja boost openssl sqlite3 postgresql16 python312
+```
+
+MacPorts installs under `/opt/local`. Pass that prefix to CMake:
+
+```bash
+mkdir cmake-build && cd cmake-build
+cmake .. -G Ninja -DCMAKE_PREFIX_PATH=/opt/local
+cmake --build .
+```
+
+If Boost component-config discovery fails (same root cause as the Homebrew case
+above), add `-DBoost_NO_BOOST_CMAKE=ON`:
+
+```bash
+mkdir cmake-build && cd cmake-build
+cmake .. -G Ninja -DCMAKE_PREFIX_PATH=/opt/local -DBoost_NO_BOOST_CMAKE=ON
+cmake --build .
+```
+
+#### Option C — vcpkg
+
+vcpkg provides the strongest cross-platform reproducibility. The project ships a
+`vcpkg.json` manifest at the repository root that declares all required ports
+(Boost components, OpenSSL, libpq, sqlite3, yaml-cpp, hiredis), so vcpkg installs
+everything automatically during the first CMake configure — no separate
+`brew vcpkg install` step is needed.
+
+**Bootstrap vcpkg** (one-time setup):
+
+```bash
+git clone https://github.com/microsoft/vcpkg.git ~/.vcpkg
+~/.vcpkg/bootstrap-vcpkg.sh
+```
+
+**Configure and build**
+
+Choose the triplet for your machine:
+
+##### Apple Silicon
+
+```bash
+mkdir cmake-build && cd cmake-build
+cmake .. -G Ninja -DCMAKE_TOOLCHAIN_FILE=~/.vcpkg/scripts/buildsystems/vcpkg.cmake -DVCPKG_TARGET_TRIPLET=arm64-osx
+cmake --build .
+```
+
+##### Intel Mac
+
+```
+mkdir cmake-build && cd cmake-build
+cmake .. -G Ninja -DCMAKE_TOOLCHAIN_FILE=~/.vcpkg/scripts/buildsystems/vcpkg.cmake -DVCPKG_TARGET_TRIPLET=x64-osx
+cmake --build .
+```
+
+vcpkg downloads and builds all declared ports on the first configure. This can
+take several minutes; subsequent builds use the local binary cache and are fast.
+
+> **Important.** When using vcpkg, do **not** also install Boost or OpenSSL from
+> Homebrew or MacPorts. Conflicting headers and library search paths will cause
+> CMake discovery errors.
 
 ### Windows
 
