@@ -50,8 +50,9 @@ bool RedisRateLimiter::EnsureConnected(RateLimitError* error)
         redisFree(ctx_);
         ctx_ = nullptr;
     }
-    timeval tv{static_cast<long>(config_.connect_timeout.count() / 1000),
-               static_cast<long>((config_.connect_timeout.count() % 1000) * 1000)};
+    const auto timeout_ms = config_.connect_timeout.count();
+    timeval tv{static_cast<decltype(timeval{}.tv_sec)>(timeout_ms / 1000),
+               static_cast<decltype(timeval{}.tv_usec)>((timeout_ms % 1000) * 1000)};
     ctx_ = redisConnectWithTimeout(config_.host.c_str(), config_.port, tv);
     if (ctx_ == nullptr || ctx_->err != 0) {
         if (error) *error = RateLimitError::unavailable;
