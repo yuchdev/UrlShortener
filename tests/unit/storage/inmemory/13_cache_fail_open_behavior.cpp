@@ -1,9 +1,9 @@
 #define BOOST_TEST_MODULE InMemoryCacheFailOpenBehaviorTest
 #include <boost/test/unit_test.hpp>
-#include "url_shortener/core/LinkService.hpp"
+#include "url_shortener/core/link_service.hpp"
 #include "url_shortener/core/clock.hpp"
-#include "url_shortener/storage/inmemory/InMemoryAnalyticsSink.hpp"
-#include "url_shortener/storage/inmemory/InMemoryMetadataRepository.hpp"
+#include "url_shortener/storage/inmemory/in_memory_analytics_sink.hpp"
+#include "url_shortener/storage/inmemory/in_memory_metadata_repository.hpp"
 class FailingCache final : public ICacheStore {
 public:
     std::optional<CacheValue> Get(const std::string&, CacheError* error) override { if (error) *error = CacheError::unavailable; return std::nullopt; }

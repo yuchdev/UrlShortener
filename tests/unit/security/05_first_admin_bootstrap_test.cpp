@@ -4,10 +4,10 @@
 #include <soci/soci.h>
 #include <soci/sqlite3/soci-sqlite3.h>
 
-#include "url_shortener/security/AuthAuditLogRepository.hpp"
-#include "url_shortener/security/FirstAdminBootstrap.hpp"
-#include "url_shortener/security/PasswordHasher.hpp"
-#include "url_shortener/security/UserCredentialsRepository.hpp"
+#include "url_shortener/security/auth_audit_log_repository.hpp"
+#include "url_shortener/security/first_admin_bootstrap.hpp"
+#include "url_shortener/security/password_hasher.hpp"
+#include "url_shortener/security/user_credentials_repository.hpp"
 
 static void createSchema(soci::session& db)
 {

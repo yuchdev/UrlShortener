@@ -1,7 +1,7 @@
 #define BOOST_TEST_MODULE CoreLinkAccessEventModelTest
 #include <boost/test/unit_test.hpp>
 
-#include "url_shortener/storage/models/LinkAccessEvent.hpp"
+#include "url_shortener/storage/models/link_access_event.hpp"
 
 BOOST_AUTO_TEST_CASE(link_access_event_fields_roundtrip)
 {

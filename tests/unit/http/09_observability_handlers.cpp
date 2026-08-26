@@ -1,7 +1,7 @@
 #define BOOST_TEST_MODULE ObservabilityHandlers
 #include <boost/test/unit_test.hpp>
 
-#include <url_shortener/http/handlers/ObservabilityHandlers.hpp>
+#include <url_shortener/http/handlers/observability_handlers.hpp>
 
 namespace bhttp = boost::beast::http;
 using url_shortener::http::BeastRequest;

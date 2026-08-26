@@ -1,8 +1,8 @@
 #define BOOST_TEST_MODULE RouterDispatch
 #include <boost/test/unit_test.hpp>
 
-#include <url_shortener/http/Router.hpp>
-#include <url_shortener/http/RouterBuilder.hpp>
+#include <url_shortener/http/router.hpp>
+#include <url_shortener/http/router_builder.hpp>
 #include <url_shortener/core/config.h>
 #include <url_shortener/http/request_handlers.h>
 

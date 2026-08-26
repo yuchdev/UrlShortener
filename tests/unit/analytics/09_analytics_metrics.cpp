@@ -1,6 +1,6 @@
 #define BOOST_TEST_MODULE AnalyticsMetricsNull
 #include <boost/test/unit_test.hpp>
-#include "url_shortener/analytics/AnalyticsMetrics.hpp"
+#include "url_shortener/analytics/analytics_metrics.hpp"
 using namespace url_shortener::analytics;
 BOOST_AUTO_TEST_CASE(null_metrics_safe)
 {

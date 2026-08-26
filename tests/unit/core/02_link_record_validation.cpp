@@ -1,8 +1,8 @@
 #define BOOST_TEST_MODULE CoreLinkRecordValidationTest
 #include <boost/test/unit_test.hpp>
 
-#include "url_shortener/storage/models/CreateLinkRequest.hpp"
-#include "url_shortener/storage/models/LinkRecord.hpp"
+#include "url_shortener/storage/models/create_link_request.hpp"
+#include "url_shortener/storage/models/link_record.hpp"
 
 BOOST_AUTO_TEST_CASE(link_record_stores_required_fields)
 {

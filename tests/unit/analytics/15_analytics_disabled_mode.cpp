@@ -1,7 +1,7 @@
 #define BOOST_TEST_MODULE AnalyticsDisabledMode
 #include <boost/test/unit_test.hpp>
-#include "url_shortener/analytics/AnalyticsService.hpp"
-#include "url_shortener/analytics/AnalyticsWorker.hpp"
+#include "url_shortener/analytics/analytics_service.hpp"
+#include "url_shortener/analytics/analytics_worker.hpp"
 
 using namespace url_shortener::analytics;
 

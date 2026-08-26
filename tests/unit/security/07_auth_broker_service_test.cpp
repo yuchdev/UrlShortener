@@ -4,12 +4,12 @@
 #include <soci/soci.h>
 #include <soci/sqlite3/soci-sqlite3.h>
 
-#include "url_shortener/security/AuthAuditLogRepository.hpp"
-#include "url_shortener/security/AuthBrokerService.hpp"
-#include "url_shortener/security/AuthSessionRepository.hpp"
-#include "url_shortener/security/PasswordHasher.hpp"
-#include "url_shortener/security/TokenGenerator.hpp"
-#include "url_shortener/security/UserCredentialsRepository.hpp"
+#include "url_shortener/security/auth_audit_log_repository.hpp"
+#include "url_shortener/security/auth_broker_service.hpp"
+#include "url_shortener/security/auth_session_repository.hpp"
+#include "url_shortener/security/password_hasher.hpp"
+#include "url_shortener/security/token_generator.hpp"
+#include "url_shortener/security/user_credentials_repository.hpp"
 
 static void createSchema(soci::session& db)
 {

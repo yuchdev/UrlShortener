@@ -1,10 +1,10 @@
 #define BOOST_TEST_MODULE InMemoryRedirectVisibleStatesIntegrationTest
 #include <boost/test/unit_test.hpp>
-#include "url_shortener/core/LinkService.hpp"
+#include "url_shortener/core/link_service.hpp"
 #include "url_shortener/core/clock.hpp"
-#include "url_shortener/storage/inmemory/InMemoryAnalyticsSink.hpp"
-#include "url_shortener/storage/inmemory/InMemoryCacheStore.hpp"
-#include "url_shortener/storage/inmemory/InMemoryMetadataRepository.hpp"
+#include "url_shortener/storage/inmemory/in_memory_analytics_sink.hpp"
+#include "url_shortener/storage/inmemory/in_memory_cache_store.hpp"
+#include "url_shortener/storage/inmemory/in_memory_metadata_repository.hpp"
 BOOST_AUTO_TEST_CASE(inactive_expired_unknown_states)
 {
     ManualClock clock(std::chrono::system_clock::time_point{});

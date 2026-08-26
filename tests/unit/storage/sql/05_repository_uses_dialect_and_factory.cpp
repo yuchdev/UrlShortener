@@ -1,6 +1,6 @@
 #define BOOST_TEST_MODULE SqlRepositoryUsesDialectAndFactoryTest
 #include <boost/test/unit_test.hpp>
-#include "url_shortener/storage/sql/SqlMetadataRepository.hpp"
+#include "url_shortener/storage/sql/sql_metadata_repository.hpp"
 
 class StubDialect final : public SqlDialect {
 public:

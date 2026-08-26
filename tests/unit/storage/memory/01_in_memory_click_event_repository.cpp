@@ -1,6 +1,6 @@
 #define BOOST_TEST_MODULE InMemoryClickEventRepositoryBasic
 #include <boost/test/unit_test.hpp>
-#include "url_shortener/storage/memory/InMemoryClickEventRepository.hpp"
+#include "url_shortener/storage/memory/in_memory_click_event_repository.hpp"
 using namespace url_shortener;
 BOOST_AUTO_TEST_CASE(insert_aggregate_unknown_slug){
     storage::memory::InMemoryClickEventRepository repo;

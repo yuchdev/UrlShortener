@@ -3,10 +3,10 @@
 
 #include <url_shortener/core/config.h>
 #include <url_shortener/core/utils.h>
-#include <url_shortener/analytics/AggregateQuery.hpp>
-#include <url_shortener/analytics/AggregateStats.hpp>
-#include <url_shortener/http/RouterBuilder.hpp>
-#include <url_shortener/storage/memory/InMemoryClickEventRepository.hpp>
+#include <url_shortener/analytics/aggregate_query.hpp>
+#include <url_shortener/analytics/aggregate_stats.hpp>
+#include <url_shortener/http/router_builder.hpp>
+#include <url_shortener/storage/memory/in_memory_click_event_repository.hpp>
 #include <url_shortener/storage/link_repository.h>
 
 #include <chrono>

@@ -1,7 +1,7 @@
 #define BOOST_TEST_MODULE PostgresDsnAndConnectionOptionsTest
 #include <boost/test/unit_test.hpp>
 
-#include "url_shortener/storage/sql/SqlConnectionConfig.hpp"
+#include "url_shortener/storage/sql/sql_connection_config.hpp"
 
 BOOST_AUTO_TEST_CASE(connection_config_contains_postgres_options)
 {

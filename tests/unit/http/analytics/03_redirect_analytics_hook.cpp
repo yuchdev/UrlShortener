@@ -1,6 +1,6 @@
 #define BOOST_TEST_MODULE RedirectAnalyticsHook
 #include <boost/test/unit_test.hpp>
-#include "url_shortener/http/RedirectAnalyticsHook.hpp"
+#include "url_shortener/http/redirect_analytics_hook.hpp"
 
 using namespace url_shortener;
 using namespace url_shortener::analytics;

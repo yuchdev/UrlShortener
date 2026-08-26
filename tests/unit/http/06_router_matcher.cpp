@@ -1,7 +1,7 @@
 #define BOOST_TEST_MODULE RouterMatcher
 #include <boost/test/unit_test.hpp>
 
-#include <url_shortener/http/Router.hpp>
+#include <url_shortener/http/router.hpp>
 
 using url_shortener::http::RouteContext;
 using url_shortener::http::Router;

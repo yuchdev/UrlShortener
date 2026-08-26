@@ -1,6 +1,6 @@
 #define BOOST_TEST_MODULE InMemoryAnalyticsEmitFlushTest
 #include <boost/test/unit_test.hpp>
-#include "url_shortener/storage/inmemory/InMemoryAnalyticsSink.hpp"
+#include "url_shortener/storage/inmemory/in_memory_analytics_sink.hpp"
 BOOST_AUTO_TEST_CASE(emit_and_flush_and_order)
 {
     InMemoryAnalyticsSink sink;

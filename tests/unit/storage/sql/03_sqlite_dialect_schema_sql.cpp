@@ -1,6 +1,6 @@
 #define BOOST_TEST_MODULE SqliteDialectSchemaSqlTest
 #include <boost/test/unit_test.hpp>
-#include "url_shortener/storage/sqlite/SqliteSqlDialect.hpp"
+#include "url_shortener/storage/sqlite/sqlite_sql_dialect.hpp"
 
 BOOST_AUTO_TEST_CASE(schema_sql_contains_links_table)
 {

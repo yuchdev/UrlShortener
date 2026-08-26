@@ -2,9 +2,9 @@
 #include <boost/test/unit_test.hpp>
 
 #include <url_shortener/core/config.h>
-#include <url_shortener/http/RouteContext.hpp>
-#include <url_shortener/http/RouterBuilder.hpp>
-#include <url_shortener/http/handlers/FallbackHandlers.hpp>
+#include <url_shortener/http/route_context.hpp>
+#include <url_shortener/http/router_builder.hpp>
+#include <url_shortener/http/handlers/fallback_handlers.hpp>
 
 namespace bhttp = boost::beast::http;
 using url_shortener::http::BeastRequest;

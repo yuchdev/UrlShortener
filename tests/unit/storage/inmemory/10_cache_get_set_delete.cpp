@@ -1,7 +1,7 @@
 #define BOOST_TEST_MODULE InMemoryCacheGetSetDeleteTest
 #include <boost/test/unit_test.hpp>
 #include "url_shortener/core/clock.hpp"
-#include "url_shortener/storage/inmemory/InMemoryCacheStore.hpp"
+#include "url_shortener/storage/inmemory/in_memory_cache_store.hpp"
 BOOST_AUTO_TEST_CASE(cache_get_set_delete)
 {
     ManualClock clock(std::chrono::system_clock::time_point{});

@@ -1,6 +1,6 @@
 #define BOOST_TEST_MODULE AnalyticsConfigLoading
 #include <boost/test/unit_test.hpp>
-#include "url_shortener/analytics/AnalyticsConfig.hpp"
+#include "url_shortener/analytics/analytics_config.hpp"
 using namespace url_shortener::analytics;
 
 BOOST_AUTO_TEST_CASE(defaults_are_valid)

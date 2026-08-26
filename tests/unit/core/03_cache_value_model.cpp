@@ -1,7 +1,7 @@
 #define BOOST_TEST_MODULE CoreCacheValueModelTest
 #include <boost/test/unit_test.hpp>
 
-#include "url_shortener/storage/models/CacheValue.hpp"
+#include "url_shortener/storage/models/cache_value.hpp"
 
 BOOST_AUTO_TEST_CASE(cache_value_active_and_expiring)
 {

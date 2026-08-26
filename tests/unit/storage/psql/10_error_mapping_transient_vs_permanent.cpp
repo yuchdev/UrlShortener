@@ -3,7 +3,7 @@
 
 #include <stdexcept>
 
-#include "url_shortener/storage/postgres/PostgresErrorMapper.hpp"
+#include "url_shortener/storage/postgres/postgres_error_mapper.hpp"
 
 BOOST_AUTO_TEST_CASE(maps_transient_and_permanent)
 {

@@ -1,8 +1,8 @@
 #define BOOST_TEST_MODULE RouterRegistryConsistency
 #include <boost/test/unit_test.hpp>
 
-#include <url_shortener/http/RouteRegistry.hpp>
-#include <url_shortener/http/RouterBuilder.hpp>
+#include <url_shortener/http/route_registry.hpp>
+#include <url_shortener/http/router_builder.hpp>
 
 #include <set>
 #include <string>

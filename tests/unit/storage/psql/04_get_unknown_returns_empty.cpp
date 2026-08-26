@@ -2,7 +2,7 @@
 #include <boost/test/unit_test.hpp>
 
 #include "psql_test_common.hpp"
-#include "url_shortener/storage/postgres/PostgresSqlDialect.hpp"
+#include "url_shortener/storage/postgres/postgres_sql_dialect.hpp"
 
 BOOST_AUTO_TEST_CASE(get_unknown_returns_empty)
 {

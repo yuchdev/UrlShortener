@@ -1,7 +1,7 @@
 #define BOOST_TEST_MODULE SecurityAccessGuardTest
 #include <boost/test/unit_test.hpp>
 
-#include "url_shortener/security/AccessGuard.hpp"
+#include "url_shortener/security/access_guard.hpp"
 
 BOOST_AUTO_TEST_CASE(admin_guard_allows_all_operations)
 {

@@ -1,7 +1,7 @@
 #define BOOST_TEST_MODULE PostgresConfigRoundtripTest
 #include <boost/test/unit_test.hpp>
 
-#include "url_shortener/storage/sql/SqlConnectionConfig.hpp"
+#include "url_shortener/storage/sql/sql_connection_config.hpp"
 
 BOOST_AUTO_TEST_CASE(postgres_specific_config_roundtrip)
 {

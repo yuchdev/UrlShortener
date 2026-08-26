@@ -1,7 +1,7 @@
 #define BOOST_TEST_MODULE RedisSetGetDeleteCommands
 #include <boost/test/unit_test.hpp>
 
-#include "url_shortener/storage/redis/RedisCacheStore.hpp"
+#include "url_shortener/storage/redis/redis_cache_store.hpp"
 
 BOOST_AUTO_TEST_CASE(unavailable_backend_maps_to_failure_without_crash) {
     RedisCacheConfig cfg;

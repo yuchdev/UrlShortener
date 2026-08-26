@@ -1,7 +1,7 @@
 #define BOOST_TEST_MODULE RouteRegistryDocs
 #include <boost/test/unit_test.hpp>
 
-#include <url_shortener/http/RouteRegistry.hpp>
+#include <url_shortener/http/route_registry.hpp>
 
 #include <sstream>
 #include <string>

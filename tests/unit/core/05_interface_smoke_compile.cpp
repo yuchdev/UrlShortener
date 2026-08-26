@@ -2,10 +2,10 @@
 #include <boost/test/unit_test.hpp>
 
 #include "url_shortener/core/clock.hpp"
-#include "url_shortener/storage/IAnalyticsSink.hpp"
-#include "url_shortener/storage/ICacheStore.hpp"
-#include "url_shortener/storage/IMetadataRepository.hpp"
-#include "url_shortener/storage/IRateLimiter.hpp"
+#include "url_shortener/storage/i_analytics_sink.hpp"
+#include "url_shortener/storage/i_cache_store.hpp"
+#include "url_shortener/storage/i_metadata_repository.hpp"
+#include "url_shortener/storage/i_rate_limiter.hpp"
 
 class DummyRepo final : public IMetadataRepository {
 public:

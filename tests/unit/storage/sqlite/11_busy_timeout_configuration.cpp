@@ -1,6 +1,6 @@
 #define BOOST_TEST_MODULE SqliteBusyTimeoutConfigurationTest
 #include <boost/test/unit_test.hpp>
-#include "url_shortener/storage/sqlite/SqliteSessionFactory.hpp"
+#include "url_shortener/storage/sqlite/sqlite_session_factory.hpp"
 
 BOOST_AUTO_TEST_CASE(session_factory_applies_busy_timeout)
 {

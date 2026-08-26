@@ -2,7 +2,7 @@
 #include <boost/test/unit_test.hpp>
 
 #include "psql_test_common.hpp"
-#include "url_shortener/storage/postgres/PostgresSqlDialect.hpp"
+#include "url_shortener/storage/postgres/postgres_sql_dialect.hpp"
 
 BOOST_AUTO_TEST_CASE(duplicate_short_code_maps_to_already_exists)
 {

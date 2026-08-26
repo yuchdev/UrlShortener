@@ -1,6 +1,6 @@
 #define BOOST_TEST_MODULE cfg
 #include <boost/test/unit_test.hpp>
-#include "url_shortener/config/StorageConfig.hpp"
+#include "url_shortener/config/storage_config.hpp"
 BOOST_AUTO_TEST_CASE(case_test){ auto c = ParseStorageConfigYaml(R"(metadata:
   backend: postgres
   postgres_dsn: host=localhost

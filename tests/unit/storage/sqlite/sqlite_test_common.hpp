@@ -2,11 +2,11 @@
 
 #include <filesystem>
 
-#include "url_shortener/storage/sql/SqlConnectionConfig.hpp"
-#include "url_shortener/storage/sql/SqlMetadataRepository.hpp"
-#include "url_shortener/storage/sql/SqlMetadataRowMapper.hpp"
-#include "url_shortener/storage/sqlite/SqliteSessionFactory.hpp"
-#include "url_shortener/storage/sqlite/SqliteSqlDialect.hpp"
+#include "url_shortener/storage/sql/sql_connection_config.hpp"
+#include "url_shortener/storage/sql/sql_metadata_repository.hpp"
+#include "url_shortener/storage/sql/sql_metadata_row_mapper.hpp"
+#include "url_shortener/storage/sqlite/sqlite_session_factory.hpp"
+#include "url_shortener/storage/sqlite/sqlite_sql_dialect.hpp"
 
 inline std::shared_ptr<SqlMetadataRepository> MakeSqliteRepo(const std::string& filename = "url_shortener_unit.sqlite3")
 {

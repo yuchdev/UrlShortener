@@ -1,6 +1,6 @@
 #define BOOST_TEST_MODULE AnalyticsWorkerIntervalFlush
 #include <boost/test/unit_test.hpp>
-#include "url_shortener/analytics/AnalyticsWorker.hpp"
+#include "url_shortener/analytics/analytics_worker.hpp"
 using namespace url_shortener::analytics;
 class Repo2 final : public IClickEventRepository { public: std::size_t calls=0; std::size_t total=0; bool InsertBatch(const std::vector<ClickEvent>& events, AnalyticsError*) override { ++calls; total += events.size(); return true; } bool GetAggregateStats(const AggregateQuery&, AggregateStats*, AnalyticsError*) override { return true; } bool DeleteOlderThan(Timestamp, AnalyticsError*) override { return true; } };
 BOOST_AUTO_TEST_CASE(partial_batch_flushes_without_real_sleep)

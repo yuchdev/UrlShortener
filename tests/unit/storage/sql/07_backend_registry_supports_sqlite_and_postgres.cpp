@@ -3,7 +3,7 @@
 
 #include <sstream>
 
-#include "url_shortener/storage/sql/SqlBackendKind.hpp"
+#include "url_shortener/storage/sql/sql_backend_kind.hpp"
 
 BOOST_AUTO_TEST_CASE(streaming_backend_kind_supports_sqlite_and_postgres)
 {

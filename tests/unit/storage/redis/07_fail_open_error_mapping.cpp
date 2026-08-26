@@ -1,7 +1,7 @@
 #define BOOST_TEST_MODULE RedisFailOpenErrorMapping
 #include <boost/test/unit_test.hpp>
 
-#include "url_shortener/storage/redis/RedisCacheStore.hpp"
+#include "url_shortener/storage/redis/redis_cache_store.hpp"
 
 BOOST_AUTO_TEST_CASE(connection_error_classifies_as_unavailable) {
     RedisCacheConfig cfg;

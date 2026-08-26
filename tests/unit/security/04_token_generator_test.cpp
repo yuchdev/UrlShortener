@@ -1,7 +1,7 @@
 #define BOOST_TEST_MODULE SecurityTokenGeneratorTest
 #include <boost/test/unit_test.hpp>
 
-#include "url_shortener/security/TokenGenerator.hpp"
+#include "url_shortener/security/token_generator.hpp"
 
 BOOST_AUTO_TEST_CASE(token_is_non_empty)
 {

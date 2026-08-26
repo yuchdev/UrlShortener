@@ -4,37 +4,37 @@ set(URL_SHORTENER_CPP
         ${CMAKE_CURRENT_SOURCE_DIR}/src/uri_map_singleton.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/core/utils.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/analytics/click_event_queue.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/analytics/AnalyticsConfig.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/analytics/AnalyticsError.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/analytics/ClickEvent.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/analytics/ClickEventSanitizer.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/analytics/ClientIdHasher.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/analytics/ClickEventBuilder.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/analytics/AggregateQuery.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/analytics/AggregateStats.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/analytics/BoundedClickEventQueue.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/analytics/AnalyticsMetrics.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/analytics/AnalyticsService.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/analytics/AnalyticsWorker.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/analytics/RetentionCleanupJob.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/http/RedirectAnalyticsHook.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/analytics/analytics_config.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/analytics/analytics_error.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/analytics/click_event.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/analytics/click_event_sanitizer.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/analytics/client_id_hasher.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/analytics/click_event_builder.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/analytics/aggregate_query.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/analytics/aggregate_stats.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/analytics/bounded_click_event_queue.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/analytics/analytics_metrics.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/analytics/analytics_service.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/analytics/analytics_worker.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/analytics/retention_cleanup_job.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/http/redirect_analytics_hook.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/storage/link_repository.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/http/http_server.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/http/request_handlers.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/http/http_session.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/http/RouteRegistry.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/http/Router.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/http/RouterBuilder.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/http/handlers/ObservabilityHandlers.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/http/handlers/LinkHandlers.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/http/handlers/CompatibilityHandlers.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/http/handlers/RedirectHandlers.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/http/handlers/FallbackHandlers.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/observability/LogLevel.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/observability/LoggingConfig.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/observability/LogFields.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/observability/Logger.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/observability/LoggerFactory.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/http/route_registry.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/http/router.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/http/router_builder.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/http/handlers/observability_handlers.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/http/handlers/link_handlers.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/http/handlers/compatibility_handlers.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/http/handlers/redirect_handlers.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/http/handlers/fallback_handlers.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/observability/log_level.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/observability/logging_config.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/observability/log_fields.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/observability/logger.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/observability/logger_factory.cpp
 )
 
 set(URL_SHORTENER_H
@@ -47,16 +47,16 @@ set(URL_SHORTENER_H
         ${CMAKE_CURRENT_SOURCE_DIR}/include/url_shortener/http/http_server.h
         ${CMAKE_CURRENT_SOURCE_DIR}/include/url_shortener/http/request_handlers.h
         ${CMAKE_CURRENT_SOURCE_DIR}/include/url_shortener/http/http_session.h
-        ${CMAKE_CURRENT_SOURCE_DIR}/include/url_shortener/http/RouteRegistry.hpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/include/url_shortener/http/RouteContext.hpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/include/url_shortener/http/HandlerTypes.hpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/include/url_shortener/http/Router.hpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/include/url_shortener/http/RouterBuilder.hpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/include/url_shortener/http/handlers/ObservabilityHandlers.hpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/include/url_shortener/http/handlers/LinkHandlers.hpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/include/url_shortener/http/handlers/CompatibilityHandlers.hpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/include/url_shortener/http/handlers/RedirectHandlers.hpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/include/url_shortener/http/handlers/FallbackHandlers.hpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/include/url_shortener/http/route_registry.hpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/include/url_shortener/http/route_context.hpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/include/url_shortener/http/handler_types.hpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/include/url_shortener/http/router.hpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/include/url_shortener/http/router_builder.hpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/include/url_shortener/http/handlers/observability_handlers.hpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/include/url_shortener/http/handlers/link_handlers.hpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/include/url_shortener/http/handlers/compatibility_handlers.hpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/include/url_shortener/http/handlers/redirect_handlers.hpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/include/url_shortener/http/handlers/fallback_handlers.hpp
         ${CMAKE_CURRENT_SOURCE_DIR}/include/url_shortener/cli/cli_parser.h
         ${CMAKE_CURRENT_SOURCE_DIR}/include/url_shortener/observability/LogLevel.h
         ${CMAKE_CURRENT_SOURCE_DIR}/include/url_shortener/observability/LoggingConfig.h

@@ -1,6 +1,6 @@
 #define BOOST_TEST_MODULE AnalyticsWorkerBatchFlush
 #include <boost/test/unit_test.hpp>
-#include "url_shortener/analytics/AnalyticsWorker.hpp"
+#include "url_shortener/analytics/analytics_worker.hpp"
 
 using namespace url_shortener::analytics;
 

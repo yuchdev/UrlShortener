@@ -1,7 +1,7 @@
 #define BOOST_TEST_MODULE SqlBackendKindSelectionTest
 #include <boost/test/unit_test.hpp>
-#include "url_shortener/storage/sql/SqlConnectionConfig.hpp"
-#include "url_shortener/storage/sqlite/SqliteSessionFactory.hpp"
+#include "url_shortener/storage/sql/sql_connection_config.hpp"
+#include "url_shortener/storage/sqlite/sqlite_session_factory.hpp"
 
 BOOST_AUTO_TEST_CASE(postgres_backend_rejected_for_sqlite_factory)
 {

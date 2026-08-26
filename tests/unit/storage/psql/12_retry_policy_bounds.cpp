@@ -1,7 +1,7 @@
 #define BOOST_TEST_MODULE PostgresRetryPolicyBoundsTest
 #include <boost/test/unit_test.hpp>
 
-#include "url_shortener/storage/sql/SqlConnectionConfig.hpp"
+#include "url_shortener/storage/sql/sql_connection_config.hpp"
 
 BOOST_AUTO_TEST_CASE(retry_policy_is_bounded_by_config)
 {

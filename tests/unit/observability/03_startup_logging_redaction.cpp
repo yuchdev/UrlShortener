@@ -1,6 +1,6 @@
 #define BOOST_TEST_MODULE 03_startup_logging_redaction
 #include <boost/test/unit_test.hpp>
-#include "url_shortener/observability/StorageObservability.hpp"
+#include "url_shortener/observability/storage_observability.hpp"
 
 BOOST_AUTO_TEST_CASE(password_like_values_are_redacted) {
     BOOST_TEST(observability::redactSecretValue("password", "p@ss") == "[REDACTED]");

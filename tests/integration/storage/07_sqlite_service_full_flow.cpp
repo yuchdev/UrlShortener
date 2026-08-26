@@ -3,15 +3,15 @@
 
 #include <filesystem>
 
-#include "url_shortener/core/LinkService.hpp"
+#include "url_shortener/core/link_service.hpp"
 #include "url_shortener/core/clock.hpp"
-#include "url_shortener/storage/inmemory/InMemoryAnalyticsSink.hpp"
-#include "url_shortener/storage/inmemory/InMemoryCacheStore.hpp"
-#include "url_shortener/storage/sql/SqlConnectionConfig.hpp"
-#include "url_shortener/storage/sql/SqlMetadataRepository.hpp"
-#include "url_shortener/storage/sql/SqlMetadataRowMapper.hpp"
-#include "url_shortener/storage/sqlite/SqliteSessionFactory.hpp"
-#include "url_shortener/storage/sqlite/SqliteSqlDialect.hpp"
+#include "url_shortener/storage/inmemory/in_memory_analytics_sink.hpp"
+#include "url_shortener/storage/inmemory/in_memory_cache_store.hpp"
+#include "url_shortener/storage/sql/sql_connection_config.hpp"
+#include "url_shortener/storage/sql/sql_metadata_repository.hpp"
+#include "url_shortener/storage/sql/sql_metadata_row_mapper.hpp"
+#include "url_shortener/storage/sqlite/sqlite_session_factory.hpp"
+#include "url_shortener/storage/sqlite/sqlite_sql_dialect.hpp"
 
 BOOST_AUTO_TEST_CASE(service_resolves_via_sqlite_sql_repository)
 {

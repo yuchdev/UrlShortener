@@ -1,6 +1,6 @@
 #define BOOST_TEST_MODULE AnalyticsServiceFailureIsolation
 #include <boost/test/unit_test.hpp>
-#include "url_shortener/analytics/AnalyticsService.hpp"
+#include "url_shortener/analytics/analytics_service.hpp"
 
 using namespace url_shortener::analytics;
 

@@ -1,7 +1,7 @@
 #define BOOST_TEST_MODULE RouteContext
 #include <boost/test/unit_test.hpp>
 
-#include <url_shortener/http/RouteContext.hpp>
+#include <url_shortener/http/route_context.hpp>
 
 using url_shortener::http::RouteContext;
 using url_shortener::http::pathParam;

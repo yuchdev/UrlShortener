@@ -1,6 +1,6 @@
 #define BOOST_TEST_MODULE SqlConnectionConfigDefaultsTest
 #include <boost/test/unit_test.hpp>
-#include "url_shortener/storage/sql/SqlConnectionConfig.hpp"
+#include "url_shortener/storage/sql/sql_connection_config.hpp"
 
 BOOST_AUTO_TEST_CASE(defaults_are_sqlite_friendly)
 {

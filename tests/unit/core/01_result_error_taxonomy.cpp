@@ -1,10 +1,10 @@
 #define BOOST_TEST_MODULE CoreErrorTaxonomyTest
 #include <boost/test/unit_test.hpp>
 
-#include "url_shortener/storage/errors/AnalyticsError.hpp"
-#include "url_shortener/storage/errors/CacheError.hpp"
-#include "url_shortener/storage/errors/RateLimitError.hpp"
-#include "url_shortener/storage/errors/RepoError.hpp"
+#include "url_shortener/storage/errors/analytics_error.hpp"
+#include "url_shortener/storage/errors/cache_error.hpp"
+#include "url_shortener/storage/errors/rate_limit_error.hpp"
+#include "url_shortener/storage/errors/repo_error.hpp"
 
 BOOST_AUTO_TEST_CASE(error_enums_are_constructible_and_comparable)
 {

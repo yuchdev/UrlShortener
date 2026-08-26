@@ -1,7 +1,7 @@
 #define BOOST_TEST_MODULE 05_invalid_backend_name
 #include <boost/test/unit_test.hpp>
-#include "url_shortener/config/StorageConfig.hpp"
-#include "url_shortener/composition/StorageFactory.hpp"
+#include "url_shortener/config/storage_config.hpp"
+#include "url_shortener/composition/storage_factory.hpp"
 #include "url_shortener/core/clock.hpp"
 BOOST_AUTO_TEST_CASE(case_test){
     SystemClock clock;

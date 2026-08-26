@@ -9,14 +9,14 @@
 #include <boost/test/unit_test.hpp>
 
 #include "url_shortener/core/clock.hpp"
-#include "url_shortener/storage/inmemory/InMemoryMetadataRepository.hpp"
-#include "url_shortener/storage/postgres/PostgresSessionFactory.hpp"
-#include "url_shortener/storage/postgres/PostgresSqlDialect.hpp"
-#include "url_shortener/storage/sql/SqlConnectionConfig.hpp"
-#include "url_shortener/storage/sql/SqlMetadataRepository.hpp"
-#include "url_shortener/storage/sql/SqlMetadataRowMapper.hpp"
-#include "url_shortener/storage/sqlite/SqliteSessionFactory.hpp"
-#include "url_shortener/storage/sqlite/SqliteSqlDialect.hpp"
+#include "url_shortener/storage/inmemory/in_memory_metadata_repository.hpp"
+#include "url_shortener/storage/postgres/postgres_session_factory.hpp"
+#include "url_shortener/storage/postgres/postgres_sql_dialect.hpp"
+#include "url_shortener/storage/sql/sql_connection_config.hpp"
+#include "url_shortener/storage/sql/sql_metadata_repository.hpp"
+#include "url_shortener/storage/sql/sql_metadata_row_mapper.hpp"
+#include "url_shortener/storage/sqlite/sqlite_session_factory.hpp"
+#include "url_shortener/storage/sqlite/sqlite_sql_dialect.hpp"
 
 struct MetadataHarness {
     std::string name;

@@ -1,7 +1,7 @@
 #define BOOST_TEST_MODULE SecurityControlSetTest
 #include <boost/test/unit_test.hpp>
 
-#include "url_shortener/security/ControlSet.hpp"
+#include "url_shortener/security/control_set.hpp"
 
 BOOST_AUTO_TEST_CASE(admin_has_all_permissions)
 {

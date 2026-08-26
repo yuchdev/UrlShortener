@@ -3,8 +3,8 @@
 
 #include <url_shortener/core/config.h>
 #include <url_shortener/core/utils.h>
-#include <url_shortener/http/RouterBuilder.hpp>
-#include <url_shortener/http/handlers/CompatibilityHandlers.hpp>
+#include <url_shortener/http/router_builder.hpp>
+#include <url_shortener/http/handlers/compatibility_handlers.hpp>
 #include <url_shortener/storage/link_repository.h>
 
 namespace bhttp = boost::beast::http;

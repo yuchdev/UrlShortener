@@ -1,6 +1,6 @@
 #define BOOST_TEST_MODULE SqlRowMapperRoundtripTest
 #include <boost/test/unit_test.hpp>
-#include "url_shortener/storage/sql/SqlMetadataRowMapper.hpp"
+#include "url_shortener/storage/sql/sql_metadata_row_mapper.hpp"
 
 BOOST_AUTO_TEST_CASE(row_mapper_roundtrip)
 {

@@ -3,7 +3,7 @@
 
 #include <fstream>
 
-#include "url_shortener/storage/postgres/PostgresMigrationRunner.hpp"
+#include "url_shortener/storage/postgres/postgres_migration_runner.hpp"
 
 BOOST_AUTO_TEST_CASE(up_and_down_migrations_are_ordered_deterministically)
 {

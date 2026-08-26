@@ -1,6 +1,6 @@
 #define BOOST_TEST_MODULE AnalyticsWorkerRetryBounds
 #include <boost/test/unit_test.hpp>
-#include "url_shortener/analytics/AnalyticsWorker.hpp"
+#include "url_shortener/analytics/analytics_worker.hpp"
 using namespace url_shortener::analytics;
 class FlakyRepo final : public IClickEventRepository { public: int fail_count=0; int calls=0; bool InsertBatch(const std::vector<ClickEvent>&, AnalyticsError*) override { ++calls; if (calls<=fail_count) return false; return true; } bool GetAggregateStats(const AggregateQuery&, AggregateStats*, AnalyticsError*) override { return true; } bool DeleteOlderThan(Timestamp, AnalyticsError*) override { return true; } };
 class M final : public IAnalyticsMetrics { public: int failures=0; int persisted=0; void OnEnqueued() noexcept override {} void OnDropped() noexcept override {} void OnPersisted(std::uint64_t c) noexcept override { persisted += (int)c; } void OnWorkerFailure() noexcept override { ++failures; } void SetQueueDepth(std::uint64_t) noexcept override {} void ObserveEnqueueLatencyUs(std::uint64_t) noexcept override {} };

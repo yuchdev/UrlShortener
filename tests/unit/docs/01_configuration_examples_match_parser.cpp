@@ -7,7 +7,7 @@
 #include <sstream>
 #include <string>
 
-#include "url_shortener/config/StorageConfig.hpp"
+#include "url_shortener/config/storage_config.hpp"
 
 BOOST_AUTO_TEST_CASE(all_yaml_examples_parse) {
 #ifndef SOURCE_DIR

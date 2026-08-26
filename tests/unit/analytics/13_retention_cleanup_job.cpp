@@ -1,7 +1,7 @@
 #define BOOST_TEST_MODULE RetentionCleanupJob
 #include <boost/test/unit_test.hpp>
 
-#include "url_shortener/analytics/RetentionCleanupJob.hpp"
+#include "url_shortener/analytics/retention_cleanup_job.hpp"
 
 using namespace url_shortener::analytics;
 

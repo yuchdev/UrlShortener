@@ -3,7 +3,7 @@
 #include <map>
 #include <memory>
 
-#include "url_shortener/storage/sql/SqlMetadataRepository.hpp"
+#include "url_shortener/storage/sql/sql_metadata_repository.hpp"
 
 struct FakeSqlState {
     std::map<std::string, SqlRow> table;

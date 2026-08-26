@@ -1,7 +1,7 @@
 #define BOOST_TEST_MODULE AnalyticsPostgresRepositoryRoundtrip
 #include <boost/test/unit_test.hpp>
 #include <cstdlib>
-#include "url_shortener/storage/sql/SqlClickEventRepository.hpp"
+#include "url_shortener/storage/sql/sql_click_event_repository.hpp"
 using namespace url_shortener;
 BOOST_AUTO_TEST_CASE(roundtrip_or_skip){
     const char* dsn = std::getenv("URL_SHORTENER_TEST_POSTGRES_DSN");

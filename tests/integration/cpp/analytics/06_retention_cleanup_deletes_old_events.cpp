@@ -1,8 +1,8 @@
 #define BOOST_TEST_MODULE RetentionCleanupDeletesOldEvents
 #include <boost/test/unit_test.hpp>
 
-#include "url_shortener/analytics/RetentionCleanupJob.hpp"
-#include "url_shortener/storage/memory/InMemoryClickEventRepository.hpp"
+#include "url_shortener/analytics/retention_cleanup_job.hpp"
+#include "url_shortener/storage/memory/in_memory_click_event_repository.hpp"
 
 using namespace url_shortener::analytics;
 using namespace url_shortener::storage::memory;

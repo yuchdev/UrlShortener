@@ -1,7 +1,7 @@
 #define BOOST_TEST_MODULE AnalyticsSqliteRepositoryRoundtrip
 #include <boost/test/unit_test.hpp>
 #include <filesystem>
-#include "url_shortener/storage/sql/SqlClickEventRepository.hpp"
+#include "url_shortener/storage/sql/sql_click_event_repository.hpp"
 using namespace url_shortener;
 BOOST_AUTO_TEST_CASE(roundtrip_smoke){
     // Use a temporary file to verify that data persists to disk (not in-memory).

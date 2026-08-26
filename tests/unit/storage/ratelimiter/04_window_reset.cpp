@@ -2,7 +2,7 @@
 #include <boost/test/unit_test.hpp>
 
 #include "url_shortener/core/clock.hpp"
-#include "url_shortener/storage/inmemory/InMemoryRateLimiter.hpp"
+#include "url_shortener/storage/inmemory/in_memory_rate_limiter.hpp"
 
 BOOST_AUTO_TEST_CASE(first_request_after_window_reset_is_allowed)
 {

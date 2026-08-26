@@ -4,7 +4,7 @@
  */
 #define BOOST_TEST_MODULE SerializeLinkStatsJsonFields
 #include <boost/test/unit_test.hpp>
-#include <url_shortener/app/LinkCommandService.hpp>
+#include <url_shortener/app/link_command_service.hpp>
 
 using namespace url_shortener::app;
 

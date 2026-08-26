@@ -1,6 +1,6 @@
 #define BOOST_TEST_MODULE RedisCacheValueSerialization
 #include <boost/test/unit_test.hpp>
-#include "url_shortener/storage/redis/RedisCacheSerialization.hpp"
+#include "url_shortener/storage/redis/redis_cache_serialization.hpp"
 
 BOOST_AUTO_TEST_CASE(includes_schema_version_and_url_size) {
     CacheValue v{"https://x/y?z=1", std::nullopt, true, 5};

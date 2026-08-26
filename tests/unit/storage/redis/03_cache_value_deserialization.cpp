@@ -1,6 +1,6 @@
 #define BOOST_TEST_MODULE RedisCacheValueDeserialization
 #include <boost/test/unit_test.hpp>
-#include "url_shortener/storage/redis/RedisCacheSerialization.hpp"
+#include "url_shortener/storage/redis/redis_cache_serialization.hpp"
 
 BOOST_AUTO_TEST_CASE(roundtrip_reconstructs_value) {
     CacheValue v{"https://éxample.com/☃", std::chrono::system_clock::time_point{std::chrono::seconds{1710000000}}, false, 7};

@@ -1,8 +1,8 @@
 #define BOOST_TEST_MODULE SqlRepositoryBackendSwitchingTest
 #include <boost/test/unit_test.hpp>
 
-#include "url_shortener/storage/postgres/PostgresSqlDialect.hpp"
-#include "url_shortener/storage/sqlite/SqliteSqlDialect.hpp"
+#include "url_shortener/storage/postgres/postgres_sql_dialect.hpp"
+#include "url_shortener/storage/sqlite/sqlite_sql_dialect.hpp"
 
 BOOST_AUTO_TEST_CASE(dialects_expose_backend_specific_storage_semantics)
 {

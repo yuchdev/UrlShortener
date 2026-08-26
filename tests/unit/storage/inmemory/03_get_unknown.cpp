@@ -1,6 +1,6 @@
 #define BOOST_TEST_MODULE InMemoryMetadataGetUnknownTest
 #include <boost/test/unit_test.hpp>
-#include "url_shortener/storage/inmemory/InMemoryMetadataRepository.hpp"
+#include "url_shortener/storage/inmemory/in_memory_metadata_repository.hpp"
 BOOST_AUTO_TEST_CASE(get_unknown_returns_empty_optional)
 {
     InMemoryMetadataRepository repo;

@@ -2,7 +2,7 @@
 #include <boost/test/unit_test.hpp>
 
 #include "psql_test_common.hpp"
-#include "url_shortener/storage/postgres/PostgresSqlDialect.hpp"
+#include "url_shortener/storage/postgres/postgres_sql_dialect.hpp"
 
 BOOST_AUTO_TEST_CASE(exists_consistent_before_and_after_create)
 {

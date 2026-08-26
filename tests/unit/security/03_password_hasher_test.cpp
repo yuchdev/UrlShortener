@@ -1,7 +1,7 @@
 #define BOOST_TEST_MODULE SecurityPasswordHasherTest
 #include <boost/test/unit_test.hpp>
 
-#include "url_shortener/security/PasswordHasher.hpp"
+#include "url_shortener/security/password_hasher.hpp"
 
 BOOST_AUTO_TEST_CASE(hash_is_non_empty)
 {

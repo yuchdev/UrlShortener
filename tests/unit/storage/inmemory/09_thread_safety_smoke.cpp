@@ -3,7 +3,7 @@
 #include <atomic>
 #include <thread>
 #include <vector>
-#include "url_shortener/storage/inmemory/InMemoryMetadataRepository.hpp"
+#include "url_shortener/storage/inmemory/in_memory_metadata_repository.hpp"
 BOOST_AUTO_TEST_CASE(concurrent_create_one_wins_and_reads_safe)
 {
     InMemoryMetadataRepository repo;
