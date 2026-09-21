@@ -53,6 +53,112 @@ uint16_t parsePort(uint32_t value)
     return static_cast<uint16_t>(value);
 }
 
+/**
+ * @brief Map a `link` subcommand token to its LinkCliVerb enumerator.
+ *
+ * @param token The verb token (argv[2]), e.g. "create" or "delete".
+ * @return LinkCliVerb The matching verb.
+ * @throws std::invalid_argument If the token is not a recognized verb.
+ */
+LinkCliVerb parseLinkVerb(const std::string& token)
+{
+    if (token == "create") {
+        return LinkCliVerb::create;
+    }
+    if (token == "get") {
+        return LinkCliVerb::get;
+    }
+    if (token == "update") {
+        return LinkCliVerb::update;
+    }
+    if (token == "delete") {
+        return LinkCliVerb::del;
+    }
+    if (token == "enable") {
+        return LinkCliVerb::enable;
+    }
+    if (token == "disable") {
+        return LinkCliVerb::disable;
+    }
+    if (token == "restore") {
+        return LinkCliVerb::restore;
+    }
+    if (token == "preview") {
+        return LinkCliVerb::preview;
+    }
+    if (token == "stats") {
+        return LinkCliVerb::stats;
+    }
+    throw std::invalid_argument(
+        "Unknown link command: '" + token
+        + "'. Valid commands: create, get, update, delete, enable, disable, "
+          "restore, preview, stats.");
+}
+
+/**
+ * @brief Parse a `link <verb> [options]` invocation into a LinkCliCommand.
+ *
+ * Recognizes the verb (argv[2]) and installs the matching, default-constructed
+ * `app::` DTO as the command payload. Per-verb flag-to-DTO mapping is added by
+ * later subtasks; this function only performs top-level verb dispatch.
+ *
+ * @param argc Argument count.
+ * @param argv Argument vector (argv[1] is known to be "link").
+ * @return LinkCliCommand The recognized verb and its (empty) payload.
+ * @throws std::invalid_argument If the verb is missing or unrecognized.
+ */
+LinkCliCommand parseLinkCommand(int argc, char* argv[])
+{
+    namespace app = url_shortener::app;
+
+    if (argc < 3) {
+        throw std::invalid_argument(
+            "Missing link subcommand. Expected: link <verb> [options].");
+    }
+
+    LinkCliCommand command;
+    command.verb = parseLinkVerb(argv[2]);
+
+    switch (command.verb) {
+    case LinkCliVerb::create:
+        command.payload = app::CreateLinkCommand{};
+        break;
+    case LinkCliVerb::get:
+        command.payload = app::GetLinkQuery{};
+        break;
+    case LinkCliVerb::update:
+        command.payload = app::UpdateLinkCommand{};
+        break;
+    case LinkCliVerb::del:
+        command.payload = app::DeleteLinkCommand{};
+        break;
+    case LinkCliVerb::enable: {
+        app::SetLinkEnabledCommand payload;
+        payload.enabled = true;
+        command.payload = payload;
+        break;
+    }
+    case LinkCliVerb::disable: {
+        app::SetLinkEnabledCommand payload;
+        payload.enabled = false;
+        command.payload = payload;
+        break;
+    }
+    case LinkCliVerb::restore:
+        command.payload = app::RestoreLinkCommand{};
+        break;
+    case LinkCliVerb::preview:
+        // Preview reuses the get-by-slug/id query shape.
+        command.payload = app::GetLinkQuery{};
+        break;
+    case LinkCliVerb::stats:
+        command.payload = app::GetLinkStatsQuery{};
+        break;
+    }
+
+    return command;
+}
+
 } // namespace
 
 /**
@@ -67,6 +173,16 @@ uint16_t parsePort(uint32_t value)
 ParseResult CliParser::parse(int argc, char* argv[]) const
 {
     ParseResult result;
+
+    // Top-level command dispatch: a leading `link` positional selects the
+    // one-shot link-management CLI and short-circuits every ServerConfig
+    // option, so existing server-flag parsing (C8) is left entirely untouched
+    // when argv[1] != "link".
+    if (argc >= 2 && std::string(argv[1]) == "link") {
+        result.command = parseLinkCommand(argc, argv);
+        return result;
+    }
+
     ServerConfig& cfg = result.config;
 
     // Read environment variables before CLI args so explicit CLI overrides them.

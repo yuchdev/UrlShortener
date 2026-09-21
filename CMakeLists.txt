@@ -171,6 +171,7 @@ include(CTest)
   endmacro()
 
   register_labeled_cpp_tests(SECURITY_UNIT_SOURCES           "unit")
+  register_labeled_cpp_tests(CLI_UNIT_SOURCES            "unit")
   register_labeled_cpp_tests(CORE_UNIT_SOURCES           "unit")
   register_labeled_cpp_tests(INMEMORY_UNIT_SOURCES       "unit")
   register_labeled_cpp_tests(SQL_FOUNDATION_UNIT_SOURCES "unit")

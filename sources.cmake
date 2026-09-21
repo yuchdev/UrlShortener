@@ -298,6 +298,10 @@ set(URL_SHORTENER_SOURCES
       tests/unit/app/16_link_command_service_restore_clears_deleted_at.cpp
   )
 
+  set(CLI_UNIT_SOURCES
+      tests/unit/cli/01_cli_parser_link_commands.cpp
+  )
+
   set(ANALYTICS_INTEGRATION_SOURCES
       tests/integration/cpp/analytics/01_redirect_success_emits_click_event.cpp
       tests/integration/cpp/analytics/02_redirect_not_found_emits_terminal_event.cpp

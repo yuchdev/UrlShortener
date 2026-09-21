@@ -18,7 +18,7 @@ storage access, no process-lifecycle change (that is Task 03.0).
 
 | # | Document | Status | Blocks |
 |---|----------|--------|--------|
-| 01 | [ParseResult command variant](01-parse-result-command-variant.md) | ⬜ Not started | 02, 03 |
+| 01 | [ParseResult command variant](01-parse-result-command-variant.md) | ✅ Complete | 02, 03 |
 | 02 | [Flag mapping for existing commands (create/get/stats)](02-flag-mapping-for-existing-commands.md) | ⬜ Not started | 04 |
 | 03 | [Flag mapping for new commands (update/delete/enable/disable/restore/preview)](03-flag-mapping-for-new-commands.md) | ⬜ Not started | 04 |
 | 04 | [Help text and usage](04-help-text-and-usage.md) | ⬜ Not started | none |
