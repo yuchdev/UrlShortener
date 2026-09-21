@@ -1,7 +1,7 @@
 # 03 - Migrate lifecycle and preview handlers
 
 **Parent task:** 01.0 Command layer completion
-**State:** ⬜ Not started
+**State:** ✅ Complete
 **Depends on:** 01
 **Blocks:** 04
 

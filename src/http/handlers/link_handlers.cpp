@@ -52,99 +52,6 @@ std::string getQueryParam(const std::string& query_string,
         : query_string.substr(val_start, val_end - val_start);
 }
 
-std::string makeShortUrl(const BeastRequest&,
-                         const ::ServerConfig& config,
-                         bool,
-                         const std::string& slug)
-{
-    std::string base = config.shortener_base_domain;
-    while (!base.empty() && base.back() == '/') {
-        base.pop_back();
-    }
-    return base + "/" + slug;
-}
-
-std::string serializeLink(const Link& link, const std::string& short_url)
-{
-    std::ostringstream body;
-    body << "{\"id\":" << url_shortener::jsonString(link.id)
-         << ",\"slug\":" << url_shortener::jsonString(link.slug)
-         << ",\"url\":" << url_shortener::jsonString(link.target_url)
-         << ",\"short_url\":" << url_shortener::jsonString(short_url)
-         << ",\"created_at\":" << url_shortener::jsonString(link.created_at)
-         << ",\"updated_at\":" << url_shortener::jsonString(link.updated_at)
-         << ",\"status\":"
-         << url_shortener::jsonString(url_shortener::linkStatusToString(
-                url_shortener::resolveLinkStatus(link)))
-         << ",\"redirect_type\":"
-         << url_shortener::jsonString(
-                url_shortener::redirectTypeToString(link.redirect_type))
-         << ",\"tags\":[";
-    for (size_t i = 0; i < link.tags.size(); ++i) {
-        if (i > 0) {
-            body << ',';
-        }
-        body << url_shortener::jsonString(link.tags[i]);
-    }
-    body << "],\"metadata\":{";
-    if (!link.metadata.empty()) {
-        std::vector<std::pair<std::string, std::string>> metadata_items(
-            link.metadata.begin(), link.metadata.end());
-        std::sort(metadata_items.begin(),
-                  metadata_items.end(),
-                  [](const auto& lhs, const auto& rhs)
-                  { return lhs.first < rhs.first; });
-        for (size_t i = 0; i < metadata_items.size(); ++i) {
-            if (i > 0) {
-                body << ',';
-            }
-            body << url_shortener::jsonString(metadata_items[i].first) << ':'
-                 << url_shortener::jsonString(metadata_items[i].second);
-        }
-    }
-    body << "},\"campaign\":";
-    if (link.campaign.has_value()) {
-        body << '{';
-        bool first = true;
-        const auto appendCampaignField =
-            [&](const char* key, const std::optional<std::string>& value)
-        {
-            if (!value.has_value()) {
-                return;
-            }
-            if (!first) {
-                body << ',';
-            }
-            first = false;
-            body << url_shortener::jsonString(key) << ':'
-                 << url_shortener::jsonString(*value);
-        };
-        appendCampaignField("name", link.campaign->name);
-        appendCampaignField("source", link.campaign->source);
-        appendCampaignField("medium", link.campaign->medium);
-        appendCampaignField("term", link.campaign->term);
-        appendCampaignField("content", link.campaign->content);
-        appendCampaignField("id", link.campaign->id);
-        body << '}';
-    }
-    else {
-        body << "null";
-    }
-    body << ",\"stats\":{"
-         << "\"total_redirects\":" << link.stats.total_redirects
-         << ",\"redirects_24h\":" << link.stats.redirects_24h
-         << ",\"redirects_7d\":" << link.stats.redirects_7d
-         << ",\"last_accessed_at\":";
-    if (link.stats.last_accessed_at.has_value()) {
-        body << url_shortener::jsonString(*link.stats.last_accessed_at);
-    }
-    else {
-        body << "null";
-    }
-    body << "}}";
-    return body.str();
-}
-
 std::optional<Link::Campaign> extractCampaign(const std::string& body)
 {
     const auto raw = url_shortener::extractJsonValueToken(body, "campaign");
@@ -275,29 +182,27 @@ BeastResponse handleLifecycleAction(const BeastRequest& req,
                                     const RouteContext& context,
                                     const std::string& action)
 {
+    // Transport concern: translate the lifecycle route into the transport-
+    // agnostic command DTO. enable/disable collapse onto SetLinkEnabled with
+    // the target flag; restore maps to RestoreLink. The read-mutate-persist
+    // logic (including the not_found path) lives in LinkCommandService, the
+    // sole mutation path shared with the CLI adapter.
     const auto slug = pathValue(context, "slug");
-    auto link = url_shortener::getLinkForRead(slug);
-    if (!link.has_value()) {
-        return linkNotFound(req, config, is_tls);
-    }
+    const auto command_service = makeCommandService(config);
 
-    if (action == "enable") {
-        link->enabled = true;
+    const auto result = action == "restore"
+        ? command_service.service->RestoreLink(app::RestoreLinkCommand {slug})
+        : command_service.service->SetLinkEnabled(
+              app::SetLinkEnabledCommand {slug, action == "enable"});
+    if (!result.ok()) {
+        return appErrorResponse(req, config, is_tls, result.error);
     }
-    else if (action == "disable") {
-        link->enabled = false;
-    }
-    else {
-        link->deleted_at.reset();
-    }
-    link->updated_at = url_shortener::currentTimestamp();
-    url_shortener::updateLinkAndInvalidateCache(*link);
     return url_shortener::makeResponse(
         req,
         config,
         is_tls,
         200,
-        serializeLink(*link, makeShortUrl(req, config, is_tls, link->slug)),
+        app::serializeLinkViewJson(*result.value),
         "application/json");
 }
 
@@ -677,31 +582,38 @@ BeastResponse handlePreviewLink(const BeastRequest& req,
                                 const bool is_tls,
                                 const RouteContext& context)
 {
+    // Read-only lookup runs through LinkCommandService::PreviewLink (no write
+    // path). PreviewLink returns the full LinkView; shaping it down to the
+    // reduced preview response is a transport concern kept here so the service
+    // stays free of REST-specific projection.
     const auto slug = pathValue(context, "slug");
-    const auto link = url_shortener::getLinkForRead(slug);
-    if (!link.has_value()) {
-        return linkNotFound(req, config, is_tls);
+    const auto command_service = makeCommandService(config);
+    const auto result =
+        command_service.service->PreviewLink({app::GetLinkBy::slug, slug});
+    if (!result.ok()) {
+        return appErrorResponse(req, config, is_tls, result.error);
     }
-    const auto status = url_shortener::resolveLinkStatus(*link);
+    const auto& view = *result.value;
     std::ostringstream body;
-    body << "{\"slug\":" << url_shortener::jsonString(link->slug)
-         << ",\"url\":" << url_shortener::jsonString(link->target_url)
+    body << "{\"slug\":" << url_shortener::jsonString(view.slug)
+         << ",\"url\":" << url_shortener::jsonString(view.target_url)
          << ",\"status\":"
-         << url_shortener::jsonString(url_shortener::linkStatusToString(status))
+         << url_shortener::jsonString(
+                url_shortener::linkStatusToString(view.status))
          << ",\"redirect_type\":"
          << url_shortener::jsonString(
-                url_shortener::redirectTypeToString(link->redirect_type))
-         << ",\"enabled\":" << (link->enabled ? "true" : "false")
+                url_shortener::redirectTypeToString(view.redirect_type))
+         << ",\"enabled\":" << (view.enabled ? "true" : "false")
          << ",\"expires_at\":";
-    if (link->expires_at.has_value()) {
-        body << url_shortener::jsonString(*link->expires_at);
+    if (view.expires_at.has_value()) {
+        body << url_shortener::jsonString(*view.expires_at);
     }
     else {
         body << "null";
     }
     body << ",\"deleted_at\":";
-    if (link->deleted_at.has_value()) {
-        body << url_shortener::jsonString(*link->deleted_at);
+    if (view.deleted_at.has_value()) {
+        body << url_shortener::jsonString(*view.deleted_at);
     }
     else {
         body << "null";
