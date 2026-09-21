@@ -54,6 +54,41 @@ BOOST_AUTO_TEST_CASE(restore_clears_deleted_at)
 }
 
 /**
+ * [Unit][App] RestoreLink on an already-active (non-deleted) link is an
+ * idempotent success: the CURRENT implementation resets deleted_at
+ * unconditionally, so restoring a link that was never deleted still returns ok
+ * with deleted_at empty.
+ *
+ * If this breaks, first check:
+ *   - RestoreLink resets deleted_at without a "was it deleted?" precondition.
+ */
+BOOST_AUTO_TEST_CASE(restore_non_deleted_link_is_idempotent_success)
+{
+    FakeLinkStore store;
+    FakeLinkStatsReader stats;
+    const auto config = makeTestConfig();
+
+    Link link;
+    link.id = "id-active";
+    link.slug = "active";
+    link.target_url = "https://target.example.com/path";
+    link.created_at = currentTimestamp();
+    link.updated_at = link.created_at;
+    link.enabled = true;
+    link.redirect_type = RedirectType::temporary;
+    store.seed(link);  // no deleted_at set
+    LinkCommandService svc(store, stats, config);
+
+    RestoreLinkCommand cmd;
+    cmd.slug = "active";
+    const auto result = svc.RestoreLink(cmd);
+
+    BOOST_REQUIRE(result.ok());
+    BOOST_CHECK(!result.value->deleted_at.has_value());
+    BOOST_CHECK(!store.findBySlug("active")->deleted_at.has_value());
+}
+
+/**
  * [Unit][App] Restoring a missing slug returns not_found.
  */
 BOOST_AUTO_TEST_CASE(restore_missing_slug_returns_not_found)

@@ -148,6 +148,11 @@ Result<LinkView> LinkCommandService::UpdateLink(
         return {std::nullopt, error(AppErrorCode::not_found, "Link not found")};
     }
 
+    // The validateTags/validateMetadata/validateCampaign and RFC3339 checks
+    // below are intentionally redundant with the REST handler's body
+    // validation. The handler keeps field-specific 400 codes for the REST
+    // contract; the service re-validates so non-REST callers (such as the
+    // upcoming CLI adapter) cannot bypass these constraints.
     if (command.enabled.has_value()) {
         link->enabled = *command.enabled;
     }
@@ -206,8 +211,9 @@ Result<LinkView> LinkCommandService::DeleteLink(
     if (!link.has_value()) {
         return {std::nullopt, error(AppErrorCode::not_found, "Link not found")};
     }
-    link->deleted_at = currentTimestamp();
-    link->updated_at = currentTimestamp();
+    const auto now = currentTimestamp();
+    link->deleted_at = now;
+    link->updated_at = now;
     store_.update(*link);
     return {toView(*link), {}};
 }

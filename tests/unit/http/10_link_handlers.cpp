@@ -439,6 +439,30 @@ BOOST_AUTO_TEST_CASE(characterize_patch_error_paths)
         "invalid_metadata");
 }
 
+// Existence is resolved BEFORE body validation (shared contract C3): a PATCH
+// to an unknown slug must surface 404 not_found even when the body would
+// otherwise fail field validation, rather than leaking a 400 field-code.
+BOOST_AUTO_TEST_CASE(characterize_patch_not_found_precedes_body_validation)
+{
+    // No link is created for this slug; the invalid body must not shadow 404.
+    expect_api_error(
+        dispatch(make_request(
+            bhttp::verb::patch,
+            "/api/v1/links/lhcharmissing02",
+            "{\"enabled\":\"not-bool\"}")),
+        404,
+        "not_found");
+
+    // A different invalid field on a still-unknown slug also yields 404.
+    expect_api_error(
+        dispatch(make_request(
+            bhttp::verb::patch,
+            "/api/v1/links/lhcharmissing03",
+            "{\"tags\":\"not-an-array\"}")),
+        404,
+        "not_found");
+}
+
 BOOST_AUTO_TEST_CASE(characterize_delete_success_and_not_found)
 {
     create_link("lhchardelete01");

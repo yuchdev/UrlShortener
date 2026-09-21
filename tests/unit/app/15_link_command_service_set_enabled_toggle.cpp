@@ -78,6 +78,45 @@ BOOST_AUTO_TEST_CASE(set_enabled_true_enables)
 }
 
 /**
+ * [Unit][App] SetLinkEnabled operates on a soft-deleted link: the CURRENT
+ * implementation does not treat deleted_at as a guard, so toggling enabled on a
+ * soft-deleted record succeeds and leaves deleted_at untouched.
+ *
+ * If this breaks, first check:
+ *   - SetLinkEnabled only mutates enabled/updated_at and never inspects
+ *     deleted_at before store.update.
+ */
+BOOST_AUTO_TEST_CASE(set_enabled_on_soft_deleted_link_succeeds)
+{
+    FakeLinkStore store;
+    FakeLinkStatsReader stats;
+    const auto config = makeTestConfig();
+
+    Link link;
+    link.id = "id-deleted-toggle";
+    link.slug = "deleted-toggle";
+    link.target_url = "https://target.example.com/path";
+    link.created_at = currentTimestamp();
+    link.updated_at = link.created_at;
+    link.deleted_at = currentTimestamp();
+    link.enabled = true;
+    link.redirect_type = RedirectType::temporary;
+    store.seed(link);
+    LinkCommandService svc(store, stats, config);
+
+    SetLinkEnabledCommand cmd;
+    cmd.slug = "deleted-toggle";
+    cmd.enabled = false;
+    const auto result = svc.SetLinkEnabled(cmd);
+
+    BOOST_REQUIRE(result.ok());
+    BOOST_CHECK_EQUAL(result.value->enabled, false);
+    // deleted_at is preserved: the toggle does not resurrect the record.
+    BOOST_CHECK(result.value->deleted_at.has_value());
+    BOOST_CHECK(store.findBySlug("deleted-toggle")->deleted_at.has_value());
+}
+
+/**
  * [Unit][App] Toggling a missing slug returns not_found.
  */
 BOOST_AUTO_TEST_CASE(set_enabled_missing_slug_returns_not_found)

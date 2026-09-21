@@ -420,8 +420,22 @@ BeastResponse handlePatchLink(const BeastRequest& req,
     // 400 error codes the REST contract locks in. The read-mutate-persist and
     // business validation then run once inside LinkCommandService::UpdateLink,
     // which is also the sole path used by the CLI adapter.
+    //
+    // REST contract (C3): existence is checked BEFORE any body validation so a
+    // PATCH to an unknown slug returns 404 not_found even when the body is
+    // malformed. The lookup runs through LinkCommandService::GetLink to avoid
+    // reintroducing direct getLinkForRead calls in this migrated handler.
     app::UpdateLinkCommand command;
     command.slug = pathValue(context, "slug");
+
+    const auto command_service = makeCommandService(config);
+    if (const auto existing =
+            command_service.service->GetLink({app::GetLinkBy::slug,
+                                              command.slug});
+        !existing.ok())
+    {
+        return appErrorResponse(req, config, is_tls, existing.error);
+    }
 
     if (url_shortener::hasJsonField(req.body(), "enabled")) {
         const auto enabled =
@@ -541,7 +555,6 @@ BeastResponse handlePatchLink(const BeastRequest& req,
         }
     }
 
-    const auto command_service = makeCommandService(config);
     const auto result = command_service.service->UpdateLink(command);
     if (!result.ok()) {
         return appErrorResponse(req, config, is_tls, result.error);
