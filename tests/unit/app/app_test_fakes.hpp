@@ -148,6 +148,13 @@ public:
 
     void invalidateCache(const std::string& /*slug*/) override {}
 
+    /// Overwrite an existing link in both maps, keyed by slug and id.
+    void update(const url_shortener::Link& link) override
+    {
+        by_slug_[link.slug] = link;
+        by_id_[link.id] = link;
+    }
+
 private:
     std::unordered_map<std::string, url_shortener::Link> by_slug_;
     std::unordered_map<std::string, url_shortener::Link> by_id_;

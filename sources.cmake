@@ -292,6 +292,10 @@ set(URL_SHORTENER_SOURCES
       tests/unit/app/10_link_command_service_stats_reader_error_propagated.cpp
       tests/unit/app/11_serialize_link_view_json_fields.cpp
       tests/unit/app/12_serialize_link_stats_json_fields.cpp
+      tests/unit/app/13_link_command_service_update_field_semantics.cpp
+      tests/unit/app/14_link_command_service_delete_soft_delete.cpp
+      tests/unit/app/15_link_command_service_set_enabled_toggle.cpp
+      tests/unit/app/16_link_command_service_restore_clears_deleted_at.cpp
   )
 
   set(ANALYTICS_INTEGRATION_SOURCES

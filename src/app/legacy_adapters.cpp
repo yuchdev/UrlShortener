@@ -75,6 +75,11 @@ void LegacyLinkStore::invalidateCache(const std::string& slug)
     linkCache().erase(slug);
 }
 
+void LegacyLinkStore::update(const Link& link)
+{
+    updateLinkAndInvalidateCache(link);
+}
+
 Result<LinkStatsView> LegacyLinkStatsReader::read(
     const GetLinkStatsQuery& query) const
 {

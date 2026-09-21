@@ -140,6 +140,115 @@ Result<LinkView> LinkCommandService::GetLink(const GetLinkQuery& query) const
     return {toView(*link), {}};
 }
 
+Result<LinkView> LinkCommandService::UpdateLink(
+    const UpdateLinkCommand& command) const
+{
+    auto link = store_.findBySlug(command.slug);
+    if (!link.has_value()) {
+        return {std::nullopt, error(AppErrorCode::not_found, "Link not found")};
+    }
+
+    if (command.enabled.has_value()) {
+        link->enabled = *command.enabled;
+    }
+
+    if (command.expires_at.has_value()) {
+        const auto& value = *command.expires_at;
+        if (!value.has_value()) {
+            link->expires_at.reset();
+        }
+        else if (parseRfc3339Zulu(*value).has_value()) {
+            link->expires_at = *value;
+        }
+        else {
+            return {std::nullopt, error(AppErrorCode::invalid_field, "expires_at must be RFC3339 UTC or null")};
+        }
+    }
+
+    if (command.tags.has_value()) {
+        auto normalized = *command.tags;
+        if (!validateTags(normalized)) {
+            return {std::nullopt, error(AppErrorCode::invalid_field, "tags violate constraints")};
+        }
+        link->tags = std::move(normalized);
+    }
+
+    if (command.metadata.has_value()) {
+        if (!validateMetadata(*command.metadata)) {
+            return {std::nullopt, error(AppErrorCode::invalid_field, "metadata must be flat object with string values")};
+        }
+        link->metadata = *command.metadata;
+    }
+
+    if (command.campaign.has_value()) {
+        const auto& value = *command.campaign;
+        if (!value.has_value()) {
+            link->campaign.reset();
+        }
+        else {
+            std::optional<Link::Campaign> candidate = value;
+            if (!validateCampaign(candidate)) {
+                return {std::nullopt, error(AppErrorCode::invalid_field, "campaign fields exceed limits")};
+            }
+            link->campaign = candidate;
+        }
+    }
+
+    link->updated_at = currentTimestamp();
+    store_.update(*link);
+    return {toView(*link), {}};
+}
+
+Result<LinkView> LinkCommandService::DeleteLink(
+    const DeleteLinkCommand& command) const
+{
+    auto link = store_.findBySlug(command.slug);
+    if (!link.has_value()) {
+        return {std::nullopt, error(AppErrorCode::not_found, "Link not found")};
+    }
+    link->deleted_at = currentTimestamp();
+    link->updated_at = currentTimestamp();
+    store_.update(*link);
+    return {toView(*link), {}};
+}
+
+Result<LinkView> LinkCommandService::SetLinkEnabled(
+    const SetLinkEnabledCommand& command) const
+{
+    auto link = store_.findBySlug(command.slug);
+    if (!link.has_value()) {
+        return {std::nullopt, error(AppErrorCode::not_found, "Link not found")};
+    }
+    link->enabled = command.enabled;
+    link->updated_at = currentTimestamp();
+    store_.update(*link);
+    return {toView(*link), {}};
+}
+
+Result<LinkView> LinkCommandService::RestoreLink(
+    const RestoreLinkCommand& command) const
+{
+    auto link = store_.findBySlug(command.slug);
+    if (!link.has_value()) {
+        return {std::nullopt, error(AppErrorCode::not_found, "Link not found")};
+    }
+    link->deleted_at.reset();
+    link->updated_at = currentTimestamp();
+    store_.update(*link);
+    return {toView(*link), {}};
+}
+
+Result<LinkView> LinkCommandService::PreviewLink(const GetLinkQuery& query) const
+{
+    const auto link = query.by == GetLinkBy::id
+        ? store_.findById(query.value)
+        : store_.findBySlug(query.value);
+    if (!link.has_value()) {
+        return {std::nullopt, error(AppErrorCode::not_found, "Link not found")};
+    }
+    return {toView(*link), {}};
+}
+
 Result<LinkStatsView> LinkCommandService::GetLinkStats(
     const GetLinkStatsQuery& query) const
 {
