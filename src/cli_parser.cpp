@@ -9,8 +9,11 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <vector>
 
 #include <boost/program_options.hpp>
+
+#include <url_shortener/cli/link_command_args.hpp>
 
 namespace po = boost::program_options;
 
@@ -98,18 +101,23 @@ LinkCliVerb parseLinkVerb(const std::string& token)
 /**
  * @brief Parse a `link <verb> [options]` invocation into a LinkCliCommand.
  *
- * Recognizes the verb (argv[2]) and installs the matching, default-constructed
- * `app::` DTO as the command payload. Per-verb flag-to-DTO mapping is added by
- * later subtasks; this function only performs top-level verb dispatch.
+ * Recognizes the verb (argv[2]) and maps the remaining flags into the matching
+ * `app::` DTO. The `create`, `get`, and `stats` verbs have their per-flag
+ * mapping fully implemented (via `cli::parse*Args`); the remaining verbs still
+ * install a default-constructed payload pending later subtasks.
  *
  * @param argc Argument count.
  * @param argv Argument vector (argv[1] is known to be "link").
- * @return LinkCliCommand The recognized verb and its (empty) payload.
- * @throws std::invalid_argument If the verb is missing or unrecognized.
+ * @param config ServerConfig receiving create-time overrides (`--base-domain`,
+ *        `--allow-private-targets`).
+ * @return LinkCliCommand The recognized verb and its parsed payload.
+ * @throws std::invalid_argument If the verb is missing/unrecognized or a
+ *         mapped verb's flags are missing, unknown, or malformed.
  */
-LinkCliCommand parseLinkCommand(int argc, char* argv[])
+LinkCliCommand parseLinkCommand(int argc, char* argv[], ServerConfig& config)
 {
     namespace app = url_shortener::app;
+    namespace cli = url_shortener::cli;
 
     if (argc < 3) {
         throw std::invalid_argument(
@@ -119,12 +127,15 @@ LinkCliCommand parseLinkCommand(int argc, char* argv[])
     LinkCliCommand command;
     command.verb = parseLinkVerb(argv[2]);
 
+    // Flags that follow the verb, e.g. everything after `link create`.
+    const std::vector<std::string> verb_args(argv + 3, argv + argc);
+
     switch (command.verb) {
     case LinkCliVerb::create:
-        command.payload = app::CreateLinkCommand{};
+        command.payload = cli::parseCreateArgs(verb_args, config);
         break;
     case LinkCliVerb::get:
-        command.payload = app::GetLinkQuery{};
+        command.payload = cli::parseGetArgs(verb_args);
         break;
     case LinkCliVerb::update:
         command.payload = app::UpdateLinkCommand{};
@@ -152,7 +163,7 @@ LinkCliCommand parseLinkCommand(int argc, char* argv[])
         command.payload = app::GetLinkQuery{};
         break;
     case LinkCliVerb::stats:
-        command.payload = app::GetLinkStatsQuery{};
+        command.payload = cli::parseStatsArgs(verb_args);
         break;
     }
 
@@ -179,7 +190,7 @@ ParseResult CliParser::parse(int argc, char* argv[]) const
     // option, so existing server-flag parsing (C8) is left entirely untouched
     // when argv[1] != "link".
     if (argc >= 2 && std::string(argv[1]) == "link") {
-        result.command = parseLinkCommand(argc, argv);
+        result.command = parseLinkCommand(argc, argv, result.config);
         return result;
     }
 
