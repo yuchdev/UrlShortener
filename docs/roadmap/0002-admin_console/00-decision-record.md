@@ -17,7 +17,6 @@ TanStack Virtual
 Apache ECharts
 React Hook Form
 Zod
-Tailwind CSS
 shadcn/ui-style internal components
 Vitest
 React Testing Library
@@ -71,28 +70,6 @@ Use Apache ECharts for analytics charts because the app will likely need line ch
 Wrap it internally so the library can be replaced later.
 
 Do not spread chart-library-specific code across pages.
-
-### Tailwind + internal component wrappers
-
-Use Tailwind for layout and utility classes. Build internal components instead of depending directly on a large design system everywhere.
-
-Suggested internal components:
-
-```text
-Button
-Card
-Dialog
-Dropdown
-Input
-Select
-TableShell
-MetricCard
-RiskBadge
-StatusBadge
-DateRangePicker
-PermissionGate
-MaskedValue
-```
 
 ## 3. Fingerprinting decision
 

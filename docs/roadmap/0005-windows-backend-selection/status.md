@@ -1,75 +1,90 @@
-# Windows secret-store backend selection status
+# Milestone 0005 - Windows Backend Selection - Status
+
+Tracks progress against
+[plan.md](/docs/roadmap/0005-windows-backend-selection/plan.md).
 
 ## Current status
 
-Status: planned.
+| Task | Name | Status | Tests |
+|------|------|--------|-------|
+| 01.0 | [CLI backend flag parsing & validation](/docs/roadmap/0005-windows-backend-selection/01.0-cli-backend-flag-parsing-and-validation/README.md) | ⬜ Not started | 0 |
+| 02.0 | [DPAPI CurrentUser adapter](/docs/roadmap/0005-windows-backend-selection/02.0-dpapi-current-user-adapter/README.md) | ⬜ Not started | 0 |
+| 03.0 | [DPAPI LocalMachine adapter](/docs/roadmap/0005-windows-backend-selection/03.0-dpapi-local-machine-adapter/README.md) | ⬜ Not started | 0 |
+| 04.0 | [Windows Credential Manager adapter](/docs/roadmap/0005-windows-backend-selection/04.0-windows-credential-manager-adapter/README.md) | ⬜ Not started | 0 |
+| 05.0 | [Factory wiring & auto-selection](/docs/roadmap/0005-windows-backend-selection/05.0-factory-wiring-and-auto-selection/README.md) | ⬜ Not started | 0 |
+| 06.0 | [Test suite](/docs/roadmap/0005-windows-backend-selection/06.0-test-suite/README.md) | ⬜ Not started | 0 |
+| 07.0 | [Documentation](/docs/roadmap/0005-windows-backend-selection/07.0-documentation/README.md) | ⬜ Not started | 0 |
 
-This roadmap item is now Windows-focused. The target deliverable is explicit
-backend selection for `secret-store.exe` on Windows, with the same user-facing
-control that Linux already provides.
+**Legend:** ✅ Complete · 🔶 In progress / partial · ⬜ Not started
 
-## Required Windows backend values
+**Current gate status:** 0% implemented - no code for any task exists yet.
+**Blocking open question:** a repo-wide search found no `secret-store.exe`,
+`ISecretStore`, or Linux backend selector anywhere in this checkout (see the
+verification note in [plan.md](/docs/roadmap/0005-windows-backend-selection/plan.md)).
+Confirm where/whether the Linux implementation this milestone is meant to
+match actually lives before starting Task 01.0.
 
-| Status | CLI value | Backend |
-|---|---|---|
-| Planned | `dpapi-user` | DPAPI CurrentUser |
-| Planned | `dpapi-machine` | DPAPI LocalMachine |
-| Planned | `wincred` | Windows Credential Manager |
+## Notes & decisions
 
-## Completed
+### Design decisions
 
-- Re-scoped this roadmap item from Linux backend selection to Windows backend
-  selection.
-- Defined the three explicit Windows backend values.
-- Defined the expected CLI behavior and failure modes.
-- Defined test coverage expectations for parser, factory, and command-level
-  behavior.
-
-## Not started
-
-- Add `--backend` parsing for `secret-store.exe` on Windows.
-- Add Windows backend enum and parser.
-- Add Windows secret-store factory selection.
-- Wire `dpapi-user`, `dpapi-machine`, and `wincred` adapters into the factory.
-- Add fake-adapter unit tests for all three backend values.
-- Add Windows-only integration tests for real DPAPI/Credential Manager behavior,
-  if the project wants opt-in host-level validation.
-- Update user-facing CLI documentation.
-
-## Design decisions
-
-- Windows supports exactly three explicit backend values:
-  `dpapi-user`, `dpapi-machine`, and `wincred`.
-- A requested backend must never silently fall back to a different backend.
-- `dpapi-user` should remain the safest default for interactive Windows use.
+- Windows supports exactly three explicit backend values: `dpapi-user`,
+  `dpapi-machine`, and `wincred` (Tasks 02.0-04.0).
+- A requested backend must never silently fall back to a different backend
+  (plan.md C2).
+- `dpapi-user` should remain the safest default for interactive Windows use
+  (Task 02.0, wired through auto-selection in Task 05.0).
 - `dpapi-machine` is for service scenarios and must be documented as broader
-  trust scope.
-- `wincred` is selected only when the caller explicitly wants Windows Credential
-  Manager semantics.
+  trust scope (Task 03.0, documented in Task 07.0).
+- `wincred` is selected only when the caller explicitly wants Windows
+  Credential Manager semantics (Task 04.0).
 
-## Risks
+### Risks
 
-| Risk | Mitigation |
-|---|---|
-| Accidentally accepting Linux backend names on Windows | Platform-specific validation and tests |
-| Silent fallback hides misconfiguration | Treat unsupported backend as fatal |
-| LocalMachine DPAPI broadens access unexpectedly | Document ACL requirements and service-only use case |
-| Tests modify real user Credential Manager entries | Use fake adapters by default; make real integration tests opt-in |
-| Secrets appear in diagnostics | Assert test logs and error paths do not include secret payloads |
+| Risk | Mitigation | Owning task(s) |
+|---|---|---|
+| Accidentally accepting Linux backend names on Windows | Platform-specific validation and tests | 01.0, 06.0 |
+| Silent fallback hides misconfiguration | Treat unsupported backend as fatal (plan.md C2) | 01.0 |
+| LocalMachine DPAPI broadens access unexpectedly | Document ACL requirements and service-only use case | 03.0, 07.0 |
+| Tests modify real user Credential Manager entries | Use fake adapters by default; make real integration tests opt-in | 06.0 |
+| Secrets appear in diagnostics | Assert test logs and error paths do not include secret payloads (plan.md C3) | 05.0, 06.0 |
+| Linux `secret-store` implementation this milestone should match cannot be located in this repo | Confirm its actual location/name with the team before Task 01.0 starts, or scope this milestone as introducing `ISecretStore` from scratch | 01.0 |
 
-## Next implementation steps
+## Decomposition tree (as built)
 
-1. Add a Windows backend parser for `dpapi-user`, `dpapi-machine`, and `wincred`.
-2. Add factory tests proving each value selects the correct adapter.
-3. Wire the parser into `secret-store.exe --backend`.
-4. Preserve existing automatic selection when `--backend` is omitted.
-5. Add documentation examples for all three Windows values.
-
-## Validation checklist
-
-- `secret-store.exe --backend dpapi-user ...` selects DPAPI CurrentUser.
-- `secret-store.exe --backend dpapi-machine ...` selects DPAPI LocalMachine.
-- `secret-store.exe --backend wincred ...` selects Windows Credential Manager.
-- Invalid values fail with valid Windows values in the error.
-- Linux backend names are rejected on Windows.
-- No secret material is logged or printed during backend selection failures.
+```text
+docs/roadmap/0005-windows-backend-selection/
+  plan.md
+  status.md
+  01.0-cli-backend-flag-parsing-and-validation/
+    README.md
+    01-windows-secret-backend-enum-and-parser.md
+    02-backend-flag-cli-wiring-and-error-messages.md
+    03-platform-validation-linux-and-non-windows-rejection.md
+  02.0-dpapi-current-user-adapter/
+    README.md
+    01-dpapi-current-user-protect-and-unprotect.md
+    02-dpapi-current-user-isecretstore-conformance.md
+  03.0-dpapi-local-machine-adapter/
+    README.md
+    01-dpapi-local-machine-protect-and-unprotect.md
+    02-dpapi-local-machine-acl-and-scope-documentation-notes.md
+  04.0-windows-credential-manager-adapter/
+    README.md
+    01-wincred-target-naming-and-crud-preservation.md
+    02-wincred-isecretstore-conformance.md
+  05.0-factory-wiring-and-auto-selection/
+    README.md
+    01-build-windows-secret-store-factory.md
+    02-omitted-backend-auto-selection-and-diagnostics.md
+  06.0-test-suite/
+    README.md
+    01-parser-and-validation-unit-tests.md
+    02-factory-adapter-selection-unit-tests.md
+    03-secret-safety-assertions.md
+    04-opt-in-windows-integration-tests.md
+  07.0-documentation/
+    README.md
+    01-windows-backend-table-and-dpapi-tradeoffs.md
+    02-wincred-naming-and-migration-note.md
+```
