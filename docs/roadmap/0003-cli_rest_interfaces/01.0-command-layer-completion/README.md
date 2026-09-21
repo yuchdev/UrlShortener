@@ -27,7 +27,7 @@ layer to build a CLI adapter against, not to change any HTTP behavior.
 | 01 | [Define new command DTOs and service methods](01-define-update-delete-lifecycle-preview-dtos.md) | ⬜ Not started | 02, 03 |
 | 02 | [Migrate patch and delete handlers](02-migrate-patch-and-delete-handlers.md) | ⬜ Not started | 04 |
 | 03 | [Migrate lifecycle and preview handlers](03-migrate-lifecycle-and-preview-handlers.md) | ⬜ Not started | 04 |
-| 04 | [Characterization tests for migrated handlers](04-characterization-tests-for-migrated-handlers.md) | ⬜ Not started | none |
+| 04 | [Characterization tests for migrated handlers](04-characterization-tests-for-migrated-handlers.md) | ✅ Complete | none |
 
 ## Key constraints
 

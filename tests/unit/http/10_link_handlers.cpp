@@ -1,6 +1,9 @@
 #define BOOST_TEST_MODULE LinkHandlers
 #include <boost/test/unit_test.hpp>
 
+#include <string>
+#include <vector>
+
 #include <url_shortener/core/config.h>
 #include <url_shortener/core/utils.h>
 #include <url_shortener/http/router_builder.hpp>
@@ -74,6 +77,27 @@ void expect_api_error(
     BOOST_TEST(res.result_int() == status);
     BOOST_TEST(res.body().find("\"code\":\"" + code + "\"") != std::string::npos);
     BOOST_TEST(!res.base()["X-Request-Id"].empty());
+}
+
+// Assert that the given substrings appear in `body` in the exact order
+// listed, with each subsequent match starting after the previous one. Used to
+// lock in JSON field ordering as a characterization guard against the
+// upcoming command-layer migration (Milestone 0003, Task 01.0, subtask 04).
+void expect_ordered_fields(
+    const std::string& body,
+    const std::vector<std::string>& tokens)
+{
+    std::string::size_type cursor = 0;
+    for (const auto& token : tokens) {
+        const auto pos = body.find(token, cursor);
+        BOOST_TEST(
+            (pos != std::string::npos),
+            "missing/out-of-order token '" << token << "' in body: " << body);
+        if (pos == std::string::npos) {
+            return;
+        }
+        cursor = pos + token.size();
+    }
 }
 
 } // namespace
@@ -258,6 +282,317 @@ BOOST_AUTO_TEST_CASE(stats_and_placeholder_routes)
         dispatch(make_request(
             bhttp::verb::get,
             "/api/v1/links/lhmissing001/qr")),
+        404,
+        "not_found");
+}
+
+// ---------------------------------------------------------------------------
+// Characterization tests (Milestone 0003, Task 01.0, subtask 04).
+//
+// These lock in the CURRENT observable REST behavior of handlePatchLink,
+// handleDeleteLink, handleLifecycleAction (enable/disable/restore) and
+// handlePreviewLink BEFORE they are migrated onto LinkCommandService in
+// subtasks 02/03. Per shared contract C3 the migration must not change any
+// status code, JSON field name, field order, field value or error code. If a
+// later change makes one of these fail, that is a behavior regression to fix
+// in the migration, never a test to loosen.
+// ---------------------------------------------------------------------------
+
+BOOST_AUTO_TEST_CASE(characterize_patch_success_full_body_field_order)
+{
+    create_link("lhcharpatch01");
+
+    auto patch = dispatch(make_request(
+        bhttp::verb::patch,
+        "/api/v1/links/lhcharpatch01",
+        "{\"enabled\":false,\"tags\":[\"docs\",\"release\"],"
+        "\"metadata\":{\"team\":\"core\"},"
+        "\"campaign\":{\"name\":\"spring\",\"source\":\"newsletter\"}}"));
+
+    BOOST_TEST(patch.result_int() == 200);
+    BOOST_TEST(std::string(patch[bhttp::field::content_type]) == "application/json");
+
+    // Full serialized field order emitted by serializeLink().
+    expect_ordered_fields(
+        patch.body(),
+        {"\"id\":", "\"slug\":", "\"url\":", "\"short_url\":",
+         "\"created_at\":", "\"updated_at\":", "\"status\":",
+         "\"redirect_type\":", "\"tags\":", "\"metadata\":", "\"campaign\":",
+         "\"stats\":"});
+
+    // Deterministic values.
+    BOOST_TEST(patch.body().find("\"slug\":\"lhcharpatch01\"") != std::string::npos);
+    BOOST_TEST(patch.body().find("\"short_url\":\"http://localhost:8000/lhcharpatch01\"") != std::string::npos);
+    BOOST_TEST(patch.body().find("\"status\":\"disabled\"") != std::string::npos);
+    BOOST_TEST(patch.body().find("\"redirect_type\":\"temporary\"") != std::string::npos);
+    BOOST_TEST(patch.body().find("\"tags\":[\"docs\",\"release\"]") != std::string::npos);
+    BOOST_TEST(patch.body().find("\"metadata\":{\"team\":\"core\"}") != std::string::npos);
+    BOOST_TEST(patch.body().find("\"campaign\":{\"name\":\"spring\",\"source\":\"newsletter\"}") != std::string::npos);
+    BOOST_TEST(patch.body().find("\"stats\":{\"total_redirects\":0,\"redirects_24h\":0,\"redirects_7d\":0,\"last_accessed_at\":null}}") != std::string::npos);
+}
+
+BOOST_AUTO_TEST_CASE(characterize_patch_campaign_clearing)
+{
+    create_link("lhcharpatch02");
+
+    // Establish a campaign first.
+    auto set_campaign = dispatch(make_request(
+        bhttp::verb::patch,
+        "/api/v1/links/lhcharpatch02",
+        "{\"campaign\":{\"name\":\"spring\"}}"));
+    BOOST_TEST(set_campaign.result_int() == 200);
+    BOOST_TEST(set_campaign.body().find("\"campaign\":{\"name\":\"spring\"}") != std::string::npos);
+
+    // Clearing it with null must serialize campaign back to null.
+    auto clear_campaign = dispatch(make_request(
+        bhttp::verb::patch,
+        "/api/v1/links/lhcharpatch02",
+        "{\"campaign\":null}"));
+    BOOST_TEST(clear_campaign.result_int() == 200);
+    BOOST_TEST(clear_campaign.body().find("\"campaign\":null") != std::string::npos);
+}
+
+BOOST_AUTO_TEST_CASE(characterize_patch_expires_at_set_then_cleared)
+{
+    create_link("lhcharpatch03");
+
+    auto set_expiry = dispatch(make_request(
+        bhttp::verb::patch,
+        "/api/v1/links/lhcharpatch03",
+        "{\"expires_at\":\"2999-01-01T00:00:00Z\"}"));
+    BOOST_TEST(set_expiry.result_int() == 200);
+
+    // expires_at is not part of serializeLink(); it is observable via preview.
+    auto preview_set = dispatch(make_request(
+        bhttp::verb::get,
+        "/api/v1/links/lhcharpatch03/preview"));
+    BOOST_TEST(preview_set.body().find("\"expires_at\":\"2999-01-01T00:00:00Z\"") != std::string::npos);
+
+    auto clear_expiry = dispatch(make_request(
+        bhttp::verb::patch,
+        "/api/v1/links/lhcharpatch03",
+        "{\"expires_at\":null}"));
+    BOOST_TEST(clear_expiry.result_int() == 200);
+
+    auto preview_cleared = dispatch(make_request(
+        bhttp::verb::get,
+        "/api/v1/links/lhcharpatch03/preview"));
+    BOOST_TEST(preview_cleared.body().find("\"expires_at\":null") != std::string::npos);
+}
+
+BOOST_AUTO_TEST_CASE(characterize_patch_error_paths)
+{
+    create_link("lhcharpatch04");
+
+    // Missing slug -> 404 not_found.
+    expect_api_error(
+        dispatch(make_request(
+            bhttp::verb::patch,
+            "/api/v1/links/lhcharmissing01",
+            "{\"enabled\":false}")),
+        404,
+        "not_found");
+
+    // Non-boolean enabled -> 400 invalid_enabled.
+    expect_api_error(
+        dispatch(make_request(
+            bhttp::verb::patch,
+            "/api/v1/links/lhcharpatch04",
+            "{\"enabled\":\"false\"}")),
+        400,
+        "invalid_enabled");
+
+    // Malformed expires_at -> 400 invalid_expires_at.
+    expect_api_error(
+        dispatch(make_request(
+            bhttp::verb::patch,
+            "/api/v1/links/lhcharpatch04",
+            "{\"expires_at\":\"not-a-timestamp\"}")),
+        400,
+        "invalid_expires_at");
+
+    // Non-array tags -> 400 invalid_tags.
+    expect_api_error(
+        dispatch(make_request(
+            bhttp::verb::patch,
+            "/api/v1/links/lhcharpatch04",
+            "{\"tags\":\"docs\"}")),
+        400,
+        "invalid_tags");
+
+    // Tags violating constraints (whitespace) -> 400 invalid_tags.
+    expect_api_error(
+        dispatch(make_request(
+            bhttp::verb::patch,
+            "/api/v1/links/lhcharpatch04",
+            "{\"tags\":[\"bad tag\"]}")),
+        400,
+        "invalid_tags");
+
+    // Non-object metadata -> 400 invalid_metadata.
+    expect_api_error(
+        dispatch(make_request(
+            bhttp::verb::patch,
+            "/api/v1/links/lhcharpatch04",
+            "{\"metadata\":\"nope\"}")),
+        400,
+        "invalid_metadata");
+}
+
+BOOST_AUTO_TEST_CASE(characterize_delete_success_and_not_found)
+{
+    create_link("lhchardelete01");
+
+    auto remove = dispatch(make_request(
+        bhttp::verb::delete_,
+        "/api/v1/links/lhchardelete01"));
+    BOOST_TEST(remove.result_int() == 200);
+    BOOST_TEST(std::string(remove[bhttp::field::content_type]) == "application/json");
+
+    // Full serialized link body order, with status flipped to deleted.
+    expect_ordered_fields(
+        remove.body(),
+        {"\"id\":", "\"slug\":", "\"url\":", "\"short_url\":",
+         "\"created_at\":", "\"updated_at\":", "\"status\":",
+         "\"redirect_type\":", "\"tags\":", "\"metadata\":", "\"campaign\":",
+         "\"stats\":"});
+    BOOST_TEST(remove.body().find("\"slug\":\"lhchardelete01\"") != std::string::npos);
+    BOOST_TEST(remove.body().find("\"status\":\"deleted\"") != std::string::npos);
+
+    // deleted_at persisted: observable via preview.
+    auto preview = dispatch(make_request(
+        bhttp::verb::get,
+        "/api/v1/links/lhchardelete01/preview"));
+    BOOST_TEST(preview.body().find("\"status\":\"deleted\"") != std::string::npos);
+    BOOST_TEST(preview.body().find("\"deleted_at\":null") == std::string::npos);
+
+    // Missing slug -> 404 not_found.
+    expect_api_error(
+        dispatch(make_request(
+            bhttp::verb::delete_,
+            "/api/v1/links/lhcharmissing02")),
+        404,
+        "not_found");
+}
+
+BOOST_AUTO_TEST_CASE(characterize_lifecycle_disable_enable_roundtrip)
+{
+    create_link("lhcharlife01");
+
+    auto disable = dispatch(make_request(
+        bhttp::verb::post,
+        "/api/v1/links/lhcharlife01/disable"));
+    BOOST_TEST(disable.result_int() == 200);
+    BOOST_TEST(std::string(disable[bhttp::field::content_type]) == "application/json");
+    BOOST_TEST(disable.body().find("\"status\":\"disabled\"") != std::string::npos);
+    // Lifecycle responses use the same serializeLink field ordering.
+    expect_ordered_fields(
+        disable.body(),
+        {"\"id\":", "\"slug\":", "\"status\":", "\"redirect_type\":",
+         "\"tags\":", "\"metadata\":", "\"campaign\":", "\"stats\":"});
+
+    auto preview_disabled = dispatch(make_request(
+        bhttp::verb::get,
+        "/api/v1/links/lhcharlife01/preview"));
+    BOOST_TEST(preview_disabled.body().find("\"enabled\":false") != std::string::npos);
+
+    auto enable = dispatch(make_request(
+        bhttp::verb::post,
+        "/api/v1/links/lhcharlife01/enable"));
+    BOOST_TEST(enable.result_int() == 200);
+    BOOST_TEST(enable.body().find("\"status\":\"active\"") != std::string::npos);
+
+    auto preview_enabled = dispatch(make_request(
+        bhttp::verb::get,
+        "/api/v1/links/lhcharlife01/preview"));
+    BOOST_TEST(preview_enabled.body().find("\"enabled\":true") != std::string::npos);
+}
+
+BOOST_AUTO_TEST_CASE(characterize_lifecycle_restore_soft_deleted)
+{
+    create_link("lhcharlife02");
+
+    // Soft-delete through the delete handler, then restore.
+    auto remove = dispatch(make_request(
+        bhttp::verb::delete_,
+        "/api/v1/links/lhcharlife02"));
+    BOOST_TEST(remove.body().find("\"status\":\"deleted\"") != std::string::npos);
+
+    auto restore = dispatch(make_request(
+        bhttp::verb::post,
+        "/api/v1/links/lhcharlife02/restore"));
+    BOOST_TEST(restore.result_int() == 200);
+    BOOST_TEST(restore.body().find("\"status\":\"active\"") != std::string::npos);
+
+    auto preview = dispatch(make_request(
+        bhttp::verb::get,
+        "/api/v1/links/lhcharlife02/preview"));
+    BOOST_TEST(preview.body().find("\"deleted_at\":null") != std::string::npos);
+    BOOST_TEST(preview.body().find("\"status\":\"active\"") != std::string::npos);
+}
+
+BOOST_AUTO_TEST_CASE(characterize_lifecycle_not_found)
+{
+    for (const std::string& action : {"enable", "disable", "restore"}) {
+        expect_api_error(
+            dispatch(make_request(
+                bhttp::verb::post,
+                "/api/v1/links/lhcharmissing03/" + action)),
+            404,
+            "not_found");
+    }
+}
+
+BOOST_AUTO_TEST_CASE(characterize_preview_active_exact_body)
+{
+    create_link("lhcharprev01");
+
+    auto preview = dispatch(make_request(
+        bhttp::verb::get,
+        "/api/v1/links/lhcharprev01/preview"));
+    BOOST_TEST(preview.result_int() == 200);
+    BOOST_TEST(std::string(preview[bhttp::field::content_type]) == "application/json");
+
+    // Preview of an untouched active link is fully deterministic; lock the
+    // entire body byte-for-byte (field names, order, values).
+    BOOST_TEST(preview.body() ==
+        "{\"slug\":\"lhcharprev01\","
+        "\"url\":\"https://example.com/lhcharprev01\","
+        "\"status\":\"active\","
+        "\"redirect_type\":\"temporary\","
+        "\"enabled\":true,"
+        "\"expires_at\":null,"
+        "\"deleted_at\":null}");
+}
+
+BOOST_AUTO_TEST_CASE(characterize_preview_soft_deleted_link)
+{
+    create_link("lhcharprev02");
+    auto remove = dispatch(make_request(
+        bhttp::verb::delete_,
+        "/api/v1/links/lhcharprev02"));
+    BOOST_TEST(remove.result_int() == 200);
+
+    auto preview = dispatch(make_request(
+        bhttp::verb::get,
+        "/api/v1/links/lhcharprev02/preview"));
+    BOOST_TEST(preview.result_int() == 200);
+    expect_ordered_fields(
+        preview.body(),
+        {"\"slug\":", "\"url\":", "\"status\":", "\"redirect_type\":",
+         "\"enabled\":", "\"expires_at\":", "\"deleted_at\":"});
+    BOOST_TEST(preview.body().find("\"status\":\"deleted\"") != std::string::npos);
+    BOOST_TEST(preview.body().find("\"enabled\":true") != std::string::npos);
+    // deleted_at carries a timestamp, not null.
+    BOOST_TEST(preview.body().find("\"deleted_at\":null") == std::string::npos);
+}
+
+BOOST_AUTO_TEST_CASE(characterize_preview_not_found)
+{
+    expect_api_error(
+        dispatch(make_request(
+            bhttp::verb::get,
+            "/api/v1/links/lhcharmissing04/preview")),
         404,
         "not_found");
 }
