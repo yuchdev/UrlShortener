@@ -17,6 +17,7 @@ import re
 import shutil
 import sqlite3
 import socket
+import subprocess
 import sys
 import time
 from dataclasses import dataclass, field
@@ -749,8 +750,29 @@ def assert_http_body_contains(url: str, expected_substring: str) -> tuple[bool, 
     return False, f"Response body does not contain {expected_substring!r}"
 
 
+def _assert_process_running_via_ps(name: str) -> tuple[bool, str]:
+    """Portable fallback for platforms without /proc (e.g. macOS)."""
+    try:
+        listing = subprocess.run(
+            ["ps", "-axo", "pid=,command="],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout
+    except (OSError, subprocess.CalledProcessError) as exc:
+        return False, f"Unable to list processes: {exc}"
+    own_pid = str(os.getpid())
+    for line in listing.splitlines():
+        pid, _, command = line.strip().partition(" ")
+        if pid != own_pid and name in command:
+            return True, f"Process matching {name!r} is running (pid={pid})"
+    return False, f"No running process matched {name!r}"
+
+
 def assert_process_running(name: str) -> tuple[bool, str]:
     proc_root = Path("/proc")
+    if not proc_root.is_dir():
+        return _assert_process_running_via_ps(name)
     for entry in proc_root.iterdir():
         if not entry.name.isdigit():
             continue
