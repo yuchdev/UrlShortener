@@ -2,8 +2,8 @@
 import pathlib
 
 root = pathlib.Path(__file__).resolve().parents[3]
-config = (root / "include" / "url_shortener" / "storage" / "sql" / "SqlConnectionConfig.hpp").read_text()
-factory = (root / "src" / "storage" / "postgres" / "PostgresSessionFactory.cpp").read_text()
+config = (root / "include" / "url_shortener" / "storage" / "sql" / "sql_connection_config.hpp").read_text()
+factory = (root / "src" / "storage" / "postgres" / "postgres_session_factory.cpp").read_text()
 
 assert "max_retries" in config
 assert "RunWithRetry" in factory
