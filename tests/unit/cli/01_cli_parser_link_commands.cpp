@@ -454,13 +454,14 @@ BOOST_AUTO_TEST_CASE(link_update_expires_at_value_case)
 }
 
 /**
- * [Unit][CLI] `--clear-expires-at` is the explicit-null case: the outer optional
- * is engaged but the inner optional is empty (clear the expiry).
+ * [Unit][CLI] `--expires-at clear` is the explicit-null case: the literal value
+ * "clear" engages the outer optional but leaves the inner optional empty (clear
+ * the expiry), matching the spec's single-flag syntax.
  */
 BOOST_AUTO_TEST_CASE(link_update_expires_at_clear_case)
 {
     ArgvBuilder args({"url_shortener", "link", "update",
-        "--slug", "foo", "--clear-expires-at"});
+        "--slug", "foo", "--expires-at", "clear"});
     const auto result = CliParser{}.parse(args.argc(), args.argv());
     const auto& cmd = requireUpdate(result);
 
@@ -469,27 +470,15 @@ BOOST_AUTO_TEST_CASE(link_update_expires_at_clear_case)
 }
 
 /**
- * [Unit][CLI] Passing both `--expires-at` and `--clear-expires-at` is a parse
- * error (ambiguous set-and-clear).
- */
-BOOST_AUTO_TEST_CASE(link_update_expires_at_conflict_throws)
-{
-    ArgvBuilder args({"url_shortener", "link", "update",
-        "--slug", "foo", "--expires-at", "2030-01-01T00:00:00Z",
-        "--clear-expires-at"});
-    BOOST_CHECK_THROW(
-        CliParser{}.parse(args.argc(), args.argv()), std::invalid_argument);
-}
-
-/**
- * [Unit][CLI] Repeatable `--tag` replaces the whole tag list; `--clear-tags`
- * replaces it with an (present) empty list.
+ * [Unit][CLI] `--tags a,b` splits one comma-separated value into the present
+ * replacement list, and `--tags ""` yields a present, empty list (drop all
+ * tags) - the spec's present-but-empty case.
  */
 BOOST_AUTO_TEST_CASE(link_update_tags_replace_and_clear)
 {
     {
         ArgvBuilder args({"url_shortener", "link", "update",
-            "--slug", "foo", "--tag", "a", "--tag", "b"});
+            "--slug", "foo", "--tags", "a,b"});
         const auto result = CliParser{}.parse(args.argc(), args.argv());
         const auto& cmd = requireUpdate(result);
         BOOST_REQUIRE(cmd.tags.has_value());
@@ -499,7 +488,7 @@ BOOST_AUTO_TEST_CASE(link_update_tags_replace_and_clear)
     }
     {
         ArgvBuilder args({"url_shortener", "link", "update",
-            "--slug", "foo", "--clear-tags"});
+            "--slug", "foo", "--tags", ""});
         const auto result = CliParser{}.parse(args.argc(), args.argv());
         const auto& cmd = requireUpdate(result);
         BOOST_REQUIRE(cmd.tags.has_value());
@@ -508,23 +497,27 @@ BOOST_AUTO_TEST_CASE(link_update_tags_replace_and_clear)
 }
 
 /**
- * [Unit][CLI] `--metadata KEY=VALUE` replaces the whole map; `--clear-metadata`
- * replaces it with a present empty map; a malformed entry is rejected.
+ * [Unit][CLI] `--metadata k=v,k2=v2` splits one comma-separated value into the
+ * present replacement map; `--metadata ""` yields a present, empty map; a
+ * malformed entry (no `=`) is rejected.
  */
 BOOST_AUTO_TEST_CASE(link_update_metadata_replace_clear_and_malformed)
 {
     {
         ArgvBuilder args({"url_shortener", "link", "update",
-            "--slug", "foo", "--metadata", "team=growth"});
+            "--slug", "foo", "--metadata", "team=growth,tier=gold"});
         const auto result = CliParser{}.parse(args.argc(), args.argv());
         const auto& cmd = requireUpdate(result);
         BOOST_REQUIRE(cmd.metadata.has_value());
+        BOOST_REQUIRE_EQUAL(cmd.metadata->size(), 2u);
         BOOST_REQUIRE_EQUAL(cmd.metadata->count("team"), 1u);
         BOOST_CHECK_EQUAL(cmd.metadata->at("team"), "growth");
+        BOOST_REQUIRE_EQUAL(cmd.metadata->count("tier"), 1u);
+        BOOST_CHECK_EQUAL(cmd.metadata->at("tier"), "gold");
     }
     {
         ArgvBuilder args({"url_shortener", "link", "update",
-            "--slug", "foo", "--clear-metadata"});
+            "--slug", "foo", "--metadata", ""});
         const auto result = CliParser{}.parse(args.argc(), args.argv());
         const auto& cmd = requireUpdate(result);
         BOOST_REQUIRE(cmd.metadata.has_value());
@@ -533,6 +526,12 @@ BOOST_AUTO_TEST_CASE(link_update_metadata_replace_clear_and_malformed)
     {
         ArgvBuilder args({"url_shortener", "link", "update",
             "--slug", "foo", "--metadata", "novalue"});
+        BOOST_CHECK_THROW(CliParser{}.parse(args.argc(), args.argv()),
+            std::invalid_argument);
+    }
+    {
+        ArgvBuilder args({"url_shortener", "link", "update",
+            "--slug", "foo", "--metadata", "team=growth,novalue"});
         BOOST_CHECK_THROW(CliParser{}.parse(args.argc(), args.argv()),
             std::invalid_argument);
     }

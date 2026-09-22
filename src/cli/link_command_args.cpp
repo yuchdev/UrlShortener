@@ -60,6 +60,68 @@ void requireNonEmpty(const std::string& flag, const std::string& value)
 }
 
 /**
+ * @brief Split a comma-separated flag value into its raw tokens.
+ *
+ * Purely syntactic: an empty input yields an empty vector (the "present but
+ * empty" case used by `--tags ""`); otherwise the value is split on every `,`
+ * with each token kept verbatim (including empty ones). Semantic constraints
+ * such as tag count/format are re-validated downstream by
+ * `LinkCommandService` (via `validateTags`), never here.
+ *
+ * @param value Raw comma-separated flag value.
+ * @return std::vector<std::string> The split tokens.
+ */
+std::vector<std::string> splitCommaList(const std::string& value)
+{
+    std::vector<std::string> tokens;
+    if (value.empty()) {
+        return tokens;
+    }
+    std::string::size_type start = 0;
+    while (true) {
+        const auto comma = value.find(',', start);
+        if (comma == std::string::npos) {
+            tokens.push_back(value.substr(start));
+            break;
+        }
+        tokens.push_back(value.substr(start, comma - start));
+        start = comma + 1;
+    }
+    return tokens;
+}
+
+/**
+ * @brief Split a comma-separated `KEY=VALUE` list into a metadata map.
+ *
+ * Only structural tokenizing happens here: split on `,`, then each entry on its
+ * single `=`. An empty input yields an empty map (the "present but empty" case
+ * used by `--metadata ""`). Key/value length and content limits are left to
+ * `LinkCommandService` (via `validateMetadata`).
+ *
+ * @param value Raw comma-separated `KEY=VALUE` list.
+ * @return std::unordered_map<std::string, std::string> The parsed entries.
+ * @throws std::invalid_argument If an entry does not contain exactly one `=`,
+ *         or has an empty key.
+ */
+std::unordered_map<std::string, std::string> parseMetadataList(
+    const std::string& value)
+{
+    std::unordered_map<std::string, std::string> parsed;
+    for (const auto& entry : splitCommaList(value)) {
+        const auto eq = entry.find('=');
+        if (eq == std::string::npos || eq == 0
+            || entry.find('=', eq + 1) != std::string::npos) {
+            throw std::invalid_argument(
+                "Invalid --metadata entry: '" + entry
+                + "'. Expected KEY=VALUE with exactly one '=' and a non-empty "
+                  "KEY.");
+        }
+        parsed[entry.substr(0, eq)] = entry.substr(eq + 1);
+    }
+    return parsed;
+}
+
+/**
  * @brief Run a Boost.ProgramOptions description over post-verb tokens.
  *
  * Wraps unknown-flag and value-conversion failures into std::invalid_argument
@@ -338,8 +400,8 @@ app::UpdateLinkCommand parseUpdateArgs(const std::vector<std::string>& args)
     std::string slug;
     std::string enabled;
     std::string expires_at;
-    std::vector<std::string> tags;
-    std::vector<std::string> metadata;
+    std::string tags;
+    std::string metadata;
     std::string campaign_name;
     std::string campaign_source;
     std::string campaign_medium;
@@ -347,11 +409,11 @@ app::UpdateLinkCommand parseUpdateArgs(const std::vector<std::string>& args)
     std::string campaign_content;
     std::string campaign_id;
 
-    // Value-bearing options are declared first, then the zero-token
-    // `--clear-*` switches. Keeping the `composing()` list options (`--tag`,
-    // `--metadata`) away from adjacent `bool_switch` options mirrors the
-    // working `link create` layout and avoids a Boost.ProgramOptions quirk
-    // where an interleaved zero-token switch swallows a repeated list value.
+    // Each optional field is a single-value flag whose presence engages the
+    // matching three-state `UpdateLinkCommand` slot; only `--clear-campaign`
+    // remains a paired zero-token switch (the spec keeps no other `--clear-*`
+    // flag). `--tags`/`--metadata` take one comma-separated value and are
+    // tokenized syntactically below.
     po::options_description desc("link update options");
     desc.add_options()(
         "slug", po::value<std::string>(&slug)->value_name("SLUG"),
@@ -359,16 +421,15 @@ app::UpdateLinkCommand parseUpdateArgs(const std::vector<std::string>& args)
         "enabled", po::value<std::string>(&enabled)->value_name("BOOL"),
         "New enabled state (true/false).")(
         "expires-at",
-        po::value<std::string>(&expires_at)->value_name("RFC3339"),
-        "Set the expiry timestamp (RFC3339 UTC).")(
-        "tag", po::value<std::vector<std::string>>(&tags)->composing()
-                   ->value_name("TAG"),
-        "Replacement tag (repeatable); replaces the whole tag list.")(
+        po::value<std::string>(&expires_at)->value_name("RFC3339|clear"),
+        "Set the expiry (RFC3339 UTC), or the literal 'clear' to drop it.")(
+        "tags", po::value<std::string>(&tags)->value_name("A,B,C"),
+        "Replacement tags as a comma-separated list; replaces the whole tag "
+        "list (empty value clears all tags).")(
         "metadata",
-        po::value<std::vector<std::string>>(&metadata)->composing()
-            ->value_name("KEY=VALUE"),
-        "Replacement metadata entry KEY=VALUE (repeatable); replaces the whole "
-        "map.")(
+        po::value<std::string>(&metadata)->value_name("KEY=VALUE,..."),
+        "Replacement metadata as comma-separated KEY=VALUE entries; replaces "
+        "the whole map (empty value clears all metadata).")(
         "campaign-name",
         po::value<std::string>(&campaign_name)->value_name("VALUE"),
         "Campaign name.")(
@@ -387,12 +448,6 @@ app::UpdateLinkCommand parseUpdateArgs(const std::vector<std::string>& args)
         "campaign-id",
         po::value<std::string>(&campaign_id)->value_name("VALUE"),
         "Campaign identifier.")(
-        "clear-expires-at", po::bool_switch(),
-        "Clear the expiry (explicit null).")(
-        "clear-tags", po::bool_switch(),
-        "Replace the tag list with an empty list.")(
-        "clear-metadata", po::bool_switch(),
-        "Replace the metadata map with an empty map.")(
         "clear-campaign", po::bool_switch(),
         "Clear the campaign (explicit null).");
 
@@ -411,57 +466,32 @@ app::UpdateLinkCommand parseUpdateArgs(const std::vector<std::string>& args)
         command.enabled = parseBoolFlag("--enabled", enabled);
     }
 
-    // expires_at: three-state. --expires-at sets a value; --clear-expires-at
-    // sets an explicit null; the two are mutually exclusive.
-    const bool clear_expires_at = vm["clear-expires-at"].as<bool>();
-    if (vm.count("expires-at") && clear_expires_at) {
-        throw std::invalid_argument(
-            "link update accepts only one of --expires-at or "
-            "--clear-expires-at.");
-    }
+    // expires_at: three-state on a single flag. The literal value "clear"
+    // engages the outer optional with an empty inner optional (explicit null);
+    // any other value sets the RFC3339 timestamp; omitting the flag leaves the
+    // outer optional empty (unchanged).
     if (vm.count("expires-at")) {
-        requireNonEmpty("--expires-at", expires_at);
-        command.expires_at = std::optional<std::string>{expires_at};
-    }
-    else if (clear_expires_at) {
-        command.expires_at = std::optional<std::string>{};
+        if (expires_at == "clear") {
+            command.expires_at = std::optional<std::string>{};
+        }
+        else {
+            requireNonEmpty("--expires-at", expires_at);
+            command.expires_at = std::optional<std::string>{expires_at};
+        }
     }
 
-    // tags: present => replace the whole list. --tag supplies the replacement
-    // values; --clear-tags replaces with an empty list; both together is
-    // ambiguous.
-    const bool clear_tags = vm["clear-tags"].as<bool>();
-    if (!tags.empty() && clear_tags) {
-        throw std::invalid_argument(
-            "link update accepts only one of --tag or --clear-tags.");
+    // tags: present => replace the whole list. The single --tags value is
+    // split on commas; an empty value yields a present, empty list (drop all
+    // tags). Omitting --tags leaves the field absent.
+    if (vm.count("tags")) {
+        command.tags = splitCommaList(tags);
     }
-    if (!tags.empty()) {
-        command.tags = tags;
-    }
-    else if (clear_tags) {
-        command.tags = std::vector<std::string>{};
-    }
-    // metadata: same present/replace semantics as tags.
-    const bool clear_metadata = vm["clear-metadata"].as<bool>();
-    if (!metadata.empty() && clear_metadata) {
-        throw std::invalid_argument(
-            "link update accepts only one of --metadata or --clear-metadata.");
-    }
-    if (!metadata.empty()) {
-        std::unordered_map<std::string, std::string> parsed;
-        for (const auto& entry : metadata) {
-            const auto eq = entry.find('=');
-            if (eq == std::string::npos || eq == 0) {
-                throw std::invalid_argument(
-                    "Invalid --metadata entry: '" + entry
-                    + "'. Expected KEY=VALUE with a non-empty KEY.");
-            }
-            parsed[entry.substr(0, eq)] = entry.substr(eq + 1);
-        }
-        command.metadata = std::move(parsed);
-    }
-    else if (clear_metadata) {
-        command.metadata = std::unordered_map<std::string, std::string>{};
+
+    // metadata: same present/replace semantics as tags, split on commas then
+    // each entry on its single '='; an empty value yields a present, empty
+    // map. Omitting --metadata leaves the field absent.
+    if (vm.count("metadata")) {
+        command.metadata = parseMetadataList(metadata);
     }
 
     // campaign: three-state. Any --campaign-* sets a value; --clear-campaign

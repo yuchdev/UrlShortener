@@ -73,28 +73,29 @@ app::GetLinkQuery parseGetArgs(const std::vector<std::string>& args);
  * `--slug <SLUG>` is the required selector; every other flag is optional and
  * maps onto @ref app::UpdateLinkCommand's PATCH-style three-state fields. A
  * field left off the command line stays "absent" (leave untouched); the value
- * and explicit-clear cases are distinguished by separate flags:
+ * and explicit-clear cases are folded onto each field's single flag:
  *  - `--enabled <BOOL>`      -> UpdateLinkCommand::enabled (present => set).
- *  - `--expires-at <RFC3339>` -> expires_at present-with-value (set expiry).
- *  - `--clear-expires-at`    -> expires_at present-null (clear expiry).
- *  - `--tag <TAG>` (repeatable) -> tags present with the given replacement list.
- *  - `--clear-tags`          -> tags present as an empty list (drop all tags).
- *  - `--metadata <KEY=VALUE>` (repeatable) -> metadata present replacement map.
- *  - `--clear-metadata`      -> metadata present as an empty map.
+ *  - `--expires-at <RFC3339>` -> expires_at present-with-value (set expiry);
+ *    the literal `--expires-at clear` is expires_at present-null (clear it).
+ *  - `--tags <A,B,C>`        -> tags present with the comma-split replacement
+ *    list; `--tags ""` is a present, empty list (drop all tags).
+ *  - `--metadata <K=V,...>`  -> metadata present with the comma/`=`-split
+ *    replacement map; `--metadata ""` is a present, empty map.
  *  - `--campaign-name/-source/-medium/-term/-content/-id <VALUE>`
  *                            -> campaign present-with-value.
  *  - `--clear-campaign`      -> campaign present-null (clear the campaign).
  *
- * The clear/value flags of each field are mutually exclusive (e.g. passing both
- * `--expires-at` and `--clear-expires-at` is a parse error), which keeps the
- * ambiguous "set and clear at once" case out of the DTO. Only argv
- * well-formedness is enforced here; RFC3339 validity, tag/metadata limits, and
- * campaign-field limits are validated independently by `LinkCommandService`.
+ * `--campaign-*` and `--clear-campaign` remain mutually exclusive (passing both
+ * is a parse error). Only argv well-formedness is enforced here - comma/`=`
+ * tokenizing for `--tags`/`--metadata` - while RFC3339 validity, tag/metadata
+ * limits, and campaign-field limits are validated independently by
+ * `LinkCommandService` (via `validateTags`/`validateMetadata`).
  *
  * @param args Flag tokens after the verb (argv[3..argc-1]).
  * @return app::UpdateLinkCommand The parsed partial-update command.
  * @throws std::invalid_argument On a missing/empty `--slug`, an unknown flag, a
- *         malformed value, or a value/clear flag conflict.
+ *         malformed value (bad boolean or metadata entry), or a
+ *         campaign/`--clear-campaign` conflict.
  */
 app::UpdateLinkCommand parseUpdateArgs(const std::vector<std::string>& args);
 
