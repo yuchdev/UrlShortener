@@ -15,7 +15,11 @@ today's server-flag usage text unchanged.
 
 - `src/cli_parser.cpp` - add a `link`-scoped help branch that sets
   `ParseResult::help_requested`/`help_text` the same way the existing
-  top-level `--help` does, listing all ten verbs and their flags.
+  top-level `--help` does, listing all nine verbs and their flags. (The
+  command inventory in `plan.md` has ten REST-endpoint rows, but
+  `GET /api/v1/links/{slug}` and `GET /api/v1/links/id/{id}` both map to
+  the single `link get` verb - distinguished by `--slug` vs `--id` - so
+  there are nine distinct CLI verbs, not ten.)
 
 ## Tests
 
@@ -23,7 +27,7 @@ Extend `tests/unit/cli/01_cli_parser_link_commands.cpp`:
 - `argv = {"url_shortener", "--help"}` produces byte-identical
   `help_text` to before this milestone (regression guard).
 - `argv = {"url_shortener", "link", "--help"}` sets `help_requested = true`
-  and lists all ten verbs.
+  and lists all nine verbs.
 - `argv = {"url_shortener", "link", "create", "--help"}` describes
   `create`'s specific flags.
 
@@ -35,7 +39,7 @@ Extend `tests/unit/cli/01_cli_parser_link_commands.cpp`:
 ## Success criteria
 
 - [ ] `link --help` and `link <verb> --help` produce useful, accurate usage
-      text for all ten commands.
+      text for all nine commands.
 - [ ] Top-level `--help` (server mode) output is byte-identical to before
       this task.
 - [ ] Manual QA test case 11 in `docs/testing/cli_link_commands.md`
