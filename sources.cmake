@@ -2,6 +2,7 @@ set(URL_SHORTENER_CPP
         ${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/cli_parser.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/cli/link_command_args.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cli/link_command_dispatch.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/uri_map_singleton.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/core/utils.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/analytics/click_event_queue.cpp
@@ -60,6 +61,7 @@ set(URL_SHORTENER_H
         ${CMAKE_CURRENT_SOURCE_DIR}/include/url_shortener/http/handlers/fallback_handlers.hpp
         ${CMAKE_CURRENT_SOURCE_DIR}/include/url_shortener/cli/cli_parser.h
         ${CMAKE_CURRENT_SOURCE_DIR}/include/url_shortener/cli/link_command_args.hpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/include/url_shortener/cli/link_command_dispatch.hpp
         ${CMAKE_CURRENT_SOURCE_DIR}/include/url_shortener/observability/LogLevel.h
         ${CMAKE_CURRENT_SOURCE_DIR}/include/url_shortener/observability/LoggingConfig.h
         ${CMAKE_CURRENT_SOURCE_DIR}/include/url_shortener/observability/LogFields.h
@@ -302,6 +304,7 @@ set(URL_SHORTENER_SOURCES
 
   set(CLI_UNIT_SOURCES
       tests/unit/cli/01_cli_parser_link_commands.cpp
+      tests/unit/cli/02_cli_dispatch_reachable.cpp
   )
 
   set(ANALYTICS_INTEGRATION_SOURCES
@@ -365,6 +368,7 @@ set(URL_SHORTENER_SOURCES
       ${SECURITY_SOURCES}
       ${CMAKE_CURRENT_SOURCE_DIR}/src/cli_parser.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/cli/link_command_args.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/cli/link_command_dispatch.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/uri_map_singleton.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/core/utils.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/analytics/click_event_queue.cpp
