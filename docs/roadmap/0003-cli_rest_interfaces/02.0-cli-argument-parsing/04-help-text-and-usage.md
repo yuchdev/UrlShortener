@@ -1,7 +1,7 @@
 # 04 - Help text and usage
 
 **Parent task:** 02.0 CLI argument parsing
-**State:** ⬜ Not started
+**State:** ✅ Complete
 **Depends on:** 02, 03
 **Blocks:** none
 

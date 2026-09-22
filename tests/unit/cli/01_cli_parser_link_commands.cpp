@@ -785,3 +785,163 @@ BOOST_AUTO_TEST_CASE(server_flags_unchanged_by_link_additions)
     BOOST_CHECK(!result.config.analytics_enabled);
     BOOST_CHECK_EQUAL(result.config.max_request_body_bytes, 4096u);
 }
+
+// ---------------------------------------------------------------------------
+// link help text (subtask 04)
+// ---------------------------------------------------------------------------
+
+namespace
+{
+/// Golden copy of the top-level (server-mode) `--help` output, captured before
+/// the link-scoped help branch was added. Kept as an exact raw-string literal
+/// so any accidental edit to the server `--help` path (contract C8) is caught
+/// by a byte-for-byte comparison rather than a lenient substring check.
+///
+/// Regenerate only if the *server* option surface intentionally changes:
+///   ./cmake-build/url_shortener --help
+const char* const kTopLevelHelpGolden =
+    R"HELPGOLD(Usage: simple-http [OPTIONS] [PORT]
+
+
+General options:
+  -h [ --help ]                         Print this help message and exit.
+
+HTTP options:
+  --http-port PORT                      HTTP listening port (default: 8000).
+  --http-enabled BOOL                   Enable HTTP listener (true/false, 
+                                        default: true).
+  --http-redirect-to-https BOOL         Redirect all HTTP requests to HTTPS 
+                                        (true/false, default: false).
+  --hsts-max-age SECONDS                HSTS max-age in seconds (optional; omit
+                                        to disable HSTS header).
+
+TLS/HTTPS options:
+  --tls-enabled BOOL                    Enable TLS/HTTPS listener (true/false, 
+                                        default: false).
+  --https-port PORT                     HTTPS listening port (default: 443).
+  --tls-cert PATH                       Path to PEM certificate chain file.
+  --tls-key PATH                        Path to PEM private key file.
+  --tls-key-passphrase PASSPHRASE       Private key passphrase (optional).
+  --tls-ca-file PATH                    Path to CA certificate file (optional).
+  --tls-ca-path PATH                    Path to CA certificate directory 
+                                        (optional).
+  --tls-min-version VERSION (=TLS1.2)   Minimum TLS version (default: TLS1.2).
+  --tls-cipher-suites SUITES            TLS 1.3 cipher suites 
+                                        (colon-separated).
+  --tls-ciphers CIPHERS                 TLS 1.2 cipher list (OpenSSL format).
+  --tls-curves CURVES (=X25519:P-256)   Elliptic curves (default: 
+                                        X25519:P-256).
+  --tls-alpn ALPN (=http/1.1)           ALPN protocol (default: http/1.1).
+  --tls-session-tickets BOOL            Enable TLS session tickets (true/false,
+                                        default: false).
+  --tls-session-cache BOOL              Enable TLS session cache (true/false, 
+                                        default: true).
+  --tls-client-auth MODE                Client authentication mode: none, 
+                                        optional, or required (default: none).
+
+URL shortener options:
+  --shortener-base-domain URL           Base domain used in generated short 
+                                        URLs (default: http://localhost:8000; 
+                                        overridable via SHORTENER_BASE_DOMAIN 
+                                        env var).
+  --shortener-default-redirect-type TYPE (=temporary)
+                                        Default redirect type: temporary or 
+                                        permanent (default: temporary).
+  --shortener-default-expiry-seconds SECONDS
+                                        Default expiration window in seconds 
+                                        for new links when expires_at is 
+                                        omitted.
+  --shortener-generated-slug-length N (=7)
+                                        Length of auto-generated slugs 
+                                        (default: 7).
+  --shortener-allow-private-targets BOOL
+                                        Allow private/intranet target URLs 
+                                        (true/false, default: false).
+
+Analytics options:
+  --analytics-enabled BOOL              Enable analytics collection 
+                                        (true/false, default: true).
+  --analytics-queue-capacity N (=1024)  In-memory analytics queue capacity 
+                                        (default: 1024).
+  --analytics-client-hash-salt SALT (=dev-analytics-salt)
+                                        HMAC salt for client ID hashing 
+                                        (default: dev-analytics-salt).
+
+Request limits:
+  --request-id-max-length N (=64)       Maximum accepted X-Request-Id header 
+                                        length (default: 64).
+  --max-request-body-bytes BYTES (=65536)
+                                        Maximum request body size in bytes 
+                                        (default: 65536).
+  --max-request-target-length N (=2048) Maximum request target (URL path) 
+                                        length (default: 2048).
+)HELPGOLD";
+}  // namespace
+
+/**
+ * [Unit][CLI] Regression guard: top-level `--help` (no `link` token) still sets
+ * help_requested and emits help_text byte-identical to the pre-subtask-04
+ * baseline. Exact-string, not substring, so an accidental edit to the server
+ * help path is caught immediately (contract C8, subtask 04 constraint).
+ *
+ * If this breaks, first check:
+ *   - The `link` help branch only fires when argv[1] == "link".
+ *   - No server option was added/renamed/reworded (that regenerates the
+ *     golden; update kTopLevelHelpGolden deliberately if so).
+ */
+BOOST_AUTO_TEST_CASE(top_level_help_is_byte_identical_to_baseline)
+{
+    ArgvBuilder args({"url_shortener", "--help"});
+    const ParseResult result = CliParser{}.parse(args.argc(), args.argv());
+
+    BOOST_CHECK(result.help_requested);
+    BOOST_CHECK(!result.command.has_value());
+    BOOST_CHECK_EQUAL(result.help_text, std::string(kTopLevelHelpGolden));
+}
+
+/**
+ * [Unit][CLI] `link --help` (no verb) requests help and lists every verb, plus
+ * the `link <verb> --help` drill-down hint - and does NOT parse a command.
+ */
+BOOST_AUTO_TEST_CASE(link_help_lists_all_verbs)
+{
+    ArgvBuilder args({"url_shortener", "link", "--help"});
+    const ParseResult result = CliParser{}.parse(args.argc(), args.argv());
+
+    BOOST_CHECK(result.help_requested);
+    BOOST_CHECK(!result.command.has_value());
+
+    const std::string& help = result.help_text;
+    for (const char* verb : {"create", "get", "update", "delete", "enable",
+             "disable", "restore", "preview", "stats"}) {
+        BOOST_CHECK_MESSAGE(help.find(verb) != std::string::npos,
+            "link --help must mention verb: " << verb);
+    }
+    // The tenth "verb" is the `link` group itself, surfaced via the drill-down
+    // hint that points at per-verb help.
+    BOOST_CHECK(help.find("link <verb> --help") != std::string::npos);
+}
+
+/**
+ * [Unit][CLI] `link create --help` requests help and describes create's own
+ * flags (required --url plus the optional set from subtask 02); it does not
+ * parse a create command nor require --url.
+ */
+BOOST_AUTO_TEST_CASE(link_create_help_describes_create_flags)
+{
+    ArgvBuilder args({"url_shortener", "link", "create", "--help"});
+    const ParseResult result = CliParser{}.parse(args.argc(), args.argv());
+
+    BOOST_CHECK(result.help_requested);
+    BOOST_CHECK(!result.command.has_value());
+
+    const std::string& help = result.help_text;
+    for (const char* flag : {"--url", "--slug", "--redirect-type",
+             "--expires-at", "--enabled", "--tag", "--metadata",
+             "--campaign-name", "--base-domain", "--allow-private-targets"}) {
+        BOOST_CHECK_MESSAGE(help.find(flag) != std::string::npos,
+            "link create --help must describe flag: " << flag);
+    }
+    // Verb-scoped: it must not bleed in an unrelated verb's unique flag.
+    BOOST_CHECK(help.find("--bucket") == std::string::npos);
+}
