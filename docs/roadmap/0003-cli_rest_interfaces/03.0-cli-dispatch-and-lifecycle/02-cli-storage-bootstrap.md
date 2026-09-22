@@ -1,7 +1,7 @@
 # 02 - CLI storage bootstrap
 
 **Parent task:** 03.0 CLI dispatch and process lifecycle
-**State:** ⬜ Not started
+**State:** ✅ Complete
 **Depends on:** 01
 **Blocks:** 03
 
