@@ -9,7 +9,7 @@
 #include <variant>
 
 #include <url_shortener/app/link_command_service.hpp>
-#include <url_shortener/url_shortener.h>
+#include <url_shortener/core/config.h>
 
 /// Link-management subcommand recognized as `link <verb>` on the command line.
 ///
