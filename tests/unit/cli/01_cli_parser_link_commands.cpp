@@ -91,7 +91,7 @@ BOOST_AUTO_TEST_CASE(link_verbs_map_to_expected_enumerators)
             r.command->payload));
     }
     {
-        ArgvBuilder args({"url_shortener", "link", "delete"});
+        ArgvBuilder args({"url_shortener", "link", "delete", "--slug", "d"});
         const auto r = CliParser{}.parse(args.argc(), args.argv());
         BOOST_REQUIRE(r.command.has_value());
         BOOST_CHECK(r.command->verb == LinkCliVerb::del);
@@ -100,7 +100,7 @@ BOOST_AUTO_TEST_CASE(link_verbs_map_to_expected_enumerators)
                 r.command->payload));
     }
     {
-        ArgvBuilder args({"url_shortener", "link", "enable"});
+        ArgvBuilder args({"url_shortener", "link", "enable", "--slug", "e"});
         const auto r = CliParser{}.parse(args.argc(), args.argv());
         BOOST_REQUIRE(r.command.has_value());
         BOOST_CHECK(r.command->verb == LinkCliVerb::enable);
@@ -111,7 +111,7 @@ BOOST_AUTO_TEST_CASE(link_verbs_map_to_expected_enumerators)
         BOOST_CHECK(payload->enabled);
     }
     {
-        ArgvBuilder args({"url_shortener", "link", "disable"});
+        ArgvBuilder args({"url_shortener", "link", "disable", "--slug", "e"});
         const auto r = CliParser{}.parse(args.argc(), args.argv());
         BOOST_REQUIRE(r.command.has_value());
         BOOST_CHECK(r.command->verb == LinkCliVerb::disable);
@@ -122,7 +122,7 @@ BOOST_AUTO_TEST_CASE(link_verbs_map_to_expected_enumerators)
         BOOST_CHECK(!payload->enabled);
     }
     {
-        ArgvBuilder args({"url_shortener", "link", "preview"});
+        ArgvBuilder args({"url_shortener", "link", "preview", "--slug", "p"});
         const auto r = CliParser{}.parse(args.argc(), args.argv());
         BOOST_REQUIRE(r.command.has_value());
         BOOST_CHECK(r.command->verb == LinkCliVerb::preview);
@@ -388,6 +388,307 @@ BOOST_AUTO_TEST_CASE(link_get_requires_exactly_one_selector)
     }
     {
         ArgvBuilder args({"url_shortener", "link", "get"});
+        BOOST_CHECK_THROW(CliParser{}.parse(args.argc(), args.argv()),
+            std::invalid_argument);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// link update flag mapping (PATCH three-state semantics)
+// ---------------------------------------------------------------------------
+
+namespace
+{
+/// Extract the UpdateLinkCommand payload or fail the test.
+///
+/// The returned reference points into `result`, so callers must bind the
+/// ParseResult to a named local first. Passing a temporary
+/// (`requireUpdate(CliParser{}.parse(...))`) leaves the reference dangling:
+/// the payload reads back as empty or faults.
+const url_shortener::app::UpdateLinkCommand& requireUpdate(
+    const ParseResult& result)
+{
+    BOOST_REQUIRE(result.command.has_value());
+    const auto* payload =
+        std::get_if<url_shortener::app::UpdateLinkCommand>(
+            &result.command->payload);
+    BOOST_REQUIRE(payload != nullptr);
+    return *payload;
+}
+}  // namespace
+
+/**
+ * [Unit][CLI] `link update --slug foo --enabled false` sets only `enabled`,
+ * leaving every three-state optional field at "absent" (nullopt).
+ */
+BOOST_AUTO_TEST_CASE(link_update_sets_only_enabled)
+{
+    ArgvBuilder args({"url_shortener", "link", "update",
+        "--slug", "foo", "--enabled", "false"});
+    const auto result = CliParser{}.parse(args.argc(), args.argv());
+    const auto& cmd = requireUpdate(result);
+
+    BOOST_CHECK_EQUAL(cmd.slug, "foo");
+    BOOST_REQUIRE(cmd.enabled.has_value());
+    BOOST_CHECK(!*cmd.enabled);
+    BOOST_CHECK(!cmd.expires_at.has_value());
+    BOOST_CHECK(!cmd.tags.has_value());
+    BOOST_CHECK(!cmd.metadata.has_value());
+    BOOST_CHECK(!cmd.campaign.has_value());
+}
+
+/**
+ * [Unit][CLI] `--expires-at <value>` is the present-with-value case: the outer
+ * optional is engaged and the inner optional holds the timestamp.
+ */
+BOOST_AUTO_TEST_CASE(link_update_expires_at_value_case)
+{
+    ArgvBuilder args({"url_shortener", "link", "update",
+        "--slug", "foo", "--expires-at", "2030-01-01T00:00:00Z"});
+    const auto result = CliParser{}.parse(args.argc(), args.argv());
+    const auto& cmd = requireUpdate(result);
+
+    BOOST_REQUIRE(cmd.expires_at.has_value());
+    BOOST_REQUIRE(cmd.expires_at->has_value());
+    BOOST_CHECK_EQUAL(**cmd.expires_at, "2030-01-01T00:00:00Z");
+}
+
+/**
+ * [Unit][CLI] `--clear-expires-at` is the explicit-null case: the outer optional
+ * is engaged but the inner optional is empty (clear the expiry).
+ */
+BOOST_AUTO_TEST_CASE(link_update_expires_at_clear_case)
+{
+    ArgvBuilder args({"url_shortener", "link", "update",
+        "--slug", "foo", "--clear-expires-at"});
+    const auto result = CliParser{}.parse(args.argc(), args.argv());
+    const auto& cmd = requireUpdate(result);
+
+    BOOST_REQUIRE(cmd.expires_at.has_value());
+    BOOST_CHECK(!cmd.expires_at->has_value());
+}
+
+/**
+ * [Unit][CLI] Passing both `--expires-at` and `--clear-expires-at` is a parse
+ * error (ambiguous set-and-clear).
+ */
+BOOST_AUTO_TEST_CASE(link_update_expires_at_conflict_throws)
+{
+    ArgvBuilder args({"url_shortener", "link", "update",
+        "--slug", "foo", "--expires-at", "2030-01-01T00:00:00Z",
+        "--clear-expires-at"});
+    BOOST_CHECK_THROW(
+        CliParser{}.parse(args.argc(), args.argv()), std::invalid_argument);
+}
+
+/**
+ * [Unit][CLI] Repeatable `--tag` replaces the whole tag list; `--clear-tags`
+ * replaces it with an (present) empty list.
+ */
+BOOST_AUTO_TEST_CASE(link_update_tags_replace_and_clear)
+{
+    {
+        ArgvBuilder args({"url_shortener", "link", "update",
+            "--slug", "foo", "--tag", "a", "--tag", "b"});
+        const auto result = CliParser{}.parse(args.argc(), args.argv());
+        const auto& cmd = requireUpdate(result);
+        BOOST_REQUIRE(cmd.tags.has_value());
+        BOOST_REQUIRE_EQUAL(cmd.tags->size(), 2u);
+        BOOST_CHECK_EQUAL((*cmd.tags)[0], "a");
+        BOOST_CHECK_EQUAL((*cmd.tags)[1], "b");
+    }
+    {
+        ArgvBuilder args({"url_shortener", "link", "update",
+            "--slug", "foo", "--clear-tags"});
+        const auto result = CliParser{}.parse(args.argc(), args.argv());
+        const auto& cmd = requireUpdate(result);
+        BOOST_REQUIRE(cmd.tags.has_value());
+        BOOST_CHECK(cmd.tags->empty());
+    }
+}
+
+/**
+ * [Unit][CLI] `--metadata KEY=VALUE` replaces the whole map; `--clear-metadata`
+ * replaces it with a present empty map; a malformed entry is rejected.
+ */
+BOOST_AUTO_TEST_CASE(link_update_metadata_replace_clear_and_malformed)
+{
+    {
+        ArgvBuilder args({"url_shortener", "link", "update",
+            "--slug", "foo", "--metadata", "team=growth"});
+        const auto result = CliParser{}.parse(args.argc(), args.argv());
+        const auto& cmd = requireUpdate(result);
+        BOOST_REQUIRE(cmd.metadata.has_value());
+        BOOST_REQUIRE_EQUAL(cmd.metadata->count("team"), 1u);
+        BOOST_CHECK_EQUAL(cmd.metadata->at("team"), "growth");
+    }
+    {
+        ArgvBuilder args({"url_shortener", "link", "update",
+            "--slug", "foo", "--clear-metadata"});
+        const auto result = CliParser{}.parse(args.argc(), args.argv());
+        const auto& cmd = requireUpdate(result);
+        BOOST_REQUIRE(cmd.metadata.has_value());
+        BOOST_CHECK(cmd.metadata->empty());
+    }
+    {
+        ArgvBuilder args({"url_shortener", "link", "update",
+            "--slug", "foo", "--metadata", "novalue"});
+        BOOST_CHECK_THROW(CliParser{}.parse(args.argc(), args.argv()),
+            std::invalid_argument);
+    }
+}
+
+/**
+ * [Unit][CLI] Campaign three-state: `--campaign-name` sets the value case and
+ * `--clear-campaign` sets the explicit-null case.
+ */
+BOOST_AUTO_TEST_CASE(link_update_campaign_value_and_clear)
+{
+    {
+        ArgvBuilder args({"url_shortener", "link", "update",
+            "--slug", "foo", "--campaign-name", "summer"});
+        const auto result = CliParser{}.parse(args.argc(), args.argv());
+        const auto& cmd = requireUpdate(result);
+        BOOST_REQUIRE(cmd.campaign.has_value());
+        BOOST_REQUIRE(cmd.campaign->has_value());
+        BOOST_REQUIRE((*cmd.campaign)->name.has_value());
+        BOOST_CHECK_EQUAL(*(*cmd.campaign)->name, "summer");
+    }
+    {
+        ArgvBuilder args({"url_shortener", "link", "update",
+            "--slug", "foo", "--clear-campaign"});
+        const auto result = CliParser{}.parse(args.argc(), args.argv());
+        const auto& cmd = requireUpdate(result);
+        BOOST_REQUIRE(cmd.campaign.has_value());
+        BOOST_CHECK(!cmd.campaign->has_value());
+    }
+    {
+        ArgvBuilder args({"url_shortener", "link", "update",
+            "--slug", "foo", "--campaign-name", "summer", "--clear-campaign"});
+        BOOST_CHECK_THROW(CliParser{}.parse(args.argc(), args.argv()),
+            std::invalid_argument);
+    }
+}
+
+/**
+ * [Unit][CLI] `link update` without `--slug` is a parse error, and an unknown
+ * flag is rejected rather than silently ignored.
+ */
+BOOST_AUTO_TEST_CASE(link_update_missing_slug_and_unknown_flag_throw)
+{
+    {
+        ArgvBuilder args({"url_shortener", "link", "update",
+            "--enabled", "true"});
+        BOOST_CHECK_THROW(CliParser{}.parse(args.argc(), args.argv()),
+            std::invalid_argument);
+    }
+    {
+        ArgvBuilder args({"url_shortener", "link", "update",
+            "--slug", "foo", "--bogus", "1"});
+        BOOST_CHECK_THROW(CliParser{}.parse(args.argc(), args.argv()),
+            std::invalid_argument);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// link delete / enable / disable / restore flag mapping
+// ---------------------------------------------------------------------------
+
+/**
+ * [Unit][CLI] `link delete --slug foo` yields DeleteLinkCommand{slug=foo}.
+ */
+BOOST_AUTO_TEST_CASE(link_delete_maps_slug)
+{
+    ArgvBuilder args({"url_shortener", "link", "delete", "--slug", "foo"});
+    const auto r = CliParser{}.parse(args.argc(), args.argv());
+    const auto* cmd =
+        std::get_if<url_shortener::app::DeleteLinkCommand>(&r.command->payload);
+    BOOST_REQUIRE(cmd != nullptr);
+    BOOST_CHECK_EQUAL(cmd->slug, "foo");
+}
+
+/**
+ * [Unit][CLI] `link enable` sets enabled=true and `link disable` sets
+ * enabled=false on SetLinkEnabledCommand; both carry the slug.
+ */
+BOOST_AUTO_TEST_CASE(link_enable_disable_map_slug_and_state)
+{
+    {
+        ArgvBuilder args({"url_shortener", "link", "enable", "--slug", "foo"});
+        const auto r = CliParser{}.parse(args.argc(), args.argv());
+        const auto* cmd = std::get_if<
+            url_shortener::app::SetLinkEnabledCommand>(&r.command->payload);
+        BOOST_REQUIRE(cmd != nullptr);
+        BOOST_CHECK_EQUAL(cmd->slug, "foo");
+        BOOST_CHECK(cmd->enabled);
+    }
+    {
+        ArgvBuilder args({"url_shortener", "link", "disable", "--slug", "foo"});
+        const auto r = CliParser{}.parse(args.argc(), args.argv());
+        const auto* cmd = std::get_if<
+            url_shortener::app::SetLinkEnabledCommand>(&r.command->payload);
+        BOOST_REQUIRE(cmd != nullptr);
+        BOOST_CHECK_EQUAL(cmd->slug, "foo");
+        BOOST_CHECK(!cmd->enabled);
+    }
+}
+
+/**
+ * [Unit][CLI] `link restore --slug foo` yields RestoreLinkCommand{slug=foo}.
+ */
+BOOST_AUTO_TEST_CASE(link_restore_maps_slug)
+{
+    ArgvBuilder args({"url_shortener", "link", "restore", "--slug", "foo"});
+    const auto r = CliParser{}.parse(args.argc(), args.argv());
+    const auto* cmd =
+        std::get_if<url_shortener::app::RestoreLinkCommand>(&r.command->payload);
+    BOOST_REQUIRE(cmd != nullptr);
+    BOOST_CHECK_EQUAL(cmd->slug, "foo");
+}
+
+/**
+ * [Unit][CLI] delete/enable/disable/restore all require `--slug`; omitting it is
+ * a parse error for each.
+ */
+BOOST_AUTO_TEST_CASE(link_lifecycle_verbs_require_slug)
+{
+    for (const char* verb : {"delete", "enable", "disable", "restore"}) {
+        ArgvBuilder args({"url_shortener", "link", verb});
+        BOOST_CHECK_THROW(CliParser{}.parse(args.argc(), args.argv()),
+            std::invalid_argument);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// link preview flag mapping
+// ---------------------------------------------------------------------------
+
+/**
+ * [Unit][CLI] `link preview` reuses the get lookup DTO: `--slug` selects slug,
+ * `--id` selects id, and neither/both is a parse error.
+ */
+BOOST_AUTO_TEST_CASE(link_preview_selects_slug_or_id)
+{
+    {
+        ArgvBuilder args({"url_shortener", "link", "preview", "--slug", "foo"});
+        const auto r = CliParser{}.parse(args.argc(), args.argv());
+        const auto* q =
+            std::get_if<url_shortener::app::GetLinkQuery>(&r.command->payload);
+        BOOST_REQUIRE(q != nullptr);
+        BOOST_CHECK(q->by == url_shortener::app::GetLinkBy::slug);
+        BOOST_CHECK_EQUAL(q->value, "foo");
+    }
+    {
+        ArgvBuilder args({"url_shortener", "link", "preview", "--id", "bar"});
+        const auto r = CliParser{}.parse(args.argc(), args.argv());
+        const auto* q =
+            std::get_if<url_shortener::app::GetLinkQuery>(&r.command->payload);
+        BOOST_REQUIRE(q != nullptr);
+        BOOST_CHECK(q->by == url_shortener::app::GetLinkBy::id);
+        BOOST_CHECK_EQUAL(q->value, "bar");
+    }
+    {
+        ArgvBuilder args({"url_shortener", "link", "preview"});
         BOOST_CHECK_THROW(CliParser{}.parse(args.argc(), args.argv()),
             std::invalid_argument);
     }

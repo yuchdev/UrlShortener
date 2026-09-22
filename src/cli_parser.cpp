@@ -102,9 +102,9 @@ LinkCliVerb parseLinkVerb(const std::string& token)
  * @brief Parse a `link <verb> [options]` invocation into a LinkCliCommand.
  *
  * Recognizes the verb (argv[2]) and maps the remaining flags into the matching
- * `app::` DTO. The `create`, `get`, and `stats` verbs have their per-flag
- * mapping fully implemented (via `cli::parse*Args`); the remaining verbs still
- * install a default-constructed payload pending later subtasks.
+ * `app::` DTO via the per-verb `cli::parse*Args` mappers. Every verb (create,
+ * get, update, delete, enable, disable, restore, preview, stats) has its
+ * per-flag mapping fully implemented.
  *
  * @param argc Argument count.
  * @param argv Argument vector (argv[1] is known to be "link").
@@ -138,29 +138,23 @@ LinkCliCommand parseLinkCommand(int argc, char* argv[], ServerConfig& config)
         command.payload = cli::parseGetArgs(verb_args);
         break;
     case LinkCliVerb::update:
-        command.payload = app::UpdateLinkCommand{};
+        command.payload = cli::parseUpdateArgs(verb_args);
         break;
     case LinkCliVerb::del:
-        command.payload = app::DeleteLinkCommand{};
+        command.payload = cli::parseDeleteArgs(verb_args);
         break;
-    case LinkCliVerb::enable: {
-        app::SetLinkEnabledCommand payload;
-        payload.enabled = true;
-        command.payload = payload;
+    case LinkCliVerb::enable:
+        command.payload = cli::parseSetEnabledArgs(verb_args, true);
         break;
-    }
-    case LinkCliVerb::disable: {
-        app::SetLinkEnabledCommand payload;
-        payload.enabled = false;
-        command.payload = payload;
+    case LinkCliVerb::disable:
+        command.payload = cli::parseSetEnabledArgs(verb_args, false);
         break;
-    }
     case LinkCliVerb::restore:
-        command.payload = app::RestoreLinkCommand{};
+        command.payload = cli::parseRestoreArgs(verb_args);
         break;
     case LinkCliVerb::preview:
         // Preview reuses the get-by-slug/id query shape.
-        command.payload = app::GetLinkQuery{};
+        command.payload = cli::parsePreviewArgs(verb_args);
         break;
     case LinkCliVerb::stats:
         command.payload = cli::parseStatsArgs(verb_args);

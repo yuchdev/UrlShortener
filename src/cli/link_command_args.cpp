@@ -1,12 +1,16 @@
 /**
  * @file link_command_args.cpp
- * @brief Implementation of the per-verb argv-to-DTO mapping for `link create`,
- * `link get`, and `link stats`.
+ * @brief Implementation of the per-verb argv-to-DTO mapping for the `link`
+ * subcommands (create, get, update, delete, enable, disable, restore, preview,
+ * stats).
  */
 #include <url_shortener/cli/link_command_args.hpp>
 
+#include <optional>
 #include <stdexcept>
 #include <string>
+#include <unordered_map>
+#include <utility>
 #include <vector>
 
 #include <boost/program_options.hpp>
@@ -81,6 +85,92 @@ void runVerbParse(
     catch (const po::error& e) {
         throw std::invalid_argument(e.what());
     }
+}
+
+/**
+ * @brief Parse a `--slug`/`--id` selector into a GetLinkQuery.
+ *
+ * Shared by `link get` and `link preview`, which use the identical lookup DTO
+ * and exactly-one-selector rule; only the diagnostic verb label differs.
+ *
+ * @param args       Flag tokens after the verb.
+ * @param verb_label Human-readable verb name for error messages.
+ * @return app::GetLinkQuery The parsed lookup query.
+ * @throws std::invalid_argument If both or neither selector is given, on an
+ *         unknown flag, or on an empty selector value.
+ */
+app::GetLinkQuery parseGetLikeArgs(
+    const std::vector<std::string>& args,
+    const std::string& verb_label)
+{
+    std::string slug;
+    std::string id;
+
+    po::options_description desc(verb_label + " options");
+    desc.add_options()(
+        "slug", po::value<std::string>(&slug)->value_name("SLUG"),
+        "Look up the link by slug.")(
+        "id", po::value<std::string>(&id)->value_name("ID"),
+        "Look up the link by id.");
+
+    po::variables_map vm;
+    runVerbParse(args, desc, vm);
+
+    const bool has_slug = vm.count("slug") != 0;
+    const bool has_id = vm.count("id") != 0;
+    if (has_slug && has_id) {
+        throw std::invalid_argument(
+            verb_label + " accepts exactly one of --slug or --id, not both.");
+    }
+    if (!has_slug && !has_id) {
+        throw std::invalid_argument(
+            verb_label + " requires one of --slug <SLUG> or --id <ID>.");
+    }
+
+    app::GetLinkQuery query;
+    if (has_slug) {
+        requireNonEmpty("--slug", slug);
+        query.by = app::GetLinkBy::slug;
+        query.value = slug;
+    }
+    else {
+        requireNonEmpty("--id", id);
+        query.by = app::GetLinkBy::id;
+        query.value = id;
+    }
+    return query;
+}
+
+/**
+ * @brief Parse a lifecycle verb that takes only a required `--slug` selector.
+ *
+ * Backs `link delete`, `link enable`, `link disable`, and `link restore`, whose
+ * DTOs differ only in type but share the exact same single-flag argv shape.
+ *
+ * @param args       Flag tokens after the verb.
+ * @param verb_label Human-readable verb name for error messages.
+ * @return std::string The validated, non-empty slug.
+ * @throws std::invalid_argument On a missing/empty `--slug` or an unknown flag.
+ */
+std::string parseSlugOnly(
+    const std::vector<std::string>& args,
+    const std::string& verb_label)
+{
+    std::string slug;
+
+    po::options_description desc(verb_label + " options");
+    desc.add_options()(
+        "slug", po::value<std::string>(&slug)->value_name("SLUG"),
+        "Slug of the link to act on (required).");
+
+    po::variables_map vm;
+    runVerbParse(args, desc, vm);
+
+    if (!vm.count("slug")) {
+        throw std::invalid_argument(verb_label + " requires --slug <SLUG>.");
+    }
+    requireNonEmpty("--slug", slug);
+    return slug;
 }
 
 } // namespace
@@ -240,42 +330,209 @@ app::CreateLinkCommand parseCreateArgs(
 
 app::GetLinkQuery parseGetArgs(const std::vector<std::string>& args)
 {
-    std::string slug;
-    std::string id;
+    return parseGetLikeArgs(args, "link get");
+}
 
-    po::options_description desc("link get options");
+app::UpdateLinkCommand parseUpdateArgs(const std::vector<std::string>& args)
+{
+    std::string slug;
+    std::string enabled;
+    std::string expires_at;
+    std::vector<std::string> tags;
+    std::vector<std::string> metadata;
+    std::string campaign_name;
+    std::string campaign_source;
+    std::string campaign_medium;
+    std::string campaign_term;
+    std::string campaign_content;
+    std::string campaign_id;
+
+    // Value-bearing options are declared first, then the zero-token
+    // `--clear-*` switches. Keeping the `composing()` list options (`--tag`,
+    // `--metadata`) away from adjacent `bool_switch` options mirrors the
+    // working `link create` layout and avoids a Boost.ProgramOptions quirk
+    // where an interleaved zero-token switch swallows a repeated list value.
+    po::options_description desc("link update options");
     desc.add_options()(
         "slug", po::value<std::string>(&slug)->value_name("SLUG"),
-        "Look up the link by slug.")(
-        "id", po::value<std::string>(&id)->value_name("ID"),
-        "Look up the link by id.");
+        "Slug of the link to update (required).")(
+        "enabled", po::value<std::string>(&enabled)->value_name("BOOL"),
+        "New enabled state (true/false).")(
+        "expires-at",
+        po::value<std::string>(&expires_at)->value_name("RFC3339"),
+        "Set the expiry timestamp (RFC3339 UTC).")(
+        "tag", po::value<std::vector<std::string>>(&tags)->composing()
+                   ->value_name("TAG"),
+        "Replacement tag (repeatable); replaces the whole tag list.")(
+        "metadata",
+        po::value<std::vector<std::string>>(&metadata)->composing()
+            ->value_name("KEY=VALUE"),
+        "Replacement metadata entry KEY=VALUE (repeatable); replaces the whole "
+        "map.")(
+        "campaign-name",
+        po::value<std::string>(&campaign_name)->value_name("VALUE"),
+        "Campaign name.")(
+        "campaign-source",
+        po::value<std::string>(&campaign_source)->value_name("VALUE"),
+        "Campaign source.")(
+        "campaign-medium",
+        po::value<std::string>(&campaign_medium)->value_name("VALUE"),
+        "Campaign medium.")(
+        "campaign-term",
+        po::value<std::string>(&campaign_term)->value_name("VALUE"),
+        "Campaign term.")(
+        "campaign-content",
+        po::value<std::string>(&campaign_content)->value_name("VALUE"),
+        "Campaign content.")(
+        "campaign-id",
+        po::value<std::string>(&campaign_id)->value_name("VALUE"),
+        "Campaign identifier.")(
+        "clear-expires-at", po::bool_switch(),
+        "Clear the expiry (explicit null).")(
+        "clear-tags", po::bool_switch(),
+        "Replace the tag list with an empty list.")(
+        "clear-metadata", po::bool_switch(),
+        "Replace the metadata map with an empty map.")(
+        "clear-campaign", po::bool_switch(),
+        "Clear the campaign (explicit null).");
 
     po::variables_map vm;
     runVerbParse(args, desc, vm);
 
-    const bool has_slug = vm.count("slug") != 0;
-    const bool has_id = vm.count("id") != 0;
-    if (has_slug && has_id) {
-        throw std::invalid_argument(
-            "link get accepts exactly one of --slug or --id, not both.");
+    if (!vm.count("slug")) {
+        throw std::invalid_argument("link update requires --slug <SLUG>.");
     }
-    if (!has_slug && !has_id) {
-        throw std::invalid_argument(
-            "link get requires one of --slug <SLUG> or --id <ID>.");
+    requireNonEmpty("--slug", slug);
+
+    app::UpdateLinkCommand command;
+    command.slug = slug;
+
+    if (vm.count("enabled")) {
+        command.enabled = parseBoolFlag("--enabled", enabled);
     }
 
-    app::GetLinkQuery query;
-    if (has_slug) {
-        requireNonEmpty("--slug", slug);
-        query.by = app::GetLinkBy::slug;
-        query.value = slug;
+    // expires_at: three-state. --expires-at sets a value; --clear-expires-at
+    // sets an explicit null; the two are mutually exclusive.
+    const bool clear_expires_at = vm["clear-expires-at"].as<bool>();
+    if (vm.count("expires-at") && clear_expires_at) {
+        throw std::invalid_argument(
+            "link update accepts only one of --expires-at or "
+            "--clear-expires-at.");
     }
-    else {
-        requireNonEmpty("--id", id);
-        query.by = app::GetLinkBy::id;
-        query.value = id;
+    if (vm.count("expires-at")) {
+        requireNonEmpty("--expires-at", expires_at);
+        command.expires_at = std::optional<std::string>{expires_at};
     }
-    return query;
+    else if (clear_expires_at) {
+        command.expires_at = std::optional<std::string>{};
+    }
+
+    // tags: present => replace the whole list. --tag supplies the replacement
+    // values; --clear-tags replaces with an empty list; both together is
+    // ambiguous.
+    const bool clear_tags = vm["clear-tags"].as<bool>();
+    if (!tags.empty() && clear_tags) {
+        throw std::invalid_argument(
+            "link update accepts only one of --tag or --clear-tags.");
+    }
+    if (!tags.empty()) {
+        command.tags = tags;
+    }
+    else if (clear_tags) {
+        command.tags = std::vector<std::string>{};
+    }
+    // metadata: same present/replace semantics as tags.
+    const bool clear_metadata = vm["clear-metadata"].as<bool>();
+    if (!metadata.empty() && clear_metadata) {
+        throw std::invalid_argument(
+            "link update accepts only one of --metadata or --clear-metadata.");
+    }
+    if (!metadata.empty()) {
+        std::unordered_map<std::string, std::string> parsed;
+        for (const auto& entry : metadata) {
+            const auto eq = entry.find('=');
+            if (eq == std::string::npos || eq == 0) {
+                throw std::invalid_argument(
+                    "Invalid --metadata entry: '" + entry
+                    + "'. Expected KEY=VALUE with a non-empty KEY.");
+            }
+            parsed[entry.substr(0, eq)] = entry.substr(eq + 1);
+        }
+        command.metadata = std::move(parsed);
+    }
+    else if (clear_metadata) {
+        command.metadata = std::unordered_map<std::string, std::string>{};
+    }
+
+    // campaign: three-state. Any --campaign-* sets a value; --clear-campaign
+    // sets an explicit null; the two are mutually exclusive.
+    const bool has_campaign_field = vm.count("campaign-name")
+        || vm.count("campaign-source") || vm.count("campaign-medium")
+        || vm.count("campaign-term") || vm.count("campaign-content")
+        || vm.count("campaign-id");
+    const bool clear_campaign = vm["clear-campaign"].as<bool>();
+    if (has_campaign_field && clear_campaign) {
+        throw std::invalid_argument(
+            "link update accepts only one of the --campaign-* flags or "
+            "--clear-campaign.");
+    }
+    if (has_campaign_field) {
+        Link::Campaign campaign;
+        if (vm.count("campaign-name")) {
+            campaign.name = campaign_name;
+        }
+        if (vm.count("campaign-source")) {
+            campaign.source = campaign_source;
+        }
+        if (vm.count("campaign-medium")) {
+            campaign.medium = campaign_medium;
+        }
+        if (vm.count("campaign-term")) {
+            campaign.term = campaign_term;
+        }
+        if (vm.count("campaign-content")) {
+            campaign.content = campaign_content;
+        }
+        if (vm.count("campaign-id")) {
+            campaign.id = campaign_id;
+        }
+        command.campaign = std::optional<Link::Campaign>{campaign};
+    }
+    else if (clear_campaign) {
+        command.campaign = std::optional<Link::Campaign>{};
+    }
+
+    return command;
+}
+
+app::DeleteLinkCommand parseDeleteArgs(const std::vector<std::string>& args)
+{
+    app::DeleteLinkCommand command;
+    command.slug = parseSlugOnly(args, "link delete");
+    return command;
+}
+
+app::SetLinkEnabledCommand parseSetEnabledArgs(
+    const std::vector<std::string>& args,
+    const bool enabled)
+{
+    app::SetLinkEnabledCommand command;
+    command.slug =
+        parseSlugOnly(args, enabled ? "link enable" : "link disable");
+    command.enabled = enabled;
+    return command;
+}
+
+app::RestoreLinkCommand parseRestoreArgs(const std::vector<std::string>& args)
+{
+    app::RestoreLinkCommand command;
+    command.slug = parseSlugOnly(args, "link restore");
+    return command;
+}
+
+app::GetLinkQuery parsePreviewArgs(const std::vector<std::string>& args)
+{
+    return parseGetLikeArgs(args, "link preview");
 }
 
 app::GetLinkStatsQuery parseStatsArgs(const std::vector<std::string>& args)
