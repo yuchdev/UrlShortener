@@ -1,7 +1,7 @@
 # 04 - E2E sections for remaining commands
 
 **Parent task:** 05.0 Tests
-**State:** ⬜ Not started
+**State:** ✅ Complete
 **Depends on:** [Task 03.0](/docs/roadmap/0003-cli_rest_interfaces/03.0-cli-dispatch-and-lifecycle/README.md)
 **Blocks:** none
 
