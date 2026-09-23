@@ -10,7 +10,7 @@ Tracks progress against [plan.md](/docs/roadmap/0003-cli_rest_interfaces/plan.md
 | 02.0 | CLI argument parsing | ✅ Complete | `tests/unit/cli/01_cli_parser_link_commands.cpp` |
 | 03.0 | CLI dispatch and process lifecycle | ✅ Complete | `tests/unit/cli/02_cli_dispatch_reachable.cpp`, `tests/e2e/scripts/sections/14-18_cli_link_*.sh` |
 | 04.0 | CLI output and error contract | ✅ Complete | `tests/unit/cli/03_cli_success_output.cpp`, `tests/unit/cli/04_cli_exit_codes.cpp` |
-| 05.0 | Tests | ⬜ Not started | none yet |
+| 05.0 | Tests | ✅ Complete | `tests/unit/app/17_link_command_service_preview_link.cpp`, `tests/unit/cli/01_cli_parser_link_commands.cpp` (extended), `tests/integration/cli/11-16_link_*.py` |
 | 06.0 | Docs and registry sync | ⬜ Not started | none yet |
 
 **Legend:** ✅ Complete · 🔶 In progress / partial · ⬜ Not started
@@ -340,5 +340,97 @@ existing `codeForAppError`). One non-blocking naming fix applied
 (extract the duplicated `CoutCapture` test helper; add coverage for the
 ok-but-no-value success path used by void-payload verbs).
 
-No deferred subtasks.</new_string>
+No deferred subtasks.
+
+## Task 05.0 - Tests
+
+**Delivered.** An audit-and-close pass across all four test layers (unit,
+CLI-unit, integration, e2e), confirming Tasks 01.0-04.0's own test additions
+were as complete as each task's close-out claimed, and closing every real
+gap found.
+
+**Key findings and decisions.**
+
+- **Subtask 01 (unit, command service):** `UpdateLink`/`DeleteLink`/
+  `SetLinkEnabled`/`RestoreLink` (Task 01.0's tests 13-16) were already
+  fully branch-covered. `PreviewLink` had **zero** unit coverage despite
+  being one of the five methods this subtask's own objective names -
+  closed with new `tests/unit/app/17_link_command_service_preview_link.cpp`
+  (5 cases: slug/id lookup, soft-deleted exposure, not-found via both
+  selectors).
+- **Subtask 02 (unit, CLI parser):** closed three real gaps in
+  `tests/unit/cli/01_cli_parser_link_commands.cpp` - the C8 server-flag
+  regression test was a 6-flag representative sample, tightened to all
+  ~30 registered flags with off-default values each
+  (`all_server_flags_parse_unchanged_by_link_additions`); the
+  `parseBoolFlag` error path (non-boolean `--enabled`) had no test; empty
+  `--slug`/`--id`/stats-field rejection was tested only for create's
+  `--url`, not the other verbs' selectors.
+- **Subtask 03 (integration, remaining commands) - key architectural
+  finding, verified independently twice (once before delegating, once by
+  `subtask-verifier` reading the source a second time):** neither
+  cross-CLI-invocation seeding nor REST-fixture seeding is reachable for
+  testing `update`/`delete`/`enable`/`disable`/`restore`/`preview`.
+  `linkRepository()` (`src/storage/link_repository.cpp:87-91`) is a
+  function-local `static`, and `DispatchLinkCommand`
+  (`src/cli/link_command_dispatch.cpp`) builds a brand-new
+  `LegacyLinkStore` per invocation with no HTTP call - a CLI subprocess
+  can never see a link seeded by a prior CLI invocation *or* by an
+  HTTP-server fixture in the same test process (different process, or a
+  fresh in-process store even within the same test binary). **Every CLI
+  invocation starts from an empty store.** New tests
+  (`tests/integration/cli/11-16_link_*_not_found_and_invalid_input.py`)
+  are therefore scoped to error paths (not_found, missing/invalid flags)
+  for each of the six commands - the spec's own text explicitly sanctions
+  this ("do not write a test that silently assumes cross-invocation
+  persistence without first confirming it holds"). Happy-path coverage for
+  these six commands would require a persistent CLI test-fixture backend,
+  which is a new capability outside this subtask's "add tests" scope.
+  `/pr-review` accepted this as the correct outcome, not a shortfall.
+- **Subtask 04 (e2e, remaining commands):** pure audit, zero code changes.
+  The five target files (`14`-`18_cli_link_*.sh`) already existed, built
+  ahead of schedule as part of Task 03.0 subtask 03's own e2e work, and
+  already satisfied this subtask's specific success criteria - including
+  that the `1fe3919` dead-timeout-detection-branch fix was still intact.
+  `run_all_sections.sh`'s spec instruction to register the new sections
+  was judged stale: that script's `DEFAULT_SECTIONS` has only ever listed
+  the ten mock-service sections, and the pre-existing CLI sections 11-13
+  were never added there either, confirming CLI e2e sections run via
+  `ctest -L e2e` against the real binary by design, not via that
+  QA-walkthrough driver.
+
+**Tests (before -> after).**
+
+| Suite | Before (Task 04.0 baseline) | After |
+|-------|------------------------------|-------|
+| unit (`-L unit`) | 156/156 | 157/157 (+1: `app__17_link_command_service_preview_link`) |
+| contract (`-L contract`, serial) | 8/8 | 8/8 |
+| integration (`-L integration`) | 84/85 | 90/91 (+6 new tests, all pass) |
+| e2e (`-L e2e`) | 17/18 | 17/18 (unchanged - subtask 04 was audit-only) |
+
+Only `cli_03_link_create_then_get_persists_state` and
+`e2e_12_cli_link_get` remain red, both the same documented cross-process
+in-memory-store limitation this task's subtask 03 finding explains
+precisely. No regression anywhere; every gap this task's audits found was
+a genuine, independently-confirmed coverage hole, not busywork.
+
+**Review.** `/pr-review`: feature-reviewer LGTM, security-auditor PASS
+(test-only diff, no product code changed, no new trust boundary - a full
+STRIDE pass was correctly judged unnecessary). Two cheap, well-scoped
+non-blocking findings were fixed directly rather than looped back through
+an agent: `16_link_preview_*`'s id-based not-found case was missing the
+stdout-empty/stderr-non-empty checks its slug-based sibling had
+(`8d5aad3`), and twelve parse-error assertions across the six new
+integration files asserted only "non-zero exit" where the code
+deterministically returns exit 1 via `main.cpp`'s `catch` block - tightened
+to `assertEqual(returncode, 1)` so a future regression that reroutes parse
+errors through `ExitCodeForAppError` would be caught (`8d5aad3`). Two
+further non-blocking suggestions were deferred rather than fixed
+now (still open, low priority): disabled/expired-state coverage for
+`PreviewLink`, and a few redundant vacuous secondary assertions in the new
+integration tests. The `CoutCapture`-extraction and
+ok-but-no-value-coverage items deferred from Task 04.0 were not picked up
+by this task's audits either - still open.
+
+No deferred subtasks.
 
