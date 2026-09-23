@@ -530,4 +530,9 @@ set(URL_SHORTENER_SOURCES
           11_cli_link_create
           12_cli_link_get
           13_cli_no_server_socket
+          14_cli_link_update
+          15_cli_link_delete
+          16_cli_link_enable_disable
+          17_cli_link_restore
+          18_cli_link_preview
       )
