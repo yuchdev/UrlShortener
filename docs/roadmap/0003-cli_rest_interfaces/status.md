@@ -549,3 +549,37 @@ ADR 0001) rather than silently left for a user to rediscover.
 against `master` as a whole, or for the user to merge/push at their
 discretion - neither has been done.**
 
+## Whole-milestone `/pr-review` (post-close)
+
+Run separately from every per-task review above, against the full
+37-commit, 74-file diff to `master` as one unit. Security: PASS, no new
+findings, no regression on anything previously accepted (confirmed the six
+tasks compose without an emergent trust-boundary risk, and re-verified the
+Task 01.0 REST migration preserved every pre-migration validation check).
+Feature: LGTM, but one finding from the whole-picture pass was real and
+material enough that this session treated it as blocking rather than
+deferring it, despite the individual review categorizing it as
+non-blocking:
+
+- **`link preview`'s CLI output was missing `expires_at`/`deleted_at`/
+  `enabled` entirely** - the exact fields that give `preview` its purpose
+  as an operator's safety check (checking expiry/deletion/enabled state).
+  Task 04.0's "reuse the shared serializer verbatim" instruction was
+  correct in principle but pointed at the wrong serializer
+  (`serializeLinkViewJson`, the *full* `LinkView` shape) for this one
+  verb; REST's actual reduced-preview shape was inline, unshared C++ in
+  `handlePreviewLink`, so no CLI-reusable serializer for it existed.
+  **Fixed in `959b438`:** extracted REST's inline body into a new shared
+  `app::serializeLinkPreviewJson`, called by both `handlePreviewLink` and
+  the CLI's preview dispatch - which strengthens C1 (one source of truth
+  for serialization) rather than working around it. REST's
+  characterization tests (`10_link_handlers`, including
+  `characterize_preview_active_exact_body`) confirmed byte-identical
+  before and after. `docs/cli/README.md`'s backwards "CLI returns the
+  full view" claim was corrected to describe the actual (now-shared)
+  reduced shape.
+
+Final suite after the fix: unit 157/157, contract 8/8, integration 90/91,
+e2e 17/18 - unchanged from Task 06.0's close (the fix touched no test
+count, only a genuine output-shape bug). **Merge verdict: APPROVE.**
+
