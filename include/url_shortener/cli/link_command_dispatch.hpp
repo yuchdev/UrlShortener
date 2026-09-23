@@ -10,6 +10,8 @@
  */
 #pragma once
 
+#include <url_shortener/app/app_error.hpp>
+
 /// Top-level server configuration (defined in url_shortener/core/config.h).
 struct ServerConfig;
 
@@ -19,6 +21,27 @@ struct LinkCliCommand;
 
 namespace url_shortener::cli
 {
+/**
+ * @brief Map an application error code to the CLI process exit code.
+ *
+ * This is the CLI-side counterpart to link_handlers.cpp's
+ * `statusForAppError`/`codeForAppError` (which map @ref app::AppErrorCode to an
+ * HTTP status and error-code string). It is defined exactly once and every
+ * `link <verb>` command routes its failure path through it, so exit codes stay
+ * consistent across verbs and a script can branch on `$?` alone.
+ *
+ * Mapping (see the definition for the rationale of each group):
+ * - @c none            -> 0 (not an error path; callers should not reach here)
+ * - @c not_found       -> 1
+ * - @c invalid_url, @c invalid_slug, @c invalid_field, @c reserved_slug -> 2
+ * - @c slug_conflict   -> 3
+ * - @c storage_failure, @c internal -> 4
+ *
+ * @param code Application error code carried by a failed service @c Result.
+ * @return Non-negative process exit code (0 only for @c none).
+ */
+int ExitCodeForAppError(app::AppErrorCode code);
+
 /**
  * @brief Execute a parsed `link <verb>` command in one-shot CLI mode.
  *

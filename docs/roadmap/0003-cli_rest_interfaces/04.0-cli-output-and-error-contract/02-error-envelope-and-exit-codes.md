@@ -1,7 +1,7 @@
 # 02 - Error envelope and exit codes
 
 **Parent task:** 04.0 CLI output and error contract
-**State:** ⬜ Not started
+**State:** ✅ Complete
 **Depends on:** 01
 **Blocks:** none
 

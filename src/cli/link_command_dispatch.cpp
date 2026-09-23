@@ -79,14 +79,14 @@ std::string serialize_success(const app::LinkStatsView& view)
  * On success, writes exactly one line to stdout: the shared REST serializer's
  * JSON for the carried view plus a trailing newline, and nothing else, so that
  * stdout carries only the success payload and scripting against it is reliable
- * (Task 04.0). On failure, writes a human-readable diagnostic to stderr; the
- * final error-envelope format and full exit-code mapping are owned by Task 04.0
- * subtask 02 and are intentionally still a placeholder here.
+ * (Task 04.0). On failure, writes a human-readable diagnostic (verb + the
+ * error detail) to stderr only, leaving stdout empty, and returns the exit code
+ * from @ref ExitCodeForAppError so callers can branch on `$?` alone.
  *
  * @tparam View The value type carried by the service @c Result.
  * @param verb   Human-readable verb token for the failure diagnostic.
  * @param result Result returned by the invoked @c LinkCommandService method.
- * @return 0 when the command succeeded, 1 otherwise.
+ * @return 0 when the command succeeded, otherwise the mapped non-zero exit code.
  */
 template <typename View>
 int report_result(std::string_view verb, const app::Result<View>& result)
@@ -100,9 +100,45 @@ int report_result(std::string_view verb, const app::Result<View>& result)
         return 0;
     }
     std::cerr << verb << " failed: " << result.error.detail << '\n';
-    return 1;
+    return ExitCodeForAppError(result.error.code);
 }
 }  // namespace
+
+int ExitCodeForAppError(app::AppErrorCode code)
+{
+    // Mirrors the switch shape of statusForAppError/codeForAppError in
+    // src/http/handlers/link_handlers.cpp, but yields a small, stable set of
+    // process exit codes instead of an HTTP status. Grouping rationale:
+    //   1  not_found        - the addressed link does not exist.
+    //   2  bad input        - the request itself is malformed or disallowed:
+    //                         invalid_url/invalid_slug/invalid_field, and
+    //                         reserved_slug (the caller chose a disallowed slug,
+    //                         a client-side input problem, distinct from a
+    //                         collision with an existing link).
+    //   3  conflict         - slug_conflict: the slug is already taken.
+    //   4  server/internal  - storage_failure/internal: not the caller's fault.
+    // The switch is exhaustive over AppErrorCode with no default so that adding
+    // an enumerator is a compile-time prompt to classify it here.
+    switch (code) {
+    case app::AppErrorCode::none:
+        return 0;
+    case app::AppErrorCode::not_found:
+        return 1;
+    case app::AppErrorCode::invalid_url:
+    case app::AppErrorCode::invalid_slug:
+    case app::AppErrorCode::invalid_field:
+    case app::AppErrorCode::reserved_slug:
+        return 2;
+    case app::AppErrorCode::slug_conflict:
+        return 3;
+    case app::AppErrorCode::storage_failure:
+    case app::AppErrorCode::internal:
+        return 4;
+    }
+    // UNREACHABLE: AppErrorCode is a closed enum exhaustively handled above.
+    // Any unmapped value is treated as an internal failure.
+    return 4;
+}
 
 int DispatchLinkCommand(const LinkCliCommand& command,
                         const ServerConfig& config)
