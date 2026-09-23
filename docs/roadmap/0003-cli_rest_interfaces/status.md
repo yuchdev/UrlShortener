@@ -11,17 +11,19 @@ Tracks progress against [plan.md](/docs/roadmap/0003-cli_rest_interfaces/plan.md
 | 03.0 | CLI dispatch and process lifecycle | ✅ Complete | `tests/unit/cli/02_cli_dispatch_reachable.cpp`, `tests/e2e/scripts/sections/14-18_cli_link_*.sh` |
 | 04.0 | CLI output and error contract | ✅ Complete | `tests/unit/cli/03_cli_success_output.cpp`, `tests/unit/cli/04_cli_exit_codes.cpp` |
 | 05.0 | Tests | ✅ Complete | `tests/unit/app/17_link_command_service_preview_link.cpp`, `tests/unit/cli/01_cli_parser_link_commands.cpp` (extended), `tests/integration/cli/11-16_link_*.py` |
-| 06.0 | Docs and registry sync | ⬜ Not started | none yet |
+| 06.0 | Docs and registry sync | ✅ Complete | documentation only - `docs/testing/cli_link_commands.md`, `docs/testing/testplans/cli.md`, `docs/cli/README.md`, `docs/adr/0001-cli-rest-shared-command-layer.md` |
 
 **Legend:** ✅ Complete · 🔶 In progress / partial · ⬜ Not started
 
-**Current gate status:** Milestone 0003 has not started. `link create`,
-`link get`, and `link stats` already share `app::LinkCommandService` with
-their REST handlers (pre-existing, not attributed to this milestone), but no
-CLI entrypoint exists to invoke them - `CliParser`/`main.cpp` still only
-support server-startup flags. See `plan.md`'s Background section for the
-exact current state and the prior CLI-design documents this milestone
-corrects (`docs/testing/cli_link_commands.md`'s `uri.txt` assumption).
+**Current gate status: Milestone 0003 is ✅ Complete.** All six tasks landed
+on `milestone/0003-cli-rest-interfaces`; all ten `link <verb>` commands (nine
+distinct CLI verbs) are implemented, reviewed, tested, and documented. Final
+suite: unit 157/157, contract 8/8, integration 90/91, e2e 17/18 - the only
+two remaining failures (`cli_03_link_create_then_get_persists_state`,
+`e2e_12_cli_link_get`) are the same documented, architecturally-inherent
+cross-process in-memory-store limitation (see Task 03.0's section below and
+[ADR 0001](/docs/adr/0001-cli-rest-shared-command-layer.md)), not defects.
+Branch not merged to `master` or pushed - that is the user's call.
 
 ## Notes & decisions
 
@@ -433,4 +435,117 @@ ok-but-no-value-coverage items deferred from Task 04.0 were not picked up
 by this task's audits either - still open.
 
 No deferred subtasks.
+
+## Task 06.0 - Docs and registry sync
+
+**Delivered.** The final task of the milestone: three documentation
+deliverables closing out the CLI surface's discoverability.
+
+- **Subtask 01** rewrote `docs/testing/cli_link_commands.md` and
+  `docs/testing/testplans/cli.md` to match the shipped CLI - every
+  `uri.txt` reference removed (CLI mode never touches it, contract C5),
+  "nine verbs" used consistently (not the stale "ten"), the cross-process
+  storage-scoping finding stated accurately, and manual QA / test-plan
+  coverage added for all six commands beyond create/get/stats.
+- **Subtask 02** added `docs/cli/README.md` - one entry per CLI verb with
+  invocation syntax, cross-linked `operation_id` back to `docs/api/README.md`,
+  flags, the `ExitCodeForAppError` exit-code mapping, and an example
+  invocation - plus a "CLI mode" section in the repo root `README.md`. No
+  REST field documentation was duplicated; everything field-level links out.
+- **Subtask 03** added **the repository's first ADR**,
+  [`docs/adr/0001-cli-rest-shared-command-layer.md`](/docs/adr/0001-cli-rest-shared-command-layer.md),
+  recording the DTO-sharing architecture decision, the explicit non-goals
+  restated from `plan.md`, and an honest negative-consequences section
+  naming the cross-process CLI limitation directly. Cross-linked from
+  `plan.md`'s Architecture section and from the (previously empty)
+  `docs/adr/README.md` inventory table.
+
+**Key decisions and corrections.**
+
+- **ADR numbering corrected before writing:** the subtask spec guessed
+  `0006` as "the next available ADR number," assuming ADRs 0001-0005
+  already existed (per `CLAUDE.md`'s aspirational mention of them). Checked
+  `docs/adr/` directly before delegating: it held zero numbered ADRs, and
+  the ADR index's own inventory table literally said "_none yet_." Used the
+  correct number, `0001`, instead of blindly following the spec's stale
+  guess.
+- **All three subtask agents were killed mid-flight by a session rate-limit
+  reset.** Verified actual disk/git state before relaunching each one:
+  subtask 03's ADR was already complete and high-quality (only the
+  `plan.md` cross-link was missing); subtask 01's `cli_link_commands.md`
+  was already complete (only `testplans/cli.md` remained); subtask 02 had
+  produced nothing yet. Each relaunch was scoped to only the missing piece,
+  so no finished work was redone.
+- **A large, unrelated, never-committed README.md rewrite from an earlier,
+  separate session** (a "stable release" README pass, pre-dating this
+  milestone) was sitting in the working tree the entire time subtask 02
+  ran. Verified it was untouched by every agent's diff before staging;
+  subtask 02's own "CLI mode" section was isolated and staged as a single
+  27-line hunk via a crafted patch, leaving the pre-existing unrelated
+  rewrite exactly as it was found - still uncommitted, not this milestone's
+  concern.
+- **`/pr-review` round 1 caught two real factual documentation bugs**,
+  both independently reverified against source before fixing (`f489ed3`):
+  `docs/cli/README.md` claimed `link preview` covers two REST endpoints
+  (false - only `link get` does; `preview` has exactly one registered
+  route); `docs/testing/testplans/cli.md` listed `--url` as a `link update`
+  flag (false - `UpdateLinkCommand` has no such field and `parseUpdateArgs`
+  never registers it; following the documented synopsis would produce a
+  false bug report). Round 2: feature-reviewer LGTM, security-auditor PASS.
+
+**Tests.** Documentation-only task; no test count change (unit 157/157,
+contract 8/8, integration 90/91, e2e 17/18 - unchanged from Task 05.0's
+close, confirmed by a full suite run with no regression).
+
+**Review.** `/pr-review` round 1: REQUEST_CHANGES (two factual errors,
+listed above). Round 2: feature-reviewer LGTM, security-auditor PASS (no
+findings in either round - a docs-only diff, correctly judged not to
+warrant a full STRIDE pass). `/link-check` scoped to this milestone's
+files (`docs/roadmap/0003-cli_rest_interfaces docs/cli docs/adr
+docs/testing README.md`) is clean: 59 files, 0 problems. (A bare `docs/`
+run surfaces ~108 pre-existing dangling links in the unrelated
+`docs/roadmap/0002-admin_console/` tree - not touched by this milestone,
+out of scope.)
+
+No deferred subtasks.
+
+---
+
+## Milestone 0003 - Final Summary
+
+All six tasks complete. All nine `link <verb>` CLI subcommands
+(`create`/`get`/`update`/`delete`/`enable`/`disable`/`restore`/`preview`/
+`stats`) are implemented end-to-end: parsed by `CliParser`, dispatched by
+`DispatchLinkCommand` before any server construction (C4/C5 honored
+throughout - verified repeatedly, never regressed), executed through the
+same `LinkCommandService` methods and DTOs the REST handlers use (C1/C2,
+formalized in ADR 0001), and output as either one JSON line on stdout or a
+mapped exit code (1-4) with a stderr diagnostic (C3/C4/C6/C7/C8 all held).
+
+**Final state:** unit 157/157, contract 8/8, integration 90/91, e2e 17/18.
+The only two non-passing tests are the same documented, architecturally-
+inherent limitation: the CLI's `linkRepository()` backing store is a
+per-process in-memory singleton, so two *separate* CLI process invocations
+never share state. This was discovered, independently verified twice, and
+is now documented in three places (`status.md`, `docs/cli/README.md`,
+ADR 0001) rather than silently left for a user to rediscover.
+
+**Known follow-ups, not blocking, recorded for a future milestone:**
+- `--base-domain` skips `normalizeAndValidateBaseDomain` (validation-parity
+  gap vs. the REST path) - Task 02.0/03.0 security review.
+- CLI mutating verbs do not traverse `AccessGuard`/`auth_audit_log` -
+  verified to be parity with the REST path's existing posture (neither
+  does `link_handlers.cpp`), not a gap this milestone introduced.
+- Minor test-coverage gaps: both-selectors case for `link preview`,
+  `link update --expires-at ""`, disabled/expired-state coverage for
+  `PreviewLink`, a few redundant vacuous integration-test assertions.
+- The duplicated `CoutCapture` test helper (two copies in `tests/unit/cli/`)
+  could be extracted to a shared header.
+- Cross-process CLI scripting (`link create` then a separate `link get`
+  seeing the same link) requires a persistent backend - explicitly a
+  non-goal of this milestone (ADR 0001's Non-goals section).
+
+**Branch `milestone/0003-cli-rest-interfaces` is ready for `/pr-review`
+against `master` as a whole, or for the user to merge/push at their
+discretion - neither has been done.**
 
