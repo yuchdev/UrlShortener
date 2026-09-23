@@ -1,7 +1,7 @@
 # 01 - Correct CLI test docs
 
 **Parent task:** 06.0 Docs and registry sync
-**State:** ⬜ Not started
+**State:** Complete
 **Depends on:** [Task 05.0](/docs/roadmap/0003-cli_rest_interfaces/05.0-tests/README.md)
 **Blocks:** none
 
