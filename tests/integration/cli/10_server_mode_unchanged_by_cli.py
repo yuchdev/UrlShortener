@@ -84,12 +84,12 @@ class ServerModeUnchangedByCliTest(CliIntegrationBase):
             )
             if alive:
                 conn = http.client.HTTPConnection("127.0.0.1", _SERVER_PORT)
-                conn.request("GET", "/health")
+                conn.request("GET", "/healthz")
                 resp = conn.getresponse()
                 conn.close()
                 self.assertEqual(
                     resp.status, 200,
-                    f"Expected 200 from /health, got {resp.status}",
+                    f"Expected 200 from /healthz, got {resp.status}",
                 )
         finally:
             proc.terminate()
