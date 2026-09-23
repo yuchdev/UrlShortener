@@ -316,6 +316,33 @@ curl -i http://localhost:8000/api/v1/links/docs/preview
 curl -i http://localhost:8000/api/v1/links/docs/stats
 ```
 
+## CLI mode
+
+The binary also runs as a one-shot link-management client when invoked as
+`url_shortener link <verb>`. No server process is started; the command executes,
+writes a JSON object to stdout (or a diagnostic to stderr), and exits.
+
+```bash
+# Create a short link - exit 0, JSON on stdout
+./cmake-build/url_shortener link create \
+  --url https://example.com/docs --slug docs
+
+# Fetch by slug
+./cmake-build/url_shortener link get --slug docs
+
+# Soft-delete, then restore
+./cmake-build/url_shortener link delete --slug docs
+./cmake-build/url_shortener link restore --slug docs
+```
+
+**Note.** The CLI uses the in-memory link store, which is per-process and
+non-persistent. Two separate invocations do **not** share state; a link created
+in one process is invisible to `link get` in a separate process.
+
+Full reference - all nine verbs (`create`, `get`, `update`, `delete`, `enable`,
+`disable`, `restore`, `preview`, `stats`), flags, and exit codes:
+[`docs/cli/README.md`](docs/cli/README.md).
+
 ### Stage 2 migration notes
 
 - Stage 2 management fields are backward-compatible and default to: `enabled=true`, `deleted_at=null`, `tags=[]`, `metadata={}`, and `campaign=null` when absent.
