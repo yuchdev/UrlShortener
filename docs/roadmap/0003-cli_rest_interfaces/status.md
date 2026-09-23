@@ -9,7 +9,7 @@ Tracks progress against [plan.md](/docs/roadmap/0003-cli_rest_interfaces/plan.md
 | 01.0 | Command layer completion | ✅ Complete | `tests/unit/http/10_link_handlers.cpp` (characterization), `tests/unit/app/13-16_link_command_service_*.cpp` |
 | 02.0 | CLI argument parsing | ✅ Complete | `tests/unit/cli/01_cli_parser_link_commands.cpp` |
 | 03.0 | CLI dispatch and process lifecycle | ✅ Complete | `tests/unit/cli/02_cli_dispatch_reachable.cpp`, `tests/e2e/scripts/sections/14-18_cli_link_*.sh` |
-| 04.0 | CLI output and error contract | ⬜ Not started | none yet |
+| 04.0 | CLI output and error contract | ✅ Complete | `tests/unit/cli/03_cli_success_output.cpp`, `tests/unit/cli/04_cli_exit_codes.cpp` |
 | 05.0 | Tests | ⬜ Not started | none yet |
 | 06.0 | Docs and registry sync | ⬜ Not started | none yet |
 
@@ -276,6 +276,69 @@ exhaustion or hang path. Two LOW/INFO items carried forward as milestone-level
 follow-ups (not blocking): `--base-domain` validation parity, and CLI mutating
 verbs not traversing `AccessGuard`/audit (verified to be parity with the
 REST path's existing posture, not a gap this milestone introduces).
+
+No deferred subtasks.
+
+## Task 04.0 - CLI output and error contract
+
+**Delivered.** `DispatchLinkCommand`'s placeholder output
+(`"<verb> ok slug=X"` / `"<verb> failed: detail"`) is gone. On success, every
+verb writes exactly one JSON line to stdout via the exact same serializer the
+REST handler for that command already uses -
+`app::serializeLinkViewJson` (create/get/update/delete/enable/disable/
+restore/preview) or `app::serializeLinkStatsJson` (stats) - no second/forked
+serialization path. On failure, a new `ExitCodeForAppError(app::AppErrorCode)`
+(`src/cli/link_command_dispatch.{hpp,cpp}`) maps every one of the nine
+`AppErrorCode` enumerators to an exit code (`none`->0, `not_found`->1,
+`invalid_url`/`invalid_slug`/`invalid_field`/`reserved_slug`->2,
+`slug_conflict`->3, `storage_failure`/`internal`->4, exhaustive switch, no
+`default:`), with the message on stderr and stdout guaranteed empty.
+
+**Key decisions.**
+
+- `reserved_slug` maps to exit 2 (bad input) rather than exit 3
+  (`slug_conflict`'s bucket) - a caller-chosen disallowed slug is a
+  client-side input problem, distinct from a collision with an existing
+  link. Documented inline.
+- Along the way, an unrelated pre-existing bug was found and fixed:
+  `cli_10`'s integration test queried `/health`, which was never a
+  registered route (only `/healthz` exists, since the test was authored in
+  an earlier commit). This test could never have passed regardless of any
+  CLI work in this milestone; Task 03.0's status.md had incorrectly
+  attributed its failure to "needs the full envelope." Fixed in `468fa48`.
+- A feature-review finding (private members `buffer_`/`previous_` in the new
+  `CoutCapture` test helper missing the `m_` prefix CLAUDE.md requires) was
+  fixed directly in `a59dd16` rather than looped back through a subagent,
+  since it was a trivial, unambiguous mechanical rename.
+
+**Tests (before -> after).**
+
+| Suite | Before (Task 03.0 baseline) | After |
+|-------|------------------------------|-------|
+| unit (`-L unit`) | 154/154 | 156/156 (+2: `cli__03_cli_success_output`, `cli__04_cli_exit_codes`) |
+| contract (`-L contract`, serial) | 8/8 | 8/8 |
+| integration (`-L integration`) | 80/85 | 84/85 |
+| e2e (`-L e2e`) | 16/18 | 17/18 |
+
+Every integration/e2e failure this task set out to close did close:
+`cli_01/02/04/05/06/07/08/09/10` all pass, and `e2e_11` passes. **Only two
+failures remain, both the same documented cross-process limitation** (plan.md
+C5: the in-memory `linkRepository()` singleton is per-process, so a `get` in
+a separate process invocation after a `create` returns `not_found` - not a
+JSON/exit-code defect): `cli_03_link_create_then_get_persists_state` and
+`e2e_12_cli_link_get`. Neither is fixable without a persistent backend, which
+is out of this milestone's scope per [plan.md](/docs/roadmap/0003-cli_rest_interfaces/plan.md)'s storage-path decision;
+recorded for Task 06.0's docs.
+
+**Review.** `/pr-review`: feature-reviewer LGTM, security-auditor PASS with
+no findings above informational (stdout output is byte-identical to REST's
+serializer; `error.detail` remains static-literal-only across all nine
+`AppErrorCode` paths now exercised, re-confirming Task 03.0's finding; the
+exit-code mapping introduces no new information oracle relative to REST's
+existing `codeForAppError`). One non-blocking naming fix applied
+(`a59dd16`); two further non-blocking suggestions deferred to Task 05.0
+(extract the duplicated `CoutCapture` test helper; add coverage for the
+ok-but-no-value success path used by void-payload verbs).
 
 No deferred subtasks.</new_string>
 
