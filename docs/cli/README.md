@@ -70,6 +70,36 @@ by-id REST preview endpoint.
 | `link preview` | [`get_api_v1_links_slug_preview`](../api/README.md) | `GET /api/v1/links/{slug}/preview` |
 | `link stats` | [`get_api_v1_links_slug_stats`](../api/README.md) | `GET /api/v1/links/{slug}/stats` |
 
+## Command pairs
+
+Every CLI verb and its REST counterpart invoke the exact same
+`LinkCommandService` method (see [ADR 0001](../adr/0001-cli-rest-shared-command-layer.md)),
+so the two are functionally interchangeable - pick whichever transport fits the
+context. The commands below operate on the same link (`docs`) so the pairs can
+be compared directly; full flag/field references are in the sections below and
+in [`docs/api/README.md`](../api/README.md).
+
+| Command | REST | CLI |
+|---|---|---|
+| Create | `curl -X POST http://localhost:8000/api/v1/links -H 'Content-Type: application/json' -d '{"url":"https://example.com/docs","slug":"docs"}'` | `url_shortener link create --url https://example.com/docs --slug docs` |
+| Get by slug | `curl http://localhost:8000/api/v1/links/docs` | `url_shortener link get --slug docs` |
+| Get by ID | `curl http://localhost:8000/api/v1/links/id/<id>` | `url_shortener link get --id <id>` |
+| Update | `curl -X PATCH http://localhost:8000/api/v1/links/docs -H 'Content-Type: application/json' -d '{"enabled":false,"tags":["campaign"]}'` | `url_shortener link update --slug docs --enabled false --tags campaign` |
+| Delete (soft) | `curl -X DELETE http://localhost:8000/api/v1/links/docs` | `url_shortener link delete --slug docs` |
+| Enable | `curl -X POST http://localhost:8000/api/v1/links/docs/enable` | `url_shortener link enable --slug docs` |
+| Disable | `curl -X POST http://localhost:8000/api/v1/links/docs/disable` | `url_shortener link disable --slug docs` |
+| Restore | `curl -X POST http://localhost:8000/api/v1/links/docs/restore` | `url_shortener link restore --slug docs` |
+| Preview | `curl http://localhost:8000/api/v1/links/docs/preview` | `url_shortener link preview --slug docs` |
+| Stats | `curl http://localhost:8000/api/v1/links/docs/stats?from=0&to=9999999999&bucket=day` | `url_shortener link stats --slug docs --from 0 --to 9999999999 --bucket day` |
+
+**One real difference:** REST commands act on whatever link state the running
+server process holds; the CLI's in-memory store is per-invocation and does
+not persist across separate process runs (see [Storage limitation](#storage-limitation)
+above) - so, unlike the REST pairs above, running the CLI `create` example
+and then the CLI `get`/`update`/etc. example in *separate* invocations will
+not find the link. Within a single running server, the REST pairs above do
+work exactly as shown.
+
 ---
 
 ### `link create`
