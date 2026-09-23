@@ -1,7 +1,7 @@
 # 02 - Unit tests for the CLI parser
 
 **Parent task:** 05.0 Tests
-**State:** ⬜ Not started
+**State:** ✅ Complete
 **Depends on:** [Task 02.0](/docs/roadmap/0003-cli_rest_interfaces/02.0-cli-argument-parsing/README.md)
 **Blocks:** none
 

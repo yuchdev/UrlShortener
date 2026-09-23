@@ -344,6 +344,28 @@ BOOST_AUTO_TEST_CASE(link_create_malformed_metadata_throws)
         CliParser{}.parse(args.argc(), args.argv()), std::invalid_argument);
 }
 
+/**
+ * [Unit][CLI] A non-boolean `--enabled` token is rejected at parse time for both
+ * `link create` and `link update` (the shared parseBoolFlag error branch). A
+ * silent fallthrough here would store a link with a lifecycle state the caller
+ * never asked for.
+ */
+BOOST_AUTO_TEST_CASE(link_invalid_enabled_bool_throws)
+{
+    {
+        ArgvBuilder args({"url_shortener", "link", "create",
+            "--url", "https://example.com/x", "--enabled", "maybe"});
+        BOOST_CHECK_THROW(CliParser{}.parse(args.argc(), args.argv()),
+            std::invalid_argument);
+    }
+    {
+        ArgvBuilder args({"url_shortener", "link", "update",
+            "--slug", "foo", "--enabled", "maybe"});
+        BOOST_CHECK_THROW(CliParser{}.parse(args.argc(), args.argv()),
+            std::invalid_argument);
+    }
+}
+
 // ---------------------------------------------------------------------------
 // link get flag mapping
 // ---------------------------------------------------------------------------
@@ -658,6 +680,33 @@ BOOST_AUTO_TEST_CASE(link_lifecycle_verbs_require_slug)
     }
 }
 
+/**
+ * [Unit][CLI] A present-but-empty selector is rejected rather than silently
+ * mapped onto an empty DTO field: `--slug ""` on the lifecycle/get/preview verbs
+ * and every required `link stats` flag exercise the shared requireNonEmpty
+ * guard. An empty slug slipping through would target the wrong (or no) link.
+ */
+BOOST_AUTO_TEST_CASE(link_verbs_reject_empty_selector_values)
+{
+    for (const char* verb : {"delete", "enable", "disable", "restore",
+             "get", "preview"}) {
+        ArgvBuilder args({"url_shortener", "link", verb, "--slug", ""});
+        BOOST_CHECK_THROW(CliParser{}.parse(args.argc(), args.argv()),
+            std::invalid_argument);
+    }
+    {
+        ArgvBuilder args({"url_shortener", "link", "get", "--id", ""});
+        BOOST_CHECK_THROW(CliParser{}.parse(args.argc(), args.argv()),
+            std::invalid_argument);
+    }
+    {
+        ArgvBuilder args({"url_shortener", "link", "stats",
+            "--slug", "foo", "--from", "", "--to", "200", "--bucket", "day"});
+        BOOST_CHECK_THROW(CliParser{}.parse(args.argc(), args.argv()),
+            std::invalid_argument);
+    }
+}
+
 // ---------------------------------------------------------------------------
 // link preview flag mapping
 // ---------------------------------------------------------------------------
@@ -784,6 +833,112 @@ BOOST_AUTO_TEST_CASE(server_flags_unchanged_by_link_additions)
         result.config.shortener_base_domain, "http://cfg.example");
     BOOST_CHECK(!result.config.analytics_enabled);
     BOOST_CHECK_EQUAL(result.config.max_request_body_bytes, 4096u);
+}
+
+/**
+ * [Unit][CLI] Exhaustive C8 contract: every pre-existing server flag - the full
+ * HTTP, TLS, shortener, analytics, and request-limit families - still parses to
+ * the expected ServerConfig value, with no `link` command produced. This is the
+ * strict form of the milestone's C8 constraint ("every pre-existing server flag
+ * ... still parses to the same ServerConfig values as before this milestone"):
+ * the representative test above is a fast smoke check, this one is the full
+ * contract. Each value is deliberately set away from its default so a silently
+ * dropped or misrouted flag fails a concrete assertion.
+ *
+ * If this breaks, first check:
+ *   - The additive `link` branch still short-circuits only when argv[1]=="link".
+ *   - No server flag was renamed or its value-conversion (parseBool/parsePort/
+ *     parseClientAuthMode/optional engagement) altered.
+ */
+BOOST_AUTO_TEST_CASE(all_server_flags_parse_unchanged_by_link_additions)
+{
+    ArgvBuilder args({"url_shortener",
+        // HTTP options.
+        "--http-port", "8123",
+        "--http-enabled", "false",
+        "--http-redirect-to-https", "true",
+        "--hsts-max-age", "3600",
+        // TLS/HTTPS options.
+        "--tls-enabled", "true",
+        "--https-port", "9443",
+        "--tls-cert", "/tmp/cert.pem",
+        "--tls-key", "/tmp/key.pem",
+        "--tls-key-passphrase", "s3cret",
+        "--tls-ca-file", "/tmp/ca.pem",
+        "--tls-ca-path", "/tmp/ca.d",
+        "--tls-min-version", "TLS1.3",
+        "--tls-cipher-suites", "TLS_AES_128_GCM_SHA256",
+        "--tls-ciphers", "ECDHE-RSA-AES128-GCM-SHA256",
+        "--tls-curves", "P-384",
+        "--tls-alpn", "h2",
+        "--tls-session-tickets", "true",
+        "--tls-session-cache", "false",
+        "--tls-client-auth", "required",
+        // URL shortener options.
+        "--shortener-base-domain", "http://cfg.example",
+        "--shortener-default-redirect-type", "permanent",
+        "--shortener-default-expiry-seconds", "7200",
+        "--shortener-generated-slug-length", "10",
+        "--shortener-allow-private-targets", "true",
+        // Analytics options.
+        "--analytics-enabled", "false",
+        "--analytics-queue-capacity", "2048",
+        "--analytics-client-hash-salt", "custom-salt",
+        // Request limits.
+        "--request-id-max-length", "128",
+        "--max-request-body-bytes", "4096",
+        "--max-request-target-length", "1024"});
+    const ParseResult result = CliParser{}.parse(args.argc(), args.argv());
+
+    BOOST_CHECK(!result.command.has_value());
+    BOOST_CHECK(!result.help_requested);
+    const ServerConfig& cfg = result.config;
+
+    // HTTP.
+    BOOST_CHECK_EQUAL(cfg.http_port, 8123);
+    BOOST_CHECK(!cfg.http_enabled);
+    BOOST_CHECK(cfg.http_redirect_to_https);
+    BOOST_REQUIRE(cfg.hsts_max_age.has_value());
+    BOOST_CHECK_EQUAL(*cfg.hsts_max_age, 3600u);
+
+    // TLS/HTTPS.
+    BOOST_CHECK(cfg.tls.enabled);
+    BOOST_CHECK_EQUAL(cfg.tls.port, 9443);
+    BOOST_CHECK_EQUAL(cfg.tls.certificate_chain_file, "/tmp/cert.pem");
+    BOOST_CHECK_EQUAL(cfg.tls.private_key_file, "/tmp/key.pem");
+    BOOST_REQUIRE(cfg.tls.private_key_passphrase.has_value());
+    BOOST_CHECK_EQUAL(*cfg.tls.private_key_passphrase, "s3cret");
+    BOOST_REQUIRE(cfg.tls.ca_file.has_value());
+    BOOST_CHECK_EQUAL(*cfg.tls.ca_file, "/tmp/ca.pem");
+    BOOST_REQUIRE(cfg.tls.ca_path.has_value());
+    BOOST_CHECK_EQUAL(*cfg.tls.ca_path, "/tmp/ca.d");
+    BOOST_CHECK_EQUAL(cfg.tls.min_version, "TLS1.3");
+    BOOST_CHECK_EQUAL(cfg.tls.cipher_suites, "TLS_AES_128_GCM_SHA256");
+    BOOST_CHECK_EQUAL(cfg.tls.ciphers, "ECDHE-RSA-AES128-GCM-SHA256");
+    BOOST_CHECK_EQUAL(cfg.tls.curves, "P-384");
+    BOOST_CHECK_EQUAL(cfg.tls.alpn, "h2");
+    BOOST_CHECK(cfg.tls.session_tickets);
+    BOOST_CHECK(!cfg.tls.session_cache);
+    BOOST_CHECK(
+        cfg.tls.client_auth_mode == TlsConfig::ClientAuthMode::required);
+
+    // URL shortener.
+    BOOST_CHECK_EQUAL(cfg.shortener_base_domain, "http://cfg.example");
+    BOOST_CHECK_EQUAL(cfg.shortener_default_redirect_type, "permanent");
+    BOOST_REQUIRE(cfg.shortener_default_expiry_seconds.has_value());
+    BOOST_CHECK_EQUAL(*cfg.shortener_default_expiry_seconds, 7200u);
+    BOOST_CHECK_EQUAL(cfg.shortener_generated_slug_length, 10u);
+    BOOST_CHECK(cfg.shortener_allow_private_targets);
+
+    // Analytics.
+    BOOST_CHECK(!cfg.analytics_enabled);
+    BOOST_CHECK_EQUAL(cfg.analytics_queue_capacity, 2048u);
+    BOOST_CHECK_EQUAL(cfg.analytics_client_hash_salt, "custom-salt");
+
+    // Request limits.
+    BOOST_CHECK_EQUAL(cfg.request_id_max_length, 128u);
+    BOOST_CHECK_EQUAL(cfg.max_request_body_bytes, 4096u);
+    BOOST_CHECK_EQUAL(cfg.max_request_target_length, 1024u);
 }
 
 // ---------------------------------------------------------------------------
