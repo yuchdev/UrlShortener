@@ -25,7 +25,7 @@ CLI verbs in total:
 
 - `link create --url <url> [--slug <slug>] [--base-domain <url>]`
 - `link get --slug <slug> | --id <id>`
-- `link update --slug <slug> [--url <url>] [--enabled <bool>] [--expires-at
+- `link update --slug <slug> [--enabled <bool>] [--expires-at
   <rfc3339>|clear] [--tags <csv>] [--metadata <k=v,...>] [--campaign-id
   <id>] [--clear-campaign]`
 - `link delete --slug <slug>`

@@ -44,11 +44,19 @@ url_shortener link create --url https://example.com/docs --slug docs | jq '.slug
 The mapping is implemented by `ExitCodeForAppError` in
 `src/cli/link_command_dispatch.cpp`.
 
+Parse errors (an unrecognized flag, a malformed flag value, or a missing
+required flag) also exit `1`, thrown before any command reaches
+`LinkCommandService` - diagnostics appear on stderr, same as any other
+failure.
+
 ## Commands
 
-Nine verbs are available. `link get` and `link preview` each cover two REST
-endpoints (by-slug and by-id lookup) via a single verb with a `--slug`/`--id`
-selector.
+Nine verbs are available. `link get` is the only verb that covers two REST
+endpoints (`GET /api/v1/links/{slug}` and `GET /api/v1/links/id/{id}`) via a
+single verb with a `--slug`/`--id` selector. `link preview` maps to a single
+REST endpoint (`GET /api/v1/links/{slug}/preview`) but accepts the same
+`--slug`/`--id` selector as a CLI-only convenience - there is no
+by-id REST preview endpoint.
 
 | Verb | REST operation_id | REST path |
 |------|-------------------|-----------|

@@ -15,7 +15,7 @@ are in `assets/`.
 Use `template.md` when creating a new ADR:
 
 ```bash
-cp docs/adr/template.md docs/adr/0001-short-title.md
+cp docs/adr/template.md docs/adr/000N-short-title.md
 ```
 
 Replace the template placeholders with the record's number, title, date, and status.
