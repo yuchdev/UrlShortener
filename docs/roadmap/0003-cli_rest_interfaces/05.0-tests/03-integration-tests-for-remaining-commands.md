@@ -1,7 +1,7 @@
 # 03 - Integration tests for remaining commands
 
 **Parent task:** 05.0 Tests
-**State:** ⬜ Not started
+**State:** ✅ Complete
 **Depends on:** [Task 03.0](/docs/roadmap/0003-cli_rest_interfaces/03.0-cli-dispatch-and-lifecycle/README.md), [Task 04.0](/docs/roadmap/0003-cli_rest_interfaces/04.0-cli-output-and-error-contract/README.md)
 **Blocks:** 04
 

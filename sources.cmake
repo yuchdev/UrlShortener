@@ -508,6 +508,12 @@ set(URL_SHORTENER_SOURCES
       tests/integration/cli/08_link_stats_empty_on_fresh_link.py
       tests/integration/cli/09_link_stats_invalid_time_window.py
       tests/integration/cli/10_server_mode_unchanged_by_cli.py
+      tests/integration/cli/11_link_update_not_found_and_invalid_input.py
+      tests/integration/cli/12_link_delete_not_found_and_invalid_input.py
+      tests/integration/cli/13_link_enable_not_found_and_invalid_input.py
+      tests/integration/cli/14_link_disable_not_found_and_invalid_input.py
+      tests/integration/cli/15_link_restore_not_found_and_invalid_input.py
+      tests/integration/cli/16_link_preview_not_found_and_invalid_input.py
   )
 
   set(ALL_INTEGRATION_SOURCES
