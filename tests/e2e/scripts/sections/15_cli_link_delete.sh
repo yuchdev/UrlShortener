@@ -28,9 +28,6 @@ if [[ -z "$BINARY" || ! -x "$BINARY" ]]; then
   exit 2
 fi
 
-TMPDIR_CLI="$(mktemp -d)"
-trap 'rm -rf "$TMPDIR_CLI"' EXIT
-
 _port_open() {
   local port="$1"
   python3 - "$port" <<'PY'
@@ -53,16 +50,19 @@ if _port_open 8000; then
   exit 0
 fi
 
-if ! timeout 5 "$BINARY" link delete \
+# Capture timeout's own exit status directly (|| rc=$? both satisfies `set -e`
+# and preserves the real code); `! timeout ...` would instead force rc=0 in the
+# then-branch and make the 124 check unreachable.
+rc=0
+timeout 5 "$BINARY" link delete \
        --slug e2e-delete-slug \
        --base-domain http://sho.rt \
-       >/dev/null 2>&1; then
-  rc=$?
-  if [[ "$rc" -eq 124 ]]; then
-    echo "FAIL: 'link delete' did not exit within 5s (lifetime guarantee)." >&2
-    exit 1
-  fi
+       >/dev/null 2>&1 || rc=$?
+if [[ "$rc" -eq 124 ]]; then
+  echo "FAIL: 'link delete' did not exit within 5s (lifetime guarantee)." >&2
+  exit 1
 fi
+# Any other non-zero exit (e.g. slug not found) is acceptable here.
 
 sleep 0.3
 

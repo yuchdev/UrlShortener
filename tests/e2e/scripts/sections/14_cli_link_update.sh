@@ -33,9 +33,6 @@ if [[ -z "$BINARY" || ! -x "$BINARY" ]]; then
   exit 2
 fi
 
-TMPDIR_CLI="$(mktemp -d)"
-trap 'rm -rf "$TMPDIR_CLI"' EXIT
-
 _port_open() {
   local port="$1"
   python3 - "$port" <<'PY'
@@ -62,18 +59,20 @@ fi
 # Run CLI link update one-shot and bound its runtime; the command must return on
 # its own (never enter io_context.run()), so a timeout firing is itself a
 # failure of the lifetime guarantee.
-if ! timeout 5 "$BINARY" link update \
+# Capture timeout's own exit status directly (|| rc=$? both satisfies `set -e`
+# and preserves the real code); `! timeout ...` would instead force rc=0 in the
+# then-branch and make the 124 check unreachable.
+rc=0
+timeout 5 "$BINARY" link update \
        --slug e2e-update-slug \
        --enabled false \
        --base-domain http://sho.rt \
-       >/dev/null 2>&1; then
-  rc=$?
-  if [[ "$rc" -eq 124 ]]; then
-    echo "FAIL: 'link update' did not exit within 5s (lifetime guarantee)." >&2
-    exit 1
-  fi
-  # Any other non-zero exit (e.g. slug not found) is acceptable here.
+       >/dev/null 2>&1 || rc=$?
+if [[ "$rc" -eq 124 ]]; then
+  echo "FAIL: 'link update' did not exit within 5s (lifetime guarantee)." >&2
+  exit 1
 fi
+# Any other non-zero exit (e.g. slug not found) is acceptable here.
 
 # Brief pause to allow any lingering socket teardown.
 sleep 0.3

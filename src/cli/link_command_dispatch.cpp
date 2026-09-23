@@ -68,8 +68,12 @@ std::string_view verb_token(LinkCliVerb verb)
 template <typename View>
 int report_result(std::string_view verb, const app::Result<View>& result)
 {
-    if (result.ok() && result.value.has_value()) {
-        std::cout << verb << " ok slug=" << result.value->slug << '\n';
+    if (result.ok()) {
+        if (result.value.has_value()) {
+            std::cout << verb << " ok slug=" << result.value->slug << '\n';
+        }
+        // An ok result without a value carries no payload to print here; the
+        // command still succeeded, so do not emit a spurious "failed:" line.
         return 0;
     }
     std::cerr << verb << " failed: " << result.error.detail << '\n';
@@ -138,6 +142,8 @@ int DispatchLinkCommand(const LinkCliCommand& command,
                 std::get<app::GetLinkStatsQuery>(command.payload)));
     }
 
+    // UNREACHABLE: LinkCliVerb is a closed enum exhaustively handled above; this
+    // return exists only to satisfy the compiler's non-void return check.
     return 1;
 }
 
