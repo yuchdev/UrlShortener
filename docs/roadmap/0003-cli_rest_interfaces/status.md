@@ -8,7 +8,7 @@ Tracks progress against [plan.md](/docs/roadmap/0003-cli_rest_interfaces/plan.md
 |------|------|--------|-------|
 | 01.0 | Command layer completion | ✅ Complete | `tests/unit/http/10_link_handlers.cpp` (characterization), `tests/unit/app/13-16_link_command_service_*.cpp` |
 | 02.0 | CLI argument parsing | ✅ Complete | `tests/unit/cli/01_cli_parser_link_commands.cpp` |
-| 03.0 | CLI dispatch and process lifecycle | ⬜ Not started | none yet |
+| 03.0 | CLI dispatch and process lifecycle | ✅ Complete | `tests/unit/cli/02_cli_dispatch_reachable.cpp`, `tests/e2e/scripts/sections/14-18_cli_link_*.sh` |
 | 04.0 | CLI output and error contract | ⬜ Not started | none yet |
 | 05.0 | Tests | ⬜ Not started | none yet |
 | 06.0 | Docs and registry sync | ⬜ Not started | none yet |
@@ -188,6 +188,94 @@ Non-blocking follow-ups recorded, none gate this task's completion:
 - Minor test-coverage gaps (both-selectors case for `link preview`,
   `link update --expires-at ""`) and a stale "tenth verb" comment - noted
   for Task 05.0.
+
+No deferred subtasks.
+
+## Task 03.0 - CLI dispatch and process lifecycle
+
+**Delivered.** `src/main.cpp` now branches to CLI dispatch immediately after
+the `parsed.help_requested` check and before `net::io_context io_context;`,
+`HttpServer` construction, or the `uri.txt` load - a short-circuit, not a
+start-and-tear-down. `url_shortener::cli::DispatchLinkCommand` (new,
+`include/url_shortener/cli/link_command_dispatch.hpp` /
+`src/cli/link_command_dispatch.cpp`) builds one `LinkCommandServiceBundle` via
+`app::BuildLegacyLinkCommandService(config)` - the *same* factory
+`src/http/handlers/link_handlers.cpp` uses - and calls the matching
+`LinkCommandService` method for all nine verbs via `std::get<T>` on the DTO
+variant. Every command returns a plain `int` (0/1) up through `main`'s
+`return`, with no `std::exit`/`abort` bypassing the bundle's RAII cleanup, and
+no background-thread component (`BoundedClickEventQueue`/`AnalyticsWorker`)
+is reachable from the CLI path - confirmed by grep, independently reconfirmed
+by both review rounds.
+
+**Key decisions.**
+
+- `DispatchLinkCommand`'s output is a deliberate placeholder
+  (`"<verb> ok slug=<slug>"` / `"<verb> failed: <detail>"`), not JSON -
+  the real success-JSON/error-envelope format is explicitly Task 04.0's job.
+  This means `link create`/`get`/`stats`/`enable`(via `--help` scaffolding
+  reuse) tests that assert JSON output will not go green until Task 04.0
+  lands; see Tests below.
+- **Cross-process state-visibility, answered per subtask 02's required
+  success criterion:** `linkRepository()`
+  (`src/storage/link_repository.cpp:87-91`) is a function-local `static`
+  in-memory singleton, per-process only, with no disk-backed persistence.
+  **Two separate CLI process invocations do NOT share state** - `link create`
+  in one process is invisible to `link get` in a second process; only calls
+  within the *same* process observe each other (proven by the
+  `dispatch_create_then_get_roundtrip_same_process` unit test). Real CLI
+  usage is one command per process, so in practice **the CLI cannot be used
+  for create-then-read scripting across separate invocations** with the
+  current in-memory backend - this is a real, user-facing limitation Task
+  06.0 must document explicitly, not a bug to fix in this milestone (plan.md
+  decided not to reconcile the two storage paths).
+- Mid-task, `cli_parser.h` was found to pull in the entire HTTP stack
+  (`HttpServer`, Boost.Asio) transitively, just to get `ServerConfig` for
+  `ParseResult::config` - narrowed to include `core/config.h` directly
+  (`85e3fd4`), verified via the actual preprocessed compile command, not just
+  a source grep.
+- The e2e no-server-socket guarantee (`13_cli_no_server_socket.sh`) was
+  extended to the remaining six commands via five new sections
+  (`14`-`18_cli_link_*.sh`, `enable`/`disable` share one file). A round-1
+  review caught a real bug in all five: `if ! timeout 5 ...; then rc=$?`
+  captured the *negated* exit status (always 0), making the hang-detection
+  branch unreachable - a false negative on exactly the C4 invariant these
+  tests exist to prove. Fixed in `1fe3919`
+  (`rc=0; timeout 5 ... || rc=$?`), independently verified via `bash -c`
+  under `set -euo pipefail` for the hang/normal/nonzero-exit cases by both
+  the implementer and, separately, this session.
+
+**Tests (before -> after).**
+
+| Suite | Before (Task 02.0 baseline) | After |
+|-------|------------------------------|-------|
+| unit (`-L unit`) | 153/153 | 154/154 (+1: `cli__02_cli_dispatch_reachable`) |
+| contract (`-L contract`, serial) | 8/8 | 8/8 |
+| integration (`-L integration`) | 84/85 | 80/85 |
+| e2e (`-L e2e`) | 10/13 | 16/18 (+5 new sections, all pass) |
+
+Integration **regressed** from 84/85 to 80/85: `cli_01/02/03/08` newly fail
+(dropped from passing after Task 02.0's parsing-only state) because real
+dispatch now produces the placeholder text output instead of parseable JSON -
+`json.loads(stdout)` fails on `"create ok slug=demo123"`. This is the
+expected, direct consequence of landing real dispatch before Task 04.0's
+output-format work, not a defect in this task's own scope (confirmed by
+reading the actual test failure, not assumed). `cli_10` remains red (needs
+the full envelope). `e2e_11`/`e2e_12` remain red for the same reason;
+`e2e_13`-`18` (the no-server-socket family) are now all green. All seven
+current failures are expected to turn green once Task 04.0 lands.
+
+**Review.** `/pr-review` round 1: REQUEST_CHANGES (the dead
+timeout-detection branch, caught by feature-reviewer and independently
+reproduced with `bash -c` before delegating the fix). Round 2: feature-reviewer
+LGTM, security-auditor PASS. Threat model:
+[docs/security/2026-09-23-cli-argument-parsing.md](/docs/security/2026-09-23-cli-argument-parsing.md)
+(Task 03.0 section appended). No new bypass vs. the REST path was found;
+`--allow-private-targets` confirmed strictly per-invocation; no resource-
+exhaustion or hang path. Two LOW/INFO items carried forward as milestone-level
+follow-ups (not blocking): `--base-domain` validation parity, and CLI mutating
+verbs not traversing `AccessGuard`/audit (verified to be parity with the
+REST path's existing posture, not a gap this milestone introduces).
 
 No deferred subtasks.</new_string>
 

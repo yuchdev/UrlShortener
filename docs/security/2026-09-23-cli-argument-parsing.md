@@ -91,3 +91,72 @@ that; "once wired" notes call out what changes when Task 03.0 lands.
 No CRITICAL or HIGH findings. Parsing surface is process-local, memory-safe, and
 reaches no injection sink (parameterized SQL, no shell/format-string). Two LOW
 items and Task-03.0 authorization/audit follow-ups noted above.
+
+## Task 03.0 - CLI dispatch and process lifecycle (2026-09-23, round 2)
+
+Scope: `git diff 5239e13...1fe3919` (5953f20, 85e3fd4, d59cf47, d0b2e3c, 1fe3919)
+- the first commit range where parsed argv reaches storage-mutating
+`LinkCommandService` calls. New: `src/cli/link_command_dispatch.cpp`,
+`include/url_shortener/cli/link_command_dispatch.hpp`, the `main.cpp`
+short-circuit branch, e2e sections 14-18.
+
+### Trust boundary
+Untrusted input remains process-local `argv` only - dispatch runs before any
+`io_context`/`HttpServer` construction (`main.cpp:47` vs. `io_context` at
+`:56`; confirmed by direct read, not just prior commit messages). The boundary
+crossed by this task: parsed `app::` DTOs -> `LinkCommandService` (via
+`app::BuildLegacyLinkCommandService`, the *same* factory
+`src/http/handlers/link_handlers.cpp` uses) -> `LegacyLinkStore` ->
+`linkRepository()` in-memory singleton.
+
+### Findings
+- **No new bypass vs. REST.** SSRF guard (`isPrivateHost` /
+  `normalizeTargetUrl`, `src/core/utils.cpp:237`) is enforced inside
+  `LinkCommandService::CreateLink` itself, so CLI `create` gets the identical
+  protection as the REST handler - not duplicated, not skippable. REST enforces
+  no body-size limit or rate limit in `link_handlers.cpp` either, so CLI
+  matching that (argv has no equivalent transport-layer limit, bounded by
+  `ARG_MAX`) is parity, not a new gap.
+- **`--allow-private-targets` reachability confirmed per-invocation only.**
+  Flows `parsed.config` -> `LinkCommandService`'s `const ServerConfig&` ->
+  `normalizeTargetUrl`; touches no persistent or global state. Each one-shot
+  CLI process re-derives it from its own argv.
+- **[INFO] `src/cli/link_command_dispatch.cpp:70`** (pre-fix) / `:71-79`
+  (post-fix) - stderr error line (`"<verb> failed: <detail>"`) only ever
+  carries static string literals from `link_command_service.cpp` /
+  `legacy_adapters.cpp` ("Link not found", "url must be an absolute
+  http/https URL", etc.). No DSN, token, salt, or filesystem path is ever
+  interpolated - nothing the REST error path would redact leaks here.
+- **No resource-exhaustion path.** `linkRepository()`
+  (`src/storage/link_repository.cpp:87-91`) is a function-local `static`,
+  process-lifetime only; a one-shot CLI process starts empty and frees the
+  map on exit - no cross-invocation accumulation. Slug generation is a
+  bounded 10-iteration loop. A DTO/verb variant mismatch raises
+  `std::bad_variant_access`, caught by `main`'s try/catch -> clean exit 1, not
+  a hang.
+- **[LOW, round-2 delta only]** Round-1's blocking finding was a *test* bug
+  (not a product-security issue): e2e sections 14-18's `if ! timeout 5 ...;
+  then rc=$?` captured the negated exit status (always 0), making the
+  `rc -eq 124` hang-detection branch unreachable - a false negative on the C4
+  no-server-socket guarantee. Fixed in `1fe3919`
+  (`rc=0; timeout 5 ... || rc=$?`), independently verified via `bash -c`
+  under `set -euo pipefail` for the hang/normal/nonzero-exit cases. No
+  product-code security surface was affected by either the bug or the fix.
+- **[LOW, carried, still open]** `--base-domain` still skips
+  `normalizeAndValidateBaseDomain` (unchanged since Task 02.0's audit); now
+  that dispatch is real rather than parsed-only, a malformed base domain does
+  render into `short_url` on an actual CLI invocation. Recommend folding into
+  Task 06.0's cleanup pass.
+- **[INFO, carried, still open]** CLI mutating verbs still do not traverse
+  `AccessGuard`/`ControlSet` - confirmed this is parity with the REST path
+  (`src/http/handlers/link_handlers.cpp` doesn't call `AccessGuard` either;
+  only the separate auth-broker subsystem in `src/security/` does), not a gap
+  this milestone introduces. Tracked as a milestone-level follow-up per
+  `plan.md`'s decision not to reconcile the two storage/authz paths.
+
+## Verdict (Task 03.0): PASS_WITH_FOLLOWUP
+No CRITICAL or HIGH in either round. The one round-1 blocking finding was a
+test-only false-negative (fixed, independently reverified). Two LOW/INFO
+items remain open at the milestone level (base-domain validation parity;
+no `AccessGuard`/audit on mutating verbs), tracked for Task 06.0 and beyond,
+not blocking this task's completion.
