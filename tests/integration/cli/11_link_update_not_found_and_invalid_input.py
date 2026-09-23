@@ -103,9 +103,9 @@ class LinkUpdateNotFoundAndInvalidInputTest(CliIntegrationBase):
                 "--enabled", "false",
                 cwd=tmpdir,
             )
-            self.assertNotEqual(
-                proc.returncode, 0,
-                "Expected non-zero exit when --slug is missing",
+            self.assertEqual(
+                proc.returncode, 1,
+                "Expected exit 1 when --slug is missing",
             )
 
     def test_update_invalid_enabled_bool_is_rejected(self):
@@ -118,9 +118,9 @@ class LinkUpdateNotFoundAndInvalidInputTest(CliIntegrationBase):
                 "--enabled", "notabool",
                 cwd=tmpdir,
             )
-            self.assertNotEqual(
-                proc.returncode, 0,
-                "Expected non-zero exit for a non-boolean --enabled value",
+            self.assertEqual(
+                proc.returncode, 1,
+                "Expected exit 1 for a non-boolean --enabled value",
             )
             self.assertEqual(
                 proc.stdout.strip(), "",

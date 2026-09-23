@@ -82,6 +82,14 @@ class LinkPreviewNotFoundAndInvalidInputTest(CliIntegrationBase):
                 f"Expected not-found exit 1 for unknown id; "
                 f"stdout: {proc.stdout!r} stderr: {proc.stderr!r}",
             )
+            self.assertEqual(
+                proc.stdout.strip(), "",
+                f"not-found preview must not emit JSON on stdout; got {proc.stdout!r}",
+            )
+            self.assertTrue(
+                proc.stderr.strip(),
+                "not-found preview must emit a diagnostic on stderr",
+            )
 
     def test_preview_both_selectors_is_rejected(self):
         """Supplying both --slug and --id is ambiguous and must be rejected."""
@@ -93,18 +101,18 @@ class LinkPreviewNotFoundAndInvalidInputTest(CliIntegrationBase):
                 "--id", "ffffffff-0000-0000-0000-000000000000",
                 cwd=tmpdir,
             )
-            self.assertNotEqual(
-                proc.returncode, 0,
-                "Expected non-zero exit when both --slug and --id are given",
+            self.assertEqual(
+                proc.returncode, 1,
+                "Expected exit 1 when both --slug and --id are given",
             )
 
     def test_preview_no_selector_is_rejected(self):
         """Supplying neither --slug nor --id must be rejected."""
         with self.make_tmpdir() as tmpdir:
             proc = run_cli(self._binary, "link", "preview", cwd=tmpdir)
-            self.assertNotEqual(
-                proc.returncode, 0,
-                "Expected non-zero exit when no selector is given",
+            self.assertEqual(
+                proc.returncode, 1,
+                "Expected exit 1 when no selector is given",
             )
 
 

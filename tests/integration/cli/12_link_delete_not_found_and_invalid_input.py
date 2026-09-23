@@ -87,9 +87,9 @@ class LinkDeleteNotFoundAndInvalidInputTest(CliIntegrationBase):
     def test_delete_missing_slug_is_rejected(self):
         with self.make_tmpdir() as tmpdir:
             proc = run_cli(self._binary, "link", "delete", cwd=tmpdir)
-            self.assertNotEqual(
-                proc.returncode, 0,
-                "Expected non-zero exit when --slug is missing",
+            self.assertEqual(
+                proc.returncode, 1,
+                "Expected exit 1 when --slug is missing",
             )
 
     def test_delete_empty_slug_is_rejected(self):
@@ -100,9 +100,9 @@ class LinkDeleteNotFoundAndInvalidInputTest(CliIntegrationBase):
                 "--slug", "",
                 cwd=tmpdir,
             )
-            self.assertNotEqual(
-                proc.returncode, 0,
-                "Expected non-zero exit for an empty --slug value",
+            self.assertEqual(
+                proc.returncode, 1,
+                "Expected exit 1 for an empty --slug value",
             )
 
 

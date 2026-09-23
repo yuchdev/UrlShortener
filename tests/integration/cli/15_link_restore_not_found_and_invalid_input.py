@@ -86,9 +86,9 @@ class LinkRestoreNotFoundAndInvalidInputTest(CliIntegrationBase):
     def test_restore_missing_slug_is_rejected(self):
         with self.make_tmpdir() as tmpdir:
             proc = run_cli(self._binary, "link", "restore", cwd=tmpdir)
-            self.assertNotEqual(
-                proc.returncode, 0,
-                "Expected non-zero exit when --slug is missing",
+            self.assertEqual(
+                proc.returncode, 1,
+                "Expected exit 1 when --slug is missing",
             )
 
     def test_restore_unknown_flag_is_rejected(self):
@@ -100,9 +100,9 @@ class LinkRestoreNotFoundAndInvalidInputTest(CliIntegrationBase):
                 "--bogus", "x",
                 cwd=tmpdir,
             )
-            self.assertNotEqual(
-                proc.returncode, 0,
-                "Expected non-zero exit for an unknown flag",
+            self.assertEqual(
+                proc.returncode, 1,
+                "Expected exit 1 for an unknown flag",
             )
 
 

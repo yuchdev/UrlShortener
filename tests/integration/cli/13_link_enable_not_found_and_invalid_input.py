@@ -85,9 +85,9 @@ class LinkEnableNotFoundAndInvalidInputTest(CliIntegrationBase):
     def test_enable_missing_slug_is_rejected(self):
         with self.make_tmpdir() as tmpdir:
             proc = run_cli(self._binary, "link", "enable", cwd=tmpdir)
-            self.assertNotEqual(
-                proc.returncode, 0,
-                "Expected non-zero exit when --slug is missing",
+            self.assertEqual(
+                proc.returncode, 1,
+                "Expected exit 1 when --slug is missing",
             )
 
     def test_enable_unknown_flag_is_rejected(self):
@@ -100,9 +100,9 @@ class LinkEnableNotFoundAndInvalidInputTest(CliIntegrationBase):
                 "--bogus-flag", "x",
                 cwd=tmpdir,
             )
-            self.assertNotEqual(
-                proc.returncode, 0,
-                "Expected non-zero exit for an unknown flag",
+            self.assertEqual(
+                proc.returncode, 1,
+                "Expected exit 1 for an unknown flag",
             )
 
 
