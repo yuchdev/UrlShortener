@@ -49,19 +49,19 @@ namespace
 class CoutCapture
 {
 public:
-    CoutCapture() : previous_(std::cout.rdbuf(buffer_.rdbuf())) {}
+    CoutCapture() : m_previous_(std::cout.rdbuf(m_buffer_.rdbuf())) {}
 
-    ~CoutCapture() { std::cout.rdbuf(previous_); }
+    ~CoutCapture() { std::cout.rdbuf(m_previous_); }
 
     CoutCapture(const CoutCapture&) = delete;
     CoutCapture& operator=(const CoutCapture&) = delete;
 
     /// The text written to std::cout so far.
-    std::string str() const { return buffer_.str(); }
+    std::string str() const { return m_buffer_.str(); }
 
 private:
-    std::ostringstream buffer_;
-    std::streambuf* previous_;
+    std::ostringstream m_buffer_;
+    std::streambuf* m_previous_;
 };
 
 /// Minimal ServerConfig sufficient for LinkCommandService construction and the
