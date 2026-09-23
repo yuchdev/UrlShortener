@@ -1,7 +1,7 @@
 # 01 - Unit tests for new command-service methods
 
 **Parent task:** 05.0 Tests
-**State:** ⬜ Not started
+**State:** ✅ Complete
 **Depends on:** [Task 01.0](/docs/roadmap/0003-cli_rest_interfaces/01.0-command-layer-completion/README.md)
 **Blocks:** none
 

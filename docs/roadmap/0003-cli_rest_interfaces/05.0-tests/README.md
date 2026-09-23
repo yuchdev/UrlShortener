@@ -21,7 +21,7 @@ three layers to the six new commands.
 
 | # | Document | Status | Blocks |
 |---|----------|--------|--------|
-| 01 | [Unit tests for new command-service methods](01-unit-tests-for-new-command-service-methods.md) | ⬜ Not started | none |
+| 01 | [Unit tests for new command-service methods](01-unit-tests-for-new-command-service-methods.md) | ✅ Complete | none |
 | 02 | [Unit tests for the CLI parser](02-unit-tests-for-cli-parser.md) | ⬜ Not started | none |
 | 03 | [Integration tests for remaining commands](03-integration-tests-for-remaining-commands.md) | ⬜ Not started | 04 |
 | 04 | [E2E sections for remaining commands](04-e2e-sections-for-remaining-commands.md) | ⬜ Not started | none |
