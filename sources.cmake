@@ -305,6 +305,7 @@ set(URL_SHORTENER_SOURCES
   set(CLI_UNIT_SOURCES
       tests/unit/cli/01_cli_parser_link_commands.cpp
       tests/unit/cli/02_cli_dispatch_reachable.cpp
+      tests/unit/cli/03_cli_success_output.cpp
   )
 
   set(ANALYTICS_INTEGRATION_SOURCES

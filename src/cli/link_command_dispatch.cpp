@@ -24,7 +24,7 @@ namespace url_shortener::cli
 {
 namespace
 {
-/// Human-readable token for a link verb, used only for placeholder output.
+/// Human-readable token for a link verb, used only for error diagnostics.
 std::string_view verb_token(LinkCliVerb verb)
 {
     switch (verb) {
@@ -51,17 +51,40 @@ std::string_view verb_token(LinkCliVerb verb)
 }
 
 /**
- * @brief Emit a minimal, placeholder outcome line for a service @c Result.
+ * @brief Serialize a successful command payload to its canonical JSON form.
  *
- * NOTE (Task 04.0): the final success-JSON payload and error-envelope format,
- * plus the full exit-code mapping, are owned by Task 04.0. This helper is a
- * deliberate placeholder: it exists only to prove the real service call ran
- * and that its @c Result was inspected for success/failure. Both @c LinkView
- * and @c LinkStatsView expose a @c slug member, so a single template serves
- * every verb.
+ * These thin overloads bind each view type to the exact serializer the REST
+ * handlers use (see src/http/handlers/link_handlers.cpp), so the CLI and REST
+ * success payloads stay byte-for-byte identical and no second serializer is
+ * ever introduced for the CLI path (Task 04.0 subtask 01 constraint).
+ *
+ * @param view Fully populated view returned by a @c LinkCommandService method.
+ * @return The canonical JSON object for @p view.
+ * @{
+ */
+std::string serialize_success(const app::LinkView& view)
+{
+    return app::serializeLinkViewJson(view);
+}
+
+std::string serialize_success(const app::LinkStatsView& view)
+{
+    return app::serializeLinkStatsJson(view);
+}
+/// @}
+
+/**
+ * @brief Emit the outcome of a service @c Result following the CLI contract.
+ *
+ * On success, writes exactly one line to stdout: the shared REST serializer's
+ * JSON for the carried view plus a trailing newline, and nothing else, so that
+ * stdout carries only the success payload and scripting against it is reliable
+ * (Task 04.0). On failure, writes a human-readable diagnostic to stderr; the
+ * final error-envelope format and full exit-code mapping are owned by Task 04.0
+ * subtask 02 and are intentionally still a placeholder here.
  *
  * @tparam View The value type carried by the service @c Result.
- * @param verb   Human-readable verb token for the outcome line.
+ * @param verb   Human-readable verb token for the failure diagnostic.
  * @param result Result returned by the invoked @c LinkCommandService method.
  * @return 0 when the command succeeded, 1 otherwise.
  */
@@ -70,10 +93,10 @@ int report_result(std::string_view verb, const app::Result<View>& result)
 {
     if (result.ok()) {
         if (result.value.has_value()) {
-            std::cout << verb << " ok slug=" << result.value->slug << '\n';
+            std::cout << serialize_success(*result.value) << '\n';
         }
         // An ok result without a value carries no payload to print here; the
-        // command still succeeded, so do not emit a spurious "failed:" line.
+        // command still succeeded, so do not emit a spurious failure line.
         return 0;
     }
     std::cerr << verb << " failed: " << result.error.detail << '\n';
