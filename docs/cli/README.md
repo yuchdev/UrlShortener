@@ -359,9 +359,15 @@ stderr: `restore failed: not_found` — exit code 1.
 
 ### `link preview`
 
-Preview a link's resolved status without triggering a redirect. Returns the same
-`LinkView` shape as `link get`; the REST transport projects it onto a reduced
-response, but the CLI returns the full view.
+Preview a link's resolved status without triggering a redirect. Returns the
+reduced preview projection shared verbatim with the REST
+`GET /api/v1/links/{slug}/preview` endpoint — an operator's safety check that
+surfaces exactly the fields needed to decide whether a link is live, expired, or
+soft-deleted, and nothing else. The JSON object carries, in order: `slug`,
+`url`, `status`, `redirect_type`, `enabled`, `expires_at`, `deleted_at`
+(`expires_at`/`deleted_at` are `null` when unset). It deliberately omits the
+`id`, `short_url`, timestamps, tags, metadata, campaign, and stats that
+`link get` returns.
 
 **REST counterpart:** [`get_api_v1_links_slug_preview`](../api/README.md)
 (`GET /api/v1/links/{slug}/preview`)
@@ -389,7 +395,8 @@ Exactly one of `--slug` or `--id` must be supplied (same selector rule as
 url_shortener link preview --slug docs
 ```
 
-stdout: `LinkView` JSON.
+stdout: reduced preview JSON, e.g.
+`{"slug":"docs","url":"https://example.com/docs","status":"active","redirect_type":"temporary","enabled":true,"expires_at":null,"deleted_at":null}`.
 
 **Example — error** (not found)
 

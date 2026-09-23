@@ -355,6 +355,39 @@ std::string serializeLinkViewJson(const LinkView& link)
     return body.str();
 }
 
+std::string serializeLinkPreviewJson(const LinkView& link)
+{
+    // Reduced preview projection shared verbatim with the REST
+    // GET /api/v1/links/{slug}/preview handler (src/http/handlers/
+    // link_handlers.cpp::handlePreviewLink). The field set and order here are
+    // load-bearing: they are pinned byte-for-byte by the characterization tests
+    // in tests/unit/http/10_link_handlers.cpp. Do not add or reorder fields
+    // without updating those tests deliberately.
+    std::ostringstream body;
+    body << "{\"slug\":" << jsonString(link.slug)
+         << ",\"url\":" << jsonString(link.target_url)
+         << ",\"status\":" << jsonString(linkStatusToString(link.status))
+         << ",\"redirect_type\":"
+         << jsonString(redirectTypeToString(link.redirect_type))
+         << ",\"enabled\":" << (link.enabled ? "true" : "false")
+         << ",\"expires_at\":";
+    if (link.expires_at.has_value()) {
+        body << jsonString(*link.expires_at);
+    }
+    else {
+        body << "null";
+    }
+    body << ",\"deleted_at\":";
+    if (link.deleted_at.has_value()) {
+        body << jsonString(*link.deleted_at);
+    }
+    else {
+        body << "null";
+    }
+    body << '}';
+    return body.str();
+}
+
 std::string serializeLinkStatsJson(const LinkStatsView& stats)
 {
     std::ostringstream os;

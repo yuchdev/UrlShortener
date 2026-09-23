@@ -74,14 +74,30 @@ std::string serialize_success(const app::LinkStatsView& view)
 /// @}
 
 /**
+ * @brief Write a failure diagnostic to stderr and map the error to an exit code.
+ *
+ * Shared failure tail for every report_* helper: writes a human-readable
+ * diagnostic (verb + the error detail) to stderr only, leaves stdout empty, and
+ * returns the exit code from @ref ExitCodeForAppError so callers can branch on
+ * `$?` alone.
+ *
+ * @param verb  Human-readable verb token for the diagnostic line.
+ * @param error The error carried by the failed service @c Result.
+ * @return The mapped non-zero exit code for @p error.
+ */
+int report_failure(std::string_view verb, const app::AppError& error)
+{
+    std::cerr << verb << " failed: " << error.detail << '\n';
+    return ExitCodeForAppError(error.code);
+}
+
+/**
  * @brief Emit the outcome of a service @c Result following the CLI contract.
  *
  * On success, writes exactly one line to stdout: the shared REST serializer's
  * JSON for the carried view plus a trailing newline, and nothing else, so that
  * stdout carries only the success payload and scripting against it is reliable
- * (Task 04.0). On failure, writes a human-readable diagnostic (verb + the
- * error detail) to stderr only, leaving stdout empty, and returns the exit code
- * from @ref ExitCodeForAppError so callers can branch on `$?` alone.
+ * (Task 04.0). On failure, delegates to @ref report_failure.
  *
  * @tparam View The value type carried by the service @c Result.
  * @param verb   Human-readable verb token for the failure diagnostic.
@@ -99,8 +115,33 @@ int report_result(std::string_view verb, const app::Result<View>& result)
         // command still succeeded, so do not emit a spurious failure line.
         return 0;
     }
-    std::cerr << verb << " failed: " << result.error.detail << '\n';
-    return ExitCodeForAppError(result.error.code);
+    return report_failure(verb, result.error);
+}
+
+/**
+ * @brief Emit a `link preview` outcome using the reduced preview projection.
+ *
+ * `preview` returns the same @ref app::LinkView type as `get`, but its purpose
+ * is an operator safety check (is the link enabled, expired, or soft-deleted?),
+ * so it serializes with @ref app::serializeLinkPreviewJson - the exact reduced
+ * shape the REST `GET /api/v1/links/{slug}/preview` endpoint returns - instead
+ * of the full @ref app::serializeLinkViewJson used by the other verbs. Success
+ * and failure output otherwise follow the same contract as @ref report_result.
+ *
+ * @param verb   Human-readable verb token for the failure diagnostic.
+ * @param result Result returned by @ref app::LinkCommandService::PreviewLink.
+ * @return 0 when the command succeeded, otherwise the mapped non-zero exit code.
+ */
+int report_preview_result(std::string_view verb,
+                          const app::Result<app::LinkView>& result)
+{
+    if (result.ok()) {
+        if (result.value.has_value()) {
+            std::cout << app::serializeLinkPreviewJson(*result.value) << '\n';
+        }
+        return 0;
+    }
+    return report_failure(verb, result.error);
 }
 }  // namespace
 
@@ -191,7 +232,8 @@ int DispatchLinkCommand(const LinkCliCommand& command,
             service.RestoreLink(
                 std::get<app::RestoreLinkCommand>(command.payload)));
     case LinkCliVerb::preview:
-        return report_result(
+        // preview reuses the reduced REST preview shape, not the full LinkView.
+        return report_preview_result(
             verb,
             service.PreviewLink(std::get<app::GetLinkQuery>(command.payload)));
     case LinkCliVerb::stats:

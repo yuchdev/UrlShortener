@@ -101,6 +101,19 @@ LinkCliCommand makeGet(const std::string& slug)
     command.payload = payload;
     return command;
 }
+
+/// Build a `link preview` command that previews a link by slug.
+LinkCliCommand makePreview(const std::string& slug)
+{
+    url_shortener::app::GetLinkQuery payload;
+    payload.by = url_shortener::app::GetLinkBy::slug;
+    payload.value = slug;
+
+    LinkCliCommand command;
+    command.verb = LinkCliVerb::preview;
+    command.payload = payload;
+    return command;
+}
 }  // namespace
 
 BOOST_AUTO_TEST_CASE(create_success_emits_link_view_json_line)
@@ -169,6 +182,63 @@ BOOST_AUTO_TEST_CASE(get_success_matches_shared_serializer_exactly)
         url_shortener::app::serializeLinkViewJson(*result.value);
 
     BOOST_CHECK_EQUAL(payload, expected);
+}
+
+BOOST_AUTO_TEST_CASE(preview_success_matches_shared_preview_serializer_exactly)
+{
+    // Regression guard for the milestone-0003 pre-PR fix: `link preview` must
+    // emit the reduced REST preview projection (app::serializeLinkPreviewJson),
+    // NOT the full app::serializeLinkViewJson used by the other LinkView verbs.
+    // The reduced shape is what makes preview an operator safety check, so its
+    // three purpose-defining fields (enabled/expires_at/deleted_at) must be
+    // present and the full-view-only fields (id/short_url/stats/...) absent.
+    const ServerConfig config = makeConfig();
+
+    // Seed a link, discarding its output, then preview it and capture stdout.
+    {
+        CoutCapture seed;
+        BOOST_REQUIRE_EQUAL(url_shortener::cli::DispatchLinkCommand(
+                                makeCreate("cliout_preview"), config),
+                            0);
+    }
+
+    std::string captured;
+    {
+        CoutCapture capture;
+        BOOST_CHECK_EQUAL(url_shortener::cli::DispatchLinkCommand(
+                              makePreview("cliout_preview"), config),
+                          0);
+        captured = capture.str();
+    }
+
+    BOOST_REQUIRE(!captured.empty());
+    BOOST_CHECK_EQUAL(captured.back(), '\n');
+    const std::string payload = captured.substr(0, captured.size() - 1);
+
+    // Reconstruct the expected payload via the shared preview serializer, the
+    // same source of truth the REST preview handler uses.
+    const url_shortener::app::LinkCommandServiceBundle bundle =
+        url_shortener::app::BuildLegacyLinkCommandService(config);
+    url_shortener::app::GetLinkQuery query;
+    query.by = url_shortener::app::GetLinkBy::slug;
+    query.value = "cliout_preview";
+    const auto result = bundle.service->PreviewLink(query);
+    BOOST_REQUIRE(result.ok());
+    BOOST_REQUIRE(result.value.has_value());
+    const std::string expected =
+        url_shortener::app::serializeLinkPreviewJson(*result.value);
+
+    BOOST_CHECK_EQUAL(payload, expected);
+
+    // The three fields that give preview its entire purpose are present...
+    BOOST_CHECK(payload.find("\"enabled\":") != std::string::npos);
+    BOOST_CHECK(payload.find("\"expires_at\":") != std::string::npos);
+    BOOST_CHECK(payload.find("\"deleted_at\":") != std::string::npos);
+    // ...and it does NOT leak the full-LinkView-only fields.
+    BOOST_CHECK(payload.find("\"id\":") == std::string::npos);
+    BOOST_CHECK(payload.find("\"short_url\":") == std::string::npos);
+    BOOST_CHECK(payload.find("\"stats\":") == std::string::npos);
+    BOOST_CHECK(payload.find("\"created_at\":") == std::string::npos);
 }
 
 BOOST_AUTO_TEST_CASE(failure_writes_nothing_to_stdout)

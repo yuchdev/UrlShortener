@@ -243,6 +243,22 @@ private:
 };
 
 std::string serializeLinkViewJson(const LinkView& link);
+
+/**
+ * @brief Serialize the reduced preview projection of a link to JSON.
+ *
+ * Emits exactly the fields the `GET /api/v1/links/{slug}/preview` REST endpoint
+ * returns, in this order: `slug`, `url`, `status`, `redirect_type`, `enabled`,
+ * `expires_at`, `deleted_at`. This is the operator's safety-check shape (is the
+ * link enabled, expired, or soft-deleted?) and deliberately omits the `id`,
+ * `short_url`, timestamps, tags, metadata, campaign, and stats that
+ * @ref serializeLinkViewJson carries. Shared verbatim by the REST preview
+ * handler and the CLI `link preview` verb so both stay byte-for-byte identical.
+ *
+ * @param link Fully populated view returned by @ref LinkCommandService::PreviewLink.
+ * @return The canonical reduced-preview JSON object for @p link.
+ */
+std::string serializeLinkPreviewJson(const LinkView& link);
 std::string serializeLinkStatsJson(const LinkStatsView& stats);
 
 } // namespace app

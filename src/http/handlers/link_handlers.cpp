@@ -597,8 +597,9 @@ BeastResponse handlePreviewLink(const BeastRequest& req,
 {
     // Read-only lookup runs through LinkCommandService::PreviewLink (no write
     // path). PreviewLink returns the full LinkView; shaping it down to the
-    // reduced preview response is a transport concern kept here so the service
-    // stays free of REST-specific projection.
+    // reduced preview response is delegated to the shared
+    // app::serializeLinkPreviewJson serializer so the REST and CLI `preview`
+    // outputs stay byte-for-byte identical (single source of truth).
     const auto slug = pathValue(context, "slug");
     const auto command_service = makeCommandService(config);
     const auto result =
@@ -606,34 +607,13 @@ BeastResponse handlePreviewLink(const BeastRequest& req,
     if (!result.ok()) {
         return appErrorResponse(req, config, is_tls, result.error);
     }
-    const auto& view = *result.value;
-    std::ostringstream body;
-    body << "{\"slug\":" << url_shortener::jsonString(view.slug)
-         << ",\"url\":" << url_shortener::jsonString(view.target_url)
-         << ",\"status\":"
-         << url_shortener::jsonString(
-                url_shortener::linkStatusToString(view.status))
-         << ",\"redirect_type\":"
-         << url_shortener::jsonString(
-                url_shortener::redirectTypeToString(view.redirect_type))
-         << ",\"enabled\":" << (view.enabled ? "true" : "false")
-         << ",\"expires_at\":";
-    if (view.expires_at.has_value()) {
-        body << url_shortener::jsonString(*view.expires_at);
-    }
-    else {
-        body << "null";
-    }
-    body << ",\"deleted_at\":";
-    if (view.deleted_at.has_value()) {
-        body << url_shortener::jsonString(*view.deleted_at);
-    }
-    else {
-        body << "null";
-    }
-    body << '}';
     return url_shortener::makeResponse(
-        req, config, is_tls, 200, body.str(), "application/json");
+        req,
+        config,
+        is_tls,
+        200,
+        app::serializeLinkPreviewJson(*result.value),
+        "application/json");
 }
 
 BeastResponse handlePlaceholderFeature(const BeastRequest& req,
