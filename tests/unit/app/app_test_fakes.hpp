@@ -88,6 +88,9 @@ public:
     /// When set, the next create() call returns a storage_failure error.
     void forceCreateStorageFailure(bool fail = true) { fail_create_ = fail; }
 
+    /// When set, update() reports a storage_failure error instead of writing.
+    void forceUpdateStorageFailure(bool fail = true) { fail_update_ = fail; }
+
     /// Directly seed a Link into both maps (bypasses validation).
     void seed(const url_shortener::Link& link)
     {
@@ -149,10 +152,19 @@ public:
     void invalidateCache(const std::string& /*slug*/) override {}
 
     /// Overwrite an existing link in both maps, keyed by slug and id.
-    void update(const url_shortener::Link& link) override
+    bool update(const url_shortener::Link& link,
+                url_shortener::app::AppError* err = nullptr) override
     {
+        if (fail_update_) {
+            if (err != nullptr) {
+                err->code = url_shortener::app::AppErrorCode::storage_failure;
+                err->detail = "forced storage failure";
+            }
+            return false;
+        }
         by_slug_[link.slug] = link;
         by_id_[link.id] = link;
+        return true;
     }
 
 private:
@@ -160,6 +172,7 @@ private:
     std::unordered_map<std::string, url_shortener::Link> by_id_;
     std::unordered_set<std::string> existing_slugs_;
     bool fail_create_ = false;
+    bool fail_update_ = false;
 };
 
 /// Fake ILinkStatsReader.

@@ -200,7 +200,11 @@ Result<LinkView> LinkCommandService::UpdateLink(
     }
 
     link->updated_at = currentTimestamp();
-    store_.update(*link);
+    if (AppError update_error; !store_.update(*link, &update_error)) {
+        return {std::nullopt, update_error.code == AppErrorCode::none
+            ? error(AppErrorCode::storage_failure, "failed to persist link update")
+            : update_error};
+    }
     return {toView(*link), {}};
 }
 
@@ -214,7 +218,11 @@ Result<LinkView> LinkCommandService::DeleteLink(
     const auto now = currentTimestamp();
     link->deleted_at = now;
     link->updated_at = now;
-    store_.update(*link);
+    if (AppError update_error; !store_.update(*link, &update_error)) {
+        return {std::nullopt, update_error.code == AppErrorCode::none
+            ? error(AppErrorCode::storage_failure, "failed to persist link update")
+            : update_error};
+    }
     return {toView(*link), {}};
 }
 
@@ -227,7 +235,11 @@ Result<LinkView> LinkCommandService::SetLinkEnabled(
     }
     link->enabled = command.enabled;
     link->updated_at = currentTimestamp();
-    store_.update(*link);
+    if (AppError update_error; !store_.update(*link, &update_error)) {
+        return {std::nullopt, update_error.code == AppErrorCode::none
+            ? error(AppErrorCode::storage_failure, "failed to persist link update")
+            : update_error};
+    }
     return {toView(*link), {}};
 }
 
@@ -240,7 +252,11 @@ Result<LinkView> LinkCommandService::RestoreLink(
     }
     link->deleted_at.reset();
     link->updated_at = currentTimestamp();
-    store_.update(*link);
+    if (AppError update_error; !store_.update(*link, &update_error)) {
+        return {std::nullopt, update_error.code == AppErrorCode::none
+            ? error(AppErrorCode::storage_failure, "failed to persist link update")
+            : update_error};
+    }
     return {toView(*link), {}};
 }
 

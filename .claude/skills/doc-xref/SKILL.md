@@ -19,45 +19,39 @@ Unlike `/link-check`, this skill also searches **`src/**`** and **`tests/**`**, 
 renamed doc or symbol is just as likely to be referenced from a docstring or comment
 as from another Markdown file.
 
-[examples/rename-propagation.md](examples/rename-propagation.md) is a full worked
-sweep (rename a spec + a heading, update every inbound hit across docs and code).
+> **Note:** the reference project ran a `scripts/linkify_doc_mentions.py` pre-pass
+> and verified with `scripts/check_doc_links.py`. Neither script exists in this
+> repo, so this skill searches directly with `git grep` and verifies with the
+> `/link-check` skill (and the `doc_link_check` hook, which runs on edit and at
+> session end). Porting those scripts is a tracked follow-up.
 
 ## Steps
 
-1. **Prerequisite — linkify bare mentions** so prose references become discoverable
-   links before the inbound search runs:
-   ```bash
-   python scripts/linkify_doc_mentions.py docs .claude
-   ```
-   Note this **rewrites files**. Pass the narrowest roots that could plausibly
-   reference the target rather than letting it sweep the whole corpus - a "find
-   references" run should not quietly reformat unrelated docs. Unresolvable mentions
-   land in `.claude/state/linkify-report.md`.
-
-2. Enumerate inbound references across both trees:
+1. Enumerate inbound references across both trees:
    - **Docs**: links `](<path-or-anchor>)`, bare path mentions, and prose mentions
      of the heading/title in `docs/**`, repo-root `*.md`, and `.claude/**`.
    - **Code**: docstring / comment pointers in `src/**` and `tests/**` (e.g.
-     ``See docs/adr/template.md#alternatives-considered``), plus the symbol name itself
-     when the target is a symbol.
+     ``See docs/adr/0001-...md#alternatives-considered``), plus the symbol name
+     itself when the target is a symbol.
    ```bash
    git grep -nF "<target>"   # exact path / anchor / symbol; repeat for old name + anchor
    ```
 
-3. **Rename/move**: update every hit to the new path/anchor; `git mv` when renaming
+2. **Rename/move**: update every hit to the new path/anchor; `git mv` when renaming
    a whole file so history follows.
 
-4. **Reworded section**: update mentions whose surrounding text now misstates the
+3. **Reworded section**: update mentions whose surrounding text now misstates the
    section (registry descriptions, "see X" summaries, titles).
 
-5. Update the `docs/README.md` registry line if a file was added/renamed/removed.
+4. Update the `docs/README.md` registry line if a file was added/renamed/removed.
 
-6. Verify with `/link-check` (or `python scripts/check_doc_links.py`).
+5. Verify with the `/link-check` skill (outbound direction) so no edit you made left
+   a dangling pointer of its own.
 
 ## Output
 
-List each reference updated (`file:line`, old → new) and confirm `/link-check`
-passes. Flag any reference you could not safely auto-update for human review.
+List each reference updated (`file:line`, old → new) and confirm the `/link-check`
+skill passes. Flag any reference you could not safely auto-update for human review.
 
 ## Completion checklist
 
@@ -65,4 +59,4 @@ passes. Flag any reference you could not safely auto-update for human review.
 - [ ] `src/` and `tests/` searched, not just Markdown
 - [ ] Any reference not safely auto-updated is explicitly flagged for human review
 - [ ] `docs/README.md` registry line updated if the file was renamed or moved
-- [ ] `/link-check` exits 0 after all edits
+- [ ] `/link-check` reports clean after all edits

@@ -73,6 +73,10 @@
         "hooks": [
           {
             "type": "command",
+            "command": "python $CLAUDE_PROJECT_DIR/.claude/hooks/run_tests.py"
+          },
+          {
+            "type": "command",
             "command": "python $CLAUDE_PROJECT_DIR/.claude/hooks/doc_link_check.py"
           }
         ]

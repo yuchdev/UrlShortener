@@ -29,7 +29,7 @@ include(cmake/variables.cmake)
 set(CMAKE_CXX_STANDARD 17)
 
 # ---- Dependencies (Ubuntu system packages) ----
-find_package(Boost 1.74 REQUIRED COMPONENTS program_options unit_test_framework)
+find_package(Boost 1.74 REQUIRED COMPONENTS system program_options unit_test_framework)
 find_package(OpenSSL REQUIRED)
 find_package(Threads REQUIRED)
 find_package(Python3 COMPONENTS Interpreter REQUIRED)
@@ -107,6 +107,7 @@ include(CTest)
   target_include_directories(url_shortener_common PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
   target_link_libraries(url_shortener_common
     PUBLIC
+        Boost::system
         Boost::program_options
         OpenSSL::SSL
         OpenSSL::Crypto
@@ -223,6 +224,7 @@ include(CTest)
     target_include_directories(cli_parser_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
     target_link_libraries(cli_parser_test
       PRIVATE
+        Boost::system
         Boost::program_options
         Boost::unit_test_framework
         OpenSSL::SSL

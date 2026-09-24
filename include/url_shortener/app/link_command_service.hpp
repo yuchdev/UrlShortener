@@ -170,7 +170,10 @@ public:
     /// Persist a full-record update for an already-existing link and invalidate
     /// any cached copy. Used by the update/delete/lifecycle commands, which
     /// load a link, mutate the relevant fields, and write it back in one call.
-    virtual void update(const Link& link) = 0;
+    /// Returns @c true on success; on failure returns @c false and, when
+    /// @p error is non-null, fills it (typically @c storage_failure, or
+    /// @c not_found if the record vanished between load and write).
+    virtual bool update(const Link& link, AppError* error = nullptr) = 0;
 };
 
 class ILinkStatsReader

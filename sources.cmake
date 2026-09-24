@@ -301,6 +301,7 @@ set(URL_SHORTENER_SOURCES
       tests/unit/app/15_link_command_service_set_enabled_toggle.cpp
       tests/unit/app/16_link_command_service_restore_clears_deleted_at.cpp
       tests/unit/app/17_link_command_service_preview_link.cpp
+      tests/unit/app/18_link_command_service_update_storage_failure.cpp
   )
 
   set(CLI_UNIT_SOURCES

@@ -18,6 +18,9 @@ from _common import allow, append_log, block, read_event, tool_input
 # (pattern, human reason). Patterns are matched case-insensitively.
 DESTRUCTIVE: list[tuple[str, str]] = [
     (r"\brm\s+-[a-z]*r[a-z]*f|\brm\s+-[a-z]*f[a-z]*r", "recursive force delete (rm -rf)"),
+    (r"\bRemove-Item\b.*-Recurse\b.*-Force\b|\bRemove-Item\b.*-Force\b.*-Recurse\b",
+     "recursive force delete (Remove-Item -Recurse -Force)"),
+    (r"\brd\s+/s\b|\brmdir\s+/s\b", "recursive directory delete (rd /s)"),
     (r"\bDROP\s+TABLE\b", "DROP TABLE"),
     (r"\bDROP\s+DATABASE\b", "DROP DATABASE"),
     (r"\bTRUNCATE\s+TABLE\b", "TRUNCATE TABLE"),
@@ -25,6 +28,7 @@ DESTRUCTIVE: list[tuple[str, str]] = [
     (r"\bgit\s+reset\s+--hard\b", "git reset --hard"),
     (r">\s*/dev/sd[a-z]", "raw disk overwrite"),
     (r"\bmkfs\b", "filesystem format (mkfs)"),
+    (r"\bFormat-Volume\b|\bformat\s+[a-z]:", "volume format"),
 ]
 
 # Anything that looks like it touches a production target.

@@ -36,6 +36,11 @@ PATTERNS: dict[str, re.Pattern[str]] = {
         r"(?i)(password|passwd|secret|token|api[_-]?key)\s*[=:]\s*['\"](?P<value>[^'\"\s]{8,})['\"]"
     ),
     "Postgres URL with password": re.compile(r"postg(?:res|resql)://[^:\s]+:[^@\s]+@"),
+    "Redis URL with password": re.compile(r"redis(?:s)?://(?:[^:\s]*:)?[^@\s]+@"),
+    "Analytics hash salt assignment": re.compile(
+        r"(?i)(analytics[_-]?(?:client[_-]?)?hash[_-]?salt|url_shortener_analytics_hash_salt)"
+        r"\s*[=:]\s*['\"][^'\"\s]{6,}['\"]"
+    ),
 }
 
 # Findings whose captured `value` is checked against the memory-address exemption
@@ -67,6 +72,7 @@ ALLOWLIST = (
     "redacted",
     "fake",
     "test",
+    "dev-analytics-salt",  # documented in-repo dev default, not a real secret
 )
 
 SKIP_SUFFIXES = {".lock", ".png", ".jpg", ".jpeg", ".gif", ".pdf", ".dmp", ".db"}
