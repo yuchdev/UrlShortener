@@ -330,36 +330,6 @@ LinkCliCommand parseLinkCommand(int argc, char* argv[], ServerConfig& config)
 ParseResult CliParser::parse(int argc, char* argv[]) const
 {
     ParseResult result;
-
-    // Top-level command dispatch: a leading `link` positional selects the
-    // one-shot link-management CLI and short-circuits every ServerConfig
-    // option, so existing server-flag parsing (C8) is left entirely untouched
-    // when argv[1] != "link".
-    if (argc >= 2 && std::string(argv[1]) == "link") {
-        // Link-scoped help is a separate, additive concern from the top-level
-        // server `--help`: `link --help` (no verb) lists every verb, while
-        // `link <verb> --help` describes that verb's flags. Server-mode help
-        // (argv[1] != "link") never reaches here and is left byte-identical.
-        const std::vector<std::string> link_args(argv + 2, argv + argc);
-        if (linkHelpRequested(link_args)) {
-            const std::string first =
-                argc >= 3 ? std::string(argv[2]) : std::string();
-            if (first.empty() || first == "--help" || first == "-h") {
-                result.help_text = buildLinkHelpText();
-            }
-            else {
-                // A verb precedes --help: describe just that verb. An
-                // unrecognized verb still surfaces the usual parse error.
-                result.help_text =
-                    buildLinkVerbHelpText(parseLinkVerb(first));
-            }
-            result.help_requested = true;
-            return result;
-        }
-        result.command = parseLinkCommand(argc, argv, result.config);
-        return result;
-    }
-
     ServerConfig& cfg = result.config;
 
     // Read environment variables before CLI args so explicit CLI overrides them.
@@ -405,6 +375,34 @@ ParseResult CliParser::parse(int argc, char* argv[]) const
         env != nullptr)
     {
         cfg.shortener_allow_private_targets = parseBool(env);
+    }
+
+    // Top-level command dispatch: a leading `link` positional selects the
+    // one-shot link-management CLI after shared shortener configuration has
+    // been loaded, while server-only option parsing remains untouched.
+    if (argc >= 2 && std::string(argv[1]) == "link") {
+        // Link-scoped help is a separate, additive concern from the top-level
+        // server `--help`: `link --help` (no verb) lists every verb, while
+        // `link <verb> --help` describes that verb's flags. Server-mode help
+        // (argv[1] != "link") never reaches here and is left byte-identical.
+        const std::vector<std::string> link_args(argv + 2, argv + argc);
+        if (linkHelpRequested(link_args)) {
+            const std::string first =
+                argc >= 3 ? std::string(argv[2]) : std::string();
+            if (first.empty() || first == "--help" || first == "-h") {
+                result.help_text = buildLinkHelpText();
+            }
+            else {
+                // A verb precedes --help: describe just that verb. An
+                // unrecognized verb still surfaces the usual parse error.
+                result.help_text =
+                    buildLinkVerbHelpText(parseLinkVerb(first));
+            }
+            result.help_requested = true;
+            return result;
+        }
+        result.command = parseLinkCommand(argc, argv, result.config);
+        return result;
     }
 
     // ---- Option storage for values that need custom conversion ----

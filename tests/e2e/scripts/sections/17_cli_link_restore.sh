@@ -5,9 +5,11 @@
 # listening socket (plan.md C4; Task 03.0 subtask 03).
 #
 # Mirrors 13_cli_no_server_socket.sh's port-check pattern for the restore verb.
-# A non-zero exit from the command itself is acceptable here (the slug may not
-# exist in a fresh in-memory process); this section proves the
-# lifetime/socket guarantee, not the command's success payload (Task 04.0).
+# The command runs one-shot against a fresh in-memory process where the slug
+# does not exist, so it must reach dispatch and return the not-found result
+# (exit code 1 plus a "restore failed: Link not found" diagnostic on stderr).
+# This section proves the lifetime/socket guarantee and dispatch reachability,
+# not the command's success payload (Task 04.0).
 set -euo pipefail
 
 BINARY="${URLSHORTENER_BIN:-}"
@@ -50,19 +52,32 @@ if _port_open 8000; then
   exit 0
 fi
 
+# Capture stderr so we can assert the command reached dispatch (rather than
+# failing earlier during argument parsing) and cleaned up on exit.
+stderr_file="$(mktemp)"
+trap 'rm -f "$stderr_file"' EXIT
+
 # Capture timeout's own exit status directly (|| rc=$? both satisfies `set -e`
 # and preserves the real code); `! timeout ...` would instead force rc=0 in the
 # then-branch and make the 124 check unreachable.
 rc=0
 timeout 5 "$BINARY" link restore \
        --slug e2e-restore-slug \
-       --base-domain http://sho.rt \
-       >/dev/null 2>&1 || rc=$?
+       >/dev/null 2>"$stderr_file" || rc=$?
 if [[ "$rc" -eq 124 ]]; then
   echo "FAIL: 'link restore' did not exit within 5s (lifetime guarantee)." >&2
   exit 1
 fi
-# Any other non-zero exit (e.g. slug not found) is acceptable here.
+
+# The slug does not exist in a fresh in-memory process, so the command must
+# reach dispatch and return the not-found result (exit code 1 plus the
+# "restore failed: Link not found" diagnostic). Any other outcome (e.g. an
+# argument-parsing error before dispatch) is a real failure of this section.
+if [[ "$rc" -ne 1 ]] || ! grep -q "restore failed: Link not found" "$stderr_file"; then
+  echo "FAIL: 'link restore' did not reach the dispatch not-found result (rc=$rc)." >&2
+  cat "$stderr_file" >&2
+  exit 1
+fi
 
 sleep 0.3
 

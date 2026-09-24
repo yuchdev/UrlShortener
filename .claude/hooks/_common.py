@@ -17,7 +17,7 @@ import json
 import re
 import sys
 from collections.abc import Iterator
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 
@@ -171,7 +171,7 @@ def edited_path(event: dict[str, Any]) -> Optional[Path]:
 
 
 def now_iso() -> str:
-    return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def append_log(filename: str, line: str):

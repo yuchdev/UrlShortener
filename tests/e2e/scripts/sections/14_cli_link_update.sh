@@ -9,9 +9,11 @@
 #   a) not leave port 8000 (or any default port) open after it exits, and
 #   b) exit well within the process-lifetime budget (a couple of seconds).
 #
-# A non-zero exit from the command itself is acceptable here (the slug may not
-# exist in a fresh in-memory process); what this section proves is the
-# lifetime/socket guarantee, not the command's success payload (owned by
+# The command runs one-shot against a fresh in-memory process where the slug
+# does not exist, so it must reach dispatch and return the not-found result
+# (exit code 1 plus a "update failed: Link not found" diagnostic on stderr).
+# This section proves both the lifetime/socket guarantee and that the verb
+# actually reaches dispatch, not the command's success payload (owned by
 # Task 04.0).
 set -euo pipefail
 
@@ -56,6 +58,11 @@ if _port_open 8000; then
   exit 0
 fi
 
+# Capture stderr so we can assert the command reached dispatch (rather than
+# failing earlier during argument parsing) and cleaned up on exit.
+stderr_file="$(mktemp)"
+trap 'rm -f "$stderr_file"' EXIT
+
 # Run CLI link update one-shot and bound its runtime; the command must return on
 # its own (never enter io_context.run()), so a timeout firing is itself a
 # failure of the lifetime guarantee.
@@ -66,13 +73,21 @@ rc=0
 timeout 5 "$BINARY" link update \
        --slug e2e-update-slug \
        --enabled false \
-       --base-domain http://sho.rt \
-       >/dev/null 2>&1 || rc=$?
+       >/dev/null 2>"$stderr_file" || rc=$?
 if [[ "$rc" -eq 124 ]]; then
   echo "FAIL: 'link update' did not exit within 5s (lifetime guarantee)." >&2
   exit 1
 fi
-# Any other non-zero exit (e.g. slug not found) is acceptable here.
+
+# The slug does not exist in a fresh in-memory process, so the command must
+# reach dispatch and return the not-found result (exit code 1 plus the
+# "update failed: Link not found" diagnostic). Any other outcome (e.g. an
+# argument-parsing error before dispatch) is a real failure of this section.
+if [[ "$rc" -ne 1 ]] || ! grep -q "update failed: Link not found" "$stderr_file"; then
+  echo "FAIL: 'link update' did not reach the dispatch not-found result (rc=$rc)." >&2
+  cat "$stderr_file" >&2
+  exit 1
+fi
 
 # Brief pause to allow any lingering socket teardown.
 sleep 0.3

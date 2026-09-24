@@ -22,12 +22,12 @@ Read the subtask doc and extract every verifiable requirement into a checklist:
 | Category             | Checklist items                                                               |
 |----------------------|-------------------------------------------------------------------------------|
 | **Files**            | Each line marked Modify / Create / Delete under the "Files" section           |
-| **Symbols / fields** | Every row in the class/symbol table (field name, type, default, notes)        |
-| **Validators**       | Each named validation rule or decorator-based validator described             |
-| **Sensitive fields** | Any field listed under "Sensitive field coverage" / `_SECRET_KEYS` update     |
-| **Tests**            | Every explicitly named test function (e.g. `test_widget_config_defaults`)     |
+| **Symbols / fields** | Every row in the class/struct/symbol table (member name, type, default, notes)|
+| **Validators**       | Each named validation rule or service-boundary check described                |
+| **Sensitive fields** | Any field listed under "Sensitive field coverage" / secret-redaction update   |
+| **Tests**            | Every explicitly named Boost.Test case (e.g. `BOOST_AUTO_TEST_CASE(link_config_defaults)`) |
 | **Success criteria** | Each bullet in the "Success criteria" checklist                               |
-| **Constraints**      | Key constraints: full annotations, no bare `except:`, Optional[T] style, etc. |
+| **Constraints**      | Key constraints: C++17 only, RAII/rule-of-zero, `const`-correctness, `std::optional<T>` for maybe-values, `enum class`, `m_` member prefix |
 
 If the spec uses a section name not listed above, map it to the nearest category or add it
 as a free-form row.
@@ -36,10 +36,10 @@ as a free-form row.
 
 1. Changed files: `git diff --name-only HEAD` (or use the diff passed in).
 2. For each required file: check it exists on disk with `Read` or `Glob`.
-3. For each required symbol/field: `Grep` the target file for the field name and its type annotation.
-4. For each named test: `Grep tests/` for the exact function name.
-5. For each validator: `Grep` for the decorator + function name.
-6. For sensitive fields: `Grep` for the field name in `_SECRET_KEYS` or equivalent.
+3. For each required symbol/field: `Grep` the target header/source for the member name and its type (e.g. `std::optional<std::string> m_base_domain`).
+4. For each named test: `Grep tests/` for the exact `BOOST_AUTO_TEST_CASE` / `BOOST_FIXTURE_TEST_CASE` name.
+5. For each validator: `Grep` for the named check function at the service boundary (e.g. `normalizeTargetUrl`, `isValidSlug`, `isReservedSlug`).
+6. For sensitive fields: `Grep` for the field name in the secret-redaction / log-scrubbing list or equivalent.
 7. For success-criteria items that are checkable via grep or file read: do so. For behavioral claims ("validated correctly") note them as Unverified-Static and flag them for the test suite.
 
 ## Step 3 - Build the compliance matrix
@@ -72,15 +72,15 @@ For each item, mark:
 
 | Symbol | Type | Default | Status | Notes |
 |--------|------|---------|--------|-------|
-| retry_count | int | 3 | ✓ | |
-| timeout_seconds | int | 30 | ~ | Got 15 |
+| m_retry_count | int | 3 | ✓ | |
+| m_timeout_seconds | int | 30 | ~ | Got 15 |
 
 ### Tests
 
-| Test function | Status |
-|---------------|--------|
-| test_widget_config_defaults | ✓ |
-| test_widget_invalid_input | ✗ |
+| Test case | Status |
+|-----------|--------|
+| link_config_defaults | ✓ |
+| link_invalid_input | ✗ |
 
 ### Success criteria
 
@@ -90,10 +90,10 @@ For each item, mark:
 
 ### Blocking gaps (✗ items)
 
-1. `test_widget_invalid_input` not found in tests/ - spec requires it
+1. `link_invalid_input` test case not found in tests/ - spec requires it
 
 ### Deviations (~ items)
-- `timeout_seconds` default is 15; spec says 30
+- `m_timeout_seconds` default is 15; spec says 30
 
 ### Recommendation
 
@@ -106,5 +106,5 @@ FAIL → return to cpp-expert with the blocking gaps list; do not proceed to rev
 
 - Read-only: never edit, create, or delete files.
 - Do not judge code style, architecture, or test quality - that is `feature-reviewer` and `testing-expert`.
-- Do not infer intent: if a spec says `timeout_seconds: int = 30` and the code has `31`, mark it ~, even if 31 might be intentional.
+- Do not infer intent: if a spec says `int m_timeout_seconds = 30` and the code has `31`, mark it ~, even if 31 might be intentional.
 - If the spec is ambiguous or incomplete, note it explicitly and do not mark the item ✗.
