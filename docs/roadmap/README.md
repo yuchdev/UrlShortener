@@ -64,18 +64,14 @@ absolute-from-repo-root Markdown link:
 | 0001 | REST API refactoring (router, handlers, OpenAPI docs) | [plan.md](/docs/roadmap/0001-rest-api-refactoring/plan.md)           | [status.md](/docs/roadmap/0001-rest-api-refactoring/status.md)            |
 | 0002 | Web admin console (analytics, fingerprinting, abuse detection) | [plan.md](/docs/roadmap/0002-admin_console/plan.md)                  | [status.md](/docs/roadmap/0002-admin_console/status.md)                   |
 | 0003 | CLI & REST command interfaces (shared command layer for link management) | [plan.md](/docs/roadmap/0003-cli_rest_interfaces/plan.md) | [status.md](/docs/roadmap/0003-cli_rest_interfaces/status.md) |
+| 0004 | Public web UI (paste a URL, get a short link, copy it) | [plan.md](/docs/roadmap/0004-web-ui/plan.md)                        | [status.md](/docs/roadmap/0004-web-ui/status.md)                          |
 | 0005 | Windows secret-store backend selection             | [plan.md](/docs/roadmap/0005-windows-backend-selection/plan.md)      | [status.md](/docs/roadmap/0005-windows-backend-selection/status.md)       |
 
-> Milestone number `0004` is unused/reserved - there is no record of what, if
-> anything, was planned for it. Numbering was left as-is during the
-> 2026-09-21 roadmap restructuring rather than renumbering `0005`, since that
-> would have rippled into its existing cross-references.
->
-> All four milestones are decomposed into the full task → subtask tree.
+> All five milestones are decomposed into the full task → subtask tree.
 > Milestone 0001 is **fully implemented** (see its
 > [status.md](/docs/roadmap/0001-rest-api-refactoring/status.md) for verified
-> test/build evidence). Milestones 0002, 0003, and 0005 are fully specified
-> but **not started** - see each one's `status.md` for open risks, and note
-> that 0005's plan.md carries an unresolved verification question (no
+> test/build evidence). Milestones 0002, 0003, 0004, and 0005 are fully
+> specified but **not started** - see each one's `status.md` for open risks,
+> and note that 0005's plan.md carries an unresolved verification question (no
 > existing Linux `secret-store` implementation could be located in this
 > repository to confirm parity against).
