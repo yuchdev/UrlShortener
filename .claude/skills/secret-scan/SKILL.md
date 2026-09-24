@@ -1,6 +1,6 @@
 ---
 name: secret-scan
-description: Scans files for hardcoded secrets, TLS keys, DSNs, and tokens using pattern matching. Runs automatically on every Write/Edit via the secret_scan.py PreToolUse hook (which blocks on a hit); invoke manually as /secret-scan [paths] to sweep existing files on demand.
+description: Scans files for hardcoded secrets, API keys, and passwords using pattern matching. Runs automatically on every Write/Edit via the secret_scan.py PreToolUse hook (which blocks on a hit); invoke manually as /secret-scan [paths] to sweep existing files on demand.
 allowed-tools: Read, Grep, Glob, Bash
 invocation: /secret-scan [paths]
 ---
@@ -29,14 +29,10 @@ block use identical rules.
 
 ## Detected shapes
 
-TLS/PEM private-key blocks (`--tls-key` material), PostgreSQL and Redis connection
-strings with inline passwords, the analytics HMAC salt assignment, GitHub tokens,
-and generic `password/secret/token/api_key/passphrase` assignments. Obvious
-placeholders (`example`, `${VAR}`, `$env:`, `your-…`, `changeme`, `test`, and the
-documented `dev-analytics-salt` dev default) are ignored to limit false positives.
-
-This service integrates no AI providers or cloud SDKs, so the reference project's
-AWS/Anthropic/OpenAI/Google/Slack key patterns are intentionally **not** included.
+AWS keys, Anthropic/OpenAI/Google API keys, GitHub & Slack tokens, private-key
+blocks, Postgres URLs with embedded passwords, and generic `password=`/`token=`
+assignments. Obvious placeholders (`example`, `${VAR}`, `your-…`, `changeme`)
+are ignored to limit false positives.
 
 The full pattern table, the complete placeholder allowlist, per-type remediation,
 and the skipped-suffix list are in
@@ -51,9 +47,9 @@ with `.claude/hooks/secret_scan.py`.
 **Result: CLEAN | N FINDING(S)**
 ```
 On any finding: instruct the user to remove the secret, rotate it if it ever
-reached a remote, and replace it with an env var / `${VAR}` reference loaded
-through `ServerConfig`/YAML at runtime, or a secrets manager. Recommend
-`git filter-repo`/history rewrite if it was already committed.
+reached a remote, and replace it with an env var / `${VAR}` reference (see
+`.mcp.json`) or a secrets manager. Recommend `git filter-repo`/history rewrite
+if it was already committed.
 
 ## Completion checklist
 

@@ -1,23 +1,50 @@
 {
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "allow": [
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(gh pr:*)",
+      "Bash(gh issue:*)"
+    ],
+    "deny": [
+      "Read(./.env)",
+      "Read(./.env.*)",
+      "Read(./**/*.dmp)",
+      "Read(./prototype/*.db)"
+    ]
+  },
   "hooks": {
     "SessionStart": [
       {
         "hooks": [
-          { "type": "command", "command": "python .claude/hooks/session_start.py" }
+          {
+            "type": "command",
+            "command": "python $CLAUDE_PROJECT_DIR/.claude/hooks/session_start.py"
+          }
         ]
       }
     ],
     "PreToolUse": [
       {
-        "matcher": "Write|Edit|MultiEdit",
+        "matcher": "Bash",
         "hooks": [
-          { "type": "command", "command": "python .claude/hooks/secret_scan.py" }
+          {
+            "type": "command",
+            "command": "python $CLAUDE_PROJECT_DIR/.claude/hooks/guard_bash.py"
+          }
         ]
       },
       {
-        "matcher": "Bash",
+        "matcher": "Write|Edit|MultiEdit",
         "hooks": [
-          { "type": "command", "command": "python .claude/hooks/guard_bash.py" }
+          {
+            "type": "command",
+            "command": "python $CLAUDE_PROJECT_DIR/.claude/hooks/secret_scan.py"
+          }
         ]
       }
     ],
@@ -25,22 +52,29 @@
       {
         "matcher": "Write|Edit|MultiEdit",
         "hooks": [
-          { "type": "command", "command": "python .claude/hooks/post_edit_format.py" },
-          { "type": "command", "command": "python .claude/hooks/doc_link_check.py" }
+          {
+            "type": "command",
+            "command": "python $CLAUDE_PROJECT_DIR/.claude/hooks/doc_link_check.py"
+          }
         ]
       },
       {
         "matcher": "mcp__github__.*",
         "hooks": [
-          { "type": "command", "command": "python .claude/hooks/github_audit.py" }
+          {
+            "type": "command",
+            "command": "python $CLAUDE_PROJECT_DIR/.claude/hooks/github_audit.py"
+          }
         ]
       }
     ],
     "Stop": [
       {
         "hooks": [
-          { "type": "command", "command": "python .claude/hooks/run_tests.py" },
-          { "type": "command", "command": "python .claude/hooks/doc_link_check.py" }
+          {
+            "type": "command",
+            "command": "python $CLAUDE_PROJECT_DIR/.claude/hooks/doc_link_check.py"
+          }
         ]
       }
     ]

@@ -6,6 +6,7 @@ timestamp, the tool name, and a compact, secret-free summary of its arguments.
 This satisfies the audit-trail requirement: any agent action that reaches GitHub
 leaves a durable record. Never blocks.
 """
+
 from __future__ import annotations
 
 from _common import allow, append_log, read_event, tool_input
