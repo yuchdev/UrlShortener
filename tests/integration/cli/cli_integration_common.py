@@ -9,7 +9,8 @@ PREREQUISITES (implementation must satisfy before these tests pass):
      link stats) in addition to ServerConfig.
   2. main.cpp must dispatch to CLI mode when the first positional argument is
      "link"; CLI mode must NOT start the HTTP listener.
-  3. CLI mode must load uri.txt from cwd on startup and save it on clean exit.
+  3. CLI mode is one-shot and uses per-process in-memory state (no cross-process
+     persistence contract).
   4. Command argument shapes:
        link create --url <URL> [--slug <SLUG>] [--base-domain <DOMAIN>]
        link get --slug <SLUG> | --id <ID>
