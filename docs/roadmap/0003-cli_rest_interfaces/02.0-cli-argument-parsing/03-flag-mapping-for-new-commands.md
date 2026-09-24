@@ -1,7 +1,7 @@
 # 03 - Flag mapping for new commands (update/delete/enable/disable/restore/preview)
 
 **Parent task:** 02.0 CLI argument parsing
-**State:** ⬜ Not started
+**State:** ✅ Complete
 **Depends on:** 01, and [Task 01.0 subtask 01](/docs/roadmap/0003-cli_rest_interfaces/01.0-command-layer-completion/01-define-update-delete-lifecycle-preview-dtos.md) (needs the new DTOs)
 **Blocks:** 04
 

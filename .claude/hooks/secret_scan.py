@@ -4,20 +4,15 @@
 1. As a PreToolUse(Write|Edit|MultiEdit) hook: scans the *content about to be
    written*. If a likely secret is detected it exits 2 to block the write.
 2. As a CLI (``python secret_scan.py <file> [<file> ...]``): scans existing
-   files on disk; used by the /secret-scan skill and the dependency-audit flow.
+   files on disk; used by the /secret-scan skill and the dep-audit flow.
 
 Detection is pattern based and deliberately conservative-but-loud: it favours
 catching real credentials over silence. Findings are logged to
-.claude/logs/secret-scan.log. The service redacts secrets at startup/log time
-via ``observability::redactSecretValue`` - this hook stops them entering the
-repo at all.
-
-Pattern set is tuned for this C++ URL shortener's real secret surface: TLS
-private keys (``--tls-key`` PEM files), PostgreSQL/Redis connection strings with
-inline passwords, the analytics HMAC salt, generic assigned secrets, and GitHub
-tokens (the repo uses the ``gh`` CLI / GitHub MCP). AI-provider / cloud keys from
-the reference project are intentionally omitted - this service integrates none.
+.claude/logs/secret-scan.log. Some codebases already redact secrets at runtime
+(e.g. a logging filter) - this hook complements that by stopping them from
+entering the repo at all.
 """
+
 from __future__ import annotations
 
 import re
@@ -29,20 +24,39 @@ from _common import REPO_ROOT, allow, append_log, block, edited_path, read_event
 
 # name -> compiled pattern. Patterns target high-signal credential shapes.
 PATTERNS: dict[str, re.Pattern[str]] = {
-    "Private key block": re.compile(
-        r"-----BEGIN (?:RSA |EC |DSA |OPENSSH |PGP )?PRIVATE KEY-----"
+    "AWS access key id": re.compile(r"\bAKIA[0-9A-Z]{16}\b"),
+    "AWS secret access key": re.compile(r"(?i)aws_secret_access_key\s*[=:]\s*['\"]?[A-Za-z0-9/+=]{40}"),
+    "Anthropic API key": re.compile(r"\bsk-ant-[A-Za-z0-9_\-]{20,}"),
+    "OpenAI API key": re.compile(r"\bsk-(?:proj-)?[A-Za-z0-9]{20,}"),
+    "Google API key": re.compile(r"\bAIza[0-9A-Za-z_\-]{35}\b"),
+    "GitHub token": re.compile(r"\bgh[pousr]_[A-Za-z0-9]{36,}\b"),
+    "Slack token": re.compile(r"\bxox[baprs]-[A-Za-z0-9-]{10,}"),
+    "Private key block": re.compile(r"-----BEGIN (?:RSA |EC |OPENSSH |PGP )?PRIVATE KEY-----"),
+    "Generic assigned secret": re.compile(
+        r"(?i)(password|passwd|secret|token|api[_-]?key)\s*[=:]\s*['\"](?P<value>[^'\"\s]{8,})['\"]"
     ),
     "Postgres URL with password": re.compile(r"postg(?:res|resql)://[^:\s]+:[^@\s]+@"),
     "Redis URL with password": re.compile(r"redis(?:s)?://(?:[^:\s]*:)?[^@\s]+@"),
-    "GitHub token": re.compile(r"\bgh[pousr]_[A-Za-z0-9]{36,}\b"),
     "Analytics hash salt assignment": re.compile(
         r"(?i)(analytics[_-]?(?:client[_-]?)?hash[_-]?salt|url_shortener_analytics_hash_salt)"
         r"\s*[=:]\s*['\"][^'\"\s]{6,}['\"]"
     ),
-    "Generic assigned secret": re.compile(
-        r"(?i)(password|passwd|secret|token|api[_-]?key|passphrase)\s*[=:]\s*['\"][^'\"\s]{8,}['\"]"
-    ),
 }
+
+# Findings whose captured `value` is checked against the memory-address exemption
+# below. Only the keyword-driven pattern needs it: every other pattern is anchored
+# to a vendor prefix (AKIA, sk-ant-, ghp_, ...) that an address can never produce.
+ADDRESS_EXEMPT_TYPES = frozenset({"Generic assigned secret"})
+
+# A 32-/64-bit hex memory address, e.g. 0xDEADBEEF or 0x00007fff5fbff8c0, with
+# optional C integer suffix (0xFFFFF80000000000ULL). Underscore digit separators
+# are stripped before matching (0x0000_7fff_5fbf_f8c0).
+#
+# The 16-digit ceiling is the safety property, not a style choice: a 64-bit address
+# is at most 16 hex digits, while every hex-encoded credential worth catching is
+# longer - AES-128 is 32 digits, AES-256 and Ethereum private keys are 64. So this
+# exempts real addresses without opening a hole for `token = "0x<64 hex digits>"`.
+_MEM_ADDRESS_RE = re.compile(r"0[xX][0-9a-fA-F]{1,16}[uUlL]{0,3}")
 
 # Substrings that mark an obvious placeholder, so we do not cry wolf.
 ALLOWLIST = (
@@ -54,20 +68,28 @@ ALLOWLIST = (
     "dummy",
     "xxxx",
     "${",
-    "$env:",
     "<your",
     "redacted",
     "fake",
     "test",
-    "dev-analytics-salt",  # the documented in-repo dev default, not a real secret
+    "dev-analytics-salt",  # documented in-repo dev default, not a real secret
 )
 
-SKIP_SUFFIXES = {".lock", ".png", ".jpg", ".jpeg", ".gif", ".pdf", ".db", ".sqlite"}
+SKIP_SUFFIXES = {".lock", ".png", ".jpg", ".jpeg", ".gif", ".pdf", ".dmp", ".db"}
 
 
 def _is_placeholder(line: str) -> bool:
     low = line.lower()
     return any(token in low for token in ALLOWLIST)
+
+
+def _is_memory_address(value: str) -> bool:
+    """True when `value` is nothing but a 32-/64-bit hex memory address.
+
+    Checked against the *captured value*, never the whole line, so a line that
+    happens to mention an address alongside a real credential is still flagged.
+    """
+    return bool(_MEM_ADDRESS_RE.fullmatch(value.replace("_", "")))
 
 
 def scan_text(text: str) -> list[tuple[str, int, str]]:
@@ -77,8 +99,14 @@ def scan_text(text: str) -> list[tuple[str, int, str]]:
         if _is_placeholder(line):
             continue
         for name, pattern in PATTERNS.items():
-            if pattern.search(line):
-                hits.append((name, lineno, line.strip()[:120]))
+            match = pattern.search(line)
+            if match is None:
+                continue
+            if name in ADDRESS_EXEMPT_TYPES:
+                value = match.groupdict().get("value")
+                if value and _is_memory_address(value):
+                    continue  # a pointer/offset named `token`, not a credential
+            hits.append((name, lineno, line.strip()[:120]))
     return hits
 
 
@@ -112,10 +140,9 @@ def _hook_mode() -> None:
             append_log("secret-scan.log", f"BLOCKED {where}:{lineno} [{name}] {excerpt}")
         report = "\n".join(f"  - line {ln}: {name}" for name, ln, _ in hits)
         block(
-            f"Blocked by url-shortener secret-scan: possible secret in {where}:\n{report}\n"
-            "Never commit credentials, TLS private keys, or DSNs with inline passwords. "
-            "Use environment variables / ${VAR} references or a secrets manager, and load "
-            "them through ServerConfig / YAML at runtime instead."
+            f"Blocked by Url Shortener secret-scan: possible secret in {where}:\n{report}\n"
+            "Never commit credentials. Use environment variables / ${VAR} references "
+            "(see .mcp.json) or a secrets manager instead."
         )
     allow()
 

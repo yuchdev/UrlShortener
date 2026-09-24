@@ -1,7 +1,7 @@
 # 01 - ParseResult command variant
 
 **Parent task:** 02.0 CLI argument parsing
-**State:** ⬜ Not started
+**State:** ✅ Complete
 **Depends on:** none (Task 01.0's DTOs are needed by subtask 03, not this one)
 **Blocks:** 02, 03
 

@@ -140,6 +140,137 @@ Result<LinkView> LinkCommandService::GetLink(const GetLinkQuery& query) const
     return {toView(*link), {}};
 }
 
+Result<LinkView> LinkCommandService::UpdateLink(
+    const UpdateLinkCommand& command) const
+{
+    auto link = store_.findBySlug(command.slug);
+    if (!link.has_value()) {
+        return {std::nullopt, error(AppErrorCode::not_found, "Link not found")};
+    }
+
+    // The validateTags/validateMetadata/validateCampaign and RFC3339 checks
+    // below are intentionally redundant with the REST handler's body
+    // validation. The handler keeps field-specific 400 codes for the REST
+    // contract; the service re-validates so non-REST callers (such as the
+    // upcoming CLI adapter) cannot bypass these constraints.
+    if (command.enabled.has_value()) {
+        link->enabled = *command.enabled;
+    }
+
+    if (command.expires_at.has_value()) {
+        const auto& value = *command.expires_at;
+        if (!value.has_value()) {
+            link->expires_at.reset();
+        }
+        else if (parseRfc3339Zulu(*value).has_value()) {
+            link->expires_at = *value;
+        }
+        else {
+            return {std::nullopt, error(AppErrorCode::invalid_field, "expires_at must be RFC3339 UTC or null")};
+        }
+    }
+
+    if (command.tags.has_value()) {
+        auto normalized = *command.tags;
+        if (!validateTags(normalized)) {
+            return {std::nullopt, error(AppErrorCode::invalid_field, "tags violate constraints")};
+        }
+        link->tags = std::move(normalized);
+    }
+
+    if (command.metadata.has_value()) {
+        if (!validateMetadata(*command.metadata)) {
+            return {std::nullopt, error(AppErrorCode::invalid_field, "metadata must be flat object with string values")};
+        }
+        link->metadata = *command.metadata;
+    }
+
+    if (command.campaign.has_value()) {
+        const auto& value = *command.campaign;
+        if (!value.has_value()) {
+            link->campaign.reset();
+        }
+        else {
+            std::optional<Link::Campaign> candidate = value;
+            if (!validateCampaign(candidate)) {
+                return {std::nullopt, error(AppErrorCode::invalid_field, "campaign fields exceed limits")};
+            }
+            link->campaign = candidate;
+        }
+    }
+
+    link->updated_at = currentTimestamp();
+    if (AppError update_error; !store_.update(*link, &update_error)) {
+        return {std::nullopt, update_error.code == AppErrorCode::none
+            ? error(AppErrorCode::storage_failure, "failed to persist link update")
+            : update_error};
+    }
+    return {toView(*link), {}};
+}
+
+Result<LinkView> LinkCommandService::DeleteLink(
+    const DeleteLinkCommand& command) const
+{
+    auto link = store_.findBySlug(command.slug);
+    if (!link.has_value()) {
+        return {std::nullopt, error(AppErrorCode::not_found, "Link not found")};
+    }
+    const auto now = currentTimestamp();
+    link->deleted_at = now;
+    link->updated_at = now;
+    if (AppError update_error; !store_.update(*link, &update_error)) {
+        return {std::nullopt, update_error.code == AppErrorCode::none
+            ? error(AppErrorCode::storage_failure, "failed to persist link update")
+            : update_error};
+    }
+    return {toView(*link), {}};
+}
+
+Result<LinkView> LinkCommandService::SetLinkEnabled(
+    const SetLinkEnabledCommand& command) const
+{
+    auto link = store_.findBySlug(command.slug);
+    if (!link.has_value()) {
+        return {std::nullopt, error(AppErrorCode::not_found, "Link not found")};
+    }
+    link->enabled = command.enabled;
+    link->updated_at = currentTimestamp();
+    if (AppError update_error; !store_.update(*link, &update_error)) {
+        return {std::nullopt, update_error.code == AppErrorCode::none
+            ? error(AppErrorCode::storage_failure, "failed to persist link update")
+            : update_error};
+    }
+    return {toView(*link), {}};
+}
+
+Result<LinkView> LinkCommandService::RestoreLink(
+    const RestoreLinkCommand& command) const
+{
+    auto link = store_.findBySlug(command.slug);
+    if (!link.has_value()) {
+        return {std::nullopt, error(AppErrorCode::not_found, "Link not found")};
+    }
+    link->deleted_at.reset();
+    link->updated_at = currentTimestamp();
+    if (AppError update_error; !store_.update(*link, &update_error)) {
+        return {std::nullopt, update_error.code == AppErrorCode::none
+            ? error(AppErrorCode::storage_failure, "failed to persist link update")
+            : update_error};
+    }
+    return {toView(*link), {}};
+}
+
+Result<LinkView> LinkCommandService::PreviewLink(const GetLinkQuery& query) const
+{
+    const auto link = query.by == GetLinkBy::id
+        ? store_.findById(query.value)
+        : store_.findBySlug(query.value);
+    if (!link.has_value()) {
+        return {std::nullopt, error(AppErrorCode::not_found, "Link not found")};
+    }
+    return {toView(*link), {}};
+}
+
 Result<LinkStatsView> LinkCommandService::GetLinkStats(
     const GetLinkStatsQuery& query) const
 {
@@ -237,6 +368,39 @@ std::string serializeLinkViewJson(const LinkView& link)
         body << "null";
     }
     body << "}}";
+    return body.str();
+}
+
+std::string serializeLinkPreviewJson(const LinkView& link)
+{
+    // Reduced preview projection shared verbatim with the REST
+    // GET /api/v1/links/{slug}/preview handler (src/http/handlers/
+    // link_handlers.cpp::handlePreviewLink). The field set and order here are
+    // load-bearing: they are pinned byte-for-byte by the characterization tests
+    // in tests/unit/http/10_link_handlers.cpp. Do not add or reorder fields
+    // without updating those tests deliberately.
+    std::ostringstream body;
+    body << "{\"slug\":" << jsonString(link.slug)
+         << ",\"url\":" << jsonString(link.target_url)
+         << ",\"status\":" << jsonString(linkStatusToString(link.status))
+         << ",\"redirect_type\":"
+         << jsonString(redirectTypeToString(link.redirect_type))
+         << ",\"enabled\":" << (link.enabled ? "true" : "false")
+         << ",\"expires_at\":";
+    if (link.expires_at.has_value()) {
+        body << jsonString(*link.expires_at);
+    }
+    else {
+        body << "null";
+    }
+    body << ",\"deleted_at\":";
+    if (link.deleted_at.has_value()) {
+        body << jsonString(*link.deleted_at);
+    }
+    else {
+        body << "null";
+    }
+    body << '}';
     return body.str();
 }
 

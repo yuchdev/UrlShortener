@@ -1,7 +1,7 @@
 # 01 - main.cpp branch before server construction
 
 **Parent task:** 03.0 CLI dispatch and process lifecycle
-**State:** ⬜ Not started
+**State:** ✅ Complete
 **Depends on:** none (Task 02.0 must land first for `ParseResult::command` to exist)
 **Blocks:** 02, 03
 

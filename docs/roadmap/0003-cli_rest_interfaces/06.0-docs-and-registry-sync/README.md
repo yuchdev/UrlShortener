@@ -15,9 +15,9 @@ from source.
 
 | # | Document | Status | Blocks |
 |---|----------|--------|--------|
-| 01 | [Correct CLI test docs](01-correct-cli-test-docs.md) | ⬜ Not started | none |
-| 02 | [CLI command reference](02-cli-command-reference.md) | ⬜ Not started | none |
-| 03 | [Design note / ADR](03-design-note-adr.md) | ⬜ Not started | none |
+| 01 | [Correct CLI test docs](01-correct-cli-test-docs.md) | ✅ Complete | none |
+| 02 | [CLI command reference](02-cli-command-reference.md) | ✅ Complete | none |
+| 03 | [Design note / ADR](03-design-note-adr.md) | ✅ Complete | none |
 
 ## Key constraints
 

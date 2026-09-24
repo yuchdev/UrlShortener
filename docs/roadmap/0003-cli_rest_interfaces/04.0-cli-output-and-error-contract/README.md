@@ -23,8 +23,8 @@ convention once and applies it uniformly:
 
 | # | Document | Status | Blocks |
 |---|----------|--------|--------|
-| 01 | [Success envelope reuse](01-success-envelope-reuse.md) | ⬜ Not started | 02 |
-| 02 | [Error envelope and exit codes](02-error-envelope-and-exit-codes.md) | ⬜ Not started | none |
+| 01 | [Success envelope reuse](01-success-envelope-reuse.md) | ✅ Complete | 02 |
+| 02 | [Error envelope and exit codes](02-error-envelope-and-exit-codes.md) | ✅ Complete | none |
 
 ## Key constraints
 

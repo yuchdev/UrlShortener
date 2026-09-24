@@ -1,8 +1,8 @@
 # Low-latency URL shortener
 
-This repository currently contains a C++17 HTTP/HTTPS service that started as a key-value URI store and now includes initial URL shortener endpoints.
-
-The intended direction is to evolve this service into a **low-latency URL shortener** with predictable redirect performance, robust operational controls, and clearer domain boundaries.
+A **low-latency URL shortener** with predictable redirect performance, robust operational
+controls, and clean domain boundaries between the redirect fast path and the management
+plane.
 
 ## Prerequisites
 
@@ -39,7 +39,7 @@ cmake .. -G Ninja
 cmake --build .
 ```
 
-The server binary is produced at `build/url_shortener`.
+The server binary is produced at `cmake-build/url_shortener`.
 
 ### Linux (Ubuntu 24.04 / 22.04)
 
@@ -108,7 +108,7 @@ Could not find a package configuration file provided by "boost_system"
 ```
 
 Add `-DBoost_NO_BOOST_CMAKE=ON` to bypass `BoostConfig.cmake` and fall back to
-library-filename–based discovery:
+library-filename-based discovery:
 
 ```bash
 mkdir cmake-build && cd cmake-build
@@ -192,7 +192,7 @@ vcpkg provides the strongest cross-platform reproducibility. The project ships a
 `vcpkg.json` manifest at the repository root that declares all required ports
 (Boost components, OpenSSL, libpq, sqlite3, yaml-cpp, hiredis), so vcpkg installs
 everything automatically during the first CMake configure — no separate
-`brew vcpkg install` step is needed.
+`vcpkg install` step is needed.
 
 **Bootstrap vcpkg** (one-time setup):
 
@@ -216,7 +216,7 @@ cmake --build .
 
 ##### Intel Mac
 
-```
+```bash
 mkdir cmake-build && cd cmake-build
 vcpkg install --triplet x64-osx
 cmake .. -G Ninja -DCMAKE_TOOLCHAIN_FILE=~/.vcpkg/scripts/buildsystems/vcpkg.cmake -DVCPKG_TARGET_TRIPLET=x64-osx
@@ -272,6 +272,51 @@ cmake --build . --target url_shortener
   --hsts-max-age 300
 ```
 
+## Features
+
+- Single binary server (`url_shortener`) built with Boost.Asio/Beast + OpenSSL.
+- HTTP listener and optional HTTPS listener.
+- Optional HTTP → HTTPS redirect (`308`).
+- TLS hardening controls (minimum TLS 1.2, strong ciphers/curves/session config),
+  optional mTLS (`none`/`optional`/`required`), and `SIGHUP` TLS context reload
+  without restart.
+- Shortener API:
+  - Canonical link management under `/api/v1/links`.
+  - Compatibility create/read aliases under `/api/v1/short-urls`.
+  - Redirects via `GET /{slug}` and compatibility `GET /r/{slug}`.
+  - URI-store fallback routes for legacy arbitrary paths.
+- Lifecycle controls: enable, disable, soft-delete, restore.
+- Click analytics with privacy-preserving client hashing (HMAC-SHA256).
+- Liveness/readiness probes and in-process metrics.
+- Request hardening: configurable body size and path length caps, request ID
+  propagation.
+- Router-backed dispatch with route metadata in `RouteRegistry`.
+- API reference generated from route metadata: [`docs/api/README.md`](docs/api/README.md).
+
+## Storage backends
+
+The storage layer uses a ports-and-adapters design (`IMetadataRepository`,
+`ICacheStore`, `IRateLimiter`, `IClickEventRepository`) with interchangeable
+backend implementations, each exercised by a shared contract test suite:
+
+| Backend    | Role                             | Default |
+|------------|----------------------------------|---------|
+| In-memory  | metadata, cache, rate limiter    | yes     |
+| SQLite     | metadata, analytics events       | no      |
+| PostgreSQL | metadata, analytics events       | no      |
+| Redis      | cache, rate limiter              | no      |
+
+The `url_shortener` binary currently starts against the in-memory backend, which
+requires no external dependencies. YAML-driven backend selection
+(`StorageConfig`, `StorageFactory`/`BuildStorageAdapters`) exists in the storage
+composition layer and is exercised by the SQLite/PostgreSQL/Redis integration and
+contract test suites — see [`docs/storage/configuration.md`](docs/storage/configuration.md)
+for the config schema.
+
+Backend tradeoffs are documented in
+[`docs/backend-selection.md`](docs/backend-selection.md). For adding a new adapter,
+see [`docs/storage/how-to-add-adapter.md`](docs/storage/how-to-add-adapter.md).
+
 ## API examples
 
 ### Create short URL
@@ -316,230 +361,222 @@ curl -i http://localhost:8000/api/v1/links/docs/preview
 curl -i http://localhost:8000/api/v1/links/docs/stats
 ```
 
-### Stage 2 migration notes
+### API notes
 
-- Stage 2 management fields are backward-compatible and default to: `enabled=true`, `deleted_at=null`, `tags=[]`, `metadata={}`, and `campaign=null` when absent.
-- Redirect stats are **provisional operational counters** in the current in-memory implementation and may reset on process restart/state loss.
-- Old clients using existing create/read/redirect flows continue to work; new lifecycle operations live under `/api/v1/links/{slug}/...`.
-- Placeholder extension routes for future work are available at `GET /api/v1/links/{slug}/qr` and `GET /api/v1/links/{slug}/routing`, both currently returning `501 feature_not_enabled`.
-- The C++ `RouteRegistry` is the source of truth for the API inventory. A
-  generated Markdown reference is maintained at [`docs/api/README.md`](docs/api/README.md).
+- Management fields default to `enabled=true`, `deleted_at=null`, `tags=[]`,
+  `metadata={}`, and `campaign=null` when absent.
+- Old clients using existing create/read/redirect flows continue to work; lifecycle
+  operations live under `/api/v1/links/{slug}/...`.
+- Placeholder extension routes `GET /api/v1/links/{slug}/qr` and
+  `GET /api/v1/links/{slug}/routing` return `501 feature_not_enabled`.
+- The C++ `RouteRegistry` is the source of truth for the API inventory. A generated
+  Markdown reference is maintained at [`docs/api/README.md`](docs/api/README.md).
 
-## Current state
+## CLI mode
 
-### What exists today
+The binary also runs as a one-shot link-management client when invoked as
+`url_shortener link <verb>`. No server process is started; the command executes,
+writes a JSON object to stdout (or a diagnostic to stderr), and exits.
 
-- Single binary server (`url_shortener`) built with Boost.Asio/Beast + OpenSSL.
-- HTTP listener and optional HTTPS listener.
-- Optional HTTP -> HTTPS redirect (`308`).
-- TLS hardening controls (TLS version/ciphers/curves/session config), optional mTLS, and SIGHUP TLS context reload.
-- Shortener API:
-  - Canonical link management under `/api/v1/links`.
-  - Compatibility create/read aliases under `/api/v1/short-urls`.
-  - Redirects via `GET /{slug}` and compatibility `GET /r/{slug}`.
-  - URI-store fallback routes for legacy arbitrary paths.
-- Router-backed dispatch with route metadata in `RouteRegistry`.
-- API reference generated from route metadata in `docs/api/README.md`.
+```bash
+# Create a short link — exit 0, JSON on stdout
+./cmake-build/url_shortener link create \
+  --url https://example.com/docs --slug docs
 
-### Current limitations
+# Fetch by slug
+./cmake-build/url_shortener link get --slug docs
 
-- No latency-focused benchmark + profiling loop committed as part of CI.
-- Minimal JSON parsing/validation strategy (string scanning) suitable for early stage but not ideal for long-term correctness/performance.
-- Production observability is still intentionally lightweight.
+# Soft-delete, then restore
+./cmake-build/url_shortener link delete --slug docs
+./cmake-build/url_shortener link restore --slug docs
+```
 
-That means:
+**Note.** The CLI uses the in-memory link store, which is per-process and
+non-persistent. Two separate invocations do **not** share state; a link created
+in one process is invisible to `link get` in a separate process.
 
-* **POST** for link creation
-* **GET** for reads, preview, stats, and redirect
-* **PATCH** for management updates
-* **DELETE** for soft delete
-* optional **POST** for action-style endpoints like `/enable`, `/disable`, `/restore`
+Full reference — all nine verbs (`create`, `get`, `update`, `delete`, `enable`,
+`disable`, `restore`, `preview`, `stats`), flags, and exit codes:
+[`docs/cli/README.md`](docs/cli/README.md).
 
-### Why not switch away from the current stack now
+## Core API
 
-Your actual bottlenecks are elsewhere:
+### Configuration
 
-* redirect fast path is not yet optimized/measured
-
-Those are much more important than whether the API is “pure REST” or whether you adopt another RPC style. The architecture doc explicitly calls out storage abstraction, robust serialization, redirect fast path, and metrics as the next gaps to close. 
-
-### Why POST is the right choice for URL creation
-
-For a shortener, the payload is literally a URL, and that matters.
-
-Using **GET with query parameters** for creation would be a bad fit because:
-
-* long URLs can exceed practical URL length limits
-* URLs in query strings are noisier in logs and proxies
-* escaping/encoding becomes ugly fast
-* creation is not safe/idempotent in the HTTP sense
-
-Stage 1 already specifies `POST /api/v1/links` with JSON body containing `url`, optional `slug`, `expires_at`, and `redirect_type`. That is the right contract. 
-
-### Should it be “REST API”?
-
-Yes, but in a **pragmatic** sense, not a dogmatic one.
-
-A good shape for this project is:
-
-* `POST /api/v1/links` — create
-* `GET /api/v1/links/{slug}` — read by slug
-* `GET /api/v1/links/id/{id}` — read by id
-* `PATCH /api/v1/links/{slug}` — update management fields
-* `DELETE /api/v1/links/{slug}` — soft delete
-* `GET /api/v1/links/{slug}/preview` — preview
-* `GET /api/v1/links/{slug}/stats` — stats
-* `GET /{slug}` or `GET /r/{slug}` — redirect
-
-### Proceed Recommendation
-
-Do **not** adopt a new transport technology now.
-
-Do **migrate the API shape** gradually toward the staged resource model:
-
-1. Keep current Beast/Asio/OpenSSL runtime.
-2. Introduce the `Link` domain model and repository first.
-3. Add `/api/v1/links` as the canonical API.
-4. Keep existing `/api/v1/short-urls` as a compatibility alias for now.
-5. Keep `/r/{code}` during transition; later decide whether public redirect should be `/{slug}`.
-6. Only after storage abstraction and performance baselines are in place should you reconsider protocol choices.
-
-
-## Intended target: low-latency URL shortener
-
-The development target is a service optimized for fast redirects and safe operations under load.
-
-### Functional target
-
-- Canonical short-link resource model (`id`, `slug`, `target_url`, lifecycle/status fields).
-- Stable versioned API for create/read/update/delete + lifecycle controls.
-- Deterministic redirect behavior for active/disabled/expired/deleted states.
-- Backward compatibility strategy for legacy endpoints (or explicit deprecation path).
-
-### Performance target
-
-- Keep redirect path extremely short (lookup + response, minimal allocations).
-- Establish explicit p50/p95/p99 latency budgets for redirect and create operations.
-- Add repeatable micro-benchmarks and load tests for regression detection.
-- Support horizontal scaling through clean storage abstraction and external datastore integration.
-
-### Operational target
-
-- Better observability (structured logs, metrics, and health endpoints).
-- Safe configuration + startup validation.
-- Strong TLS defaults preserved for HTTPS deployments.
-- Clear rollback/migration strategy as data model evolves.
-
-## Stage 1 core API (canonical)
-
-### Config
-
-- `SHORTENER_BASE_DOMAIN` (required, must be absolute `http://` or `https://` domain without path/query/fragment)
-- `SHORTENER_DEFAULT_REDIRECT_TYPE` (`temporary` default)
-- `SHORTENER_DEFAULT_EXPIRY_SECONDS` (optional)
-- `SHORTENER_GENERATED_SLUG_LENGTH` (`7` default)
-- `SHORTENER_ALLOW_PRIVATE_TARGETS` (`false` default)
+| Variable                           | Default                  | Notes                                         |
+|------------------------------------|--------------------------|-----------------------------------------------|
+| `SHORTENER_BASE_DOMAIN`            | `http://localhost:8000`  | Must be absolute `http://` or `https://` URL. |
+| `SHORTENER_DEFAULT_REDIRECT_TYPE`  | `temporary`              | `temporary` or `permanent`.                   |
+| `SHORTENER_DEFAULT_EXPIRY_SECONDS` | (none)                   | Optional default expiry for new links.        |
+| `SHORTENER_GENERATED_SLUG_LENGTH`  | `7`                      | Length of auto-generated slugs.               |
+| `SHORTENER_ALLOW_PRIVATE_TARGETS`  | `false`                  | Allow private/intranet destination URLs.      |
 
 ### Endpoints
 
-- `POST /api/v1/links`
-- `GET /api/v1/links/id/{id}`
-- `GET /api/v1/links/{slug}`
-- `GET /{slug}` (canonical redirect)
-- `GET /r/{slug}` (compatibility alias)
+| Method   | Path                            | Notes                          |
+|----------|---------------------------------|--------------------------------|
+| `POST`   | `/api/v1/links`                 | Create a link.                 |
+| `GET`    | `/api/v1/links/{slug}`          | Fetch link metadata by slug.   |
+| `GET`    | `/api/v1/links/id/{id}`         | Fetch link metadata by ID.     |
+| `PATCH`  | `/api/v1/links/{slug}`          | Update mutable fields.         |
+| `DELETE` | `/api/v1/links/{slug}`          | Soft-delete a link.            |
+| `GET`    | `/api/v1/links/{slug}/preview`  | Preview resolved status.       |
+| `GET`    | `/api/v1/links/{slug}/stats`    | Aggregate click statistics.    |
+| `POST`   | `/api/v1/links/{slug}/enable`   | Enable a disabled link.        |
+| `POST`   | `/api/v1/links/{slug}/disable`  | Disable a link.                |
+| `POST`   | `/api/v1/links/{slug}/restore`  | Restore a soft-deleted link.   |
+| `GET`    | `/{slug}`                       | Canonical redirect.            |
+| `GET`    | `/r/{slug}`                     | Compatibility redirect alias.  |
+
+Compatibility aliases (`/api/v1/short-urls/...`) are also registered; see the full
+route reference at [`docs/api/README.md`](docs/api/README.md).
 
 ### Redirect behavior
 
-| State | Response |
-|---|---|
-| Missing | `404 not_found` |
-| Disabled | `410 link_disabled` |
-| Expired | `410 link_expired` |
-| Active temporary | `302 Found` |
-| Active permanent | `301 Moved Permanently` |
+| State            | Response                    |
+|------------------|-----------------------------|
+| Missing          | `404 not_found`             |
+| Disabled         | `410 link_disabled`         |
+| Expired          | `410 link_expired`          |
+| Active temporary | `302 Found`                 |
+| Active permanent | `301 Moved Permanently`     |
 
 ### Curl flow examples
 
 ```bash
-curl -i -X POST http://localhost:8000/api/v1/links   -H 'Content-Type: application/json'   -d '{"url":"https://example.com/docs"}'
+# Create with auto-generated slug
+curl -i -X POST http://localhost:8000/api/v1/links \
+  -H 'Content-Type: application/json' \
+  -d '{"url":"https://example.com/docs"}'
 ```
 
 ```bash
-curl -i -X POST http://localhost:8000/api/v1/links   -H 'Content-Type: application/json'   -d '{"url":"https://example.com/docs","slug":"docs"}'
+# Create with explicit slug
+curl -i -X POST http://localhost:8000/api/v1/links \
+  -H 'Content-Type: application/json' \
+  -d '{"url":"https://example.com/docs","slug":"docs"}'
 ```
 
 ```bash
+# Fetch by slug or ID
 curl -i http://localhost:8000/api/v1/links/docs
 curl -i http://localhost:8000/api/v1/links/id/<id>
 ```
 
 ```bash
+# Redirect
 curl -i http://localhost:8000/docs
 ```
 
-### Redirect benchmark baseline (Stage 1)
+### Redirect benchmark
 
-Use `scripts/benchmark_redirect.py` to capture baseline redirect throughput and latency.
+Use `scripts/benchmark_redirect.py` to measure redirect throughput and latency on
+your deployment:
 
 ```bash
-scripts/benchmark_redirect.py --base-url http://127.0.0.1:28080 --concurrency 32 --duration 10
+scripts/benchmark_redirect.py --base-url http://127.0.0.1:8000 --concurrency 32 --duration 10
 ```
 
-Sample baseline on local dev VM (8 vCPU, Ubuntu 24.04, Mar 25, 2026):
+The redirect path (`GET /{slug}`) is a protected fast path: cache lookup,
+repository fallback on miss, redirect response. Management-plane changes under
+`/api/v1/...` do not add extra logic to redirect resolution.
 
-- hot-path redirect (`302`): ~11k req/s, p50 2.1 ms, p95 8.8 ms, p99 15.4 ms
-- mixed outcomes (hit/miss/expired/disabled): ~9k req/s aggregate, p99 < 20 ms
+## Analytics
 
-The redirect path is treated as a protected fast path. Management-plane changes under `/api/v1/...` should not add extra logic to redirect resolution.
+Click events are captured on every redirect attempt through an in-memory queue
+that is non-blocking and drop-on-overflow. Analytics failures never affect redirect
+response behavior or latency.
 
-## Stage 4 (scope 5.1) analytics notes
+### Configuration
 
-Implemented in this stage slice:
-- Internal `ClickEvent` capture model on redirect attempts.
-- Bounded in-memory analytics queue with non-blocking drop-on-overflow behavior.
-- Redirect flow instrumentation is best-effort and does not change redirect response behavior.
+| Flag                          | Default               | Notes                                             |
+|-------------------------------|-----------------------|---------------------------------------------------|
+| `--analytics-enabled`         | `true`                | Enable or disable click analytics collection.     |
+| `--analytics-queue-capacity`  | `1024`                | In-memory event queue capacity.                   |
+| `--analytics-client-hash-salt`| (dev default)         | HMAC salt for client ID hashing. Set explicitly   |
+|                               |                       | in non-development environments.                  |
 
-Current config knobs:
-- `--analytics-enabled` (default: `true`)
-- `--analytics-queue-capacity` (default: `1024`)
-- `--analytics-client-hash-salt` (default dev value; set explicitly in non-dev environments)
+### Privacy defaults
 
-Privacy defaults in current scope:
-- Raw client identifiers are not persisted; a salted HMAC-SHA256-derived `client_id_hash` is captured.
-- `Referer` and `User-Agent` are length-bounded before enqueue to keep memory usage predictable.
+- Raw client identifiers are never persisted. An HMAC-SHA256-derived
+  `client_id_hash` is captured instead.
+- `Referer` and `User-Agent` are length-bounded before enqueue.
 
-Deferred to later Stage 4 scope:
-- Worker persistence pipeline
-- Aggregate analytics read API
-- Retention hooks
+For analytics output interpretation, see [`docs/analytics.md`](docs/analytics.md).
 
-## Stage 5 (scope 1) observability + hardening notes
+## Observability and request hardening
 
-Implemented in this stage slice:
-- Request ID propagation (`X-Request-Id`) with validation/fallback generation.
-- Stable error envelope request correlation (`error.request_id`).
-- Request completion structured logs with method/path/route/status/latency fields.
-- In-process counters exposed via `GET /metrics`.
-- Liveness/readiness probes: `GET /healthz`, `GET /readyz`.
-- Early request-boundary hardening: max target length and max body size caps.
+### Observability
 
-Current config knobs:
-- `--request-id-max-length` (default: `64`)
-- `--max-request-body-bytes` (default: `65536`)
-- `--max-request-target-length` (default: `2048`)
+- Request ID propagation via `X-Request-Id` header with validation and fallback
+  generation.
+- Stable error envelope with `error.request_id` correlation field.
+- Request completion structured logs with method, path, route, status, and latency
+  fields.
+- In-process counters exposed at `GET /metrics`.
+- Liveness probe: `GET /healthz`. Readiness probe: `GET /readyz`.
+
+### Request hardening
+
+| Flag                          | Default | Notes                                             |
+|-------------------------------|---------|---------------------------------------------------|
+| `--request-id-max-length`     | `64`    | Maximum accepted `X-Request-Id` header length.    |
+| `--max-request-body-bytes`    | `65536` | Request body size cap; requests exceeding this    |
+|                               |         | are rejected early.                               |
+| `--max-request-target-length` | `2048`  | Request path/target length cap.                   |
 
 ## Tests
+
+Run the full test suite:
 
 ```bash
 ctest --test-dir cmake-build --output-on-failure
 ```
 
-(Direct invocation still works: `python3 test/http_client_test/http_client_test.py`.)
+Run tests by label:
+
+```bash
+# Unit tests only
+ctest --test-dir cmake-build -L unit --output-on-failure
+
+# Contract tests (backend-agnostic repository suites)
+ctest --test-dir cmake-build -L contract --output-on-failure
+
+# Integration tests
+ctest --test-dir cmake-build -L integration --output-on-failure
+
+# All labeled suites
+ctest --test-dir cmake-build -L "unit|contract|integration|e2e" --output-on-failure
+```
+
+Run a single test by name:
+
+```bash
+ctest --test-dir cmake-build -R "^<test_name>$" --output-on-failure
+```
+
+On Windows or multi-config generators, add `-C Debug` (or the relevant config) to
+every `ctest` and `cmake --build` invocation.
+
+The integration test suite also includes a Python harness under `tests/integration/py/`
+and `tools/sqlite_state_assert.py` for asserting SQLite state directly.
 
 ## Repo guides
 
-- `ARCHITECTURE.md` — high-level architecture overview; detailed specs in [`docs/adr/`](docs/adr/).
-- `docs/adr/` — Architecture Decision Records (system architecture, backend topology, performance contract, security model, SQL persistence).
-- `docs/storage/overview.md` - Stage 03 storage abstraction (scope 1) overview.
-- `docs/stages/` - staged specification documents.
-- `scripts/setup_ubuntu_dependencies.sh` - Ubuntu dependency bootstrap.
+- [`ARCHITECTURE.md`](ARCHITECTURE.md) — high-level architecture overview.
+- [`docs/api/README.md`](docs/api/README.md) — HTTP API reference generated from
+  the C++ `RouteRegistry`.
+- [`docs/configuration.md`](docs/configuration.md) — full configuration reference
+  for server, TLS, logging, hardening, metrics, and storage knobs.
+- [`docs/backend-selection.md`](docs/backend-selection.md) — storage backend
+  comparison, maturity levels, failure modes, and migration notes.
+- [`docs/storage/configuration.md`](docs/storage/configuration.md) — YAML storage
+  config reference with examples for in-memory, SQLite, PostgreSQL, and Redis.
+- [`docs/storage/how-to-add-adapter.md`](docs/storage/how-to-add-adapter.md) —
+  step-by-step guide for adding a new storage backend.
+- [`docs/analytics.md`](docs/analytics.md) — analytics pipeline, privacy model,
+  and output interpretation.
+- [`docs/benchmarking.md`](docs/benchmarking.md) — redirect benchmarking guide.
+- [`docs/deployment.md`](docs/deployment.md) — deployment and operational guide.
+- [`scripts/setup_ubuntu_dependencies.sh`](scripts/setup_ubuntu_dependencies.sh) —
+  Ubuntu dependency bootstrap.

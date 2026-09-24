@@ -1,13 +1,19 @@
 #!/usr/bin/env bash
 # tests/e2e/scripts/sections/12_cli_link_get.sh
 #
-# E2E CLI section 12: link create then link get in the same working directory
-# returns the persisted link data.
+# E2E CLI section 12: `link get` is process-local.
+#
+# The CLI builds a fresh in-process, in-memory LinkCommandService on every
+# invocation (see src/cli/link_command_dispatch.cpp::DispatchLinkCommand) and
+# persists nothing between processes. So a link created by one `link create`
+# process is NOT visible to a later, separate `link get` process - even in the
+# same working directory. This section asserts that process-local contract,
+# consistent with tests/integration/cli/03_link_create_then_get_persists_state.py.
 #
 # PREREQUISITES:
 #   1. CLI subcommand dispatch in main.cpp: "link create" AND "link get" branches.
-#   2. main.cpp CLI: saves uri.txt after create, loads uri.txt before get.
-#   3. link get --slug <SLUG> and --id <ID> are parsed.
+#   2. link get --slug <SLUG> and --id <ID> are parsed.
+#   3. A missing link exits non-zero with "Link not found" on stderr.
 #
 # Does NOT use the mock HTTP service or SQLite state assertions.
 set -euo pipefail
@@ -33,71 +39,46 @@ fi
 TMPDIR_CLI="$(mktemp -d)"
 trap 'rm -rf "$TMPDIR_CLI"' EXIT
 
-echo "=== 12_cli_link_get: create then get ==="
+echo "=== 12_cli_link_get: create then get is process-local ==="
 
-# Step 1 – create
+# Step 1 - create (must succeed and return a non-empty id).
 CREATE_OUT="$(
-  "$BINARY" link create \
+  cd "$TMPDIR_CLI" && "$BINARY" link create \
     --url https://e2e-get.example.com \
     --slug e2e-get-slug \
     2>/dev/null
 )"
 echo "create stdout: $CREATE_OUT"
 
-# Extract id using Python (portable; avoids jq dependency).
 LINK_ID="$(python3 -c "import json,sys; print(json.loads(sys.argv[1]).get('id',''))" "$CREATE_OUT" 2>/dev/null)"
-
 if [[ -z "$LINK_ID" ]]; then
   echo "FAIL: create response did not include a non-empty 'id'" >&2
   exit 1
 fi
 
-# Step 2 – get by slug
-GET_SLUG_OUT="$(
-  cd "$TMPDIR_CLI" && "$BINARY" link get --slug e2e-get-slug 2>/dev/null
-)"
-echo "get-by-slug stdout: $GET_SLUG_OUT"
+# Helper: assert a `link get` invocation in a *new* process fails as not-found.
+assert_not_found() {
+  local label="$1"; shift
+  local stderr_out exit_code
+  set +e
+  stderr_out="$(cd "$TMPDIR_CLI" && "$BINARY" "$@" 2>&1 1>/dev/null)"
+  exit_code=$?
+  set -e
+  if [[ $exit_code -eq 0 ]]; then
+    echo "FAIL: $label unexpectedly succeeded; separate CLI processes must not share state" >&2
+    exit 1
+  fi
+  if ! grep -q "Link not found" <<<"$stderr_out"; then
+    echo "FAIL: $label did not report 'Link not found' (stderr: $stderr_out)" >&2
+    exit 1
+  fi
+  echo "$label: not found (exit $exit_code) as expected"
+}
 
-# Step 3 – get by id
-GET_ID_OUT="$(
-  cd "$TMPDIR_CLI" && "$BINARY" link get --id "$LINK_ID" 2>/dev/null
-)"
-echo "get-by-id stdout: $GET_ID_OUT"
+# Step 2 - get by slug in a new process: must NOT find the link.
+assert_not_found "get-by-slug" link get --slug e2e-get-slug
 
-# Validate both responses.
-python3 - "$CREATE_OUT" "$GET_SLUG_OUT" "$GET_ID_OUT" <<'PY'
-import json, sys
+# Step 3 - get by id in a new process: must NOT find the link.
+assert_not_found "get-by-id" link get --id "$LINK_ID"
 
-create_raw, slug_raw, id_raw = sys.argv[1], sys.argv[2], sys.argv[3]
-
-def load(raw, label):
-    try:
-        return json.loads(raw)
-    except json.JSONDecodeError as exc:
-        print(f"FAIL: {label} is not valid JSON: {exc}", file=sys.stderr)
-        print(f"raw: {raw!r}", file=sys.stderr)
-        sys.exit(1)
-
-create_data  = load(create_raw,  "create")
-slug_data    = load(slug_raw,    "get-by-slug")
-id_data      = load(id_raw,      "get-by-id")
-
-failures = []
-
-for label, data in [("get-by-slug", slug_data), ("get-by-id", id_data)]:
-    if data.get("url") != "https://e2e-get.example.com":
-        failures.append(f"{label}.url mismatch: {data.get('url')!r}")
-    if data.get("slug") != "e2e-get-slug":
-        failures.append(f"{label}.slug mismatch: {data.get('slug')!r}")
-    if data.get("status") != "active":
-        failures.append(f"{label}.status mismatch: {data.get('status')!r}")
-    if data.get("id") != create_data.get("id"):
-        failures.append(f"{label}.id {data.get('id')!r} != create.id {create_data.get('id')!r}")
-
-if failures:
-    for f in failures:
-        print(f"FAIL: {f}", file=sys.stderr)
-    sys.exit(1)
-
-print("PASS: 12_cli_link_get")
-PY
+echo "PASS: 12_cli_link_get"

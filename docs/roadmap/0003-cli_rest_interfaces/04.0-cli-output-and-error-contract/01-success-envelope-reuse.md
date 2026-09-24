@@ -1,7 +1,7 @@
 # 01 - Success envelope reuse
 
 **Parent task:** 04.0 CLI output and error contract
-**State:** ⬜ Not started
+**State:** ✅ Complete
 **Depends on:** none (Task 03.0 subtask 01 must exist as the call site)
 **Blocks:** 02
 

@@ -13,16 +13,14 @@ Check that the implementation of a subtask matches its specification document.
 
 1. **Resolve the spec path** from `$ARGUMENTS`.
    - If the argument ends with `.md`, use it as-is relative to repo root.
-   - Otherwise, expand to `docs/specs/$ARGUMENTS.md`.
-   - If the file does not exist, error: "Spec not found: <path>. Pass the path
-     relative to `docs/specs/` without the .md extension, e.g.
-     `core/link-lifecycle` or `admin_console/auth`. The stage overview lives in
-     `docs/agent/implementation-taskmap.md`."
+   - Otherwise, expand to `docs/roadmap/$ARGUMENTS.md`.
+   - If the file does not exist, error: "Spec not found: <path>. Pass the path relative to
+     docs/roadmap/ without the .md extension, e.g. `0001-working-implementation/01.0-hello-world-endpoint/01-config-model`."
 
 2. **Gather the diff scope.**
-   Run `git diff --name-only HEAD` to get changed files. If the working tree is
-   clean (no staged or unstaged changes), try `git diff --name-only HEAD~1` to
-   capture the most recent commit.
+   Run `git diff --name-only HEAD` to get changed files. If the working tree is clean
+   (no staged or unstaged changes), try `git diff --name-only HEAD~1` to capture the
+   most recent commit.
 
 3. **Spawn `subtask-verifier`** with:
    - The resolved spec path
@@ -32,8 +30,7 @@ Check that the implementation of a subtask matches its specification document.
 4. **Return** the agent's compliance report verbatim.
    - PASS → confirm to the caller that review/testing can proceed.
    - PARTIAL → list deviations; recommend fixing before merge but do not block.
-   - FAIL → list blocking gaps; instruct caller to return to `cpp-expert` with
-     the list.
+   - FAIL → list blocking gaps; instruct caller to return to `cpp-expert` with the list.
 
 ## Output
 

@@ -75,6 +75,17 @@ void LegacyLinkStore::invalidateCache(const std::string& slug)
     linkCache().erase(slug);
 }
 
+bool LegacyLinkStore::update(const Link& link, AppError* error)
+{
+    if (updateLinkAndInvalidateCache(link)) {
+        return true;
+    }
+    if (error != nullptr) {
+        *error = makeError(AppErrorCode::storage_failure, "repository failure");
+    }
+    return false;
+}
+
 Result<LinkStatsView> LegacyLinkStatsReader::read(
     const GetLinkStatsQuery& query) const
 {

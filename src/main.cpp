@@ -12,6 +12,7 @@
 
 #include <boost/asio.hpp>
 #include <url_shortener/cli/cli_parser.h>
+#include <url_shortener/cli/link_command_dispatch.hpp>
 #include <url_shortener/observability/LoggerFactory.h>
 #include <url_shortener/url_shortener.h>
 #include <url_shortener/uri_map_singleton.h>
@@ -38,6 +39,14 @@ int main(int argc, char* argv[])
         if (parsed.help_requested) {
             std::cout << parsed.help_text;
             return 0;
+        }
+
+        // One-shot CLI mode: a recognized `link <verb>` short-circuits here,
+        // before any io_context/HttpServer is constructed and before uri.txt is
+        // loaded, so CLI mode never starts the server (plan.md C4/C5).
+        if (parsed.command.has_value()) {
+            return url_shortener::cli::DispatchLinkCommand(*parsed.command,
+                                                           parsed.config);
         }
 
         auto& config = parsed.config;

@@ -1,7 +1,7 @@
 # 03 - Exit code and process lifetime guarantees
 
 **Parent task:** 03.0 CLI dispatch and process lifecycle
-**State:** ⬜ Not started
+**State:** ✅ Complete
 **Depends on:** 02
 **Blocks:** none
 

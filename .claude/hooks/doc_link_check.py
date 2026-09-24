@@ -1,20 +1,28 @@
 #!/usr/bin/env python3
 """PostToolUse (Write|Edit|MultiEdit) + Stop: documentation reference integrity.
 
-Runs ``scripts/check_doc_links.py`` so a docs edit never silently leaves a
-dangling relative link or missing heading anchor.
+Checks that Markdown relative links resolve and that `#anchor` fragments match
+a real heading slug in the target file - entirely inline, no dependency on
+`scripts/` (the link/anchor logic lives in `_common.py`). This is the fast
+auto-gate; `scripts/check_doc_links.py` is a separate, more thorough on-demand
+checker the `/link-check` skill runs - the two are complementary, not
+duplicates of each other.
 
 * **PostToolUse** - when the edited file is Markdown, check that file's outbound
   links/anchors immediately (scoped, cheap).
 * **Stop** - if any Markdown changed in the working tree this session, run the
-  full repo doc-link scan, which also catches *inbound* breakage (e.g. a renamed
-  heading that other docs still link to).
+  full `docs/` + `.claude/` scan, which also catches breakage caused by a file
+  other than the one just edited (e.g. a renamed heading whose old anchor is
+  still linked from elsewhere).
 
-Always **non-blocking** (exit 0): it surfaces problems to the agent/user as a
-reminder but never wedges a session. If ``scripts/check_doc_links.py`` is not
-present yet, the hook skips silently - see the migration report for the follow-up
-to port that checker to this repo. Flip ``_report`` to ``block`` (exit 2) to make
-it a hard gate once the checker exists.
+Also runnable standalone: ``python doc_link_check.py --check [<path> ...]`` -
+a quick ad-hoc check independent of the `/link-check` skill (which uses the
+heavier `scripts/check_doc_links.py` instead). With no paths, scans the whole
+corpus.
+
+Always **non-blocking** (exit 0 from the hook): it surfaces problems as a
+reminder but never wedges a session. The CLI mode exits 1 on findings so it
+composes with the `/link-check` skill and CI.
 """
 
 from __future__ import annotations
@@ -22,27 +30,14 @@ from __future__ import annotations
 import subprocess
 import sys
 
-from _common import REPO_ROOT, allow, append_log, edited_path, read_event
-
-CHECKER = REPO_ROOT / "scripts" / "check_doc_links.py"
+from _common import REPO_ROOT, allow, append_log, edited_path, find_broken_links, iter_markdown_files, read_event
 
 
-def _run_checker(paths: list[str]) -> tuple[int, str]:
-    if not CHECKER.is_file():
-        return 0, ""
-    try:
-        proc = subprocess.run(
-            [sys.executable, str(CHECKER), "--check", *paths],
-            cwd=str(REPO_ROOT),
-            capture_output=True,
-            text=True,
-            timeout=60,
-            check=False,
-        )
-    except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
-        sys.stderr.write(f"doc_link_check: checker unavailable ({exc}); skipped.\n")
-        return 0, ""
-    return proc.returncode, (proc.stdout + proc.stderr)
+def check(paths: list[str] | None) -> list[str]:
+    problems: list[str] = []
+    for md in iter_markdown_files(paths):
+        problems.extend(find_broken_links(md))
+    return problems
 
 
 def _changed_markdown() -> list[str]:
@@ -62,31 +57,43 @@ def _changed_markdown() -> list[str]:
     return [ln for ln in proc.stdout.splitlines() if ln.strip().lower().endswith(".md")]
 
 
-def main() -> None:
+def _hook_mode() -> None:
     event = read_event()
     target = edited_path(event)
 
     if target is not None:
-        # PostToolUse: only act on Markdown; scope to the edited file.
         if target.suffix.lower() != ".md" or not target.exists():
             allow()
-        scan_paths = [str(target)]
+        problems = check([str(target)])
     else:
-        # Stop: only when docs changed this session; then full scan (catches inbound).
         if not _changed_markdown():
             allow()
-        scan_paths = []
+        problems = check(None)
 
-    code, output = _run_checker(scan_paths)
-    if code != 0 and output.strip():
-        append_log("doc-link-check.log", "dangling documentation references found")
+    if problems:
+        append_log("doc-link-check.log", f"{len(problems)} problem(s) found")
         sys.stderr.write(
-            "doc_link_check: dangling documentation references (non-blocking) -\n"
-            + output.rstrip()
-            + "\nRun `/link-check` (or `python scripts/check_doc_links.py`) to review.\n"
+            "doc_link_check: dangling documentation references (non-blocking):\n"
+            + "\n".join(problems)
+            + "\nRun `/link-check` to review.\n"
         )
     allow()
 
 
+def _cli_mode(argv: list[str]) -> None:
+    args = argv[1:] if argv and argv[0] == "--check" else argv
+    problems = check(args if args else None)
+    for p in problems:
+        print(p)
+    if problems:
+        print(f"\ndoc_link_check: {len(problems)} problem(s) found.")
+        sys.exit(1)
+    print("doc_link_check: clean.")
+    sys.exit(0)
+
+
 if __name__ == "__main__":
-    main()
+    if len(sys.argv) > 1:
+        _cli_mode(sys.argv[1:])
+    else:
+        _hook_mode()

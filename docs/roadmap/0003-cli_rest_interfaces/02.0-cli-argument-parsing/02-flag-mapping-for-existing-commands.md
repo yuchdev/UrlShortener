@@ -1,7 +1,7 @@
 # 02 - Flag mapping for existing commands (create/get/stats)
 
 **Parent task:** 02.0 CLI argument parsing
-**State:** ⬜ Not started
+**State:** ✅ Complete
 **Depends on:** 01
 **Blocks:** 04
 

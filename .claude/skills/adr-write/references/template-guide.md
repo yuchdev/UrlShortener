@@ -1,18 +1,17 @@
 # ADR template guide (section-by-section)
 
-This guide explains what each section of the MADR template (carried inline in
-`SKILL.md`) must contain and how the git/issue context the skill gathers in Step 2
-maps onto it. When `docs/adr/template.md` is eventually created (a migration
-follow-up), read it for the exact headings and read this for how to fill them.
+The canonical structure lives in [`docs/adr/template.md`](../../../../docs/adr/template.md).
+This guide explains what each section must contain and how the git/issue context
+the skill gathers in Step 2 maps onto it. Read `template.md` for the exact
+headings; read this for how to fill them.
 
 ## Filename & header
 
 - Filename: `docs/adr/NNNN-<kebab-title>.md`, `NNNN` zero-padded, one higher than
   the current maximum in `docs/adr/`.
-- H1: `# NNNN. Title`.
+- H1: `# NNNN - Title` (space-dash-space, matching the template — not `NNNN.`).
 - Status starts **Proposed**. Only a human/architect flips it to `Accepted`.
-  `Superseded` / `Deprecated` are set later, with a link to the ADR that replaces
-  it.
+  `Superseded` / `Deprecated` are set later, with a link to the ADR that replaces it.
 
 ## Context
 
@@ -20,7 +19,7 @@ follow-up), read it for the exact headings and read this for how to fill them.
 
 - `git log --oneline -10` → the recent commits that surfaced the problem.
 - `gh issue list --state open --limit 10` → any open issue the decision resolves;
-  link it in **Links**, don't just paraphrase it.
+  link it in **Links → Roadmap task**, don't just paraphrase it.
 - State the constraints and forces plainly. No solution yet.
 
 ## Decision
@@ -31,39 +30,33 @@ If it is still genuinely open, the ADR is premature — write it once the
 
 ## Alternatives Considered
 
-A **table** (`| Option | Pros | Cons | Verdict |`). Include the chosen option's
-serious rivals — an ADR with an empty or single-row table reads as undecided.
-Every rejected row needs a concrete reason, not just "worse". For this project,
-typical rivals are storage backends (sqlite vs postgres vs redis), cache
-strategy (cache-aside vs write-through), or redirect status semantics (301 vs
-302/307/308).
+A **table** (`| Alternative | Pros | Cons | Reason rejected |`). Include the chosen
+option's serious rivals — an ADR with an empty or single-row table reads as
+undecided. Every rejected row needs a concrete *Reason rejected*, not just "worse".
 
 ## Consequences
 
-Split **Positive** and **Negative**. Negative is the honest part: migration cost,
-new failure modes, lock-in. For a URL Shortener change, call out anything touching
-the **redirect fast path** (added latency, extra I/O), **link lifecycle**
-correctness, **cache invalidation**, or **security** (SSRF surface, auth, secret
-handling) explicitly — those are the consequences a reviewer looks for first.
+Split **Positive** and **Negative** (the template's two sub-headings). Negative is
+the honest part: migration cost, new failure modes, lock-in. Call out anything
+touching this project's core safety/compliance invariants or security explicitly —
+those are the consequences a reviewer will look for first.
 
 ## Validation / Rollout
 
 How we confirm the decision works and how we ship it. Name the follow-up work and
-who owns it: implementation → `cpp-expert`, tests → `testing-expert`, doc/runbook
-updates → `docs-updater`. Reference concrete gates: the `coverage` CMake target,
-CTest labels (`unit`/`integration`/`contract`), and any redirect-latency
-benchmark.
+who owns it: implementation → `cpp-expert`, tests → `testing-expert`,
+doc/runbook updates → `docs-updater`. This is where downstream tasks get routed.
 
 ## Links
 
-- **Driving spec/issue:** the `docs/specs/…` spec or GitHub issue that drove this.
-- **Supporting specs / diagrams:** anything under `docs/specs/` or `docs/`.
+- **Roadmap task:** the `docs/roadmap/...` task or GitHub issue that drove this.
+- **Supporting specs / diagrams:** anything under `docs/specs/` or `assets/`.
 - **Supersedes / Superseded by:** prior ADRs in the same decision lineage.
 
 ## Anti-patterns to avoid
 
+- Pasting a divergent copy of the template into the ADR — always mirror
+  `docs/adr/template.md` so the corpus stays uniform.
 - Marking a fresh ADR `Accepted` — sign-off is a human step.
-- An empty Alternatives table or an all-positive Consequences section — both
-  signal the decision wasn't really weighed.
-- Recording an implementation detail as an ADR — ADRs capture *decisions with
-  trade-offs*, not routine code.
+- An empty Alternatives table or an all-positive Consequences section — both signal
+  the decision wasn't really weighed.

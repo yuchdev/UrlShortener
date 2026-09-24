@@ -89,6 +89,10 @@ This is the same ports-and-adapters discipline already used for storage
 backends (`IMetadataRepository`, `ICacheStore`, ...) in `CLAUDE.md`, applied
 one layer up between HTTP and argv.
 
+This DTO-sharing decision - including the explicit non-goals restated in the
+Explicitly-out-of-scope table below - is formalized in
+[ADR 0001 - CLI/REST Shared Command Layer](/docs/adr/0001-cli-rest-shared-command-layer.md).
+
 ## Command inventory (reference: `docs/api/README.md`, generated from `route_registry.cpp`)
 
 | REST endpoint | `operation_id` | Shared command today? | CLI command (this milestone) |

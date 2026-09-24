@@ -13,6 +13,7 @@ public:
     std::optional<Link> findById(const std::string& id) const override;
     bool slugExists(const std::string& slug) const override;
     void invalidateCache(const std::string& slug) override;
+    bool update(const Link& link, AppError* error = nullptr) override;
 };
 
 class LegacyLinkStatsReader final : public ILinkStatsReader

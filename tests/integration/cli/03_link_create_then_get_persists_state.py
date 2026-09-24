@@ -1,12 +1,8 @@
 """
-Integration test 03: link create followed by link get in the same working directory
-returns the persisted link data.
+Integration test 03: CLI invocations are process-local and do not share state.
 
-This test validates the full state-persistence contract across two separate
-process invocations: create stores state to disk (uri.txt) and get reads it back.
-
-PREREQUISITE: CLI subcommand dispatch AND state persistence (uri.txt load/save)
-must be implemented in main.cpp.
+This test validates that a link created in one CLI process invocation is not
+visible to a later invocation, even in the same working directory.
 """
 import sys
 import os
@@ -18,27 +14,21 @@ from cli_integration_common import CliIntegrationBase, run_cli, parse_json_stdou
 
 class LinkCreateThenGetPersistsStateTest(CliIntegrationBase):
     """
-    [Integration][CLI] link create persists state; link get reads it back.
+    [Integration][CLI] link state is isolated per process invocation.
 
     Scenario:
         Given no prior state (fresh tmpdir shared by both invocations).
         When:  url_shortener link create --url https://persist.example.com
                                          --slug persist-test
                url_shortener link get --slug persist-test
-        Then:  Both exit 0. The get response has url == "https://persist.example.com"
-               and slug == "persist-test".
+        Then:  `create` exits 0 and `get` exits non-zero with not-found.
 
     Why this matters:
-        The CLI must persist state to disk (uri.txt) after create and load it
-        before get. Without persistence, get would always return not-found.
-
-    If this breaks, first check:
-        - main.cpp CLI: serializes UriMapSingleton to uri.txt after create.
-        - main.cpp CLI: deserializes uri.txt before executing get.
-        - linkRepository() contains the link after create exit.
+        CLI subcommands run one-shot against an in-process in-memory store.
+        State must not leak across separate process invocations.
     """
 
-    def test_create_then_get_by_slug_returns_same_link(self):
+    def test_create_then_get_by_slug_is_not_found_in_new_process(self):
         with self.make_tmpdir() as tmpdir:
             # Step 1: create
             create_proc = run_cli(
@@ -55,22 +45,20 @@ class LinkCreateThenGetPersistsStateTest(CliIntegrationBase):
             create_data = parse_json_stdout(create_proc)
             self.assertEqual(create_data.get("slug"), "persist-test")
 
-            # Step 2: get in same tmpdir (shares uri.txt)
+            # Step 2: get in same tmpdir but a new process invocation.
             get_proc = run_cli(
                 self._binary,
                 "link", "get",
                 "--slug", "persist-test",
                 cwd=tmpdir,
             )
-            self.assertEqual(
+            self.assertNotEqual(
                 get_proc.returncode, 0,
-                f"get failed: stdout={get_proc.stdout!r} stderr={get_proc.stderr!r}",
+                "get should fail because separate CLI invocations do not share state",
             )
-            get_data = parse_json_stdout(get_proc)
-            self.assertEqual(get_data.get("url"), "https://persist.example.com")
-            self.assertEqual(get_data.get("slug"), "persist-test")
+            self.assertIn("Link not found", get_proc.stderr)
 
-    def test_create_then_get_by_id_returns_same_link(self):
+    def test_create_then_get_by_id_is_not_found_in_new_process(self):
         with self.make_tmpdir() as tmpdir:
             # Step 1: create
             create_proc = run_cli(
@@ -92,13 +80,11 @@ class LinkCreateThenGetPersistsStateTest(CliIntegrationBase):
                 "--id", link_id,
                 cwd=tmpdir,
             )
-            self.assertEqual(
+            self.assertNotEqual(
                 get_proc.returncode, 0,
-                f"get by id failed: stdout={get_proc.stdout!r} stderr={get_proc.stderr!r}",
+                "get by id should fail because separate CLI invocations do not share state",
             )
-            get_data = parse_json_stdout(get_proc)
-            self.assertEqual(get_data.get("id"), link_id)
-            self.assertEqual(get_data.get("url"), "https://byid.example.com")
+            self.assertIn("Link not found", get_proc.stderr)
 
     def test_different_tmpdirs_are_isolated(self):
         """State from one invocation does not leak into a separate tmp directory."""

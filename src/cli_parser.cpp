@@ -9,8 +9,11 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <vector>
 
 #include <boost/program_options.hpp>
+
+#include <url_shortener/cli/link_command_args.hpp>
 
 namespace po = boost::program_options;
 
@@ -51,6 +54,266 @@ uint16_t parsePort(uint32_t value)
             + " is out of valid range [1, 65535].");
     }
     return static_cast<uint16_t>(value);
+}
+
+/**
+ * @brief Map a `link` subcommand token to its LinkCliVerb enumerator.
+ *
+ * @param token The verb token (argv[2]), e.g. "create" or "delete".
+ * @return LinkCliVerb The matching verb.
+ * @throws std::invalid_argument If the token is not a recognized verb.
+ */
+LinkCliVerb parseLinkVerb(const std::string& token)
+{
+    if (token == "create") {
+        return LinkCliVerb::create;
+    }
+    if (token == "get") {
+        return LinkCliVerb::get;
+    }
+    if (token == "update") {
+        return LinkCliVerb::update;
+    }
+    if (token == "delete") {
+        return LinkCliVerb::del;
+    }
+    if (token == "enable") {
+        return LinkCliVerb::enable;
+    }
+    if (token == "disable") {
+        return LinkCliVerb::disable;
+    }
+    if (token == "restore") {
+        return LinkCliVerb::restore;
+    }
+    if (token == "preview") {
+        return LinkCliVerb::preview;
+    }
+    if (token == "stats") {
+        return LinkCliVerb::stats;
+    }
+    throw std::invalid_argument(
+        "Unknown link command: '" + token
+        + "'. Valid commands: create, get, update, delete, enable, disable, "
+          "restore, preview, stats.");
+}
+
+/**
+ * @brief Report whether a `--help`/`-h` token appears among link-scoped tokens.
+ *
+ * Mirrors the top-level parser's `--help,h` spelling so `link --help`,
+ * `link -h`, and `link <verb> --help` are all recognized as help requests.
+ *
+ * @param tokens Tokens after the `link` positional (argv[2..argc-1]).
+ * @return true If any token is `--help` or `-h`.
+ */
+bool linkHelpRequested(const std::vector<std::string>& tokens)
+{
+    for (const auto& token : tokens) {
+        if (token == "--help" || token == "-h") {
+            return true;
+        }
+    }
+    return false;
+}
+
+/**
+ * @brief Render the top-level `link` usage text listing every verb.
+ *
+ * Emitted for `link --help` (no verb). Points the reader at
+ * `link <verb> --help` for per-verb flag detail.
+ *
+ * @return std::string The multi-line usage listing.
+ */
+std::string buildLinkHelpText()
+{
+    return
+        "Usage: url_shortener link <verb> [options]\n\n"
+        "Manage short links from the command line. Run\n"
+        "`url_shortener link <verb> --help` for a verb's flags.\n\n"
+        "Verbs:\n"
+        "  create   Create a new short link.\n"
+        "  get      Look up a link by slug or id.\n"
+        "  update   Update fields of an existing link (PATCH semantics).\n"
+        "  delete   Soft-delete a link.\n"
+        "  enable   Enable a link.\n"
+        "  disable  Disable a link.\n"
+        "  restore  Restore a soft-deleted link.\n"
+        "  preview  Preview a link's target without redirecting.\n"
+        "  stats    Report click statistics for a link.\n";
+}
+
+/**
+ * @brief Render usage text for a single `link <verb>`, describing its flags.
+ *
+ * The flag spellings mirror the per-verb mappers in
+ * `src/cli/link_command_args.cpp` exactly (required vs optional, the
+ * three-state `update` flags, and the shared get/preview selector), so the
+ * help stays in step with what the parser actually accepts.
+ *
+ * @param verb The recognized link verb.
+ * @return std::string The multi-line usage text for @p verb.
+ */
+std::string buildLinkVerbHelpText(LinkCliVerb verb)
+{
+    switch (verb) {
+    case LinkCliVerb::create:
+        return
+            "Usage: url_shortener link create --url <URL> [options]\n\n"
+            "Create a new short link.\n\n"
+            "Required:\n"
+            "  --url <URL>                Target URL to shorten.\n\n"
+            "Optional:\n"
+            "  --slug <SLUG>              Custom slug for the short link.\n"
+            "  --redirect-type <temporary|permanent>\n"
+            "                             Redirect type.\n"
+            "  --expires-at <RFC3339>     Expiry timestamp (RFC3339 UTC).\n"
+            "  --enabled <BOOL>           Initial enabled state (true/false).\n"
+            "  --tag <TAG>                Tag to attach (repeatable).\n"
+            "  --metadata <KEY=VALUE>     Metadata entry (repeatable).\n"
+            "  --campaign-name|-source|-medium|-term|-content|-id <VALUE>\n"
+            "                             Campaign attribution fields.\n"
+            "  --base-domain <URL>        Base domain for the short URL.\n"
+            "  --allow-private-targets    Permit private/intranet targets.\n";
+    case LinkCliVerb::get:
+        return
+            "Usage: url_shortener link get (--slug <SLUG> | --id <ID>)\n\n"
+            "Look up a link. Exactly one selector is required.\n\n"
+            "  --slug <SLUG>              Look up the link by slug.\n"
+            "  --id <ID>                  Look up the link by id.\n";
+    case LinkCliVerb::update:
+        return
+            "Usage: url_shortener link update --slug <SLUG> [options]\n\n"
+            "Update fields of an existing link. Every optional flag uses "
+            "PATCH\nsemantics: omit it to leave the field untouched.\n\n"
+            "Required:\n"
+            "  --slug <SLUG>              Slug of the link to update.\n\n"
+            "Optional:\n"
+            "  --enabled <BOOL>           New enabled state (true/false).\n"
+            "  --expires-at <RFC3339|clear>\n"
+            "                             Set the expiry, or 'clear' to drop "
+            "it.\n"
+            "  --tags <A,B,C>             Replacement tags (comma-separated; "
+            "empty\n"
+            "                             value clears all tags).\n"
+            "  --metadata <KEY=VALUE,...> Replacement metadata (comma-separated;"
+            "\n"
+            "                             empty value clears all metadata).\n"
+            "  --campaign-name|-source|-medium|-term|-content|-id <VALUE>\n"
+            "                             Set campaign attribution fields.\n"
+            "  --clear-campaign           Clear the campaign (mutually "
+            "exclusive\n"
+            "                             with --campaign-*).\n";
+    case LinkCliVerb::del:
+        return
+            "Usage: url_shortener link delete --slug <SLUG>\n\n"
+            "Soft-delete a link.\n\n"
+            "  --slug <SLUG>              Slug of the link to delete "
+            "(required).\n";
+    case LinkCliVerb::enable:
+        return
+            "Usage: url_shortener link enable --slug <SLUG>\n\n"
+            "Enable a link.\n\n"
+            "  --slug <SLUG>              Slug of the link to enable "
+            "(required).\n";
+    case LinkCliVerb::disable:
+        return
+            "Usage: url_shortener link disable --slug <SLUG>\n\n"
+            "Disable a link.\n\n"
+            "  --slug <SLUG>              Slug of the link to disable "
+            "(required).\n";
+    case LinkCliVerb::restore:
+        return
+            "Usage: url_shortener link restore --slug <SLUG>\n\n"
+            "Restore a soft-deleted link.\n\n"
+            "  --slug <SLUG>              Slug of the link to restore "
+            "(required).\n";
+    case LinkCliVerb::preview:
+        return
+            "Usage: url_shortener link preview (--slug <SLUG> | --id <ID>)\n\n"
+            "Preview a link's target without redirecting. Exactly one "
+            "selector\nis required.\n\n"
+            "  --slug <SLUG>              Look up the link by slug.\n"
+            "  --id <ID>                  Look up the link by id.\n";
+    case LinkCliVerb::stats:
+        return
+            "Usage: url_shortener link stats --slug <SLUG> --from <EPOCH> "
+            "--to <EPOCH> --bucket <BUCKET>\n\n"
+            "Report click statistics for a link. All flags are required.\n\n"
+            "  --slug <SLUG>              Slug of the link to report on.\n"
+            "  --from <EPOCH>             Window start as a Unix epoch.\n"
+            "  --to <EPOCH>               Window end as a Unix epoch.\n"
+            "  --bucket <BUCKET>          Aggregation granularity: hour, day, "
+            "or week.\n";
+    }
+    // Unreachable: every LinkCliVerb enumerator is handled above.
+    return buildLinkHelpText();
+}
+
+/**
+ * @brief Parse a `link <verb> [options]` invocation into a LinkCliCommand.
+ *
+ * Recognizes the verb (argv[2]) and maps the remaining flags into the matching
+ * `app::` DTO via the per-verb `cli::parse*Args` mappers. Every verb (create,
+ * get, update, delete, enable, disable, restore, preview, stats) has its
+ * per-flag mapping fully implemented.
+ *
+ * @param argc Argument count.
+ * @param argv Argument vector (argv[1] is known to be "link").
+ * @param config ServerConfig receiving create-time overrides (`--base-domain`,
+ *        `--allow-private-targets`).
+ * @return LinkCliCommand The recognized verb and its parsed payload.
+ * @throws std::invalid_argument If the verb is missing/unrecognized or a
+ *         mapped verb's flags are missing, unknown, or malformed.
+ */
+LinkCliCommand parseLinkCommand(int argc, char* argv[], ServerConfig& config)
+{
+    namespace app = url_shortener::app;
+    namespace cli = url_shortener::cli;
+
+    if (argc < 3) {
+        throw std::invalid_argument(
+            "Missing link subcommand. Expected: link <verb> [options].");
+    }
+
+    LinkCliCommand command;
+    command.verb = parseLinkVerb(argv[2]);
+
+    // Flags that follow the verb, e.g. everything after `link create`.
+    const std::vector<std::string> verb_args(argv + 3, argv + argc);
+
+    switch (command.verb) {
+    case LinkCliVerb::create:
+        command.payload = cli::parseCreateArgs(verb_args, config);
+        break;
+    case LinkCliVerb::get:
+        command.payload = cli::parseGetArgs(verb_args);
+        break;
+    case LinkCliVerb::update:
+        command.payload = cli::parseUpdateArgs(verb_args);
+        break;
+    case LinkCliVerb::del:
+        command.payload = cli::parseDeleteArgs(verb_args);
+        break;
+    case LinkCliVerb::enable:
+        command.payload = cli::parseSetEnabledArgs(verb_args, true);
+        break;
+    case LinkCliVerb::disable:
+        command.payload = cli::parseSetEnabledArgs(verb_args, false);
+        break;
+    case LinkCliVerb::restore:
+        command.payload = cli::parseRestoreArgs(verb_args);
+        break;
+    case LinkCliVerb::preview:
+        // Preview reuses the get-by-slug/id query shape.
+        command.payload = cli::parsePreviewArgs(verb_args);
+        break;
+    case LinkCliVerb::stats:
+        command.payload = cli::parseStatsArgs(verb_args);
+        break;
+    }
+
+    return command;
 }
 
 } // namespace
@@ -112,6 +375,34 @@ ParseResult CliParser::parse(int argc, char* argv[]) const
         env != nullptr)
     {
         cfg.shortener_allow_private_targets = parseBool(env);
+    }
+
+    // Top-level command dispatch: a leading `link` positional selects the
+    // one-shot link-management CLI after shared shortener configuration has
+    // been loaded, while server-only option parsing remains untouched.
+    if (argc >= 2 && std::string(argv[1]) == "link") {
+        // Link-scoped help is a separate, additive concern from the top-level
+        // server `--help`: `link --help` (no verb) lists every verb, while
+        // `link <verb> --help` describes that verb's flags. Server-mode help
+        // (argv[1] != "link") never reaches here and is left byte-identical.
+        const std::vector<std::string> link_args(argv + 2, argv + argc);
+        if (linkHelpRequested(link_args)) {
+            const std::string first =
+                argc >= 3 ? std::string(argv[2]) : std::string();
+            if (first.empty() || first == "--help" || first == "-h") {
+                result.help_text = buildLinkHelpText();
+            }
+            else {
+                // A verb precedes --help: describe just that verb. An
+                // unrecognized verb still surfaces the usual parse error.
+                result.help_text =
+                    buildLinkVerbHelpText(parseLinkVerb(first));
+            }
+            result.help_requested = true;
+            return result;
+        }
+        result.command = parseLinkCommand(argc, argv, result.config);
+        return result;
     }
 
     // ---- Option storage for values that need custom conversion ----

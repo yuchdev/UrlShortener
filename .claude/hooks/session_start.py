@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """SessionStart hook - seed the session with live repo context.
 
-Emits, as additional context for the agent:
+Emits, as additional context for Claude:
   * current git branch
   * the last 5 commits (one line each)
   * any open P0/P1 issues (via the GitHub CLI if authenticated; silent if not)
@@ -9,6 +9,7 @@ Emits, as additional context for the agent:
 SessionStart context is provided by printing to stdout (the harness injects
 stdout from a SessionStart hook into the conversation context).
 """
+
 from __future__ import annotations
 
 import subprocess
@@ -61,7 +62,7 @@ def main() -> None:
     issues = _open_priority_issues()
 
     lines = [
-        "# URL Shortener - session context",
+        "# Url Shortener - session context",
         f"Branch: {branch}",
         "",
         "Recent commits:",
@@ -73,14 +74,8 @@ def main() -> None:
         lines += ["", "Open P0/P1 issues: none found (or gh not authenticated)."]
     lines += [
         "",
-        "Reminders: the redirect path is a protected fast path - keep it narrow. "
-        "Treat user-supplied URLs/slugs/bodies as untrusted (SSRF via private "
-        "targets, oversized bodies). Never log secrets, TLS private keys, DSNs, "
-        "tokens, or the analytics salt; use parameterized SQL only.",
-        "Delegate per .claude/agents/: app-architect (design/ADRs), cpp-expert "
-        "(implementation), testing-expert / test-documenter (tests), "
-        "feature-reviewer + security-auditor (review), docs-writer / docs-updater "
-        "(docs), subtask-verifier (spec compliance), agent-orchestrator (coordination).",
+        "Reminder: delegate work per your project's `.claude/CLAUDE.md` agent roster - "
+        "check it for any role that owns handling of sensitive or regulated data.",
     ]
     print("\n".join(lines))
 

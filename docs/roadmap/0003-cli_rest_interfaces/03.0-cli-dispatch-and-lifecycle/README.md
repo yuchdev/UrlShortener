@@ -20,9 +20,9 @@ invoke the resolved method, and exit - **without** constructing
 
 | # | Document | Status | Blocks |
 |---|----------|--------|--------|
-| 01 | [main.cpp branch before server construction](01-main-dispatch-before-server-construction.md) | ⬜ Not started | 02, 03 |
-| 02 | [CLI storage bootstrap](02-cli-storage-bootstrap.md) | ⬜ Not started | 03 |
-| 03 | [Exit code and process lifetime guarantees](03-exit-code-and-process-lifetime.md) | ⬜ Not started | none |
+| 01 | [main.cpp branch before server construction](01-main-dispatch-before-server-construction.md) | ✅ Complete | 02, 03 |
+| 02 | [CLI storage bootstrap](02-cli-storage-bootstrap.md) | ✅ Complete | 03 |
+| 03 | [Exit code and process lifetime guarantees](03-exit-code-and-process-lifetime.md) | ✅ Complete | none |
 
 ## Key constraints
 
