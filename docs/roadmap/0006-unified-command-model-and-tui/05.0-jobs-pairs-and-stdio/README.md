@@ -8,12 +8,12 @@
 
 Add the job runtime (catalog section 4) and everything that rides on it:
 
-1. **Jobs** - `JobStore`, `JobRunner` (bounded pool and queue, cooperative cancel, drain/shutdown), `kind=job` dispatch in the registry and the `job.get|list|cancel` commands (+ REST `/api/v1/jobs*` rows, gated like the generic endpoint).
+1. **Jobs** - `JobStore`, `JobRunner` (bounded pool and queue, cooperative cancel, drain/shutdown), `kind=job` dispatch in the registry (one mechanism, decision log D13: descriptor `job_factory` -> `IJobSubmitter::submit`, `JobRunner` implements `IJobSubmitter` and is injected as `std::shared_ptr` with `set_job_submitter`; subtask 04 proves it with the real runner) and the `job.get|list|cancel` commands (+ REST `/api/v1/jobs*` rows, gated like the generic endpoint).
 2. **Pairs** - `link.import` (CSV and NDJSON, `skip`/`fail`/`overwrite`, dry-run, capped error list) and `link.export`, with all file access isolated and path-checked.
 3. **Composition** - one process-wide `JobRunner` and the job/pair commands and the `jobs` table wired into `composition::build_command_runtime` (subtasks 20-21), so every mode (server, `cmd`, `tui`, `serve-stdio`) gets the same registry (plan C11). No subtask of this task builds its own registry.
 4. **stdio transport** - `ITransportAdapter`, the NDJSON framing, `NdjsonSession`, `StdioAdapter`, the `serve-stdio` CLI mode (with `--read-only`, `--path-root`, `--no-file-paths`) and its process-level tests, plus the `docs/commands/adding-a-transport.md` guide with an IPC worked example (design only; IPC is not implemented, decision Q12).
 
-Decisions made in this task: `JobRunner` does not reuse `AnalyticsWorker`/`BoundedClickEventQueue` (finding in subtask 02 and decision-log research item 6); `overwrite` needs a new service method (subtask 09, open decision D2); EOF on stdin is the only graceful stop of `serve-stdio` and no signal handlers are installed (subtask 15); REST and the one-shot CLI are not wrapped as `ITransportAdapter` (subtask 12, open decision D7).
+Decisions made in this task: `JobRunner` does not reuse `AnalyticsWorker`/`BoundedClickEventQueue` (finding in subtask 02 and decision-log research item 6); `overwrite` needs a new service method (subtask 09, open decision D2); EOF on stdin is the only graceful stop of `serve-stdio` and no signal handlers are installed (subtask 15); REST and the one-shot CLI are not wrapped as `ITransportAdapter` (subtask 12, open decision D7). `cmd` job waiting is a follow-up edit to 04.0/13 owned by subtask 20 (no hard edge). `link.export` with `path` needs `write` through the descriptor's `permission_for` hook (subtask 10, D16).
 
 ## Dependency graph
 
@@ -41,7 +41,7 @@ Decisions made in this task: `JobRunner` does not reuse `AnalyticsWorker`/`Bound
 | # | Document | Status | Depends on | Blocks |
 |---|----------|--------|------------|--------|
 | 01 | [Job types and JobStore](01-job-types-and-store.md) | ⬜ Not started | none | 02, 05 |
-| 02 | [JobRunner worker pool, queue, cancel](02-job-runner-worker-pool.md) | ⬜ Not started | 01 | 03, 04, 05, 21 |
+| 02 | [JobRunner worker pool, queue, cancel](02-job-runner-worker-pool.md) | ⬜ Not started | 01, 01.0/08 | 03, 04, 05, 21 |
 | 03 | [JobRunner wait, drain, shutdown](03-job-runner-wait-and-shutdown.md) | ⬜ Not started | 02 | 15, 20 |
 | 04 | [Registry job dispatch](04-registry-job-dispatch.md) | ⬜ Not started | 02, 01.0/06, 01.0/07, 01.0/08 | 05, 08, 10, 20 |
 | 05 | [job.get, job.list, job.cancel](05-job-commands.md) | ⬜ Not started | 01, 02, 04 | 11, 20, 06.0/15, 06.0/16, 06.0/17 |
@@ -59,7 +59,7 @@ Decisions made in this task: `JobRunner` does not reuse `AnalyticsWorker`/`Bound
 | 17 | [serve-stdio runtime wiring](17-serve-stdio-runtime-wiring.md) | ⬜ Not started | 12, 15, 16, 20 | 18 |
 | 18 | [serve-stdio process tests](18-serve-stdio-process-tests.md) | ⬜ Not started | 17 | 19, 07.0/07 |
 | 19 | [adding-a-transport guide](19-adding-a-transport-guide.md) | ⬜ Not started | 12, 14, 15, 18 | 08.0/04 |
-| 20 | [Process-wide job runtime in `build_command_runtime`](20-process-job-runtime-composition.md) | ⬜ Not started | 03, 04, 05, 08, 09, 10, 21, 03.0/18, 02.0/12 | 11, 17, 04.0/13, 06.0/19 |
+| 20 | [Process-wide job runtime in `build_command_runtime`](20-process-job-runtime-composition.md) | ⬜ Not started | 03, 04, 05, 08, 09, 10, 21, 02.0/12, 03.0/18 | 11, 17, 06.0/19 |
 | 21 | [`jobs` table source](21-jobs-table-source.md) | ⬜ Not started | 02, 03.0/15 | 20 |
 
 Parallel lanes once 01.0 and 03.0 are ready: A = 01-05, 21 (jobs), B = 06-10 (pairs, 08/10 need A's 04), C = 12-16 (transport; 15 needs 03); 20 joins A and B into the shared runtime, then 11 and 17. 06.0 (TUI) needs 05, 08, 10 (command contracts) and 20 (runtime, for 06.0/19).

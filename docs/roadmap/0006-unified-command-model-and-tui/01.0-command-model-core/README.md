@@ -16,8 +16,11 @@ in a new `url_shortener::commands` namespace:
 - the request and response envelope types, parser and serializer, including
   the `Job` stub (`JobInfo`, `JobState`) and the job-submission seam;
 - `ArgSpec`, `ArgsView` and argument validation;
-- `CommandDescriptor` and `CommandRegistry` with the full
-  validate -> authorize -> arg-check -> options -> handler -> audit pipeline;
+- `CommandDescriptor` (incl. `permission_for`, D16, and `job_factory`, D13) and
+  `CommandRegistry` with the full validate -> authorize -> arg-check ->
+  arg-dependent re-authorize -> options/job submit -> handler -> audit pipeline
+  (`set_job_submitter` takes the process-wide `IJobSubmitter`, implemented by
+  Task 05.0's `JobRunner`);
 - the built-in `command.list`, the catalog/help renderers and the generator
   tool with a drift test.
 
@@ -27,8 +30,11 @@ with fake handlers.
 
 ### Design note: why a scanner subtask exists
 
-ADR 0002 says `ArgsView` is "a thin accessor over the `core/utils.h` helpers".
-Reading the code shows that is not enough:
+An earlier draft of ADR 0002 called `ArgsView` "a thin accessor over the
+`core/utils.h` helpers". The current ADR text (section 2, "One sanctioned
+deviation") already names the scanner `commands::scan_object`/`scan_array` as
+the only JSON tokenizer in product code; this note records why. Reading the
+code shows the helpers are not enough:
 
 - `extractJsonValueToken` / `extractJsonStringField` find the first textual
   occurrence of `"key"` anywhere in the body, including inside nested objects
@@ -43,7 +49,7 @@ Subtask 01 therefore adds one small depth-aware top-level object scanner in
 `src/commands/`. It is not a JSON library (no DOM, no dependency, objects only,
 leaf decoding reuses `core/utils.h` where it can). This is the smallest
 deviation from "no new JSON library" that makes the ADR implementable; it is
-recorded as a risk below and in the hand-off notes.
+recorded as a risk below and as open decision D3 in the decision log.
 
 ## Subtasks
 
@@ -56,7 +62,7 @@ recorded as a risk below and in the hand-off notes.
 | 05 | [ArgSpec, ArgsView and validation](05-argspec-argsview-validation.md) | ⬜ Not started | 01, 02 | 06, 03.0/05, 03.0/07, 03.0/08, 03.0/09, 03.0/10, 03.0/14, 03.0/15, 03.0/17, 04.0/11, 06.0/02 |
 | 06 | [Descriptor and registry lookup](06-descriptor-and-registry-lookup.md) | ⬜ Not started | 03, 04, 05 | 07, 03.0/05, 03.0/07, 03.0/08, 03.0/09, 03.0/10, 03.0/14, 03.0/15, 03.0/17, 04.0/08, 05.0/04, 05.0/12, 06.0/02 |
 | 07 | [Execute pipeline and authorization](07-execute-pipeline-and-authorization.md) | ⬜ Not started | 06 | 08, 09, 10, 03.0/05, 03.0/07, 03.0/08, 03.0/09, 03.0/10, 03.0/14, 03.0/15, 03.0/17, 04.0/02, 04.0/09, 04.0/13, 05.0/04, 05.0/12, 05.0/14, 06.0/02, 06.0/18 |
-| 08 | [dry_run, async and job-submitter seam](08-dry-run-async-and-job-seam.md) | ⬜ Not started | 04, 07 | 13, 05.0/04 |
+| 08 | [dry_run, async and job-submitter seam](08-dry-run-async-and-job-seam.md) | ⬜ Not started | 04, 07 | 13, 05.0/02, 05.0/04 |
 | 09 | [Audit sink](09-audit-sink.md) | ⬜ Not started | 07 | 13, 03.0/18 |
 | 10 | [command.list built-in](10-command-list-builtin.md) | ⬜ Not started | 07 | 11, 03.0/18, 04.0/10 |
 | 11 | [Catalog and help renderers](11-catalog-and-help-renderers.md) | ⬜ Not started | 10 | 12, 04.0/13 |
@@ -114,7 +120,8 @@ use the current numbers.
 1. `ctest --test-dir cmake-build -R "^commands__" --output-on-failure` passes
    (14 test executables, label `unit`; subtask 13 owns the last two).
 2. `CommandRegistry::execute` implements the documented order
-   (lookup, permission, arg validation, options, handler, audit) and each
+   (lookup, permission, arg validation, `permission_for` re-check, options /
+   job submission, handler, audit) and each
    step has a failing-case test.
 3. Every `error.code` in [docs/commands/README.md](/docs/commands/README.md)
    section 1 is produced by at least one test and round-trips through
@@ -132,5 +139,6 @@ use the current numbers.
 - ADR 0002 type names are CamelCase while `.clang-tidy` requires lower_case;
   the repository already deviates (`LinkCommandService`). The task follows the
   ADR for type names and `.clang-tidy` for everything else.
-- The catalog hand-written sections 3.1-3.6 and the generated block will
-  overlap until Task 08.0 decides which one stays (see subtask 12).
+- The catalog hand-written sections 3.1-3.6 and the generated block 3.7
+  overlap by design (decision log D9: the generator owns only 3.7; the prose
+  is guarded by the drift test 07.0/16).

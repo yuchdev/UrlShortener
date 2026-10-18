@@ -56,19 +56,26 @@ Helpers (declared in `http/command_bridge.hpp`, implemented in `src/http/command
 ```cpp
 /// Configured role, before the peer check.
 ControlSet command_api_control_set(const ServerConfig& config);   // "admin" -> Admin, else User
-/// True for 127.0.0.0/8 and ::1 (also IPv4-mapped ::ffff:127.x.y.z).
+/// True for 127.0.0.0/8 and ::1 (also IPv4-mapped ::ffff:127.x.y.z). The IPv6 branches are moot
+/// today: every acceptor binds tcp::v4() (http_server.cpp, verified), so peers are always IPv4.
+/// They are kept (cheap, unit-tested) so a future dual-stack listener does not silently lose admin.
 bool is_loopback_peer(const boost::asio::ip::address& peer);
 /// The one caller used by every gated route (generic endpoint, GET /api/v1/links, /api/v1/jobs*):
 /// principal "command-api", transport "rest", control set = Admin only when the configured role is admin
 /// AND the peer is loopback; otherwise User. Listeners bind all IPv4 interfaces (tcp::v4() in
 /// http_server.cpp, verified), so a bind-address check is impossible; the peer check is the guard.
-commands::CallerContext command_api_caller(const ServerConfig& config, const boost::asio::ip::address& peer);
+/// An absent peer (std::nullopt) is non-loopback.
+commands::CallerContext command_api_caller(const ServerConfig& config,
+                                           const std::optional<boost::asio::ip::address>& peer);
 /// The one gate check: false -> the route answers exactly like an unmatched route.
 bool command_api_enabled(const ServerConfig& config);
 ```
 
-The peer address reaches the handler through the request context; the exact accessor (the session already logs
-`remote_addr`) is **UNVERIFIED** and is resolved in subtask 09 (add it to `RouteContext` if absent).
+The peer address reaches the handler as `RouteContext::peer`, which does **not** exist today (verified: no session reads
+`remote_endpoint()` and nothing logs the peer); subtask 09 owns that plumbing. Until 09 lands every caller passes `std::nullopt`, i.e. `User`.
+
+Help text for `--command-api-role` (verbatim intent): "admin is honoured only when the TCP peer is loopback. Behind a reverse proxy on
+the same host every request is loopback: keep 'user'. X-Forwarded-For is not honoured." (decision log D4).
 
 ## Implementation steps
 
@@ -88,8 +95,8 @@ ctest --test-dir cmake-build -R "^cli__(0[1-4]|11)_" --output-on-failure
 
 | Test file | Target | Label | Cases |
 |---|---|---|---|
-| `tests/unit/cli/11_cli_parser_command_api_flags.cpp` | `cli__11_cli_parser_command_api_flags` | unit | defaults: `command_api_enabled == false`, `command_api_role == "user"`; `--command-api-enabled true` / `false` / `1` handled like other BOOL flags; invalid bool -> `std::invalid_argument`; `--command-api-role admin` and `user` accepted; `Admin`, `root`, empty -> `std::invalid_argument`; the flags combine with `--http-port 9000`; they do not disturb the `link <verb>` and `cmd` short-circuits; `--help` text lists both flags and states the default is off, and that `admin` applies to loopback peers only. |
-| `tests/unit/http/24_command_api_caller.cpp` | `24_command_api_caller` | unit | `command_api_caller`: role `user` + loopback -> `User`; role `admin` + `127.0.0.1` / `::1` / `::ffff:127.0.0.2` -> `Admin`; role `admin` + `10.0.0.5` / `192.168.1.2` / `::ffff:10.0.0.1` -> `User`; principal and transport fixed; `command_api_enabled` mirrors the flag. |
+| `tests/unit/cli/11_cli_parser_command_api_flags.cpp` | `cli__11_cli_parser_command_api_flags` | unit | defaults: `command_api_enabled == false`, `command_api_role == "user"`; `--command-api-enabled true` / `false` / `1` handled like other BOOL flags; invalid bool -> `std::invalid_argument`; `--command-api-role admin` and `user` accepted; `Admin`, `root`, empty -> `std::invalid_argument`; the flags combine with `--http-port 9000`; they do not disturb the `link <verb>` and `cmd` short-circuits; `--help` text lists both flags and states the default is off, and that `admin` applies to loopback peers only, with the reverse-proxy warning (`X-Forwarded-For` not honoured). |
+| `tests/unit/http/24_command_api_caller.cpp` | `24_command_api_caller` | unit | `command_api_caller`: role `user` + loopback -> `User`; role `admin` + `127.0.0.1` / `::1` / `::ffff:127.0.0.2` -> `Admin`; role `admin` + `10.0.0.5` / `192.168.1.2` / `::ffff:10.0.0.1` -> `User`; role `admin` + `std::nullopt` -> `User`; principal and transport fixed; `command_api_enabled` mirrors the flag. |
 
 Manual check: `url_shortener --help` shows the group.
 

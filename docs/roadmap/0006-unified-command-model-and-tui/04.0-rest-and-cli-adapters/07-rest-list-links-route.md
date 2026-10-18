@@ -28,7 +28,8 @@ a real query-string parser (percent-decoding, repeated keys), and registers the 
   of every link (including disabled/deleted with `status=all`) and a scan of up to `kListScanLimit` rows per call. It is therefore
   **gated** like the generic endpoint (subtask 08, decision log D4): when `command_api_enabled(config)` is false it answers exactly like
   an unmatched route (byte-equal to today's `GET /api/v1/links` response); when enabled it runs with
-  `command_api_caller(config, peer)` (default role `user`, which may read), not with the resource-route `Admin` caller.
+  `command_api_caller(config, context.peer)` (`RouteContext::peer` is added by subtask 09; if this subtask lands first it passes
+  `std::nullopt`, which is non-loopback, i.e. `User` - the safe default) (default role `user`, which may read), not with the resource-route `Admin` caller.
 
 ## Files affected
 
@@ -68,7 +69,7 @@ fallback uses; capture today's bytes in the test first). Otherwise parse the que
 "<name>: duplicate". For each parameter, `integer` arguments (`offset`, `limit`) that look like `^[0-9]+$` are added with `add_raw` (a JSON integer
 token, at most 18 digits so it fits `long long`); anything else is added with `add_string` so the registry rejects it as `<arg>: wrong_type`. All other names
 (including unknown ones) are forwarded with `add_string` so the registry rejects unknown ones (`<name>: unknown`): the endpoint is strict by design.
-Then `execute_resource_command(config, "link.list", args.str(), request_id, command_api_caller(config, peer))` -> `resource_response(..., 200)`
+Then `execute_resource_command(config, "link.list", args.str(), request_id, command_api_caller(config, context.peer))` -> `resource_response(..., 200)`
 (the bridge overload that takes an explicit caller, subtask 02); registry errors surface as
 `400 invalid_request` with message `<arg>: <reason>` (the bridge maps `invalid_field`).
 

@@ -89,14 +89,16 @@ not order (0006 runs before 0002/0004); the roadmap README states this.
 ```text
  REST        CLI            TUI           serve-stdio       [IPC / gRPC ...]
   |           |              |                |                  |
-  +---------- ITransportAdapter (frame in / call / frame out) ---+
+  +-- adapters: frame in / call / frame out. Only serve-stdio (and --+
+      future IPC) implement ITransportAdapter; REST = route handler,
+      CLI = function called from main, TUI = ICommandClient (D7)
                               |
                     CommandRequest / CommandResponse   (JSON envelope v1)
                               |
                      CommandRegistry::execute
-              validate -> authorize (AccessGuard) -> ArgSpec check
+   validate -> authorize (AccessGuard) -> ArgSpec check -> permission_for (D16)
                               |                 \
-                      command handler          JobRunner (kind=job)
+                      command handler          job_factory -> IJobSubmitter = JobRunner (D13)
                               |
         LinkCommandService | BrowseService | PairService
                               |
@@ -161,8 +163,10 @@ persistence of counters runs on a background timer, never inside a request.
 **C11. One composition root.** Every process mode (server, `cmd`, `link`
 sugar, `tui`, `serve-stdio`) obtains its registry from
 `composition::build_command_runtime` (Task 03.0 subtask 18, extended for jobs
-by Task 05.0 subtask 20): one process-wide `JobRunner`, one audit sink, one
-set of registered commands. No mode builds its own registry.
+by Task 05.0 subtask 20): one process-wide `JobRunner` (held as
+`std::shared_ptr`, injected with `set_job_submitter`, decision log D13), one
+audit sink (whose destination each mode sets by initializing logging first,
+D14), one set of registered commands. No mode builds its own registry.
 
 ## Explicitly out of scope
 
@@ -225,6 +229,7 @@ same number (existing files keep their numbers):
 | `tests/integration/cli/` | 01-16 | - | 17-19 | - | 20-29 | 40-49 | - | (extends existing) |
 | `tests/unit/tui/` | - | - | - | - | - | - | 01-19 (= subtask number) | 20-69 |
 | `tests/unit/docs/` | 01-02 | (extends 02) | - | - | - | - | - | 03-09 |
+| `tests/integration/storage/` | 01-14 | - | 15 (`STORAGE_INTEGRATION_SOURCES`) | - | - | - | - | - |
 | `tests/unit/storage/*` | per folder | - | next free per folder | `listing/01-09`, next free per folder | - | - | - | - |
 | `tests/conformance/` | - | - | - | - | - | - | - | all (`runners/`, `py/`) |
 
@@ -239,4 +244,6 @@ same number (existing files keep their numbers):
 
 Other tasks only *append* to these lists. Note: test source lists live in
 `sources.cmake` (not `CMakeLists.txt` as CLAUDE.md says; corrected by Task 08.0
-subtask 06); `CMakeLists.txt` only registers them.
+subtask 06); `CMakeLists.txt` only registers them. `CONFIG_UNIT_SOURCES` and
+`CONFIG_INTEGRATION_SOURCES` exist in `sources.cmake` but are **never
+registered** (dormant); no 0006 test is added to them.

@@ -2,7 +2,7 @@
 
 **Parent task:** 04.0 REST and CLI adapters
 **State:** ⬜ Not started
-**Depends on:** 12 (parsing), 11 (coercion), 03.0/18 (`build_command_runtime`), 01.0/04 (`serialize_response`, `exit_code_for`), 01.0/07 (`execute`), 01.0/11 (`render_command_help`), 05.0/20 (`CommandRuntime::job_runner`, process-wide runner with `wait_for_terminal` from 05.0/03)
+**Depends on:** 12 (parsing), 11 (coercion), 03.0/18 (`build_command_runtime`), 01.0/04 (`serialize_response`, `exit_code_for`), 01.0/07 (`execute`), 01.0/11 (`render_command_help`) (soft, not an ordering edge: job waiting arrives with Task 05.0 subtask 20 as a follow-up edit to this file)
 **Blocks:** 15 (shares the runtime/printing helpers; 06.0/19 and 05.0/17 reuse `build_command_runtime`, not this file)
 **Estimated size:** M
 **Suggested agent:** cpp-expert
@@ -21,10 +21,17 @@ CLI adapter of ADR 0002: frame in -> `execute` -> frame out, with no per-command
 - Output contract (catalog 2 and 7 and the 07.0 CLI shim): stdout = the response envelope on one line followed by `\n`; `--raw` = only `result` JSON for successes; exit code = `exit_code_for(response)` (0 ok, table otherwise: 1 `not_found`, 2 bad input and `unknown_command`/`invalid_envelope`/`unsupported`, 3 `slug_conflict`, 4 storage/internal/`busy`/`job_cancelled`, 5 `not_authorized`).
   Failure with `--raw`: stdout stays empty, stderr gets `cmd failed: <code>: <message>`.
 - Existing sugar behavior (unchanged, C4): `link <verb>` prints only the result and writes failures to stderr. `cmd` is additive.
-- Jobs (Task 05.0): a `job` response means the command was accepted for background work. Per catalog 4, a one-shot `cmd` waits for completion and prints the final `job.get` envelope unless `--no-wait`.
-  The wait uses `runtime.job_runner->wait_for_terminal(job_id, timeout)` (05.0/03 API, exposed on `CommandRuntime` by 05.0/20), then prints the
-  `job.get` envelope executed through the same registry. `--no-wait` prints the accepted envelope. Exit code after waiting: `succeeded` 0, `failed` or
-  `cancelled` 4. Before the process exits, `composition::shutdown_process_job_runtime` (05.0/20) runs, so no worker thread outlives `main`.
+- Jobs (Task 05.0, soft): a `job` response means the command was accepted for background work. This subtask prints the accepted envelope
+  (exit 0) and one stderr note "job accepted; waiting is not available in this build" whenever `CommandRuntime` has no `job_runner`.
+  Per catalog 4 the final behaviour - wait with `runtime.job_runner->wait_for_terminal`, print the `job.get` envelope, exit 0/4,
+  `--no-wait`, and `composition::shutdown_process_job_runtime` before returning - is a **follow-up edit owned by Task 05.0 subtask 20**
+  (whichever of the two lands second applies it). No hard dependency on 05.0 (the 04.0 README calls it soft).
+- Logging (decision log D14): the one-shot modes must keep stderr exactly as today for successful commands (C4). `main` initializes
+  the logger only in server mode, and an uninitialized logger is enabled with a `stderr` sink (verified, `logger_factory.cpp`), so the
+  `LoggerAuditSink` that `build_command_runtime` installs (03.0/18) would otherwise print a `command_audit` line on stderr for every
+  successful mutation. `DispatchCmdCommand` therefore calls `LoggerFactory::Initialize(one_shot_logging_config(cmd))` before building the
+  runtime: **disabled** by default; `--log-file <path>` -> `File` sink (audit lines go there); `--verbose` -> `Stderr` sink. The flags and
+  the helper `one_shot_logging_config` are parsed/defined by subtask 12 and shared with the `link <verb>` path (subtask 15).
 - C5: the new translation unit must not include `url_shortener/http/` handler headers or Boost.Asio/Beast, must not construct `HttpServer`, and must not touch `UriMapSingleton`/`uri.txt` (grep-checked, same rule as `link_command_dispatch.cpp`).
 
 ## Files affected
@@ -55,6 +62,7 @@ int DispatchCmdCommand(const CmdCliCommand& command,
 
 Steps inside:
 
+0. `LoggerFactory::Initialize(one_shot_logging_config(command.logging))` (D14: disabled unless `--log-file`/`--verbose`); an initialization error -> `cmd failed: invalid_request: <reason>` on `err`, exit 2.
 1. `runtime = composition::build_command_runtime(config)` (a throw from wiring is reported as `cmd failed: internal` on `err`, exit 4).
 2. `command.help` -> `out << commands::render_command_help(*descriptor)`; unknown command -> exit 2 with the error envelope (`unknown_command`).
 3. Args: `json_from_stdin` -> read at most `config.max_request_body_bytes + 1` bytes from `in` (more -> exit 2, `cmd failed: invalid_envelope: args too large`); else `json_args`; else `coerce_args(descriptor ? descriptor->args : {}, pairs)` (error -> exit 2); else `"{}"`.
@@ -86,7 +94,7 @@ ctest --test-dir cmake-build -R "^cli_(20|21)_" --output-on-failure
 |---|---|---|---|
 | `tests/unit/cli/08_cmd_dispatch.cpp` | `cli__08_cmd_dispatch` | unit | `link.create` with `--json` -> exit 0, envelope has `"ok":true` and `result.slug`; same via `--arg target_url=... --arg slug=...` (identical `result` apart from generated id/timestamps); `--raw` prints only the result (valid object, no `"ok"`); `--id c-7` echoed; failures: invalid URL -> exit 2 + `"ok":false`,`invalid_url`; `link.get` unknown -> exit 1 `not_found`; unknown command -> 2 `unknown_command`; `--json 'not json'`, `--json '[1]'` and `--json '{"a":1},"command":"x"'` -> exit 2 with the `invalid_envelope` message (nothing executed); wrong-typed arg -> 2 `invalid_field`; reserved slug -> 2 `reserved_slug`; `--read-only` + `link.create` -> exit 5 `not_authorized`, `--read-only` + `link.list` -> 0; `--dry-run` on `link.create` -> 0 and the link is not stored (`link.get` in the same process -> not_found); `--dry-run` on `link.get` -> 2 `unsupported`; `--json -` reads the stream; stream larger than the limit -> exit 2; `--raw` + failure -> empty stdout, stderr line; `command.list` and `system.info` succeed; `<name> --help` prints the descriptor help and exits 0; no output ever contains the `--json` text on errors; function never throws. |
 | `tests/integration/cli/20_cmd_link_envelope.py` | `cli_20_cmd_link_envelope` | integration | spawn the real binary: `cmd link.create --json '{...}'` -> exit 0, one-line JSON envelope `ok:true`; `--raw`; `cmd link.get` unknown -> exit 1; invalid URL -> exit 2 and envelope on stdout; unknown command -> exit 2; process exits promptly (no listener, same technique as `04_cli_exits_no_listening_port.py`). |
-| `tests/integration/cli/21_cmd_inputs_and_read_only.py` | `cli_21_cmd_inputs_and_read_only` | integration | `--json -` with `input=`; `--arg` equivalent; `--read-only link.create` -> exit 5; `system.info --read-only` shows `"read_only":true`; `command.list` contains the nine link command names and `job.get`; `db.tables` lists `links`, `click_events` and `jobs`; `cmd link.export --json '{"format":"csv"}'` waits and exits 0 with a `succeeded` job envelope; `--no-wait` prints `ok:true` with `job.state`; `cmd --help` exit 0. |
+| `tests/integration/cli/21_cmd_inputs_and_read_only.py` | `cli_21_cmd_inputs_and_read_only` | integration | `--json -` with `input=`; `--arg` equivalent; `--read-only link.create` -> exit 5; `system.info --read-only` shows `"read_only":true`; `command.list` contains the nine link command names; `db.tables` lists `links` and `click_events` (plus `jobs` once 05.0/21 is wired); **stderr empty** for a successful `cmd link.create` (no audit line, C4/D14); `--log-file <tmp>` -> the file contains exactly one `command_audit` line for that create and stderr stays empty; `--verbose` -> the audit line is on stderr; `cmd --help` exit 0. (The job-waiting cases are added by the 05.0/20 follow-up edit.) |
 
 Manual check: `url_shortener cmd link.create --arg target_url=https://example.com/a --arg slug=a` and compare `result` with `url_shortener link create --url https://example.com/a --slug a` (same fields).
 
@@ -106,5 +114,5 @@ Manual check: `url_shortener cmd link.create --arg target_url=https://example.co
 ## Out of scope / risks
 
 - Persistence across invocations requires `--storage-config` (Task 02.0); in default mode every `cmd` process starts with an empty in-memory store, as `link` does today.
-- The exit code of a waited job is defined here (0/4); the runner and its shutdown come from 05.0/20.
+- The exit code of a waited job (0/4) and the waiting itself are delivered by the 05.0/20 follow-up edit; until then `cmd` prints the accepted envelope.
 - Parse errors (subtask 12) still exit 1 through `main()`'s catch; only execution errors use the table.

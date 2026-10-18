@@ -37,7 +37,7 @@ test was run. Branch `roadmap/tui-unified-command-model`.
 - **New HTTP surface on an unauthenticated server**: `/api/v1/commands`,
   `GET /api/v1/links`, `/api/v1/jobs*` are off by default and role-limited
   until Milestone 0002 (open decision D4).
-- **Open decisions D1-D12** in the decision log need a human answer before the
+- **Open decisions D1-D16** in the decision log need a human answer before the
   owning subtasks start.
 - **FTXUI claims unverified** (version, MSVC build, Windows console behavior)
   - see [decision-log.md](/docs/roadmap/0006-unified-command-model-and-tui/decision-log.md).

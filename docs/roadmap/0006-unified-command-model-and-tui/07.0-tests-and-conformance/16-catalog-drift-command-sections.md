@@ -56,7 +56,7 @@ std::string extractGeneratedRegion(const std::string& md, std::string_view begin
 | `error_table_matches_code` | every code of the 01.0 error enum appears in the catalog error table with the same HTTP status and CLI exit; and vice versa (this also pins the Python `HTTP_STATUS`/`CLI_EXIT` maps: the test additionally parses `tests/conformance/py/conformance_common.py` constants and compares) |
 | `envelope_fields_documented` | request/response field names in section 1 equal the names emitted by the 01.0 serializers on a sample envelope |
 | `perm_kind_mutating_columns_match` | per command, `Perm`, `Kind`, `Mut`, `dry_run` in the catalog equal the descriptor |
-| `argspec_tables_match` | parse the 3.1-3.6 `####` headings (`Perm`, sync/job, `Mut`, `dry_run`) and arg-table rows (name, type, required, enum values incl. `expired` for `link.list.status`) and compare with the descriptors |
+| `argspec_tables_match` | parse the 3.1-3.6 `####` headings (`Perm` = the first backticked permission = the base permission; an optional parenthetical `(`write` with `path`)` must correspond to a descriptor with `permission_for` set (D16), and its absence to an unset hook; sync/job, `Mut`, `dry_run`) and arg-table rows (name, type, required, enum values incl. `expired` for `link.list.status`) and compare with the descriptors |
 
 ## Implementation steps
 

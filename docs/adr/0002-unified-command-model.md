@@ -94,28 +94,36 @@ struct CommandDescriptor {
     std::string name;                 // "link.create"
     std::string summary;              // one line, used by --help, TUI, docs
     std::vector<ArgSpec> args;        // name, type, required, enum, doc, default
-    Permission  permission;           // read | write | migrate | manage_users
+    Permission  permission;           // read | write | migrate | manage_users (base)
+    PermissionHook permission_for;    // optional (ArgsView) -> Permission; may only RAISE the base
     ExecutionKind kind;               // sync | job
     bool        mutating;             // drives TUI confirmation + audit
     bool        supports_dry_run;     // options.dry_run allowed
     bool        async_capable;        // sync command may run as a job (options.async)
     std::vector<std::string> maps_to; // doc only: REST route / CLI verb
-    CommandHandler handler;           // (CommandContext&, ArgsView) -> CommandResult
+    CommandHandler handler;           // (CommandContext&, ArgsView) -> CommandResult  (sync)
+    JobHandlerFactory job_factory;    // (CommandContext&, ArgsView) -> JobBody | CommandError
+                                      // required iff kind == job or async_capable
 };
 
-class CommandRegistry {                // one instance per process
+class CommandRegistry {                // REST builds one per request; the job runner is shared
 public:
     void add(CommandDescriptor);
     const CommandDescriptor* find(std::string_view name) const;
     std::vector<const CommandDescriptor*> list() const;
+    void set_job_submitter(std::shared_ptr<IJobSubmitter>);   // the process-wide JobRunner
     CommandResponse execute(const CallerContext&, const CommandRequest&) const;
 };
 ```
 
 `CommandRegistry::execute` is the **only** entry point to business behavior
 for any external transport. It performs, in order: envelope validation ->
-command lookup -> permission check (`AccessGuard`) -> argument validation
-against `ArgSpec` -> handler -> response envelope. A handler decodes the
+command lookup -> base permission check (`AccessGuard`) -> argument validation
+against `ArgSpec` -> argument-dependent permission re-check (`permission_for`,
+if set; decision log D16, used by `link.export` whose `path` argument requires
+`write`) -> handler, or for a job: `job_factory` builds a self-contained
+`JobBody` on the caller thread and `IJobSubmitter::submit` queues it (decision
+log D13: this is the only job mechanism) -> response envelope. A handler decodes the
 validated args into the existing DTO (e.g. `app::UpdateLinkCommand`), calls the
 `LinkCommandService` method, and encodes the `Result<T>` with the shared
 serializer. Decode/encode live next to the handler, once.
@@ -172,19 +180,27 @@ per-command code.
 ```cpp
 struct ITransportAdapter {
     virtual ~ITransportAdapter() = default;
-    virtual std::string_view name() const = 0;   // "rest", "cli", "tui", "stdio", ...
-    virtual int run(CommandRegistry&) = 0;       // owns its own loop / one-shot
+    virtual std::string_view name() const = 0;   // "stdio" (this milestone), future "ipc", ...
+    virtual int run(CommandRegistry&) = 0;       // owns its own loop
 };
 ```
 
-| Adapter | Frame in | Frame out | Caller identity |
+`ITransportAdapter` is the contract for **stream transports that own their
+loop**. In this milestone only the stdio adapter implements it (and future IPC
+would). REST and CLI are **not** wrapped in `ITransportAdapter` (decision log
+D7): REST is a route handler inside the existing `HttpServer`/`Router`, and
+CLI is a one-shot function called from `main`; both still follow the same
+three responsibilities and call only `execute`. The TUI is a client
+(`ICommandClient`, ADR 0003), not an adapter.
+
+| Adapter (`ITransportAdapter`?) | Frame in | Frame out | Caller identity |
 |---|---|---|---|
-| REST generic | `POST /api/v1/commands` body = request envelope | HTTP 200/4xx/5xx + response envelope | until Milestone 0002: off by default (`--command-api-enabled`), fixed role from `--command-api-role` (default `user`); later the session (0002 C2) |
-| REST resource routes (existing) | method + path + body mapped by a static route->command table | unchanged bodies/status codes | same |
-| CLI one-shot | `url_shortener cmd <name> [--json '{...}' \| --arg k=v ...]`, plus the existing `link <verb>` sugar compiled to the same request | envelope (or `result` only with `--raw`) on stdout, exit code from `error.code` | local operator |
-| TUI | form fields / table actions | rendered widgets | local operator |
-| stdio NDJSON (`url_shortener serve-stdio`) | one request envelope per stdin line | one response envelope per stdout line | local operator (parent process) |
-| IPC (future) | Unix domain socket / named pipe, same NDJSON framing | same | peer credentials |
+| REST generic (no, route handler, D7) | `POST /api/v1/commands` body = request envelope | HTTP 200/4xx/5xx + response envelope | until Milestone 0002: off by default (`--command-api-enabled`), fixed role from `--command-api-role` (default `user`); later the session (0002 C2) |
+| REST resource routes (existing; no, D7) | method + path + body mapped by a static route->command table | unchanged bodies/status codes | same |
+| CLI one-shot (no, function from `main`, D7) | `url_shortener cmd <name> [--json '{...}' \| --arg k=v ...]`, plus the existing `link <verb>` sugar compiled to the same request | envelope (or `result` only with `--raw`) on stdout, exit code from `error.code` | local operator |
+| TUI (no, an `ICommandClient`, ADR 0003) | form fields / table actions | rendered widgets | local operator |
+| stdio NDJSON (`url_shortener serve-stdio`; **yes**) | one request envelope per stdin line | one response envelope per stdout line | local operator (parent process) |
+| IPC (future; yes) | Unix domain socket / named pipe, same NDJSON framing | same | peer credentials |
 
 Adding IPC (or gRPC, or a Tauri sidecar channel) means writing one class that
 implements `ITransportAdapter` and registering it in `src/composition/`. No
@@ -240,7 +256,10 @@ from the authenticated session. Until Milestone 0002 provides sessions, the
 REST server has no authentication, so the *new* HTTP surface
 (`/api/v1/commands`, `GET /api/v1/links`, `/api/v1/jobs*`) is disabled by
 default and, when enabled, runs with one configured role (`user` by default;
-`admin` honored only for loopback peers), and `manage_users` commands are
+`admin` honored only for loopback peers - the TCP peer address of the
+connection, so behind a reverse proxy on the same host every request looks
+loopback; `X-Forwarded-For` is not honoured, and such a deployment must keep
+`--command-api-role user`, decision log D4), and `manage_users` commands are
 always refused over REST. The pre-existing resource routes keep today's open
 behavior (they run as `Admin`, Milestone 0003 C3). Local one-shot/interactive transports (CLI,
 TUI, stdio) run as the local operator: the person who can start the process
@@ -252,7 +271,21 @@ only, never `0.0.0.0`) is unchanged.
 Every mutating command emits one audit line (principal, transport, command,
 slug/id, outcome - never args values that may hold secrets) through an
 `IAuditSink` that the composition root (`composition::build_command_runtime`)
-always installs.
+always installs (a `LoggerAuditSink` on the `audit` component). Where the line
+ends up is the process's logging configuration, which every mode initializes
+explicitly before building the runtime, because an uninitialized logger writes
+to stderr (decision log D14):
+
+| Mode | Audit destination (default) | Override |
+|---|---|---|
+| server (REST) | the configured server log sink (stderr by default) | existing logging config |
+| `cmd` | **nowhere** (logging disabled, so stderr stays clean, C4) | `--log-file <path>` (file) or `--verbose` (stderr) |
+| `link <verb>` sugar | nowhere (logging disabled; no new flags, C4) | use `cmd ... --log-file` |
+| `tui` | file `./url_shortener-tui.log` (never the terminal) | `--log-file <path>` |
+| `serve-stdio` | stderr (never stdout; the parent captures it) | none |
+
+The one-shot default trades the audit trail for C4 compatibility; the local
+operator who needs it passes `--log-file`. This is an open decision (D14).
 
 ## Alternatives Considered
 

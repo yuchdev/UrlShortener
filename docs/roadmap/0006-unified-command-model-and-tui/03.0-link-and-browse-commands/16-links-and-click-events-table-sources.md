@@ -43,7 +43,7 @@ no other client identifier.
 | `src/app/click_events_table_source.cpp` | create | Implementation. Add to `COMMON_CPP_SOURCES`. |
 | `tests/unit/app/46_links_table_source.cpp` | create | Links source over a fake lister. |
 | `tests/unit/app/47_click_events_table_source.cpp` | create | Click source over `InMemoryClickEventRepository`. |
-| `sources.cmake` | modify | `APP_UNIT_SOURCES` += 24, 25; `COMMON_CPP_SOURCES` += two .cpp. |
+| `sources.cmake` | modify | `APP_UNIT_SOURCES` += 46, 47; `COMMON_CPP_SOURCES` += two .cpp. |
 
 ## Classes and functions
 
@@ -95,7 +95,7 @@ fixed detail such as `click event listing failed`).
 
 ```powershell
 cmake --build cmake-build --target app__46_links_table_source app__47_click_events_table_source
-ctest --test-dir cmake-build -R "^app__2[45]_" --output-on-failure
+ctest --test-dir cmake-build -R "^app__4[67]_" --output-on-failure
 ```
 
 ## Tests

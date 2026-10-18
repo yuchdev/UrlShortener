@@ -9,7 +9,7 @@
 
 ## Objective
 
-Add `url_shortener tui [--storage-config <file>] [--read-only] [--yes] [--theme dark|light|mono]`
+Add `url_shortener tui [--storage-config <file>] [--read-only] [--yes] [--theme dark|light|mono] [--log-file <path>]`
 (ADR 0003 "Launching"). The mode must follow the one-shot CLI precedent in
 `src/main.cpp`: it short-circuits **before** any `io_context`, `HttpServer`,
 signal set or `uri.txt` load (contract C5), obtains its registry from the one
@@ -54,7 +54,9 @@ namespace url_shortener::tui {
 int run_tui(const TuiCliOptions& cli, const ServerConfig& config);
 // exit codes: 0 normal quit; 2 usage/not a terminal/built without TUI; 4 storage/bootstrap failure (matches cli::ExitCodeForAppError grouping)
 std::optional<TuiOptions> to_tui_options(const TuiCliOptions& cli, const ServerConfig& config, std::string* error);  // validates theme via parse_theme_name
-/// Logging for TUI mode: enabled=false, or sink=File at cli.log_file. Never Stdout/Stderr.
+/// Logging for TUI mode (decision log D14): always sink=File - at cli.log_file when given, otherwise
+/// at the default `url_shortener-tui.log` in the current directory (append). Never Stdout/Stderr,
+/// never disabled, so every mutation's audit line is kept.
 observability::LoggingConfig tui_logging_config(const TuiCliOptions& cli);
 }
 ```
@@ -62,7 +64,7 @@ observability::LoggingConfig tui_logging_config(const TuiCliOptions& cli);
 Behaviour of `run_tui`:
 
 1. Refuse when stdin or stdout is not a terminal (`_isatty(_fileno(stdin))` on Windows, `isatty(STDIN_FILENO)` on POSIX; no FTXUI dependency) with a one-line stderr message and exit 2.
-2. **Initialize logging explicitly** with `LoggerFactory::Initialize(tui_logging_config(cli))` *before* building the runtime: disabled by default, `File` sink when `--log-file <path>` is given. Not calling `Initialize` is not enough (verified default: enabled, stderr).
+2. **Initialize logging explicitly** with `LoggerFactory::Initialize(tui_logging_config(cli))` *before* building the runtime: `File` sink at `--log-file <path>` or, by default, `./url_shortener-tui.log` (D14: audit lines of TUI mutations must land somewhere durable, never on the screen). If the file cannot be opened, refuse to start with a one-line stderr message and exit 2. The status bar shows the log path once at start. Not calling `Initialize` is not enough (verified default: enabled, stderr).
 3. `auto runtime = composition::build_command_runtime(config);` `CallerContext{principal="local-operator", ControlSet::Admin or User if --read-only, transport="tui"}`; `InProcessClient client(*runtime.registry, caller)`.
 4. Run `App`; on quit call `composition::shutdown_process_job_runtime(std::chrono::seconds(5))` (running imports are cancelled cooperatively; partial results kept, catalog section 4) before returning.
 5. Print nothing to stdout after the alt-screen closes except errors; restore the terminal even on exceptions (RAII guard + `catch (...)`).
@@ -100,10 +102,10 @@ Stop-Process -Id $p.Id; Pop-Location
 | Test file | Target | Label | Cases |
 |---|---|---|---|
 | `tests/unit/cli/30_cli_parser_tui_mode.cpp` | `cli__30_cli_parser_tui_mode` | unit | `tui` alone -> `ParseResult.tui` set, `command` empty, `help_requested` false; each flag parsed; `tui --storage-config /x.yaml` sets `config.storage_config_path` (same helper as `link`); `--theme solarized` -> `invalid_argument`; `tui --help` sets help text; unknown flag rejected; `tui` combined with server flags (`--http-port`) rejected; existing `link get --slug x` and server-mode parse results unchanged (regression, byte-compare help text) |
-| `tests/unit/tui/19_tui_options_test.cpp` | `tui__19_tui_options_test` | unit | `to_tui_options` mapping for each theme; default values; `max_inline_bytes` propagation from `ServerConfig`; `tui_logging_config`: default -> `enabled == false`; `--log-file f` -> `sink == File`, path `f`; never `Stdout`/`Stderr` |
+| `tests/unit/tui/19_tui_options_test.cpp` | `tui__19_tui_options_test` | unit | `to_tui_options` mapping for each theme; default values; `max_inline_bytes` propagation from `ServerConfig`; `tui_logging_config`: default -> `enabled == true`, `sink == File`, path `url_shortener-tui.log`; `--log-file f` -> `sink == File`, path `f`; never `Stdout`/`Stderr`, never disabled |
 | `tests/unit/tui/19_tui_entry_boundary_test.cpp` | `tui__19_tui_entry_boundary_test` | unit | `tui_entry.cpp`, `app.cpp`, `main.cpp` text contains none of `HttpServer`, `http_server.h`, `UriMapSingleton`, `uri.txt`, `io_context` inside the tui branch (regex over the tui branch region delimited by markers `// tui-mode-begin` / `// tui-mode-end` that this subtask adds in `main.cpp`); `tui_entry.cpp` contains `build_command_runtime` and no `CommandRegistry registry`/`JobRunner` construction |
 
-Manual: [20](/docs/roadmap/0006-unified-command-model-and-tui/06.0-tui/20-manual-smoke-checklist.md) items on listener/`uri.txt`, non-TTY refusal (`url_shortener tui < NUL`), OFF build message, no stray log text on screen after a create (audit line goes nowhere or to the log file).
+Manual: [20](/docs/roadmap/0006-unified-command-model-and-tui/06.0-tui/20-manual-smoke-checklist.md) items on listener/`uri.txt`, non-TTY refusal (`url_shortener tui < NUL`), OFF build message, no stray log text on screen after a create (the audit line is in `url_shortener-tui.log` or the `--log-file` path).
 
 ## Constraints
 
@@ -121,7 +123,7 @@ Manual: [20](/docs/roadmap/0006-unified-command-model-and-tui/06.0-tui/20-manual
 3. During the session there is no listening socket and no `uri.txt` is created (manual + static test).
 4. A build with `-DURLSHORTENER_ENABLE_TUI=OFF` compiles; `url_shortener tui` exits 2 with "built without TUI support".
 5. Existing CLI parser tests (`tests/unit/cli/01-04`) still pass unchanged.
-6. Creating a link in the TUI writes no text to the terminal outside FTXUI (logging disabled or file).
+6. Creating a link in the TUI writes no text to the terminal outside FTXUI, and exactly one `command_audit` line to the log file.
 
 ## Out of scope / risks
 

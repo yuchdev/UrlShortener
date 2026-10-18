@@ -67,7 +67,7 @@ G gates             04, 06-10, 30, 32 -> 33 (CI wiring) -> 34 (coverage gap + re
 | 28 | [TUI confirm and read-only tests](28-tui-confirm-and-read-only-tests.md) | ⬜ Not started | 22, 23, Task 06.0 | 29, 34, 08.0/11 |
 | 29 | [TUI test plan and checklist traceability](29-tui-test-plan-and-checklist-traceability.md) | ⬜ Not started | 22, 23, 24, 25, 26, 27, 28, 06.0/20 | 34 |
 | 30 | [Perf label registration](30-perf-label-registration.md) | ⬜ Not started | none | 32, 33 |
-| 31 | [Redirect isolation structural guard](31-redirect-isolation-structural-guard.md) | ⬜ Not started | Task 01.0 | 34 |
+| 31 | [Redirect isolation structural guard](31-redirect-isolation-structural-guard.md) | ⬜ Not started | Task 01.0, 02.0/08 | 34 |
 | 32 | [Redirect fast-path timing guard](32-redirect-fast-path-timing-guard.md) | ⬜ Not started | 30, Task 02.0, Task 04.0 | 33, 34 |
 | 33 | [CI wiring](33-ci-wiring.md) | ⬜ Not started | 04, 06, 07, 08, 09, 10, 30, 32 | 34 |
 | 34 | [Coverage-gap run and review gates](34-coverage-gap-run-and-review-gates.md) | ⬜ Not started | 15, 16, 17, 18, 19, 20, 21, 24, 25, 26, 27, 28, 29, 31, 32, 33 | 08.0/01 |

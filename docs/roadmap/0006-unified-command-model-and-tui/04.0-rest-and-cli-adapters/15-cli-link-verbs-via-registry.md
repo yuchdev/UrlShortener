@@ -2,7 +2,7 @@
 
 **Parent task:** 04.0 REST and CLI adapters
 **State:** ⬜ Not started
-**Depends on:** 14 (converters), 13 (`cmd` dispatch: runtime/caller conventions), 03.0/18 (`build_command_runtime`), 01.0/02 (`error_info_for`, `from_app_error`), 01.0/04 (`exit_code_for`)
+**Depends on:** 14 (converters), 13 (`cmd` dispatch: runtime/caller conventions; `one_shot_logging_config` comes from 12 through 13), 03.0/18 (`build_command_runtime`), 01.0/02 (`error_info_for`, `from_app_error`), 01.0/04 (`exit_code_for`)
 **Blocks:** none (closes the task; Task 07.0 sugar-equivalence tests build on it)
 **Estimated size:** M
 **Suggested agent:** cpp-expert
@@ -23,6 +23,11 @@ while stdout, stderr text and exit codes stay exactly what the CLI documents tod
 - Registry-originated errors that did not exist before (a value rejected by an `ArgSpec` cap) cannot occur for CLI input because the caps for the nine commands are 65536/4096 (03.0/07) and argv is far smaller.
 - Config flags `--base-domain` / `--allow-private-targets` are already applied to the `ServerConfig` by `parseCreateArgs`; `build_command_runtime(config)` receives that config.
 - `--read-only` for `link` verbs is **not** added (C4: no new flags on existing verbs); `cmd --read-only` is the way to run a command as `ControlSet::User`.
+- Logging (decision log D14): the runtime installs a `LoggerAuditSink` (03.0/18), and an uninitialized logger is enabled with a
+  `stderr` sink (verified, `logger_factory.cpp`; `main` initializes logging only in server mode). Without action every successful
+  mutating verb would gain a `command_audit` line on stderr, breaking C4. `DispatchLinkCommand` therefore calls
+  `LoggerFactory::Initialize(one_shot_logging_config(OneShotLogging{}))` (subtask 12; i.e. **disabled**) before building the runtime.
+  `link` verbs get no `--log-file`/`--verbose` flags (C4); an operator who needs the audit trail uses `cmd ... --log-file`.
 
 ## Files affected
 
@@ -40,6 +45,7 @@ No new public symbols. Dispatch outline:
 ```cpp
 int DispatchLinkCommand(const LinkCliCommand& command, const ServerConfig& config)
 {
+    LoggerFactory::Initialize(one_shot_logging_config(OneShotLogging{}));   // D14: disabled, stderr stays as today
     const auto runtime = composition::build_command_runtime(config);
     const std::string args_json = <per-verb converter from subtask 14>(std::get<...>(command.payload));   // enable/disable: slug_args_json
     CommandRequest request{1, "cli-link", std::string(command_name_for(command.verb)), args_json, {}};
@@ -74,7 +80,7 @@ ctest --test-dir cmake-build -R "^e2e_1[1-8]_" --output-on-failure      # POSIX 
 
 | Test file | Target | Label | Cases |
 |---|---|---|---|
-| `tests/unit/cli/10_link_dispatch_via_registry.cpp` | `cli__10_link_dispatch_via_registry` | unit | for each of the nine verbs: success writes exactly one stdout line equal to the corresponding serializer output (preview: reduced body; stats: range report) and nothing on stderr; failures per class: `get` unknown -> exit 1 + `get failed: Link not found` + empty stdout; `create` invalid URL -> 2; reserved slug -> 2; invalid slug -> 2; duplicate slug -> 3; storage failure (forced through the legacy store seam if available, otherwise through a registry with a failing fake injected via the lister/service seam) -> 4; `update`/`delete`/`enable`/`disable`/`restore`/`preview` unknown slug -> 1; `stats` invalid timestamp -> 2 and invalid bucket -> 2 with the legacy detail text; `ExitCodeForAppError` mapping for every `AppErrorCode` unchanged (the existing 04 test passes unmodified); stdout stays empty on every failure; `cmd link.create --arg ...` and `link create --url ...` return the same `result` modulo id/timestamps (compare after masking); `--base-domain` flows into `short_url`; `--allow-private-targets true` allows a loopback target; the process never constructs an `HttpServer` (link-time check: the test binary does not reference it). |
+| `tests/unit/cli/10_link_dispatch_via_registry.cpp` | `cli__10_link_dispatch_via_registry` | unit | for each of the nine verbs: success writes exactly one stdout line equal to the corresponding serializer output (preview: reduced body; stats: range report) and nothing on stderr; **`link create` success leaves stderr completely empty** (captured `std::cerr` rdbuf; no `command_audit` line, D14), likewise `update`/`delete`/`enable`/`disable`/`restore`; failures per class: `get` unknown -> exit 1 + `get failed: Link not found` + empty stdout; `create` invalid URL -> 2; reserved slug -> 2; invalid slug -> 2; duplicate slug -> 3; storage failure (forced through the legacy store seam if available, otherwise through a registry with a failing fake injected via the lister/service seam) -> 4; `update`/`delete`/`enable`/`disable`/`restore`/`preview` unknown slug -> 1; `stats` invalid timestamp -> 2 and invalid bucket -> 2 with the legacy detail text; `ExitCodeForAppError` mapping for every `AppErrorCode` unchanged (the existing 04 test passes unmodified); stdout stays empty on every failure; `cmd link.create --arg ...` and `link create --url ...` return the same `result` modulo id/timestamps (compare after masking); `--base-domain` flows into `short_url`; `--allow-private-targets true` allows a loopback target; the process never constructs an `HttpServer` (link-time check: the test binary does not reference it). |
 
 Manual check: run the nine verbs from `docs/cli/README.md` examples before and after on the same checkout; diff stdout/stderr/exit codes.
 

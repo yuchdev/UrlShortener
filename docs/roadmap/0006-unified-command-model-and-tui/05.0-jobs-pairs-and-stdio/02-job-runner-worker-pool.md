@@ -2,7 +2,7 @@
 
 **Parent task:** 05.0 Jobs, pair import/export and stdio transport
 **State:** ⬜ Not started
-**Depends on:** 05.0/01
+**Depends on:** 05.0/01, 01.0/08 (`IJobSubmitter`; job types of 01.0/06)
 **Blocks:** 03, 04, 05, 21
 **Estimated size:** M
 **Suggested agent:** cpp-expert (tests: testing-expert)
@@ -13,7 +13,7 @@ Implement `JobRunner`: a small fixed worker pool fed by a bounded FIFO queue. `s
 
 ## Dependencies
 
-- 05.0/01 (`JobStore`, `JobRecord`, `JobState`).
+- 05.0/01 (`JobStore`, `JobRecord`, `JobState`, `JobFailure`); 01.0/06 (`JobOutcome`, `JobBody`, `IJobContext`) and 01.0/08 (`IJobSubmitter`, `JobSubmitResult`). `JobOutcome::failure` is a `CommandError`; the runner stores it as `JobFailure{error_info_for(code).name, message}` (05.0/01 keeps its own type so the store stays free of envelope headers).
 - Design decision (research item 6, see below): this class does NOT reuse `AnalyticsWorker` or `BoundedClickEventQueue`.
 - `LoggerFactory::Component("job_runner")` / `Logger::info(msg, {{key, value}})` (verified in `observability/Logger.h`).
 
@@ -35,7 +35,7 @@ Templating the queue would modify protected analytics code and its 15 unit tests
 
 | Path | Action | What changes |
 |---|---|---|
-| `include/url_shortener/commands/job_runner.hpp` | create | `JobRunnerOptions`, `JobOutcome`, `JobBody`, `JobContext`, `SubmitResult`, `JobRunner` |
+| `include/url_shortener/commands/job_runner.hpp` | create | `JobRunnerOptions`, `JobContext` (implements `IJobContext`), `JobRunner` (implements `IJobSubmitter`); includes `command_descriptor.hpp` and `job_submitter.hpp` (01.0, Beast-free) |
 | `src/commands/job_runner.cpp` | create | pool, queue, worker loop, submit, cancel, get/list delegation |
 | `tests/unit/commands/51_job_runner_pool.cpp` | create | cases below |
 | `sources.cmake` | modify | add to `COMMON_CPP_SOURCES` (feeds `url_shortener_common`; the `URL_SHORTENER_CPP` list at the top of the file is legacy): `src/commands/job_runner.cpp`; add test to `COMMANDS_UNIT_SOURCES` |
@@ -51,34 +51,28 @@ struct JobRunnerOptions {
     std::size_t max_retained_jobs = 256; // forwarded to JobStore
 };
 
-struct JobOutcome {                       // returned by a JobBody
-    bool ok = true;
-    bool cancelled = false;               // body stopped early because cancel_requested()
-    std::optional<std::string> result_json;   // may be set for ok, failed and cancelled (partial)
-    std::optional<JobFailure> failure;        // required when !ok && !cancelled
-};
+// JobOutcome, JobBody and IJobContext are declared by 01.0/06 (commands/command_descriptor.hpp) and
+// IJobSubmitter / JobSubmitResult by 01.0/08 (commands/job_submitter.hpp): one job mechanism (decision log D13).
 
-class JobContext {                        // handed to the body; owned by the worker
+class JobContext final : public IJobContext {   // handed to the body; owned by the worker
 public:
-    bool cancel_requested() const noexcept;          // relaxed atomic load
-    void set_total(std::uint64_t total);             // writes through JobStore::update_progress
-    void advance(std::uint64_t n = 1);               // done += n
+    bool cancel_requested() const noexcept override;          // relaxed atomic load
+    void set_total(std::uint64_t total) override;             // writes through JobStore::update_progress
+    void advance(std::uint64_t n = 1) override;               // done += n
 private:
     friend class JobRunner;
     JobContext(JobStore& store, std::string id, std::shared_ptr<std::atomic<bool>> cancel);
     ...
 };
-using JobBody = std::function<JobOutcome(JobContext&)>;
 
-struct SubmitResult { bool accepted = false; std::string job_id; JobFailure failure; };
-
-class JobRunner {
+class JobRunner final : public IJobSubmitter {   // injected into registries as std::shared_ptr (05.0/20)
 public:
     JobRunner(const IClock& clock, JobRunnerOptions options);   // starts workers; validates options (std::invalid_argument)
     ~JobRunner();                                               // calls shutdown() (defined in 03)
     JobRunner(const JobRunner&) = delete; JobRunner& operator=(const JobRunner&) = delete;
 
-    SubmitResult submit(std::string command, std::string args_digest, JobBody body);
+    // IJobSubmitter: busy -> {nullopt, busy}; accepted -> {JobInfo{id, "queued"}, none}
+    JobSubmitResult submit(std::string command, std::string args_digest, JobBody body) override;
     std::optional<JobRecord> get(const std::string& id) const;
     JobPage list(std::optional<JobState> filter, std::size_t offset, std::size_t limit) const;
     std::optional<JobRecord> cancel(const std::string& id);
@@ -93,8 +87,8 @@ private:
 
 Semantics:
 
-- `submit`: under `m_mutex`; if `m_stopping` or `m_queue.size() >= queue_capacity` return `{false, "", {"busy", "..."}}` (nothing stored, no record created); else `m_store.create`, push `Pending{id, body, flag}`, `notify_one`.
-- worker: pop, `mark_running`, run `body(ctx)` inside `try/catch (...)`. Mapping: exception -> `failed` with `{"internal","job failed"}` (the `what()` text goes to the log only, may contain paths); `outcome.cancelled` -> `cancelled` + `{"job_cancelled", "..."}` and keep `result_json`; `outcome.ok` -> `succeeded`; else `failed` with `outcome.failure`. Remove the flag from `m_flags`, log one `job_finished` line (id, command, state; never args).
+- `submit`: under `m_mutex`; if `m_stopping` or `m_queue.size() >= queue_capacity` return `JobSubmitResult{std::nullopt, make_error(busy, "...")}` (nothing stored, no record created); else `m_store.create`, push `Pending{id, body, flag}`, `notify_one`, return `{JobInfo{id, "queued"}, {}}`.
+- worker: pop, `mark_running`, run `body(ctx)` inside `try/catch (...)`. Mapping: exception -> `failed` with `{"internal","job failed"}` (the `what()` text goes to the log only, may contain paths); `outcome.cancelled` -> `cancelled` + `{"job_cancelled", "..."}` and keep `result_json`; `outcome.ok` -> `succeeded`; else `failed` with `outcome.failure` converted to `JobFailure`. Remove the flag from `m_flags`, log one `job_finished` line (id, command, state; never args).
 - `cancel(id)`: unknown -> `nullopt`; terminal -> return record unchanged (no-op); queued -> erase from `m_queue`, `finish(cancelled, nullopt, {"job_cancelled",...})`; running -> set the flag, return the current record (state stays `running` until the body returns).
 - A body that ignores the flag runs to completion; cancellation is cooperative by contract.
 

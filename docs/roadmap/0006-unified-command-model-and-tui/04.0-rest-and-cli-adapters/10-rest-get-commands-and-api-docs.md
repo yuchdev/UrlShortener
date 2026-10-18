@@ -42,7 +42,7 @@ BeastResponse handleListCommands(const BeastRequest& req, const ::ServerConfig& 
 ```
 
 Algorithm: gate (404 as in 09, no content-type requirement for GET) -> parse the query string with `parse_query_string` (any parameter is forwarded as an argument so the
-registry rejects it: `command.list` takes none) -> `execute_resource_command(config, "command.list", args, request_id, command_api_caller(config, peer))` (subtasks 02 and 08) ->
+registry rejects it: `command.list` takes none) -> `execute_resource_command(config, "command.list", args, request_id, command_api_caller(config, context.peer))` (subtasks 02 and 08) ->
 `resource_response(..., 200)`. Permission failures map to `403 not_authorized`.
 
 ## Implementation steps

@@ -98,7 +98,7 @@ CommandDescriptor make_db_rows_descriptor(app::TableCatalog& catalog);    // db.
 (default `asc`), `offset` int >= 0, `limit` int 1..500 default 50. Handler: `catalog.find(table)` null ->
 `not_found` (message `table not found`, never echoing the name); `sort` not among `sortable` columns ->
 `invalid_field` naming `sort`; build `TableQuery`; `source.rows(query)`; serialize.
-Results: `db.tables` -> `{"tables":[{"name","rows","writable","columns":[{"name","type"}]}]}`;
+Results: `db.tables` -> `{"tables":[{"name","rows","writable","columns":[{"name","type","sortable","searchable"}]}]}` (the two booleans are additive over the first catalog draft and now in catalog 3.2);
 `db.rows` -> `{"table","columns":[{"name","type"}],"rows":[...],"offset","limit","total"}`.
 `row_count()` failure fails the whole `db.tables` call with `storage_failure`.
 

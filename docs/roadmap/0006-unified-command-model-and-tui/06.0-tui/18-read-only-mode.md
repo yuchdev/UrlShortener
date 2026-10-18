@@ -23,8 +23,10 @@ D8, D9.
 - Internal: 06.0/02 (`SessionInfo.read_only`, `InProcessClient` built with `CallerContext{ControlSet::User}`), 04 (title), 06 (`ConfirmPolicy`), 08 (`run_mutation`, form Create button), 11 (palette disabled entries), 12-16 (per-screen action availability).
 - `security::ControlSet` in `include/url_shortener/security/control_set.hpp` and `AccessGuard` (`requireRead/requireWrite`, verified) - the registry enforces; the TUI only mirrors for presentation.
 - `system.info.read_only` (catalog 3.5) as the cross-check of the session.
-- `link.export` is a `read` command but writing to a `path` requires write (catalog 3.3, Task 05.0 subtask 10): in read-only mode the
-  Export sub-tab offers inline export only and shows the file-path field disabled with the `not_authorized` reason.
+- `link.export` has base permission `read`, but its `permission_for` hook (ADR 0002 section 2, decision log D16; Task 05.0 subtask 10)
+  raises it to `write` when `path` is given, and the registry enforces that. `command.list` reports only the base `read`, so the TUI
+  mirrors the rule explicitly for presentation: in read-only mode the Export sub-tab offers inline export only and shows the file-path
+  field disabled with the `not_authorized` reason. If the TUI sent `path` anyway, the registry would answer `not_authorized`.
 - External FTXUI: `dim`, `strikethrough`-free styling via `Theme::disabled`; no new components.
 
 ## Files affected

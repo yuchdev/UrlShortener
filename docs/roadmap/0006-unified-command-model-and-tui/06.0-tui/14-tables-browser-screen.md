@@ -20,7 +20,7 @@ edges `Tables -> RowJson` and `Tables -> LinkForm`.
 ## Dependencies
 
 - Internal: 06.0/09-10 (`TableModel`/`TableView`), 08 (`FormScreen` for insert), 11 (`ResultViewer` for row JSON), 03 (`AsyncCaller`), 05 (theme).
-- Commands: `db.tables` (result `{tables:[{name,rows,writable,columns:[{name,type}]}]}`) and `db.rows` (`{table,columns,rows,offset,limit,total}`, args `table`, `q`, `sort`, `order`, `offset`, `limit`) from catalog 3.2. Allowed sort columns are those the server lists; the TUI offers sorting on a column only if `db.tables` marks it sortable. Task 03.0 subtask 15's `TableColumn` carries `sortable`/`searchable`, but the catalog's column object lists `name`/`type` only; v1 treats every returned column as sortable and relies on the server's `invalid_field` -> toast, and the additive `sortable` key is proposed for catalog 3.2 (Task 08.0 subtask 03). The `jobs` table (Task 05.0 subtask 21) is read-only like `click_events`.
+- Commands: `db.tables` (result `{tables:[{name,rows,writable,columns:[{name,type,sortable,searchable}]}]}`) and `db.rows` (`{table,columns,rows,offset,limit,total}`, args `table`, `q`, `sort`, `order`, `offset`, `limit`) from catalog 3.2. Allowed sort columns are those the server lists; the TUI offers sorting on a column only if `db.tables` marks it sortable. Task 03.0 subtask 15's `TableColumn` carries `sortable`/`searchable` and `db.tables` emits both (catalog 3.2), so the TUI offers `s sort` only on `sortable` columns and `/ search` only when some column is `searchable`; a server `invalid_field` still becomes a toast. The `jobs` table (Task 05.0 subtask 21) is read-only like `click_events`.
 - External FTXUI: `Menu(std::vector<std::string>*, int*)`, `Container::Horizontal`, `window`, `hbox`, `vbox`, `separator`, `flex`, plus subtask 10 component.
 
 ## Files affected
@@ -97,4 +97,4 @@ ctest --test-dir cmake-build -R "^tui__14_" --output-on-failure
 
 - Editing/deleting rows from this view, SQL console, schema browsing beyond `columns`, export (use Import/Export screen).
 - Risk: counts for `click_events` (912,550) may be expensive for some backends; the screen shows `...` until `db.tables` returns and never polls it automatically.
-- Risk: `db.tables` lacks a `sortable` hint and an insert-command hint (see Dependencies).
+- Risk: `db.tables` has no insert-command hint (`links -> link.create` is hard-coded).

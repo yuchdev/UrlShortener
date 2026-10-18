@@ -41,7 +41,7 @@ allowlist only** rather than redacting configuration values.
 | `CMakeLists.txt` | modify | `target_compile_definitions(url_shortener_common PUBLIC URL_SHORTENER_VERSION="${PROJECT_VERSION}")` after the `add_library(url_shortener_common ...)` (line ~105). |
 | `tests/unit/app/48_system_info.cpp` | create | Normalization/serializer/redaction. |
 | `tests/unit/commands/28_system_info_command.cpp` | create | Command behavior. |
-| `sources.cmake` | modify | `APP_UNIT_SOURCES` += 26; `COMMANDS_UNIT_SOURCES` += 28; `COMMON_CPP_SOURCES` += two .cpp. |
+| `sources.cmake` | modify | `APP_UNIT_SOURCES` += 48; `COMMANDS_UNIT_SOURCES` += 28; `COMMON_CPP_SOURCES` += two .cpp. |
 
 ## Classes and functions
 

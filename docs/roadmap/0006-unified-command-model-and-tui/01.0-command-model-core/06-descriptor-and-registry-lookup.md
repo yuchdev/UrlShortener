@@ -66,18 +66,47 @@ struct CommandResult
 
 using CommandHandler = std::function<CommandResult(CommandContext&, const ArgsView&)>;
 
+// Job vocabulary (decision log D13). Declared here so the descriptor can carry a job factory;
+// the registry hands the body to an IJobSubmitter (subtask 08), implemented by Task 05.0's JobRunner.
+class IJobContext                 // what a running job body may do; implemented by 05.0/02
+{
+public:
+    virtual ~IJobContext() = default;
+    virtual bool cancel_requested() const noexcept = 0;
+    virtual void set_total(std::uint64_t total) = 0;
+    virtual void advance(std::uint64_t n = 1) = 0;
+};
+struct JobOutcome
+{
+    bool ok = true;
+    bool cancelled = false;                  // body stopped early because cancel_requested()
+    std::optional<std::string> result_json;  // may be set for ok, failed and cancelled (partial)
+    CommandError failure;                    // required when !ok && !cancelled
+};
+using JobBody = std::function<JobOutcome(IJobContext&)>;
+/// Validates/prepares on the caller thread (may open files), returns a self-contained body or an error.
+/// ArgsView is non-owning: the factory must COPY every value it needs into the body.
+using JobHandlerFactory =
+    std::function<std::variant<JobBody, CommandError>(const CommandContext&, const ArgsView&)>;
+/// Optional arg-dependent permission (decision log D16): evaluated by execute (01.0/07 step 4a) after
+/// ArgSpec validation; it can only RAISE the descriptor's base permission (e.g. link.export with
+/// `path` -> write): execute checks max(base, hook result) on the order read < write < migrate < manage_users.
+using PermissionHook = std::function<Permission(const ArgsView&)>;
+
 struct CommandDescriptor
 {
     std::string name;             // "link.create"
     std::string summary;          // one line
     std::vector<ArgSpec> args;
-    Permission permission = Permission::read;
+    Permission permission = Permission::read;   // base permission, checked before ArgSpec validation
+    PermissionHook permission_for;              // optional, see above
     ExecutionKind kind = ExecutionKind::sync;
     bool mutating = false;        // TUI confirmation + audit
     bool supports_dry_run = false;
     bool async_capable = false;   // may run as a job when options.async is true
     std::vector<std::string> maps_to;   // doc only: "POST /api/v1/links", "link create"
-    CommandHandler handler;
+    CommandHandler handler;       // sync handler (also used for dry_run of job commands)
+    JobHandlerFactory job_factory;   // required iff kind == job or async_capable
 };
 
 class CommandRegistry
@@ -88,7 +117,8 @@ public:
     CommandRegistry& operator=(const CommandRegistry&) = delete;
 
     /// Throws std::invalid_argument on a programming error: bad name, empty
-    /// summary, null handler, duplicate name, duplicate arg names,
+    /// summary, null handler for a sync command, missing job_factory for a job or
+    /// async_capable command, duplicate name, duplicate arg names,
     /// supports_dry_run with !mutating.
     void add(CommandDescriptor descriptor);
 
@@ -143,9 +173,10 @@ ctest --test-dir cmake-build -R "^commands__06_registry_lookup$" --output-on-fai
 - `add` + `find` round trip; `find` unknown and empty name -> `nullptr`.
 - `list()` is sorted by name regardless of insertion order; stable across calls.
 - Rejections (`std::invalid_argument`): duplicate name, invalid name
-  (`Link.create`, `link`), empty summary, null handler, duplicate arg name,
+  (`Link.create`, `link`), empty summary, null handler on a sync command,
+  `kind == job` without `job_factory`, duplicate arg name,
   `supports_dry_run` on a non-mutating command.
-- A `kind == job` read-only descriptor is accepted.
+- A `kind == job` read-only descriptor with a `job_factory` is accepted.
 - Pointers returned by `find` stay valid after later `add` calls
   (`std::map` node stability; test holds a pointer across 100 insertions).
 - Registry is non-copyable (`static_assert(!std::is_copy_constructible_v<...>)`).

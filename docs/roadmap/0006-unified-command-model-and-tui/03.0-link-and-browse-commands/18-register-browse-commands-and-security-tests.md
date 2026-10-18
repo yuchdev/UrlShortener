@@ -64,7 +64,7 @@ struct CommandRuntime {
     std::shared_ptr<app::TableCatalog> tables;
     std::shared_ptr<commands::IAuditSink> audit_sink;
     std::shared_ptr<commands::CommandRegistry> registry;
-    // Task 05.0 subtask 20 adds: commands::JobRunner* job_runner (process-wide, not owned).
+    // Task 05.0 subtask 20 adds: std::shared_ptr<commands::JobRunner> job_runner (process-wide, shared).
 };
 /// Cheap to call (wraps process-wide holders; opens no connections), so REST builds one per request
 /// (Task 04.0 subtask 02) while CLI/TUI/stdio build one per process.
@@ -78,7 +78,9 @@ CommandRuntime build_command_runtime(const ServerConfig& server, const CommandRu
 -> `CommandRegistry` + `register_link_commands` + `register_browse_commands` (+ `command.list` from 01.0/10)
 -> `registry->set_audit_sink(options.audit_sink ? options.audit_sink : std::make_shared<commands::LoggerAuditSink>(LoggerFactory::Component("audit")))`
 (milestone ADR 0002 "every mutating command emits one audit line"; the logger's sink is the process's logging
-configuration - stderr/file in server and CLI modes, disabled or file in TUI mode, never stdout in `serve-stdio`). The `SystemInfo` snapshot comes from the
+configuration, which each mode initializes **explicitly before** calling this function (decision log D14): server = its configured
+sink; `cmd` = disabled unless `--log-file` (file) or `--verbose` (stderr); `link <verb>` = disabled; TUI = file (default
+`url_shortener-tui.log`); `serve-stdio` = stderr, never stdout). This function does not initialize logging itself. The `SystemInfo` snapshot comes from the
 process-wide `app::process_system_info()` (added in subtask 17; the bootstrap that parses `--storage-config`, 02.0/11-12, calls
 `app::set_process_system_info(app::make_system_info(storage_config))`; the default is the legacy snapshot `inmemory/none/noop/disabled`). Task 05.0 subtask 20 extends this function (in place, same file) with the process-wide `JobRunner`, the job and pair commands and the `jobs` table source (05.0/21). Errors during wiring throw
 `std::runtime_error` (unrecoverable startup failure, per repo rule); expected conditions never throw.

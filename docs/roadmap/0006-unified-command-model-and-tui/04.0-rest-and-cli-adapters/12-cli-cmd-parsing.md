@@ -50,16 +50,27 @@ struct CmdCliCommand
     bool no_wait = false;    ///< --no-wait: do not wait for a job
     bool read_only = false;  ///< --read-only: run as ControlSet::User
     bool help = false;       ///< <name> --help: dispatch prints the descriptor's help
+    OneShotLogging logging;  ///< --log-file / --verbose (D14)
 };
 // ParseResult gains:  std::optional<CmdCliCommand> cmd;
+
+/// Logging policy of the one-shot modes (`cmd`, `link <verb>`), decision log D14.
+struct OneShotLogging
+{
+    std::optional<std::string> log_file;  ///< --log-file <path>: File sink
+    bool verbose = false;                 ///< --verbose: Stderr sink (with --log-file: error)
+};
+/// Default (neither flag): LoggingConfig{enabled=false}; --log-file -> {enabled, File, path};
+/// --verbose -> {enabled, Stderr}. Never Stdout. Shared by subtasks 13 and 15.
+LoggingConfig one_shot_logging_config(const OneShotLogging& logging);
 ```
 
 Accepted options (all after `cmd <name>`; order free): `--json <text|->`, `--arg <name>=<value>` (repeatable), `--id <text>`, `--raw`, `--dry-run`, `--async`, `--no-wait`,
-`--read-only`, `--help`/`-h`, plus the service-config flags `link create` already accepts: `--base-domain <url>`, `--allow-private-targets <bool>` (applied to `ParseResult::config`,
+`--read-only`, `--log-file <path>`, `--verbose`, `--help`/`-h`, plus the service-config flags `link create` already accepts: `--base-domain <url>`, `--allow-private-targets <bool>` (applied to `ParseResult::config`,
 same parsing helpers as `parseCreateArgs`).
 
 Errors (`std::invalid_argument`, messages never echo `--json` content): missing name; invalid name shape; unknown option; option missing its value; `--json` repeated; `--json` empty;
-`--json` together with `--arg`; `--id` empty or longer than `ServerConfig::request_id_max_length`; stray positional after the name. `url_shortener cmd --help` (no name) sets
+`--json` together with `--arg`; `--log-file` empty or combined with `--verbose`; `--id` empty or longer than `ServerConfig::request_id_max_length`; stray positional after the name. `url_shortener cmd --help` (no name) sets
 `help_requested` with the static usage text (options above and one example); `cmd <name> --help` sets `CmdCliCommand::help` instead (rendered by subtask 13, which has the registry).
 
 ## Implementation steps
@@ -80,7 +91,7 @@ ctest --test-dir cmake-build -R "^cli__0[1-7]_" --output-on-failure
 
 | Test file | Target | Label | Cases |
 |---|---|---|---|
-| `tests/unit/cli/07_cli_parser_cmd.cpp` | `cli__07_cli_parser_cmd` | unit | `cmd link.get --json '{"slug":"a"}'` -> fields set, `result.cmd` engaged, `result.command` empty; `--arg` repeated keeps order; `--json -` sets `json_from_stdin`; every boolean flag individually and combined; `--id abc`; `--base-domain` and `--allow-private-targets true` reach `result.config`; options before and after the name; `cmd` alone -> `std::invalid_argument`; bad names (`Link.Get`, `link`, `link..get`, empty, 65 chars) -> error; unknown flag -> error; `--json` missing value, repeated, empty, with `--arg` -> error; `--id` empty / 65 chars -> error; stray positional -> error; error text does not contain the supplied JSON; `cmd --help` -> `help_requested` with text mentioning `--json`, `--arg`, `--raw`, `--no-wait`, `--read-only`; `cmd link.get --help` -> `cmd->help == true`; `link get ...` and server flags (`--http-port 9000`) parse exactly as before (reuse cases from `01_cli_parser_link_commands.cpp`); `cmd` is recognized only as `argv[1]` (`--http-port 9000 cmd` is a server-flag error as before). |
+| `tests/unit/cli/07_cli_parser_cmd.cpp` | `cli__07_cli_parser_cmd` | unit | `cmd link.get --json '{"slug":"a"}'` -> fields set, `result.cmd` engaged, `result.command` empty; `--arg` repeated keeps order; `--json -` sets `json_from_stdin`; every boolean flag individually and combined; `--id abc`; `--log-file x.log` / `--verbose` set `logging`, both together -> error, and `one_shot_logging_config` maps none -> disabled, file -> `File`, verbose -> `Stderr`; `--base-domain` and `--allow-private-targets true` reach `result.config`; options before and after the name; `cmd` alone -> `std::invalid_argument`; bad names (`Link.Get`, `link`, `link..get`, empty, 65 chars) -> error; unknown flag -> error; `--json` missing value, repeated, empty, with `--arg` -> error; `--id` empty / 65 chars -> error; stray positional -> error; error text does not contain the supplied JSON; `cmd --help` -> `help_requested` with text mentioning `--json`, `--arg`, `--raw`, `--no-wait`, `--read-only`; `cmd link.get --help` -> `cmd->help == true`; `link get ...` and server flags (`--http-port 9000`) parse exactly as before (reuse cases from `01_cli_parser_link_commands.cpp`); `cmd` is recognized only as `argv[1]` (`--http-port 9000 cmd` is a server-flag error as before). |
 
 Manual check: `url_shortener cmd --help`.
 

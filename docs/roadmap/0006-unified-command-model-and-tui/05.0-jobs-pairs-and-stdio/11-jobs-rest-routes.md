@@ -42,7 +42,7 @@ No new classes. Route rows (catalog section 5):
 | `POST /api/v1/jobs/{id}/cancel` | `job.cancel` | path `id`; empty body accepted | write |
 
 Each handler: `if (!command_api_enabled(config)) return <unmatched-route response>;` build args with `args_builder`;
-`execute_resource_command(config, name, args, request_id, command_api_caller(config, peer))`; `resource_response(...)`.
+`execute_resource_command(config, name, args, request_id, command_api_caller(config, context.peer))`; `resource_response(...)`.
 Status codes come from the shared table in 01.0/02: `ok` -> 200 with the job object as body (same JSON as `result`),
 `not_found` -> 404, `invalid_field` -> 400, `not_authorized` -> 403, `busy` not applicable. A cancelled job reads 200 with
 `error.code = job_cancelled` inside the job object (catalog error table).

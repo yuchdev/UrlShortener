@@ -20,7 +20,7 @@ per second only while it is needed.
 
 - Internal: 06.0/03 (`AsyncCaller`, `IUiPoster`), 09-10 (table), 11 (`ResultViewer`), 06 (toast).
 - Commands (catalog 3.4): `job.list {state?, limit?, offset?}` -> `{items:[job...], total}`; `job.get {id}` -> `{id, command, state, progress{done,total}, result?, error?, created_at, finished_at?}`; `job.cancel {id}`. States `queued|running|succeeded|failed|cancelled`.
-- Field mapping: STARTED = `created_at` (catalog has no `started_at`; D8 column title kept `STARTED`; amend catalog or ADR if `started_at` is added); OUTCOME = `succeeded` -> summary from `result` (`rows`, `created`/`total`), `failed` -> `error.code`, `cancelled` -> `job_cancelled`.
+- Field mapping: STARTED = `started_at` (catalog 3.4 job object, set when the job leaves `queued`; shown as `-` while queued); OUTCOME = `succeeded` -> summary from `result` (`rows`, `created`/`total`), `failed` -> `error.code`, `cancelled` -> `job_cancelled`.
 - External FTXUI: via 10; timer via `std::thread` + `IUiPoster` (FTXUI has no timer). `ScreenInteractive::RequestAnimationFrame()` is not needed.
 
 ## Files affected
@@ -106,4 +106,4 @@ ctest --test-dir cmake-build -R "^tui__16_" --output-on-failure
 ## Out of scope / risks
 
 - Persistent job history, log streaming, per-row progress animations, retry button.
-- Risk: no `started_at` in the job record (STARTED = `created_at`); queued jobs would show a start time before they run. Show `-` while `state == queued` to avoid misleading output.
+- `started_at` is absent for queued jobs; the column shows `-` until the job runs.

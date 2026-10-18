@@ -119,8 +119,14 @@ The server has no authentication in front of `/api/v1/*` today. Therefore:
   the role from `--command-api-role user|admin` (default `user`, read-only
   commands). The listeners always bind all IPv4 interfaces (`tcp::v4()` in
   `http_server.cpp`), so `--command-api-role admin` is honored **only for
-  requests whose peer address is loopback** (`127.0.0.0/8`, `::1`); requests
-  from any other peer run as `user`.
+  requests whose TCP peer address is loopback** (`127.0.0.0/8`; `::1` is also
+  accepted but cannot occur while the acceptors are IPv4-only); requests from
+  any other peer, or with no known peer, run as `user`.
+- **Reverse proxies:** the check uses the TCP peer, not `X-Forwarded-For` /
+  `Forwarded` (those headers are spoofable and are **not honoured**). Behind a
+  reverse proxy on the same host every request arrives from loopback, so
+  `--command-api-role admin` would make every client an admin: such
+  deployments must keep `--command-api-role user` (decision log D4).
 - The generic endpoint requires `Content-Type: application/json` (`415`
   otherwise), which forces a CORS preflight and blocks "simple" cross-site
   `POST`s.
@@ -226,7 +232,7 @@ only; the resource route stays slug-only.)
 | Arg | Type | Req | Description |
 |---|---|---|---|
 | `slug` | string | yes | |
-| `from` | string | no | Range start, decimal **Unix epoch seconds** (as today's `from` query param, parsed by `LegacyLinkStatsReader::parseEpoch`). |
+| `from` | string | no | Range start, decimal **Unix epoch seconds** (as today's `from` query param, parsed by the file-local `parseEpoch` helper in an anonymous namespace of `src/app/legacy_adapters.cpp`, used by `LegacyLinkStatsReader`). |
 | `to` | string | no | Range end, epoch seconds. |
 | `bucket` | string, one of `hour`\|`day`\|`week` | no | Time-bucket size. Declared as a free string in the `ArgSpec` so the service stays the validator and the REST `invalid_bucket` code is preserved (Task 03.0 subtask 08). |
 
@@ -267,7 +273,8 @@ log (Q9).
 
 #### `db.tables` - `read`, sync
 
-No args. `result`: `{ "tables": [ { "name": "links", "rows": 1204, "writable": true, "columns": [ {"name":"slug","type":"string"} ] }, ... ] }`.
+No args. `result`: `{ "tables": [ { "name": "links", "rows": 1204, "writable": true, "columns": [ {"name":"slug","type":"string","sortable":true,"searchable":true} ] }, ... ] }`.
+`sortable` = allowed as `db.rows` `sort`; `searchable` = participates in `db.rows` `q` (both additive, Task 03.0 subtask 15).
 Logical, port-backed tables only: `links`, `click_events`, `jobs`. Never
 returns auth/session tables or columns holding hashes, tokens, salts or DSNs.
 
@@ -303,23 +310,26 @@ Bulk-insert `full_URL -> short_URL` pairs.
 Each row goes through `LinkCommandService::CreateLink` (same validation, SSRF
 check and slug rules as `link.create`; no second code path). The CSV header
 and columns are exactly `full_url,slug`. Job `result`:
-`{ "total": n, "created": n, "skipped": n, "failed": n, "errors": [ {"line": n, "code": "invalid_url"} ] }`
-(errors capped at 100).
+`{ "total": n, "created": n, "skipped": n, "failed": n, "errors": [ {"line": n, "code": "invalid_url"} ], "errors_omitted": n, "dry_run": false }`
+(`errors` capped at 100; `errors_omitted` counts the errors beyond the cap; `dry_run` echoes `options.dry_run`; Task 05.0 subtask 08).
 
-#### `link.export` - `read`, **job**
+#### `link.export` - `read` (`write` with `path`), **job**
 
 Args: `format` (`csv`|`ndjson`, required), `status`, `q`, `tag`, `campaign` (as `link.list`), `path` (optional local file, create-new only; otherwise inline `data` in the job result, size-capped). Job `result`: `{ "rows": n, "path": "..." | null, "data": "..." | null }`.
 CSV columns are `full_url,slug` (re-importable). Cells are not formula-escaped:
 targets are always `http(s)://...` and slugs match `^[A-Za-z0-9][A-Za-z0-9_-]{2,63}$`,
-so no cell can start with `=`, `+`, `-` or `@`. `path` writes a file, so a
-read-only session (`ControlSet::User`) gets `not_authorized` when `path` is
-given; inline export stays allowed.
+so no cell can start with `=`, `+`, `-` or `@`. `path` writes a file, so the
+descriptor's argument-dependent permission hook (`permission_for`, ADR 0002
+section 2, decision log D16) raises the required permission to `write` when
+`path` is present: a read-only session (`ControlSet::User`) gets
+`not_authorized` before any job is created; inline export stays `read`.
+`command.list` reports the base permission `read`.
 
 ### 3.4 Job commands
 
 | Command | Perm | Args | Result |
 |---|---|---|---|
-| `job.get` | `read` | `id` | `{ id, command, state, progress{done,total}, result?, error?, created_at, finished_at? }` |
+| `job.get` | `read` | `id` | `{ id, command, state, progress{done,total}, result?, error?, created_at, started_at?, finished_at? }` (`started_at` set when the job leaves `queued`) |
 | `job.list` | `read` | `state?`, `limit?`, `offset?` | `{ items:[job...], total }` |
 | `job.cancel` | `write` | `id` | job object; cancelling a finished job is a no-op returning its final state |
 
@@ -356,7 +366,10 @@ queued|running --cancel--> cancelled
   registry (REST server, TUI, `serve-stdio`, `cmd`), wired once by
   `composition::build_command_runtime` (Task 05.0 subtask 20). A one-shot `cmd` CLI invocation that starts a job waits for
   it to finish and prints the final `job.get` envelope (`--no-wait` prints the
-  accepted envelope, which is only useful against a long-lived process).
+  accepted envelope, which is only useful against a long-lived process). The
+  waiting arrives with Task 05.0 subtask 20 (a follow-up edit to the `cmd`
+  dispatch of Task 04.0 subtask 13); before that, `cmd` prints the accepted
+  envelope.
 - Bounded worker pool and queue; a full queue yields `busy`.
 - Cancellation is cooperative (checked between rows/pages); partial effects of
   `link.import` before cancel are kept and reported in the job result.

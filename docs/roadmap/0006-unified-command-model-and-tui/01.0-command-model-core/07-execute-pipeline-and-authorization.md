@@ -11,7 +11,7 @@
 
 Implement `CommandRegistry::execute` for plain synchronous commands: envelope
 sanity, lookup, permission check through `AccessGuard`, argument validation,
-handler call with exception isolation, and result-to-envelope conversion. This
+the optional argument-dependent permission re-check (`permission_for`, D16), handler call with exception isolation, and result-to-envelope conversion. This
 is the single entry point that every transport will use (ADR 0002 section 2,
 milestone C1/C7). `options.dry_run` / `options.async` / `kind == job` are not
 handled here (08) and, until then, fail closed with `unsupported`; audit is
@@ -64,6 +64,13 @@ response and stops):
    the schema.
 4. `validate_args(descriptor.args, request.args_json, &view, &error)` ->
    `invalid_field` (message `<arg>: <reason>` from 05).
+4a. Argument-dependent permission (decision log D16): if
+   `descriptor.permission_for` is set, `p = max(descriptor.permission,
+   descriptor.permission_for(view))` (order `read < write < migrate <
+   manage_users`); `permission_check(caller, p)` false -> `not_authorized` (same
+   fixed message). A hook that throws -> `internal`. The `max` makes the
+   re-check tighten-only, and the base check of step 3 has already run, so an
+   unauthorized caller still learns nothing about the schema.
 5. Options/job handling: if `request.options.dry_run`, `request.options.async`
    or `descriptor.kind == ExecutionKind::job` -> `unsupported` with message
    `option not supported yet` (replaced in 08).
@@ -111,6 +118,12 @@ ctest --test-dir cmake-build -R "^commands__0[67]_" --output-on-failure
   response is ok or `not_authorized`; **handler call count is 0 on denial**.
 - Denial precedes validation: an unauthorized caller with invalid args gets
   `not_authorized`, not `invalid_field`.
+- `permission_for` (D16): a `read` descriptor whose hook returns `write` when
+  arg `path` is present -> User without `path` ok, User with `path`
+  `not_authorized` and handler not called, Admin with `path` ok; hook that
+  throws -> `internal`; invalid args still give `invalid_field` before the hook
+  runs (hook never sees an unvalidated view); a `write` descriptor whose hook
+  returns `read` still requires `write` (tighten-only).
 - Validation errors: unknown key, missing required, wrong type -> `invalid_field`
   and handler not called; message names the arg and not the value.
 - Handler returns `not_found` / `slug_conflict` -> same code in the envelope,

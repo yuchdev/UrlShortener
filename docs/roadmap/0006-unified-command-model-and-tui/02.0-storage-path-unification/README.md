@@ -19,7 +19,16 @@ in-memory singleton". Reading the code shows something different and larger:
 
 - `core::LinkService` (`include/url_shortener/core/link_service.hpp`) and
   `BuildStorageAdapters` (`src/composition/storage_factory.cpp`) are used **only
-  by tests** (`tests/integration/storage/*`, `tests/unit/config/*`). No file
+  by test sources** (`tests/integration/storage/*`, `tests/unit/config/*`;
+  **dormant tests:** `CONFIG_UNIT_SOURCES` (`tests/unit/config/01-07` plus two
+  analytics round-trips) and `CONFIG_INTEGRATION_SOURCES`
+  (`tests/integration/config/01-04`, `tests/integration/storage/14_backend_swap_by_config_only.cpp`)
+  are defined in `sources.cmake` (lines ~249 and ~329) but **never registered**
+  in `CMakeLists.txt`, so they are neither built nor run. Task 02.0 therefore
+  puts its bootstrap test into the registered `STORAGE_INTEGRATION_SOURCES`
+  (subtask 11, `storage__15_link_backend_bootstrap`) and does not rely on the
+  dormant tests as evidence; registering them is a separate fix, because some
+  may no longer compile or pass). No file
   under `src/` other than `storage_factory.cpp` itself calls
   `BuildStorageAdapters`, `ParseStorageConfigFile` is never called from
   `src/main.cpp`, and nothing in `src/http/` includes `link_service.hpp`.
@@ -98,7 +107,7 @@ deliberately filters in the app layer instead, 03.0/01 and 03.0/12).
 | 05 | [recordRedirect and write-behind stats](05-record-redirect-write-behind.md) | ⬜ Not started | 04 | 08, 11 |
 | 06 | [Store tests on in-memory and SQLite](06-repository-link-store-backend-tests.md) | ⬜ Not started | 04 | none |
 | 07 | [LinkBackend holder and factory](07-link-backend-holder.md) | ⬜ Not started | none | 08, 09, 11, 03.0/11 |
-| 08 | [Redirect handlers through the backend](08-redirect-handlers-through-backend.md) | ⬜ Not started | 05, 07 | 12 |
+| 08 | [Redirect handlers through the backend](08-redirect-handlers-through-backend.md) | ⬜ Not started | 05, 07 | 12, 07.0/31 |
 | 09 | [REST and slug paths through the backend](09-rest-and-slug-paths-through-backend.md) | ⬜ Not started | 07 | 12 |
 | 10 | [--storage-config flag and env](10-storage-config-flag-and-env.md) | ⬜ Not started | none | 11, 03.0/17, 04.0/12, 06.0/19 |
 | 11 | [Backend bootstrap](11-backend-bootstrap.md) | ⬜ Not started | 04, 05, 07, 10 | 12 |

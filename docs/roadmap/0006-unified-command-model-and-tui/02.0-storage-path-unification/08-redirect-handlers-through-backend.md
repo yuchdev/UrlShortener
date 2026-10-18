@@ -3,7 +3,7 @@
 **Parent task:** 02.0 Storage path unification
 **State:** ⬜ Not started
 **Depends on:** 02.0/05, 02.0/07
-**Blocks:** 12
+**Blocks:** 12, 07.0/31 (the redirect include allowlist is captured after this change)
 **Estimated size:** S
 **Suggested agent:** cpp-expert (review: feature-reviewer, protected fast path)
 

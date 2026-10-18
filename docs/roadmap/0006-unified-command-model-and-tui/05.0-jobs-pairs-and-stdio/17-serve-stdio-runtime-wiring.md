@@ -56,14 +56,14 @@ int RunServeStdio(const ServerConfig& config, const ServeStdioCliOptions& option
 
 1. `std::ios::sync_with_stdio(false); std::cin.tie(nullptr);`
 2. Windows: `_setmode(_fileno(stdin), _O_BINARY); _setmode(_fileno(stdout), _O_BINARY);` (`<io.h>`, `<fcntl.h>`, `#ifdef _WIN32`) so `\n` is not rewritten to `\r\n` and Ctrl-Z does not end input. POSIX: `std::signal(SIGPIPE, SIG_IGN)` so a closed stdout becomes a stream failure (exit 4) instead of a kill.
-3. Logging: `LoggerFactory::Initialize(cfg)` with `cfg.sink = LogSink::Stderr` forced regardless of any configuration (a `File` sink is allowed only if explicitly configured by a later flag; `Stdout` is never allowed in this mode). Log lines, including the audit records of the runtime's `LoggerAuditSink`, go to stderr only.
+3. Logging (decision log D14): `LoggerFactory::Initialize(cfg)` with `enabled = true`, `cfg.sink = LogSink::Stderr` forced regardless of any configuration (no file-sink flag in this milestone; `Stdout` is never allowed in this mode). Log lines, **including the audit records of the runtime's `LoggerAuditSink`**, go to stderr only, so the parent process (an MCP host or script) owns the audit trail by capturing stderr; stdout carries envelopes only.
 
 `RunServeStdioOn`:
 
 1. `--path-root`, when given, must name an existing directory (else exit 2 with one stderr line, before reading input).
 2. `auto runtime = composition::build_command_runtime(config, CommandRuntimeOptions{ .file_paths = {!options.no_file_paths, options.path_root} })`
    (C++17: assign the members, no designated initializers).
-3. `TransportOptions{ read_only = options.read_only, max_line_bytes = config.max_request_body_bytes, drain_timeout = 30 s, job_runner = runtime.job_runner }`.
+3. `TransportOptions{ read_only = options.read_only, max_line_bytes = config.max_request_body_bytes, drain_timeout = 30 s, job_runner = runtime.job_runner.get() }` (the shared runner of 05.0/20; non-owning pointer for the drain).
 4. `auto adapter = composition::make_transport_adapter("stdio", transport_options, in, out); int rc = adapter->run(*runtime.registry);`
 5. `composition::shutdown_process_job_runtime(std::chrono::seconds(5))` (the adapter already drained; this joins the workers); return `rc`.
 
@@ -95,7 +95,7 @@ Bash: `echo '{"v":1,"id":"a","command":"command.list"}' | cmake-build/url_shorte
 
 | Test file | Target | Label | Cases |
 |---|---|---|---|
-| `tests/unit/cli/21_serve_stdio_dispatch.cpp` | `cli__21_serve_stdio_dispatch` | unit | `command.list` equals the list produced by `build_command_runtime` for the same config (same names, same order: no mode-specific registration); `link.create` then `link.get` in one session returns the same link; `link.import` inline CSV returns a `job`, a later `job.get` in the same session reaches `succeeded`; `db.tables` lists `links`, `click_events`, `jobs`; read-only option: `link.create` -> `not_authorized`; `--no-file-paths`: `link.import` with `path` -> `unsupported`; `--path-root <tmp>`: a `path` outside it -> `invalid_field`, inside it -> accepted; nonexistent `--path-root` -> exit 2 before reading input; logging never writes to the injected `out` (logger sink forced to stderr: assert via captured `std::cerr` rdbuf swap and empty extra output); no worker thread survives `RunServeStdioOn` (process-wide runtime shut down; `reset_process_job_runtime_for_tests` in teardown) |
+| `tests/unit/cli/21_serve_stdio_dispatch.cpp` | `cli__21_serve_stdio_dispatch` | unit | `command.list` equals the list produced by `build_command_runtime` for the same config (same names, same order: no mode-specific registration); `link.create` then `link.get` in one session returns the same link; `link.import` inline CSV returns a `job`, a later `job.get` in the same session reaches `succeeded`; `db.tables` lists `links`, `click_events`, `jobs`; read-only option: `link.create` -> `not_authorized`; `--no-file-paths`: `link.import` with `path` -> `unsupported`; `--path-root <tmp>`: a `path` outside it -> `invalid_field`, inside it -> accepted; nonexistent `--path-root` -> exit 2 before reading input; logging never writes to the injected `out` (logger sink forced to stderr: assert via captured `std::cerr` rdbuf swap and empty extra output); a successful `link.create` produces exactly one `command_audit` line on the captured stderr (D14); no worker thread survives `RunServeStdioOn` (process-wide runtime shut down; `reset_process_job_runtime_for_tests` in teardown) |
 
 Manual check: run the smoke command on Windows and Linux; confirm one JSON line on stdout, nothing else, exit code 0; `echo $?` / `$LASTEXITCODE`.
 

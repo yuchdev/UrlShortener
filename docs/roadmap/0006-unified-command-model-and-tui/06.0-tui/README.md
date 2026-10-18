@@ -140,9 +140,9 @@ parallel with 04-08; 19 can start once 04/05 exist.
 - **ADR 0003 rule 4 `MIGRATE` confirmation** is now worded as a reserved rule for future `migrate`-permission commands (no such command in 0006); the confirm policy keeps an inert, unit-tested branch (06).
 - **D7** now shows the catalog values `full_url,slug` and `overwrite` (15).
 - **`LinkView` JSON has no `expires_at`/`enabled`/`deleted_at` keys** (verified `serializeLinkViewJson`); D3 `EXPIRES` shows `-`, the detail screen reads those fields from `link.preview` (12, 13).
-- **`db.tables` has no `sortable` or insert-command hint**; subtask 14 hard-codes `links -> link.create` for insert and relies on server errors for sorting (14).
-- **No `started_at` in the job record** (STARTED shows `created_at`) (16).
+- **`db.tables` columns carry `sortable`/`searchable`** (catalog 3.2, additive); there is still no insert-command hint, so subtask 14 hard-codes `links -> link.create` (14).
+- **The job object has `started_at`** (catalog 3.4, 05.0/01 and 05.0/05); STARTED shows it, `-` while queued (16).
 - **`--yes` skips the typed-slug confirmation of `link.delete`** because ADR 0003 says confirmations are skippable; flagged in 06/18.
-- **Logging**: the TUI must not write to the console while the screen is active; verified that an uninitialized logger is enabled with a `stderr` sink, so 19 initializes logging disabled (or to `--log-file`).
+- **Logging**: the TUI must not write to the console while the screen is active; verified that an uninitialized logger is enabled with a `stderr` sink, so 19 initializes logging to a file sink (default `./url_shortener-tui.log`, or `--log-file`), never the console (decision log D14).
 - **Manual checklist location**: repo agents say `docs/test/`, the repository actually uses `docs/testing/`; this task uses `docs/testing/tui_manual_smoke.md` (20).
 - Pinned FTXUI version, MSVC build, vcpkg port and Windows-console behaviour remain to be verified in subtask 01 (decision-log "Things to research").

@@ -39,10 +39,10 @@ and flushes pending redirect counters on destruction. Called from `main`
 |---|---|---|
 | `include/url_shortener/composition/link_backend_bootstrap.hpp` | create | Handle type and `InitLinkBackend` |
 | `src/composition/link_backend_bootstrap.cpp` | create | Implementation |
-| `tests/integration/config/05_link_backend_bootstrap.cpp` | create | Bootstrap tests (SQLite temp files) |
-| `sources.cmake` | modify | `COMMON_CPP_SOURCES` += `src/composition/link_backend_bootstrap.cpp`; `CONFIG_INTEGRATION_SOURCES` += test |
+| `tests/integration/storage/15_link_backend_bootstrap.cpp` | create | Bootstrap tests (SQLite temp files) |
+| `sources.cmake` | modify | `COMMON_CPP_SOURCES` += `src/composition/link_backend_bootstrap.cpp`; `STORAGE_INTEGRATION_SOURCES` += test (registered via `register_labeled_cpp_tests(... "integration")`, CMakeLists.txt:189; `CONFIG_INTEGRATION_SOURCES` is never registered, see the 02.0 README) |
 
-Target of the test: `config__05_link_backend_bootstrap` (label integration).
+Target of the test: `storage__15_link_backend_bootstrap` (label integration).
 
 ## Classes and functions
 
@@ -129,15 +129,15 @@ them alive so later tasks can reuse them.
 ## Commands
 
 ```powershell
-cmake --build cmake-build --target config__05_link_backend_bootstrap
-ctest --test-dir cmake-build -R "^config__05_link_backend_bootstrap$" --output-on-failure
+cmake --build cmake-build --target storage__15_link_backend_bootstrap
+ctest --test-dir cmake-build -R "^storage__15_link_backend_bootstrap$" --output-on-failure
 ```
 
 ## Tests
 
 | Test file | Target | Label | Cases |
 |---|---|---|---|
-| `tests/integration/config/05_link_backend_bootstrap.cpp` | `config__05_link_backend_bootstrap` | integration | below |
+| `tests/integration/storage/15_link_backend_bootstrap.cpp` | `storage__15_link_backend_bootstrap` | integration | below |
 
 - No path -> `active() == false`, `LinkBackend::installed() == false`.
 - `metadata: {backend: inmemory}` -> active, installed, settings TTL/flush 0;
@@ -180,7 +180,7 @@ ctest --test-dir cmake-build -R "^config__05_link_backend_bootstrap$" --output-o
 
 ## Success criteria
 
-1. `config__05_link_backend_bootstrap` passes.
+1. `storage__15_link_backend_bootstrap` passes.
 2. After a thrown error nothing is installed (test).
 3. The persistence-across-`InitLinkBackend` case passes, which is the property
    the CLI integration tests (13) rely on.

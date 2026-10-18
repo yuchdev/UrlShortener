@@ -2,8 +2,8 @@
 
 **Parent task:** 05.0 Jobs, pair import/export and stdio transport
 **State:** ⬜ Not started
-**Depends on:** 05.0/03 (`wait_idle`, `cancel_all`, `shutdown`), 05.0/04 (`set_job_runner`), 05.0/05 (`register_job_commands`), 05.0/08, 05.0/09, 05.0/10 (`register_pair_commands`, `PairCommandDeps`, `overwrite` support), 05.0/21 (`jobs` table source), 03.0/18 (`build_command_runtime`, `CommandRuntime`), 02.0/12 (`main.cpp` shutdown order)
-**Blocks:** 11, 17, 04.0/13, 06.0/19
+**Depends on:** 05.0/03 (`wait_idle`, `cancel_all`, `shutdown`), 05.0/04 (registry + real runner proven through `set_job_submitter`), 05.0/05 (`register_job_commands`), 05.0/08, 05.0/09, 05.0/10 (`register_pair_commands`, `PairCommandDeps`, `overwrite` support), 05.0/21 (`jobs` table source), 03.0/18 (`build_command_runtime`, `CommandRuntime`), 02.0/12 (`main.cpp` shutdown order)
+**Blocks:** 11, 17, 06.0/19 (and the `cmd` job-wait follow-up edit to 04.0/13's file, see "Follow-up edit")
 **Estimated size:** M
 **Suggested agent:** cpp-expert (review: security-auditor for lifetimes and shutdown)
 
@@ -17,7 +17,8 @@ place where jobs are wired, for **every** process mode (milestone C11):
   `serve-stdio` build one per process);
 - registration of `job.get` / `job.list` / `job.cancel` (05) and
   `link.import` / `link.export` (08-10) on the same registry as the link and
-  browse commands, plus `registry->set_job_runner(&runner)` (04);
+  browse commands, plus `registry->set_job_submitter(runner)` (the one job
+  mechanism of 01.0/08, decision log D13; the runner is a `std::shared_ptr`);
 - the `jobs` table source (21) added to the same `TableCatalog` as `links` and
   `click_events`;
 - one shutdown function that drains jobs (bounded), cancels the rest and joins
@@ -34,7 +35,7 @@ No mode builds its own registry after this subtask: `serve-stdio` (17), `cmd`
 
 - `JobRunner(const IClock&, JobRunnerOptions)`, `JobRunnerOptions {worker_count = 2, queue_capacity = 16, max_retained_jobs = 256}`,
   `wait_idle(ms)`, `cancel_all()`, `shutdown()`, `wait_for_terminal(id, timeout)` (subtasks 02-03).
-- `CommandRegistry::set_job_runner(JobRunner*)` (non-owning, subtask 04); `register_job_commands(CommandRegistry&, JobRunner&)` (05);
+- `CommandRegistry::set_job_submitter(std::shared_ptr<IJobSubmitter>)` (01.0/08; `JobRunner` implements `IJobSubmitter`, 05.0/02); `register_job_commands(CommandRegistry&, JobRunner&)` (05);
   `register_pair_commands(CommandRegistry&, PairCommandDeps)` with `service`, `max_inline_bytes`, `list_page` (08, 10).
 - `make_jobs_table_source(const JobRunner&)` (21).
 - `CommandRuntime`, `CommandRuntimeOptions`, `build_command_runtime(const ServerConfig&, const CommandRuntimeOptions&)` (03.0/18).
@@ -48,7 +49,8 @@ No mode builds its own registry after this subtask: `serve-stdio` (17), `cmd`
 | `include/url_shortener/composition/job_runtime.hpp` | create | process-wide runner accessors and shutdown |
 | `src/composition/job_runtime.cpp` | create | implementation; add to `COMMON_CPP_SOURCES` |
 | `include/url_shortener/composition/command_runtime.hpp` | modify | `CommandRuntime::job_runner`; `CommandRuntimeOptions::file_paths` |
-| `src/composition/command_runtime.cpp` | modify | register job and pair commands, `set_job_runner`, `jobs` table |
+| `src/composition/command_runtime.cpp` | modify | register job and pair commands, `set_job_submitter`, `jobs` table |
+| `src/cli/cmd_dispatch.cpp` (created by 04.0/13) | modify (follow-up edit) | `cmd` waits for accepted jobs (see "Follow-up edit"); `tests/integration/cli/21_cmd_inputs_and_read_only.py` gains the waiting cases |
 | `src/main.cpp` | modify | server signal handler: `shutdown_process_job_runtime(30 s)` before `backend.flush()` |
 | `tests/unit/commands/64_command_runtime_jobs.cpp` | create | tests below |
 | `sources.cmake` | modify | `COMMON_CPP_SOURCES` += .cpp; `COMMANDS_UNIT_SOURCES` += test |
@@ -64,9 +66,9 @@ struct JobRuntimeSettings {
 /// if the runner already exists.
 bool configure_process_job_runtime(JobRuntimeSettings settings);
 /// The process-wide runner; created on first use (function-local static holder with a
-/// process-lifetime SystemClock), thread-safe. Never destroyed before
-/// shutdown_process_job_runtime has run.
-commands::JobRunner& process_job_runner();
+/// process-lifetime SystemClock), thread-safe. Shared ownership: registries hold it as
+/// std::shared_ptr<IJobSubmitter>. Never shut down before shutdown_process_job_runtime has run.
+std::shared_ptr<commands::JobRunner> process_job_runner();
 /// wait_idle(drain_timeout); then cancel_all(); then shutdown() (joins workers). Idempotent;
 /// a no-op if the runner was never created. Returns true when the drain finished in time.
 bool shutdown_process_job_runtime(std::chrono::milliseconds drain_timeout);
@@ -82,19 +84,33 @@ struct CommandRuntimeOptions {           // (03.0/18) gains:
     PairFileOptions file_paths;
 };
 struct CommandRuntime {                  // (03.0/18) gains:
-    commands::JobRunner* job_runner = nullptr;   // == &process_job_runner(), not owned
+    std::shared_ptr<commands::JobRunner> job_runner;   // == process_job_runner()
 };
 ```
 
 `build_command_runtime` additions, after the link and browse registration of 03.0/18:
 
-1. `auto& runner = process_job_runner();`
-2. `register_job_commands(*registry, runner);`
+1. `auto runner = process_job_runner();`
+2. `register_job_commands(*registry, *runner);`
 3. `register_pair_commands(*registry, PairCommandDeps{link_service, server.max_request_body_bytes,
    list_page_from(link_lister), options.file_paths});` - `list_page_from` captures the
    `std::shared_ptr<app::ILinkLister>` **by value**.
-4. `registry->set_job_runner(&runner); tables->add(make_jobs_table_source(runner));`
-5. `runtime.job_runner = &runner;`
+4. `registry->set_job_submitter(runner); tables->add(make_jobs_table_source(*runner));`
+5. `runtime.job_runner = runner;`
+
+### Follow-up edit: `cmd` waits for jobs (owned here, decision log D13/M4)
+
+04.0/13 ships `cmd` with a soft dependency on this subtask: until this lands, a `job`
+response is printed as the accepted envelope (exit 0) with one stderr note
+"job accepted; waiting is not available in this build". This subtask then edits
+`src/cli/cmd_dispatch.cpp`: when the response carries `job` and `--no-wait` is
+absent, call `runtime.job_runner->wait_for_terminal(id, timeout)` (05.0/03), then
+print the `job.get` envelope executed through the same registry; exit 0 for
+`succeeded`, 4 for `failed`/`cancelled`; call `shutdown_process_job_runtime` before
+returning. The integration cases (`link.export` waits; `--no-wait` prints `job.state`)
+are added to `tests/integration/cli/21_cmd_inputs_and_read_only.py` here. If 04.0/13 has
+not landed when this subtask is implemented, the follow-up is carried by 04.0/13 instead
+(whichever lands second applies it); there is no hard ordering edge between the two.
 
 **Lifetime rule (the reason this is not trivial):** a job outlives the request
 whose per-request `CommandRuntime` submitted it. Job bodies therefore capture

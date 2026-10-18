@@ -64,7 +64,7 @@ never create or read `uri.txt` / `UriMapSingleton`. Extends the existing
 ## Commands
 
 ```bash
-ctest --test-dir cmake-build -R "^(conformance_32_|commands__40_|e2e_19_)" --output-on-failure
+ctest --test-dir cmake-build -R "^(conformance_32_|commands__79_|e2e_19_)" --output-on-failure
 # e2e_19 registered only on non-Windows hosts (CMake skips e2e on CMAKE_HOST_WIN32)
 ```
 

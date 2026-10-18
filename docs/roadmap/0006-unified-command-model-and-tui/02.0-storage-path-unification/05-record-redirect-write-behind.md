@@ -90,9 +90,19 @@ void stop_stats_flusher();   // joins; also run by the destructor
 Merge-on-load (every path that loads a `Link` from `m_repo`: `findBySlug` miss,
 `findById`, list helpers): after decoding the record, under `m_stats_mutex`,
 add `m_pending[slug]` (if any) to the decoded stats before caching/returning
-it. Persisted counters plus pending deltas is therefore always the true value;
-an L1 TTL expiry (5 s) shorter than the flush interval (30 s), or a size
-eviction, cannot regress counters.
+it. Outside a flush, persisted counters plus pending deltas is the true value,
+so an L1 TTL expiry (5 s) shorter than the flush interval (30 s), or a size
+eviction, does not regress counters.
+
+**Residual race (stated honestly, R-2):** `flush_stats()` swaps `m_pending`
+out *before* it writes. A repository load that runs between that swap and the
+slug's `UpdateLink` sees the old persisted value and an empty pending entry, so
+it returns (and caches in L1 for up to the TTL) a count that is **too low** by
+the in-flight delta. Persisted totals are not affected (the delta is written,
+or re-queued on failure), so the low value self-corrects on the next load after
+the flush. Closing the window needs an "in-flight" map consulted by
+merge-on-load until the write returns; this spec leaves it open because the
+counters are display-only (R-3). Across processes, R-1 below still applies.
 
 `flush_stats()` (flusher thread or shutdown only):
 
@@ -206,6 +216,9 @@ unit tests are registered through `ALL_UNIT_SOURCES`, whose loop in
 - **R-1** residual race inside a flush (read then write of one attribute):
   needs a repository-level atomic counter (`IncrementCounter(short_code, ...)`)
   or compare-and-swap on `version`; port change for architect decision.
+  Two processes flushing the same slug inside that window lose one delta.
+- **R-2** transient under-read during a flush (see "Residual race" above);
+  persisted totals stay correct.
 - Counter loss on crash between flushes (up to `stats_flush_interval`);
   acceptable because stats are provisional (see 07_stats_increment_test notes
   "Stage 2 provisional stats").
