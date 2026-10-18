@@ -41,6 +41,16 @@ Rationale for the prefix choice, the "no accounts in V1" line, and the
 reuse-not-fork API decision lives in
 [00-decision-record.md](/docs/roadmap/0004-web-ui/00-decision-record.md).
 
+> **Note (added with Milestone 0006):** no blocker. This UI keeps using the
+> existing `POST /api/v1/links`; it may optionally use the generic
+> `POST /api/v1/commands` endpoint from
+> [Milestone 0006](/docs/roadmap/0006-unified-command-model-and-tui/plan.md).
+> If SC5 public-create rate limiting is built, apply it in the REST adapter
+> (the `POST /api/v1/links` route and the generic endpoint's `link.create`
+> bridge), keyed by HTTP client, not in the `link.create` command handler: the
+> local CLI/TUI/stdio transports are the operator and are not throttled (open
+> decision in the 0006 decision log).
+
 ## Decision Record
 
 Short, focused rationale for the three decisions that are not obvious from

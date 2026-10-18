@@ -9,6 +9,8 @@ are in `assets/`.
 | ADR | Title | Status | Date |
 |-----|-------|--------|------|
 | [0001](0001-cli-rest-shared-command-layer.md) | CLI/REST Shared Command Layer | Accepted | 2026-09-23 |
+| [0002](0002-unified-command-model.md) | Unified Command Model (JSON commands and jobs, pluggable transports) | Proposed | 2026-10-19 |
+| [0003](0003-tui-framework-and-architecture.md) | TUI Framework (FTXUI) and Architecture | Proposed | 2026-10-19 |
 
 ## Template
 
