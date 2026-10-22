@@ -37,7 +37,7 @@ Targets: `docs__04_command_route_table_consistency`, `docs__05_api_reference_mat
 | Case | Assertion |
 |---|---|
 | `table_rows_have_registered_routes` | each catalog section 5 row (method + path pattern) exists in `registeredRoutes()` (except the "any (generic)" row's command column) |
-| `registered_command_routes_have_rows` | each route registered for the command family (`/api/v1/links*`, `/api/v1/commands`, `/api/v1/jobs*`) appears in section 5 |
+| `registered_command_routes_have_rows` | each route registered for the command family (`/api/v1/links*`, `/api/v1/commands`, `/api/v1/jobs*`) that has an actual command mapping appears in section 5; exclude placeholder routes such as `/qr` and `/routing` (catalog section 3.6), rather than selecting routes by path prefix alone |
 | `route_command_exists_in_registry` | the command named by the static route table exists in `CommandRegistry` |
 | `operation_ids_unique_and_documented` | operation ids of the new routes are unique and follow the existing naming pattern (copy the rule from `01_route_registry.cpp`) |
 | `compatibility_aliases_not_in_command_table` | `/api/v1/short-urls*` and `/r/{slug}` never appear in section 5 (plan: not commands) |

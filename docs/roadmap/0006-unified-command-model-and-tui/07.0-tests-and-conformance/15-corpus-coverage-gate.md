@@ -40,7 +40,7 @@ def main(argv) -> int          # --binary PATH, --catalog PATH, --corpus DIR, --
 Checks (each finding names the missing item):
 
 1. **Command coverage:** for each registry command, at least one case where it is the `command` of a step whose `expect.ok == true` (or, for commands that only produce jobs, `expect_accept`), and at least one failing case unless the descriptor has no documented error (read-only `command.list`, `system.info`).
-2. **Error-code coverage:** each code from the catalog table appears as `expect.error.code` somewhere in the corpus or is waived with a justification and the name of the unit test that covers it (`tools/conformance_waivers.json`: `{"storage_failure": "tests/unit/app/18_link_command_service_update_storage_failure.cpp", "internal": "<01.0 unit test>"}`; the tool verifies the named file exists).
+2. **Error-code coverage:** each code from the catalog table appears as `expect.error.code` somewhere in the corpus, or as `expect.result.error.code` for a nested job outcome such as `job_cancelled`, or is waived with a justification and the name of the unit test that covers it (`tools/conformance_waivers.json`: `{"storage_failure": "tests/unit/app/18_link_command_service_update_storage_failure.cpp", "internal": "<01.0 unit test>"}`; the tool verifies the named file exists).
 3. **Route coverage:** each row of catalog section 5 has a step with `rest_resource` using that method+path pattern.
 4. **Mutating coverage:** each `mutating` command has an `authz_matrix_*` case (`tools/conformance_gen_authz.py --check` clean).
 5. **Dry-run coverage:** each descriptor with `dry_run: true` has a case with `options.dry_run`; each without has an `unsupported` case (at least one representative, not per-command).

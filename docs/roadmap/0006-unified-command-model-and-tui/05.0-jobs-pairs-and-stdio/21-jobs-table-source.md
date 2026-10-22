@@ -59,11 +59,12 @@ Columns (fixed, literal constants, in this order; S = sortable, Q = searchable):
 | `finished_at` | timestamp | S | RFC 3339 UTC or empty |
 
 `writable() == false`. `row_count()` = `runner.list(nullopt, 0, 1).total`.
-`rows(query)`: take a snapshot `runner.list(nullopt, 0, max_retained_jobs)`,
-filter by `q` (case-insensitive substring of `id` or `command`), sort by the
-requested sortable column (default `created_at` descending), page by
-`offset`/`limit`, serialize each row with `jsonString`-escaped values. The
-snapshot is bounded by the store's retention (`max_retained_jobs`, default 256).
+`rows(query)`: snapshot all records retained by the runner, including active
+jobs. Do not cap the snapshot at `max_retained_jobs`: active jobs are preserved
+and can make the retained record count exceed that value. Then filter by `q`
+(case-insensitive substring of `id` or `command`), sort by the requested
+sortable column (default `created_at` descending), page by `offset`/`limit`, and
+serialize each row with `jsonString`-escaped values.
 
 ## Implementation steps
 

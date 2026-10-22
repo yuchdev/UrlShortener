@@ -49,7 +49,7 @@ and remove statements that Task 02.0 made false.
 cmake-build/url_shortener cmd --help
 cmake-build/url_shortener serve-stdio --help
 cmake-build/url_shortener tui --help
-cmake-build/url_shortener cmd link.import --json '{"format":"csv","data":"https://example.com/a,a"}'
+cmake-build/url_shortener cmd link.import --json '{"format":"csv","data":"https://example.com/a,abc"}'
 ```
 
 ## Tests
