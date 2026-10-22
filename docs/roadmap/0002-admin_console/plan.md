@@ -35,6 +35,14 @@ of which provider produced it.
 Full rationale, provider comparison, and naming conventions live in
 [00-decision-record.md](/docs/roadmap/0002-admin_console/00-decision-record.md).
 
+> **Note (added with Milestone 0006):** [Milestone 0006](/docs/roadmap/0006-unified-command-model-and-tui/plan.md)
+> must complete first. Link/pair browsing and mutation in this console are
+> backed by the shared command registry (`link.list`, `link.stats`, `db.rows`,
+> `link.create`...), so `/admin/api/v1` is a projection of those commands
+> (`page`/`page_size` -> `offset`/`limit`, error codes mapped) rather than a
+> second implementation. Task 02.0 subtask 01 shrinks accordingly; cookie/CSRF
+> session auth (C2) and the analytics/fingerprint endpoints are unchanged.
+
 ## Architecture
 
 | Area | Decision |

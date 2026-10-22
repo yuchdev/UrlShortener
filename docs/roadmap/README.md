@@ -66,12 +66,22 @@ absolute-from-repo-root Markdown link:
 | 0003 | CLI & REST command interfaces (shared command layer for link management) | [plan.md](/docs/roadmap/0003-cli_rest_interfaces/plan.md) | [status.md](/docs/roadmap/0003-cli_rest_interfaces/status.md) |
 | 0004 | Public web UI (paste a URL, get a short link, copy it) | [plan.md](/docs/roadmap/0004-web-ui/plan.md)                        | [status.md](/docs/roadmap/0004-web-ui/status.md)                          |
 | 0005 | Windows secret-store backend selection             | [plan.md](/docs/roadmap/0005-windows-backend-selection/plan.md)      | [status.md](/docs/roadmap/0005-windows-backend-selection/status.md)       |
+| 0006 | Unified command model & TUI (JSON commands/jobs shared by REST, CLI, TUI, stdio/IPC; FTXUI terminal UI) | [plan.md](/docs/roadmap/0006-unified-command-model-and-tui/plan.md) | [status.md](/docs/roadmap/0006-unified-command-model-and-tui/status.md) |
 
-> All five milestones are decomposed into the full task → subtask tree.
-> Milestone 0001 is **fully implemented** (see its
-> [status.md](/docs/roadmap/0001-rest-api-refactoring/status.md) for verified
-> test/build evidence). Milestones 0002, 0003, 0004, and 0005 are fully
-> specified but **not started** - see each one's `status.md` for open risks,
-> and note that 0005's plan.md carries an unresolved verification question (no
-> existing Linux `secret-store` implementation could be located in this
-> repository to confirm parity against).
+> All six milestones are decomposed into the full task → subtask tree.
+> Milestones 0001 and 0003 are **fully implemented** (see their
+> `status.md` files for verified test/build evidence). Milestones 0002, 0004,
+> 0005 and 0006 are fully specified but **not started**; see each one's
+> `status.md` for open risks. Note that 0005's plan.md carries an unresolved
+> verification question (no existing Linux `secret-store` implementation could
+> be located in this repository to confirm parity against).
+
+### Execution order
+
+Milestone numbers are identifiers, not a schedule. **0006 runs before 0002 and
+0004**, because the web admin console, public web UI and a future Tauri admin
+panel consume the command model (`POST /api/v1/commands`, `link.list`, `db.*`,
+jobs) that 0006 defines. Suggested order: `0006` → (`0002` ∥ `0004`) → Tauri
+(no milestone yet). `0005` is independent. See
+[0006 plan.md](/docs/roadmap/0006-unified-command-model-and-tui/plan.md),
+"Roadmap review and placement".
