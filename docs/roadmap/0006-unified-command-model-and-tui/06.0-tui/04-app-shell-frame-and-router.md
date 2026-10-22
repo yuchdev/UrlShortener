@@ -3,7 +3,7 @@
 **Parent task:** 06.0 Terminal UI
 **State:** ⬜ Not started
 **Depends on:** 06.0/01, 02, 03
-**Blocks:** 05, 06, 08, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20
+**Blocks:** 05, 06, 08, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21
 **Estimated size:** L
 **Suggested agent:** cpp-expert
 
@@ -43,14 +43,14 @@ implements the screen transitions of **D11**. Screens are registered through an
 
 ```cpp
 enum class ScreenId { dashboard, links, link_detail, link_form, tables, row_json, import_export,
-                      jobs, job_detail, analytics, palette, generic_form, confirm };   // NEW (D11 nodes + analytics tab)
+                      jobs, job_detail, analytics, settings, palette, generic_form, confirm };   // NEW (D11 nodes + analytics/settings tabs)
 
 class Router {                                       // NEW, pure
 public:
     Router();                                        // starts at dashboard (D11 [*] -> Dashboard)
     ScreenId current() const;
     const std::vector<ScreenId>& stack() const;
-    bool navigate_tab(char key);                     // '1'..'6', ':' per D1 tab bar; clears stack to [tab]
+    bool navigate_tab(char key);                     // '1'..'7', ':' per D1 tab bar; clears stack to [tab]
     bool push(ScreenId next);                        // only D11-legal edges; returns false and leaves state if illegal
     bool pop();                                      // 'q' / Esc = back; no-op at a tab root
     static bool is_legal(ScreenId from, ScreenId to);// the D11 edge table, single source of truth
@@ -97,6 +97,7 @@ D11 edge table (encode exactly): dashboard->{links,tables,import_export,jobs,pal
 4. `App::run`: create `ScreenInteractive::Fullscreen()`, construct `FtxuiPoster`, `AsyncCaller`, call `system.info` asynchronously before first paint (show "connecting..." until the response; failure -> toast, frame still usable), root component = `CatchEvent(Container::Tab(screens, &active_index) wrapped in frame Renderer, global_key_handler)`.
 5. Global key handler (only when no text `Input` has focus - see Constraints): digits and `:` call `navigate_tab`, `q`/Esc `pop`, `F1` toggles help (stub hook for 05), Ctrl-C exits via `screen.ExitLoopClosure()`.
 6. Analytics tab ([6] in D1): register `placeholder_screen` rendering "Analytics: provided by Milestone 0002" (ADR 0003 non-goal); keep the tab visible to match D1.
+6b. Settings tab ([7] in D1, added 2026-10-22, ADR 0003 D13): unlike Analytics this is a **real** screen, not a placeholder - this subtask only registers the `[7]` tab slot and the `7` hotkey (`navigate_tab`), rendering `placeholder_screen` as a temporary body until 06.0/21 registers its own `SettingsScreen` via `register_screen`; no code in this subtask reads `system.info` or any `ServerConfig` field itself.
 7. 80x24 minimum: if `Terminal::Size()` is smaller render a single "terminal too small (need 80x24)" element instead of the frame.
 
 ## Commands
@@ -110,8 +111,8 @@ ctest --test-dir cmake-build -R "^tui__04_" --output-on-failure
 
 | Test file | Target | Label | Cases |
 |---|---|---|---|
-| `04_router_test.cpp` | `tui__04_router_test` | unit | start = dashboard; every legal D11 edge accepted, every other pair rejected (exhaustive 13x13 loop vs the table); `pop` at tab root is a no-op; tab keys from nested screens reset the stack; `confirm` return target restored |
-| `04_frame_model_test.cpp` | `tui__04_frame_model_test` | unit | title for Admin vs User (`user: local/User`); banner only when `!persistent`; tab list has 6 entries + palette, active flag follows `ScreenId`; long backend label truncated at 60 chars with `...` |
+| `04_router_test.cpp` | `tui__04_router_test` | unit | start = dashboard; every legal D11 edge accepted, every other pair rejected (exhaustive 14x14 loop vs the table, `ScreenId` now has 14 values including `settings`); `pop` at tab root is a no-op; tab keys from nested screens reset the stack; `confirm` return target restored |
+| `04_frame_model_test.cpp` | `tui__04_frame_model_test` | unit | title for Admin vs User (`user: local/User`); banner only when `!persistent`; tab list has 7 entries + palette, active flag follows `ScreenId`; long backend label truncated at 60 chars with `...` |
 | `04_frame_render_test.cpp` | `tui__04_frame_render_test` | unit | golden `d01_frame_80x24.txt` (placeholder body), `d01_frame_memory_banner_80x24.txt`, `d01_frame_narrow_60x20.txt` shows the too-small message; resizing 80x24 -> 100x30 keeps footer on last row |
 
 Manual: start/quit cleanly in Windows Terminal, legacy conhost, a Linux terminal (see [20](/docs/roadmap/0006-unified-command-model-and-tui/06.0-tui/20-manual-smoke-checklist.md)).

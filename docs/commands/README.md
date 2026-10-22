@@ -342,7 +342,7 @@ Milestone 0002 adds users, `job.*` must filter by principal.
 | Command | Perm | Result |
 |---|---|---|
 | `command.list` | `read` | `{ "commands": [ { name, summary, perm, kind, mutating, dry_run, args:[{name,type,required,enum?,doc}] } ] }` - the descriptors themselves. Drives TUI palette/forms, CLI `--help`, client codegen. |
-| `system.info` | `read` | `{ version, backend:{metadata,cache,analytics,rate_limit}, persistent:bool, read_only:bool }` - only allowlisted backend *names* are emitted (never paths, DSNs or addresses); any future free-form value goes through `::observability::redactSecretValue` (`storage_observability.hpp`). |
+| `system.info` | `read` | `{ version, backend:{metadata,cache,analytics,rate_limit}, persistent:bool, read_only:bool, shortener:{base_domain,generated_slug_length,default_redirect_type,default_expiry_seconds,allow_private_targets,analytics_enabled,max_request_body_bytes,max_request_target_length,request_id_max_length} }` - only allowlisted backend *names* and the non-secret `shortener_*`/hardening fields of `ServerConfig` are emitted (never TLS paths/passphrase, never `analytics_client_hash_salt`, never DSNs/addresses/paths); any future free-form value goes through `::observability::redactSecretValue` (`storage_observability.hpp`). Backs the TUI Settings screen (ADR 0003 D13). |
 
 ### 3.6 Deliberately not commands
 

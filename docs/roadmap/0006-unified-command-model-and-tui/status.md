@@ -17,12 +17,29 @@ Tracks progress against [plan.md](/docs/roadmap/0006-unified-command-model-and-t
 
 **Legend:** ✅ Complete · 🔶 In progress / partial · ⬜ Not started
 
-**Current gate status:** design only (2026-10-19). Delivered so far:
+**Current gate status:** design complete, decisions confirmed, implementation
+not started (2026-10-22). Delivered so far:
 [ADR 0002](/docs/adr/0002-unified-command-model.md) and
-[ADR 0003](/docs/adr/0003-tui-framework-and-architecture.md) (both
-**Proposed**), the [command catalog](/docs/commands/README.md), this
-milestone's plan and task/subtask specs. No code has changed; no build or
-test was run. Branch `roadmap/tui-unified-command-model`.
+[ADR 0003](/docs/adr/0003-tui-framework-and-architecture.md) (both still
+**Proposed** - intentionally; see below), the [command catalog](/docs/commands/README.md),
+this milestone's plan and task/subtask specs, and (2026-10-22) a human review
+of all D1-D16 open decisions plus a new Settings screen (D13 in ADR 0003,
+Task 06.0 subtask 21) added after the headless design pass. No code has
+changed; no build or test was run. Branch `roadmap/tui-unified-command-model`,
+merged to `master` locally (not yet pushed).
+
+**D1-D16 are confirmed, not open.** Every recommendation in
+[decision-log.md](/docs/roadmap/0006-unified-command-model-and-tui/decision-log.md)
+was reviewed with the user on 2026-10-22 and adopted as-is (see that file's
+"Human review" section) - none were reversed. This un-blocks every owning
+subtask listed in the decision log.
+
+**ADR 0002/0003 stay `Proposed` on purpose**, even after the D1-D16 review:
+flipping them to `Accepted` is Task 08.0 subtask 01's job, which requires Task
+07.0's gates to have actually passed and real artifacts (pinned FTXUI
+version, `tui --help` output, as-built deltas) that do not exist before any
+code is written. Confirming the decisions removes the planning-level
+blocker; it is not a substitute for that gate.
 
 ## Open risks
 
@@ -30,20 +47,21 @@ test was run. Branch `roadmap/tui-unified-command-model`.
   redirect fast path depend on; it is the highest-risk task and is gated by
   the existing contract suite plus the protected-fast-path rule (C10: behavior
   and complexity unchanged; redirect counters are persisted only by a
-  background flusher, open decision D12).
+  background flusher, per confirmed decision D12).
 - **No JSON library**: one bounded top-level scanner (Task 01.0 subtask 01) is
-  the only sanctioned deviation from the manual helpers (open decision D3);
-  escalate to a separate ADR rather than adding a dependency inline.
+  the only sanctioned deviation from the manual helpers (per confirmed
+  decision D3); escalate to a separate ADR rather than adding a dependency
+  inline.
 - **New HTTP surface on an unauthenticated server**: `/api/v1/commands`,
   `GET /api/v1/links`, `/api/v1/jobs*` are off by default and role-limited
-  until Milestone 0002 (open decision D4).
-- **Open decisions D1-D16** in the decision log need a human answer before the
-  owning subtasks start.
+  until Milestone 0002 (per confirmed decision D4).
 - **FTXUI claims unverified** (version, MSVC build, Windows console behavior)
-  - see [decision-log.md](/docs/roadmap/0006-unified-command-model-and-tui/decision-log.md).
+  - see [decision-log.md](/docs/roadmap/0006-unified-command-model-and-tui/decision-log.md);
+  still scoped to Task 06.0 subtask 01, unchanged by the 2026-10-22 review.
 - **Overlap with 0002** pagination/error contracts; reconciliation is a
   documented projection but must be re-checked when 0002 is scheduled.
-- **Tauri** has no spec; its relationship to 0002 is an open question (Q14).
+- **Tauri** has no spec; its relationship to 0002 is an open question (Q14),
+  explicitly left open on 2026-10-22 - nothing in 0006 depends on the answer.
 
 ## Notes & decisions
 

@@ -3,16 +3,21 @@
 **Parent task:** 03.0 Link and browse commands on the registry
 **State:** ⬜ Not started
 **Depends on:** 01.0/05-07 (descriptor, `execute`, caller context); 02.0/10 (`--storage-config` / env flag: only then does a `StorageConfig` actually select the backend the commands use)
-**Blocks:** 18, 06.0/17
+**Blocks:** 18, 06.0/17, 06.0/21
 **Estimated size:** S
 **Suggested agent:** cpp-expert (security-auditor reviews in subtask 18)
 
 ## Objective
 
-Implement `system.info`: `{version, backend:{metadata,cache,analytics,rate_limit}, persistent, read_only}`.
-It is the TUI status-bar source and a cheap "which backend am I talking to" check. It must be impossible for
-it to disclose a DSN, file path, address, key, password or salt, so it reports **backend names from a fixed
-allowlist only** rather than redacting configuration values.
+Implement `system.info`: `{version, backend:{metadata,cache,analytics,rate_limit}, persistent, read_only,
+shortener:{base_domain,generated_slug_length,default_redirect_type,default_expiry_seconds,
+allow_private_targets,analytics_enabled,max_request_body_bytes,max_request_target_length,
+request_id_max_length}}`.
+It is the TUI status-bar source, the backing data for the TUI Settings screen (ADR 0003 D13, Task 06.0
+subtask 21), and a cheap "which backend am I talking to" check. It must be impossible for it to disclose a
+DSN, file path, address, key, password or salt, so it reports **backend names from a fixed allowlist only**,
+and the `shortener` block emits only the explicitly-named, non-secret `ServerConfig` fields below - never
+`tls`, `analytics_client_hash_salt`, or anything not in that list.
 
 ## Dependencies
 
@@ -20,6 +25,14 @@ allowlist only** rather than redacting configuration values.
   `metadata.backend` (default `inmemory`; also `sqlite`, `postgres`), `cache.backend` (default `none`; `redis`),
   `analytics.backend` (default `noop`), `rate_limit.enabled` + `rate_limit.backend` (default `inmemory`; `redis`).
   The same struct also holds `sqlite_path`, `postgres_dsn`, `redis_address`: those are **never** read here.
+- `ServerConfig` (verified, `include/url_shortener/core/config.h`, global namespace), the **non-secret** subset
+  only: `shortener_base_domain`, `shortener_generated_slug_length`, `shortener_default_redirect_type`,
+  `shortener_default_expiry_seconds` (`std::optional<uint32_t>`, serialized as `null` when unset),
+  `shortener_allow_private_targets`, `analytics_enabled`, `max_request_body_bytes`,
+  `max_request_target_length`, `request_id_max_length`. Explicitly **never** read or forwarded: `tls`
+  (paths, passphrase), `analytics_client_hash_salt`, `http_port`/`http_enabled`/`http_redirect_to_https`/
+  `hsts_max_age` (network settings, out of scope for a *shortener* settings view - no command needs them in
+  Milestone 0006).
 - Verified: `::observability::redactSecretValue(key, value)` (`storage_observability.hpp`, **global** namespace
   `observability`; inside `url_shortener::` it must be written with the leading `::`, because
   `url_shortener::observability` also exists for `Logger`) masks values only for keys containing `password`,
@@ -34,7 +47,7 @@ allowlist only** rather than redacting configuration values.
 
 | Path | Action | What changes |
 |---|---|---|
-| `include/url_shortener/app/system_info.hpp` | create | `SystemInfo`, `make_system_info(const StorageConfig&)`, `serializeSystemInfoJson`. |
+| `include/url_shortener/app/system_info.hpp` | create | `SystemInfo`, `ShortenerSettings`, `make_system_info(const StorageConfig&, const ServerConfig&)`, `serializeSystemInfoJson`. |
 | `src/app/system_info.cpp` | create | Allowlist normalization and serializer. Add to `COMMON_CPP_SOURCES`. |
 | `include/url_shortener/commands/system_commands.hpp` | create | `make_system_info_descriptor(app::SystemInfo)`. |
 | `src/commands/system_commands.cpp` | create | Descriptor/handler. Add to `COMMON_CPP_SOURCES`. |
@@ -47,6 +60,18 @@ allowlist only** rather than redacting configuration values.
 
 ```cpp
 // namespace url_shortener::app
+struct ShortenerSettings {
+    std::string base_domain;                      // ServerConfig::shortener_base_domain, verbatim (not a secret)
+    uint32_t generated_slug_length = 0;            // ServerConfig::shortener_generated_slug_length
+    std::string default_redirect_type;             // ServerConfig::shortener_default_redirect_type
+    std::optional<uint32_t> default_expiry_seconds; // ServerConfig::shortener_default_expiry_seconds
+    bool allow_private_targets = false;             // ServerConfig::shortener_allow_private_targets
+    bool analytics_enabled = false;                 // ServerConfig::analytics_enabled
+    uint32_t max_request_body_bytes = 0;            // ServerConfig::max_request_body_bytes
+    uint32_t max_request_target_length = 0;         // ServerConfig::max_request_target_length
+    uint32_t request_id_max_length = 0;             // ServerConfig::request_id_max_length
+};
+
 struct SystemInfo {
     std::string version;       // URL_SHORTENER_VERSION or "0.0.0-dev" if undefined
     std::string metadata;      // "inmemory" | "sqlite" | "postgres" | "unknown"
@@ -54,18 +79,25 @@ struct SystemInfo {
     std::string analytics;     // "noop" | "inmemory" | "sqlite" | "postgres" | "unknown"
     std::string rate_limit;    // "disabled" | "inmemory" | "redis" | "unknown"
     bool persistent = false;   // metadata is sqlite or postgres
+    ShortenerSettings shortener;
 };
 
-/// Reads only the four backend-name fields of StorageConfig and rate_limit.enabled.
-SystemInfo make_system_info(const ::StorageConfig& config);
+/// Reads the four backend-name fields of StorageConfig, rate_limit.enabled, and the explicitly-named
+/// non-secret ServerConfig fields listed in ShortenerSettings. Does not read ServerConfig::tls or
+/// ServerConfig::analytics_client_hash_salt.
+SystemInfo make_system_info(const ::StorageConfig& storage_config, const ::ServerConfig& server_config);
 
-/// Process-wide snapshot used by build_command_runtime (subtask 18). Default = make_system_info(StorageConfig{}).
+/// Process-wide snapshot used by build_command_runtime (subtask 18).
+/// Default = make_system_info(StorageConfig{}, ServerConfig{}).
 /// The bootstrap that parses --storage-config (02.0/11-12) sets it once at startup; reads are thread-safe.
 void set_process_system_info(SystemInfo info);
 SystemInfo process_system_info();
 
 /// {"version":"..","backend":{"metadata":"..","cache":"..","analytics":"..","rate_limit":".."},
-///  "persistent":bool,"read_only":bool}
+///  "persistent":bool,"read_only":bool,
+///  "shortener":{"base_domain":"..","generated_slug_length":N,"default_redirect_type":"..",
+///               "default_expiry_seconds":N|null,"allow_private_targets":bool,"analytics_enabled":bool,
+///               "max_request_body_bytes":N,"max_request_target_length":N,"request_id_max_length":N}}
 std::string serializeSystemInfoJson(const SystemInfo& info, bool read_only);
 
 // namespace url_shortener::commands
@@ -98,15 +130,16 @@ ctest --test-dir cmake-build -R "^(app__48_system_info|commands__28_system_info_
 
 | Test file | Target | Label | Cases |
 |---|---|---|---|
-| `tests/unit/app/48_system_info.cpp` | `app__48_system_info` | unit | default `StorageConfig` -> `inmemory/none/noop/disabled`, `persistent=false`; sqlite and postgres metadata -> `persistent=true`; `rate_limit.enabled=false` always `disabled` even if backend is `redis`; **secret test:** a `StorageConfig` whose `sqlite_path`, `postgres_dsn` (`postgres://u:SECRETPW@h/db`), `redis_address` (`redis://:TOKEN@h`) are populated and whose `backend` strings contain a DSN-looking value -> serialized JSON contains none of `SECRETPW`, `TOKEN`, the path, `postgres://`, `redis://`, `salt`, `@`; unknown backend -> `unknown`; JSON is valid and key order fixed; `process_system_info()` equals the legacy snapshot before any `set_process_system_info`, equals the set value afterwards, and is safe under two concurrent readers while one writer sets it. |
+| `tests/unit/app/48_system_info.cpp` | `app__48_system_info` | unit | default `StorageConfig`/`ServerConfig` -> `inmemory/none/noop/disabled`, `persistent=false`, `shortener` equals the struct defaults; sqlite and postgres metadata -> `persistent=true`; `rate_limit.enabled=false` always `disabled` even if backend is `redis`; a `ServerConfig` with non-default `shortener_*`/hardening fields -> `shortener` reflects each one exactly (one case per field); `shortener_default_expiry_seconds` unset -> `default_expiry_seconds` serializes as `null`, set -> the number; **secret test:** a `StorageConfig` whose `sqlite_path`, `postgres_dsn` (`postgres://u:SECRETPW@h/db`), `redis_address` (`redis://:TOKEN@h`) are populated and whose `backend` strings contain a DSN-looking value, **and** a `ServerConfig` whose `tls` cert/key paths and passphrase and whose `analytics_client_hash_salt` are set to recognizable sentinel strings -> serialized JSON contains none of `SECRETPW`, `TOKEN`, the path, `postgres://`, `redis://`, `salt`, `@`, or any of the TLS/salt sentinels; unknown backend -> `unknown`; JSON is valid and key order fixed; `process_system_info()` equals the legacy snapshot before any `set_process_system_info`, equals the set value afterwards, and is safe under two concurrent readers while one writer sets it. |
 | `tests/unit/commands/28_system_info_command.cpp` | `commands__28_system_info_command` | unit | success shape; `read_only:false` for `ControlSet::Admin`, `true` for `ControlSet::User`; unknown arg -> `invalid_field`; `dry_run:true` -> `unsupported`; result stable across calls (snapshot). |
 
 Manual check: `url_shortener cmd system.info` (after Task 04.0) prints version and backend names, no paths.
 
 ## Constraints
 
-- C6: output built only from allowlisted names, `bool`s and the version string; no config value pass-through.
-- Never log or serialize `ServerConfig` (`analytics_client_hash_salt`, TLS paths and passphrase live there).
+- C6: output built only from allowlisted backend names, the explicitly-named non-secret `shortener_*`/hardening
+  fields listed above, `bool`s and the version string; no other config value pass-through.
+- Never read, log or serialize `ServerConfig::tls` or `ServerConfig::analytics_client_hash_salt`.
 - Auth broker rules unchanged; this command exposes no auth information.
 - C++17; no JSON library; naming per `.clang-tidy`; new `.cpp` in `COMMON_CPP_SOURCES`.
 
@@ -114,7 +147,8 @@ Manual check: `url_shortener cmd system.info` (after Task 04.0) prints version a
 
 1. Both tests pass, including the secret test.
 2. `grep -n "sqlite_path\|postgres_dsn\|redis_address" src/app/system_info.cpp` is empty.
-3. `url_shortener_common` compiles with `URL_SHORTENER_VERSION` defined and the output contains `1.0.0`.
+3. `grep -n "\.tls\b\|analytics_client_hash_salt" src/app/system_info.cpp` is empty.
+4. `url_shortener_common` compiles with `URL_SHORTENER_VERSION` defined and the output contains `1.0.0`.
 
 ## Out of scope / risks
 

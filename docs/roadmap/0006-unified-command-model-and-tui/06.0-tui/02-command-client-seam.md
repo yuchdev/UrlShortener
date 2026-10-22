@@ -3,7 +3,7 @@
 **Parent task:** 06.0 Terminal UI
 **State:** ⬜ Not started
 **Depends on:** 06.0/01; 01.0/01 (`scan_object`, `scan_array`, `decode_json_string`), 01.0/03 (`CommandRequest`), 01.0/04 (`CommandResponse`), 01.0/05 (`ArgSpec` with `nullable` and object `fields`), 01.0/06 (descriptor, `CommandRegistry`, `CallerContext`), 01.0/07 (`execute`)
-**Blocks:** 03, 04, 06, 07, 09, 11, 18, 19, 20
+**Blocks:** 03, 04, 06, 07, 09, 11, 18, 19, 20, 21
 **Estimated size:** M
 **Suggested agent:** cpp-expert
 

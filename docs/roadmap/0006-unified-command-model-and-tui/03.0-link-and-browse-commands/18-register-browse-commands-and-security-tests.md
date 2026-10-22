@@ -74,7 +74,7 @@ CommandRuntime build_command_runtime(const ServerConfig& server, const CommandRu
 
 `build_command_runtime` order: obtain the `ILinkStore` from `app::LinkBackend` (and its `::IMetadataRepository`, if any) -> build
 `LinkCommandService` (+ stats reader) -> lister = repository present ? `RepositoryLinkLister(repo, *link_service)` : `LegacyLinkLister(linkRepository(), *link_service)`
--> `TableCatalog` with `LinksTableSource(*lister)` and `ClickEventsTableSource(analyticsClickRepository())` -> `make_system_info(storage)`
+-> `TableCatalog` with `LinksTableSource(*lister)` and `ClickEventsTableSource(analyticsClickRepository())` -> `make_system_info(storage, server)` (both already in scope: `server` is `build_command_runtime`'s own parameter)
 -> `CommandRegistry` + `register_link_commands` + `register_browse_commands` (+ `command.list` from 01.0/10)
 -> `registry->set_audit_sink(options.audit_sink ? options.audit_sink : std::make_shared<commands::LoggerAuditSink>(LoggerFactory::Component("audit")))`
 (milestone ADR 0002 "every mutating command emits one audit line"; the logger's sink is the process's logging
@@ -82,7 +82,7 @@ configuration, which each mode initializes **explicitly before** calling this fu
 sink; `cmd` = disabled unless `--log-file` (file) or `--verbose` (stderr); `link <verb>` = disabled; TUI = file (default
 `url_shortener-tui.log`); `serve-stdio` = stderr, never stdout). This function does not initialize logging itself. The `SystemInfo` snapshot comes from the
 process-wide `app::process_system_info()` (added in subtask 17; the bootstrap that parses `--storage-config`, 02.0/11-12, calls
-`app::set_process_system_info(app::make_system_info(storage_config))`; the default is the legacy snapshot `inmemory/none/noop/disabled`). Task 05.0 subtask 20 extends this function (in place, same file) with the process-wide `JobRunner`, the job and pair commands and the `jobs` table source (05.0/21). Errors during wiring throw
+`app::set_process_system_info(app::make_system_info(storage_config, server_config))`; the default is the legacy snapshot `inmemory/none/noop/disabled` with default-constructed `shortener`). Task 05.0 subtask 20 extends this function (in place, same file) with the process-wide `JobRunner`, the job and pair commands and the `jobs` table source (05.0/21). Errors during wiring throw
 `std::runtime_error` (unrecoverable startup failure, per repo rule); expected conditions never throw.
 
 ## Implementation steps

@@ -119,7 +119,7 @@ default hotkeys; every action is also reachable from the Command Palette.
 
 ```text
 +- url_shortener -- backend: sqlite (links.db) -- user: local/Admin ---------[F1 Help]-+
-| [1]Dashboard [2]Links [3]Tables [4]Import/Export [5]Jobs [6]Analytics [:]Palette     |
+| [1]Dashboard [2]Links [3]Tables [4]Import/Export [5]Jobs [6]Analytics [7]Settings [:]Palette |
 +--------------------------------------------------------------------------------------+
 |                                                                                      |
 |                          << active screen body >>                                    |
@@ -302,6 +302,8 @@ stateDiagram-v2
   Dashboard --> Tables: 3
   Dashboard --> ImportExport: 4
   Dashboard --> Jobs: 5
+  Dashboard --> Settings: 7
+  Settings --> Dashboard: q
   Dashboard --> Palette: ':'
   Links --> LinkDetail: Enter
   Links --> LinkForm: n / e
@@ -340,6 +342,44 @@ sequenceDiagram
   S-->>U: toast + refreshed table / stdout JSON / HTTP 201
 ```
 
+### D13. Shortener settings (`system.info`)
+
+```text
++- Settings -----------------------------------------------------------------------+
+| Version        1.0.0                     Read-only session   no                  |
+|                                                                                   |
+| Backend                                   Shortener                              |
+|  metadata     sqlite  (persistent)         base domain      http://sho.rt         |
+|  cache        redis                        generated slug length   7             |
+|  analytics    sqlite                       default redirect type   temporary     |
+|  rate limit   redis                         default expiry          never         |
+|                                             allow private targets   false         |
+|                                             analytics enabled       true          |
+|                                                                                   |
+| Request hardening                                                                |
+|  max request body        65536 bytes      max request target    2048 chars       |
+|  max request id length   64 chars                                                |
+|                                                                                   |
+| Read-only view - change these with CLI flags / env vars and restart; no command   |
+| mutates them yet (ADR 0002 "no `settings.set`" - see Consequences / Non-goals).   |
++-----------------------------------------------------------------------------------+
+|  r refresh  q back                                                                |
++-----------------------------------------------------------------------------------+
+```
+
+Backed entirely by `system.info` (ADR 0002, Task 03.0 subtask 17): the `backend`/`persistent`/`read_only`
+fields already existed for the status bar and Dashboard; this screen adds the `shortener` block (the
+non-secret `ServerConfig` fields: base domain, generated slug length, default redirect type, default expiry,
+`allow_private_targets`, `analytics_enabled`, and the three request-hardening limits) as a dedicated,
+full-screen view rather than a one-line status summary. There is no `settings.set` command and none is
+planned for this milestone - `ServerConfig` is parsed once from CLI flags/env at startup and has no
+runtime-mutation path today (Milestone 0003's own finding, ADR 0001), so a write form here would be a second,
+inconsistent way to configure the server. The screen is therefore always read-only, even for `ControlSet::Admin`
+- it is a rendering concern, not a case of the Read-only-mode rule (rule 5) disabling a write control. TLS
+settings, listener ports and `analytics_client_hash_salt` are deliberately never shown (never read by
+`system.info` at all, not merely hidden): see 03.0/17's Dependencies section for the exact, named exclusion
+list.
+
 ## Alternatives Considered
 
 (Library alternatives in Decision 1.) For architecture: **bespoke screens
@@ -369,6 +409,9 @@ the same offline/listener reasons as in ADR 0001.
 
 - Mouse-first UX, theming engine, plugin screens, charts beyond bar sparklines.
 - Analytics deep-dives (fingerprints, suspicion scores) - Milestone 0002 owns those.
+- **Editable settings.** The Settings screen (D13) is read-only in this milestone; there is no
+  `settings.set` command. `ServerConfig` has no runtime-mutation path to call even if the TUI wanted one
+  (confirmed against the current startup flow); adding one is a separate, future decision, not an oversight.
 
 ## Links
 

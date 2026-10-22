@@ -36,7 +36,7 @@ mock, no `TUI_UNIT_SOURCES` list and no CMake loop.
 |---|---|---|
 | `tests/unit/tui/support/mock_command_client.hpp` | modify | add the scripting/recording API below to the 06.0 class (header-only, additive; existing 06.0 tests keep compiling) |
 | `tests/unit/tui/support/tui_test_support.hpp` | create | helpers: `okEnvelope(id, result_json)`, `errEnvelope(id, code)`, `commandListFixture()` |
-| `tests/unit/tui/23_mock_command_client_test.cpp` | create | self-test (Task 07.0 owns `tests/unit/tui/20-69`) |
+| `tests/unit/tui/23_mock_command_client_test.cpp` | create | self-test (Task 07.0 owns `tests/unit/tui/22-69`) |
 | `sources.cmake` | modify | append the test to `TUI_MODEL_UNIT_SOURCES` (owned by 06.0/01; no new list) |
 
 ## Classes and functions

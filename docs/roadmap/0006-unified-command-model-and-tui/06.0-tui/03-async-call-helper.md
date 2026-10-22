@@ -3,7 +3,7 @@
 **Parent task:** 06.0 Terminal UI
 **State:** ⬜ Not started
 **Depends on:** 06.0/01, 06.0/02
-**Blocks:** 04, 06, 08, 09, 11, 12, 13, 14, 15, 16, 17, 20
+**Blocks:** 04, 06, 08, 09, 11, 12, 13, 14, 15, 16, 17, 20, 21
 **Estimated size:** M
 **Suggested agent:** cpp-expert
 

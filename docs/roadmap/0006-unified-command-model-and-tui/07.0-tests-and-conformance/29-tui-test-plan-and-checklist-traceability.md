@@ -11,7 +11,7 @@
 
 Avoid duplicating Task 06.0's manual checklist: **06.0 owns and executes**
 `docs/testing/tui_manual_smoke.md` (real terminals, resize, legacy console,
-tmux, persistence across restarts, C5 checks, D1-D12 sign-off). This subtask
+tmux, persistence across restarts, C5 checks, D1-D13 sign-off). This subtask
 creates the missing glue: a TUI test plan that maps every automated test of
 group E to what it proves, and a traceability table showing which behaviors are
 covered only manually, so no gap is accidental.
@@ -35,7 +35,7 @@ covered only manually, so no gap is accidental.
 
 `testplans/tui.md` headings: `## Scope`; `## Automated layers` (table: layer, files, target names, what it proves: mock client 22, snapshot harness 23, navigation goldens 24, forms/jobs/palette goldens 25, FormBuilder properties 26, state machine and non-blocking 27, confirm/read-only 28, conformance TUI shim 10, no-listener 21); `## Manual layer` (link to `tui_manual_smoke.md`); `## Traceability` (below); `## Acceptance criteria`; `## Commands` (`ctest -R "^tui__"`, `UPDATE_GOLDEN`, `FORM_PROP_SEED`); `## Known gaps`.
 
-Traceability table (one row per ADR 0003 rule/diagram): rows R1-R7 (rules) and D1-D12, columns: automated test (target::case) | manual step (S-id) | status (`auto`, `manual`, `both`, `gap`). Seed content:
+Traceability table (one row per ADR 0003 rule/diagram): rows R1-R7 (rules) and D1-D13, columns: automated test (target::case) | manual step (S-id) | status (`auto`, `manual`, `both`, `gap`). Seed content:
 
 | Item | Automated | Manual | Expected status |
 |---|---|---|---|
@@ -46,7 +46,7 @@ Traceability table (one row per ADR 0003 rule/diagram): rows R1-R7 (rules) and D
 | R5 read-only | `tui__61_...`, `conformance_30_...` | S-readonly | both |
 | R6 headless testable | all `tui__*` | none | auto |
 | R7 no secrets on screen | `tui__62_...`, `commands__72_...` | S-tables | both |
-| D1-D10 layouts | goldens (24, 25) | S-diagram sign-off | both |
+| D1-D10, D13 layouts | goldens (24, 25) | S-diagram sign-off | both |
 | D11 state machine | `tui__50_...` | S-navigation | both |
 | D12 same envelope on every transport | `conformance__02_tui_client_corpus` | none | auto |
 | terminal restore after crash/SIGKILL | none | needs step | manual |
@@ -79,7 +79,7 @@ None executable.
 
 ## Success criteria
 
-1. `testplans/tui.md` exists with the sections above and a traceability row for R1-R7 and D1-D12.
+1. `testplans/tui.md` exists with the sections above and a traceability row for R1-R7 and D1-D13.
 2. No row has status `gap` without an owner.
 3. Every cited target appears in `ctest -N`.
 

@@ -91,6 +91,47 @@ that a person must confirm (or reverse) before the owning subtask starts.
 | D15 | Should `serve-stdio` default to `--no-file-paths` when stdin is not a TTY? | **No (recommended).** `serve-stdio` stdin is a pipe in practically every real use, so a TTY-dependent default is "always on" with a confusing interactive exception. Keep Q6 (behaves like the CLI unless `--no-file-paths`/`--path-root`); if hardening is wanted for the Tauri sidecar, flip the default **unconditionally** (`--allow-file-paths` opt-in) - one parser line plus the 05.0/16 and 05.0/18 cases | 05.0/16, 05.0/17, 05.0/18 | TTY-dependent default (surprising), or unconditional deny-by-default |
 | D16 | Argument-dependent permission (`link.export` with `path` writes a file, so it needs `write`; inline export is `read`) | Optional descriptor hook `permission_for(ArgsView) -> Permission` (01.0/06), evaluated by `execute` after `ArgSpec` validation; it may only **raise** the base permission (a lower value is a registration error); refusal is `not_authorized` before the job factory runs | 01.0/06, 01.0/07, 05.0/10, 06.0/18, ADR 0002 section 2 | Split into `link.export` (read, inline) and `link.export_file` (write) - two commands, no hook |
 
+## Human review (2026-10-22)
+
+Walked through with the user in chat (not headless this time). Decision: **adopt
+every D1-D16 recommendation as-is** - none are reversed. Since each
+recommendation was already the text baked into the current specs, this review
+closes the open-decision gate without further spec edits, with three exceptions
+called out below where confirmation changed (or should change) something.
+
+| # | Outcome |
+|---|---|
+| D1 | **Confirmed.** Add the optional `id` arg to `link.update`/`enable`/`disable`/`delete`/`restore` - 03.0/09-10 may implement this when scheduled, not deferred to the "two commands, small race window" fallback. |
+| D2 | **Confirmed.** `LinkCommandService::ReplaceLinkTarget` ships; `overwrite` stays in the `on_conflict` enum. |
+| D3 | **Confirmed.** No JSON library; the bounded scanner is the only sanctioned tokenizer. |
+| D4 | **Confirmed.** Command API off by default, `user`-role default, loopback-only `admin`, reverse-proxy warning stands as written. |
+| D5 | **Confirmed.** 0004's SC5 rate limit lives in the REST adapter, not the `link.create` handler. |
+| D6 | **Partially confirmed - see "ADR acceptance" below.** The human instruction this decision was waiting for has now arrived, but D6 itself ties the *flip* to Task 08.0 subtask 01, which is gated on Task 07.0's conformance/security gates passing. Those gates cannot pass before any code exists. See below: decisions are confirmed now; ADR headers stay `Proposed` until 08.0/01 actually runs post-implementation. |
+| D7 | **Confirmed.** REST/one-shot CLI are not wrapped as `ITransportAdapter`. |
+| D8 | **Confirmed.** `conformance` rides on the `integration` label; `PERF_SOURCES` gets `RUN_SERIAL`. |
+| D9 | **Confirmed.** The catalog generator owns only the generated-reference block. |
+| D10 | **Confirmed.** The nine link commands' `ArgSpec` caps are raised to match REST's existing limits (C3). |
+| D11 | **Confirmed.** `link <verb>` flag parsing stays hand-written; only `cmd --arg` is ArgSpec-compiled. |
+| D12 | **Confirmed.** Write-behind, timer-flushed, approximate redirect counters; the two named races (R-1/R-2) are accepted as documented, not fixed. |
+| D13 | **Confirmed.** `job_factory` + `CommandRegistry::set_job_submitter`, one process-wide `JobRunner`. |
+| D14 | **Confirmed.** Per-mode logging destinations exactly as listed (file for `tui`, never the console). |
+| D15 | **Confirmed.** `serve-stdio` does not default to `--no-file-paths` on a non-TTY stdin. |
+| D16 | **Confirmed.** `permission_for(ArgsView)` hook, raise-only, evaluated after `ArgSpec` validation. |
+
+**ADR acceptance stays open on purpose.** Flipping `docs/adr/0002-unified-command-model.md`
+and `docs/adr/0003-tui-framework-and-architecture.md` from `Proposed` to
+`Accepted` is Task 08.0 subtask 01's job, and that subtask's own spec requires
+Task 07.0 ("all gates passed") plus real artifacts that do not exist yet
+(a pinned FTXUI version/commit from Task 06.0 subtask 01's PR, `url_shortener
+tui --help` output, the "as built" deltas). Confirming D1-D16 now removes the
+*planning*-level blocker so implementation can start; it does not and should
+not pre-empt 08.0/01's own gate. Re-run 08.0/01 for real once 07.0 is green.
+
+**Q14 (Tauri) stays open, not blocking.** Still unresolved in this review;
+nothing in 0006 depends on an answer (0006's own plan.md already treats Tauri
+as "a later milestone after 0006, no spec yet"). Answer it when that
+milestone is actually proposed.
+
 ## Process notes
 
 - The `bash-guard` hook blocked one shell command because the script text

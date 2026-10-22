@@ -80,7 +80,7 @@ not order (0006 runs before 0002/0004); the roadmap README states this.
 | [03.0](/docs/roadmap/0006-unified-command-model-and-tui/03.0-link-and-browse-commands/README.md) | Link and browse commands | Commands | Nine link commands on the registry; `link.list`, `db.tables`, `db.rows`, `system.info`; extended list ports |
 | [04.0](/docs/roadmap/0006-unified-command-model-and-tui/04.0-rest-and-cli-adapters/README.md) | REST and CLI adapters | Adapters | Resource routes via registry; `POST /api/v1/commands`; CLI `cmd`; flags compiled from `ArgSpec` |
 | [05.0](/docs/roadmap/0006-unified-command-model-and-tui/05.0-jobs-pairs-and-stdio/README.md) | Jobs, pair import/export, stdio | Commands + adapter | `JobRunner`, `job.*`, `link.import/export`, `jobs` table, process-wide job runtime in `build_command_runtime`, `ITransportAdapter`, `serve-stdio`, IPC how-to |
-| [06.0](/docs/roadmap/0006-unified-command-model-and-tui/06.0-tui/README.md) | Terminal UI | Interface | FTXUI TUI per ADR 0003 diagrams D1-D12 |
+| [06.0](/docs/roadmap/0006-unified-command-model-and-tui/06.0-tui/README.md) | Terminal UI | Interface | FTXUI TUI per ADR 0003 diagrams D1-D13 (D13: Settings screen, added 2026-10-22) |
 | [07.0](/docs/roadmap/0006-unified-command-model-and-tui/07.0-tests-and-conformance/README.md) | Tests and conformance | Testing | Cross-transport conformance corpus, TUI snapshots, security/regression tests |
 | [08.0](/docs/roadmap/0006-unified-command-model-and-tui/08.0-docs-and-registry-sync/README.md) | Docs and registry sync | Cleanup | ADR acceptance, TUI guide, CLI/API docs, 0002/0004 reconciliation |
 
@@ -209,7 +209,7 @@ src/commands/                     registry, handlers (link, browse, system, pair
 src/composition/                  command_runtime (the one registry builder), job_runtime, transport_factory
 src/transport/                    stdio_adapter (REST/CLI adapters stay in src/http, src/cli)
 src/app/repository_link_store.cpp new ILinkStore over IMetadataRepository + ICacheStore
-src/tui/                          app, router, in_process_client, async_caller, form_model/form_view, table_model/table_view, palette, screens/ (Task 06.0 README: 20 subtasks)
+src/tui/                          app, router, in_process_client, async_caller, form_model/form_view, table_model/table_view, palette, screens/ (incl. settings_screen) (Task 06.0 README: 21 subtasks)
 tests/unit/commands/  tests/unit/tui/  tests/conformance/commands/
 docs/adr/0002-*.md  docs/adr/0003-*.md  docs/commands/  docs/tui/
 ```
@@ -227,7 +227,7 @@ same number (existing files keep their numbers):
 | `tests/unit/cli/` | 01-04 | - | 05 | - | 06-19 | 20-29 | 30-39 | 40-49 |
 | `tests/unit/http/` | 01-14 | - | 30-39 | 10 (existing, extended) | 15-29 | 40-49 | - | (extends existing) |
 | `tests/integration/cli/` | 01-16 | - | 17-19 | - | 20-29 | 40-49 | - | (extends existing) |
-| `tests/unit/tui/` | - | - | - | - | - | - | 01-19 (= subtask number) | 20-69 |
+| `tests/unit/tui/` | - | - | - | - | - | - | 01-21 (= subtask number; 20 has no test file - manual checklist) | 22-69 |
 | `tests/unit/docs/` | 01-02 | (extends 02) | - | - | - | - | - | 03-09 |
 | `tests/integration/storage/` | 01-14 | - | 15 (`STORAGE_INTEGRATION_SOURCES`) | - | - | - | - | - |
 | `tests/unit/storage/*` | per folder | - | next free per folder | `listing/01-09`, next free per folder | - | - | - | - |

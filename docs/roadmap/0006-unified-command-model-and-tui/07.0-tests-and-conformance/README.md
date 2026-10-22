@@ -104,7 +104,7 @@ only appends to lists owned by other tasks and owns the conformance and perf lis
 | `CONFORMANCE_PY_SOURCES` (`tests/conformance/py/NN_*.py`) | this task, subtask 05 | like `CLI_INTEGRATION_SOURCES` (Python3 + `SIMPLE_HTTP_BIN`) | `conformance_<stem>` | `integration;conformance` |
 | `PERF_SOURCES` (`tests/perf/**/*.cpp`) | this task, subtask 30 | `register_labeled_cpp_tests(PERF_SOURCES "perf")` + `RUN_SERIAL TRUE`, `TIMEOUT 300` | `<parent_dir>__<stem>` (`analytics__...`, `redirect__...`) | `perf` |
 
-Test prefixes used by this task: `tests/unit/commands/70-89`, `tests/unit/tui/20-69`,
+Test prefixes used by this task: `tests/unit/commands/70-89`, `tests/unit/tui/22-69`,
 `tests/unit/docs/03-09` (plan.md table). The extra CTest label `conformance` and the
 registered `PERF_SOURCES` list are open decision D8 in the decision log.
 

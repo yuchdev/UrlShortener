@@ -62,9 +62,9 @@ Cases:
 | 71 | `db_rows_sort_column_allowlist` | sort on an unknown column -> `invalid_field` |
 | 71 | `db_rows_q_filter_is_not_sql` | `q` = a quote-or-1-equals-1 injection string returns zero rows and no backend error text |
 | 71 | `db_rows_limit_bounded` | `limit: 501` -> `invalid_field` |
-| 72 | `system_info_redacts_secrets` | with `configWithSecrets()`, the serialized response does not contain `fake_secret_marker` nor any TLS file path |
+| 72 | `system_info_redacts_secrets` | with `configWithSecrets()` (a `ServerConfig` with TLS cert/key paths, passphrase and `analytics_client_hash_salt` set to recognizable sentinels, plus a `StorageConfig` with a DSN/credentials sentinel), the serialized response does not contain `fake_secret_marker`, any TLS file path, the passphrase sentinel or the salt sentinel |
 | 72 | `system_info_emits_only_allowlisted_names` | extra backend option keys named like `x_password`, `api_key`, `my_dsn`, `shared_secret` with marker values never appear in the response at all (03.0/17 emits allowlisted backend names only; `::observability::redactSecretValue` is not even reached) |
-| 72 | `system_info_has_no_extra_keys` | key set equals catalog (`version`, `backend`, `persistent`, `read_only`); new fields need a catalog change |
+| 72 | `system_info_has_no_extra_keys` | top-level key set equals catalog (`version`, `backend`, `persistent`, `read_only`, `shortener`); `shortener`'s own key set equals exactly the nine fields in 03.0/17's `ShortenerSettings` (`base_domain`, `generated_slug_length`, `default_redirect_type`, `default_expiry_seconds`, `allow_private_targets`, `analytics_enabled`, `max_request_body_bytes`, `max_request_target_length`, `request_id_max_length`); new fields on either level need a catalog change |
 | 72 | `error_messages_never_echo_secrets` | a fake repository throws with the marker in its message; `error.message` lacks the marker |
 | 73 | `audit_line_has_principal_transport_command_outcome` | one line per mutating command |
 | 73 | `audit_line_never_contains_arg_values` | create with a distinctive target URL path and a metadata value; no audit line contains either |

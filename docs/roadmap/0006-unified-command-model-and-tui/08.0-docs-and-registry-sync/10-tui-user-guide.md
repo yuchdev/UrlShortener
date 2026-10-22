@@ -15,7 +15,7 @@ the relationship to `cmd` (every screen shows its equivalent command).
 
 ## Dependencies
 
-- ADR 0003 (D1-D12, rules), catalog (`link.import` CSV/NDJSON), goldens in `tests/unit/tui/golden/` (source of truthful screen text), `url_shortener tui --help`.
+- ADR 0003 (D1-D13, rules), catalog (`link.import` CSV/NDJSON), goldens in `tests/unit/tui/golden/` (source of truthful screen text), `url_shortener tui --help`.
 - `docs/tui/` does not exist yet (new directory).
 
 ## Files affected

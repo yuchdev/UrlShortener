@@ -33,7 +33,7 @@ renderer, a second golden directory or a second environment variable.
 |---|---|---|
 | `tests/unit/tui/support/render_helpers.hpp` | modify | add `press_keys`, `drain`, ASCII border mapping and determinism setup (below) |
 | `tests/unit/tui/support/golden.hpp` | modify | `assert_matches_golden` prints a unified diff (first 40 lines) and refuses `UPDATE_GOLDEN` when `CI=true`; rewrite restricted to `TUI_GOLDEN_DIR` |
-| `tests/unit/tui/24_snapshot_harness_test.cpp` | create | harness self-test with a tiny fake component (Task 07.0 owns `tests/unit/tui/20-69`) |
+| `tests/unit/tui/24_snapshot_harness_test.cpp` | create | harness self-test with a tiny fake component (Task 07.0 owns `tests/unit/tui/22-69`) |
 | `sources.cmake` | modify | append the test to `TUI_RENDER_UNIT_SOURCES` (owned by 06.0/01) |
 | `.gitattributes` | modify or create | `tests/unit/tui/golden/* text eol=lf` |
 

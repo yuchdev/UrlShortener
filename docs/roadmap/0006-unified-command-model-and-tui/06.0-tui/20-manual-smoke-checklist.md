@@ -2,7 +2,7 @@
 
 **Parent task:** 06.0 Terminal UI
 **State:** ⬜ Not started
-**Depends on:** 06.0/01-19 (all); Task 02.0 (persistent backend for the restart check); 05.0/08, 05.0/10 (import/export)
+**Depends on:** 06.0/01-19, 21 (all); Task 02.0 (persistent backend for the restart check); 05.0/08, 05.0/10 (import/export)
 **Blocks:** 07.0/29 (checklist traceability), 08.0/10 (TUI user guide quotes this checklist)
 **Estimated size:** S
 **Suggested agent:** testing-expert, docs-writer
@@ -12,7 +12,7 @@
 Write and execute the manual smoke checklist for what snapshot tests cannot
 prove: real terminals, key handling, resize, legacy Windows console, tmux,
 persistence across restarts, and contract C5 (no listener, no `uri.txt`). The
-checklist is also the sign-off that each diagram **D1-D12** of
+checklist is also the sign-off that each diagram **D1-D13** of
 [ADR 0003](/docs/adr/0003-tui-framework-and-architecture.md) was seen
 rendering as specified (or the ADR was amended). Repo convention: the testing
 agent writes manual checklists to `docs/test/<feature>.md`, but this repository
@@ -58,13 +58,14 @@ None (documentation). Required checklist content (each item: steps, expected, re
 | S18 | Non-TTY | `url_shortener tui < NUL` and `... | more` | exit 2 with a one-line message, no garbage |
 | S19 | OFF build | build with `-DURLSHORTENER_ENABLE_TUI=OFF`, run `tui` | exit 2, "built without TUI support" |
 | S20 | Unicode | slug/URL with non-ASCII, wide CJK in tags | alignment holds; no truncated multibyte garbage |
+| S21 | Settings (D13) | press `7`; compare every field against the actual `--storage-config`/CLI flags used to start this session; confirm no write control exists on this screen | values match startup config exactly; no TLS path, port, or `analytics_client_hash_salt` ever appears on screen or in a copy/paste of it; `q` returns to Dashboard |
 
 ## Implementation steps
 
 1. Draft `docs/testing/tui_manual_smoke.md` from the table with exact commands per OS (PowerShell and bash variants).
 2. Execute on at least: Windows Terminal, legacy conhost, one Linux terminal; one `tmux` pass for S14.
 3. Record failures as issues; fix in the owning subtask; amend ADR 0003 diagrams where the implementation intentionally differs (list in the doc).
-4. Attach a coverage matrix: D1-D12 -> checklist item -> tester initials/date.
+4. Attach a coverage matrix: D1-D13 -> checklist item -> tester initials/date.
 
 ## Commands
 
@@ -79,7 +80,7 @@ ctest --test-dir cmake-build -L unit -R "^tui__" --output-on-failure   # automat
 
 | Test file | Target | Label | Cases |
 |---|---|---|---|
-| `docs/testing/tui_manual_smoke.md` (manual) | none | manual | S1-S20 above, executed per terminal |
+| `docs/testing/tui_manual_smoke.md` (manual) | none | manual | S1-S21 above, executed per terminal |
 | (automated gate) | `ctest -L unit -R "^tui__"` | unit | all earlier subtasks' tests green before the manual pass |
 
 ## Constraints
@@ -90,8 +91,8 @@ ctest --test-dir cmake-build -L unit -R "^tui__" --output-on-failure   # automat
 
 ## Success criteria
 
-1. All S1-S20 pass on Windows Terminal and one Linux terminal; conhost and tmux results recorded (known limitations listed, not hidden).
-2. The D1-D12 coverage matrix is complete (every diagram has at least one passing manual item or an explicit "snapshot-only" justification for D11/D12).
+1. All S1-S21 pass on Windows Terminal and one Linux terminal; conhost and tmux results recorded (known limitations listed, not hidden).
+2. The D1-D13 coverage matrix is complete (every diagram has at least one passing manual item or an explicit "snapshot-only" justification for D11/D12).
 3. S16 confirms C5 on the shipped binary.
 4. `docs/testing/tui_manual_smoke.md` exists and is linked from `docs/testing/README.md`.
 

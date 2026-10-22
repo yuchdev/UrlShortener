@@ -9,14 +9,20 @@
 Implement the TUI of [ADR 0003](/docs/adr/0003-tui-framework-and-architecture.md)
 with FTXUI: shell and navigation, a generic form builder driven by `ArgSpec`,
 a paged table view, the bespoke Dashboard / Links / Link detail / Tables /
-Import-Export / Jobs screens, the Command Palette (every command reachable),
-confirm dialogs and toasts, read-only mode, a mono/ASCII theme, the `tui` CLI
-mode, and a manual smoke checklist. The TUI talks only to `ICommandClient`.
+Import-Export / Jobs / Settings screens, the Command Palette (every command
+reachable), confirm dialogs and toasts, read-only mode, a mono/ASCII theme, the
+`tui` CLI mode, and a manual smoke checklist. The TUI talks only to
+`ICommandClient`.
 
-The work is split into 20 small subtasks so that each one has a single seam to
+The work is split into 21 small subtasks so that each one has a single seam to
 test: **pure view-models** (`url_shortener_tui_model`, no FTXUI, plain Boost.Test)
 and **thin FTXUI renderers** (`url_shortener_tui`, snapshot-tested against golden
-text files rendered through `ftxui::Screen`).
+text files rendered through `ftxui::Screen`). Subtask 21 (Settings screen, ADR
+0003 D13) was added 2026-10-22, after the headless design pass, at the user's
+request; it is numbered after the manual-smoke-checklist subtask (20) even
+though it must be *built* before that checklist runs - see subtask 20's
+`Depends on`, which was updated to include it. Numbers are unique labels here,
+not an execution order; `Depends on`/`Blocks` is authoritative.
 
 ### Depends on (task and subtask level)
 
@@ -29,7 +35,7 @@ text files rendered through `ftxui::Screen`).
 | 03.0/08, 03.0/11 | 12, 13 | `link.*` commands registered; preview/stats result shapes |
 | 03.0/14 | 12, 17 | `link.list` |
 | 03.0/15, 03.0/16 | 14, 17 | `db.tables`, `db.rows` and the `links`/`click_events` sources |
-| 03.0/17 | 17 | `system.info` |
+| 03.0/17 | 17, 21 | `system.info` (17: status line; 21: the Settings screen's sole data source) |
 | 03.0/18 | 19 | `composition::build_command_runtime` (the one registry builder) |
 | 05.0/05 | 15, 16, 17 | `job.get/list/cancel` |
 | 05.0/08, 05.0/10 | 15, 20 | `link.import`, `link.export` |
@@ -50,14 +56,18 @@ symmetry mechanically).
                  │                       ├─ 12 links list (09,10,11) ─ 13 link detail      │
                  │                       ├─ 14 tables browser (09,10)                      │
                  │                       ├─ 15 import/export                               │
-                 │                       └─ 16 jobs (09,10) ─ 17 dashboard (12,16)         │
+                 │                       ├─ 16 jobs (09,10) ─ 17 dashboard (12,16)         │
+                 │                       └─ 21 settings (03.0/17, no form/table needed)    │
                  │                                                                         │
                  └─ 19 tui CLI wiring (02,04,05) ──────────── 18 read-only (11-17) ─────── 20 smoke checklist
 ```
 
 Critical path: 01 -> 02 -> 03 -> 04 -> 05 -> 06 -> 07 -> 08 -> 11 -> 12 -> 13 -> 18 -> 20.
 After 08, the screens 12, 14, 15, 16 can be built in parallel; 09/10 can run in
-parallel with 04-08; 19 can start once 04/05 exist.
+parallel with 04-08; 19 can start once 04/05 exist. 21 (Settings) only needs
+04/05 and 03.0/17, so it can build in parallel with everything from 06 onward;
+unlike every other screen it does **not** block 18 (it has no write control
+for 18 to verify - see 21's own Constraints), only 20.
 
 ## Subtasks
 
@@ -82,13 +92,14 @@ parallel with 04-08; 19 can start once 04/05 exist.
 | 17 | [Dashboard (D2)](17-dashboard-screen.md) | ⬜ Not started | 03, 04, 05, 06, 12, 16, 03.0/14, 03.0/15, 03.0/17, 05.0/05 | 18, 20 |
 | 18 | [Read-only mode and mutation safety](18-read-only-mode.md) | ⬜ Not started | 02, 04, 06, 08, 11, 12, 13, 14, 15, 16, 17, 01.0/07 | 20 |
 | 19 | [`tui` CLI mode wiring](19-tui-cli-mode-wiring.md) | ⬜ Not started | 01, 02, 04, 05, 02.0/10, 02.0/12, 03.0/18, 05.0/20 | 20 |
-| 20 | [Manual smoke checklist and diagram sign-off](20-manual-smoke-checklist.md) | ⬜ Not started | 01-19, Task 02.0, 05.0/08, 05.0/10 | 07.0/29, 08.0/10 |
+| 20 | [Manual smoke checklist and diagram sign-off](20-manual-smoke-checklist.md) | ⬜ Not started | 01-19, 21, Task 02.0, 05.0/08, 05.0/10 | 07.0/29, 08.0/10 |
+| 21 | [Settings screen (D13)](21-settings-screen.md) | ⬜ Not started | 02, 03, 04, 05, 03.0/17 | 20 |
 
 ## Shared conventions (apply to every subtask)
 
 - **K1 Layout.** Public headers `include/url_shortener/tui/`, implementations `src/tui/` and `src/tui/screens/`, namespace `url_shortener::tui`. ADR-given type names (`ICommandClient`, `InProcessClient`, `FormBuilder`, `TableView`) are kept; functions, members and enumerators are `lower_case`, private members `m_`-prefixed (`.clang-tidy`). Existing sources also use CamelCase type names, so type-name style follows the ADR/existing code.
 - **K2 Two libraries, both created only under `URLSHORTENER_ENABLE_TUI`.** `url_shortener_tui_model` (links `url_shortener_common`, never FTXUI) and `url_shortener_tui` (links the model lib and `ftxui::component/dom/screen`). Sources are listed in `sources.cmake` as `TUI_MODEL_CPP_SOURCES` / `TUI_UI_CPP_SOURCES`, never in `COMMON_CPP_SOURCES`. `url_shortener` links `url_shortener_tui` and gets `URLSHORTENER_WITH_TUI=1` (or `0` when OFF).
-- **K3 Tests.** `tests/unit/tui/NN_<name>.cpp` where `NN` is the subtask number (01-19; Task 07.0 uses 20-69 in the same folder, plan.md "Test file prefixes"); lists `TUI_MODEL_UNIT_SOURCES` and `TUI_RENDER_UNIT_SOURCES` in `sources.cmake`, registered by the macro `register_tui_tests` (subtask 01), because the existing `register_labeled_cpp_tests` links only `url_shortener_common`. These two lists and the macro are the **only** TUI test registration scheme; Task 07.0 appends to them and does not create a third list. Target names follow the repo rule `<parent_dir>__<stem>` (e.g. `tui__07_form_model_test`); label `unit`. CLI parser tests for `tui` live in `tests/unit/cli/30-39`.
+- **K3 Tests.** `tests/unit/tui/NN_<name>.cpp` where `NN` is the subtask number (01-21, except 20 which produces no automated test file - manual checklist only; Task 07.0 uses 22-69 in the same folder, plan.md "Test file prefixes"); lists `TUI_MODEL_UNIT_SOURCES` and `TUI_RENDER_UNIT_SOURCES` in `sources.cmake`, registered by the macro `register_tui_tests` (subtask 01), because the existing `register_labeled_cpp_tests` links only `url_shortener_common`. These two lists and the macro are the **only** TUI test registration scheme; Task 07.0 appends to them and does not create a third list. Target names follow the repo rule `<parent_dir>__<stem>` (e.g. `tui__07_form_model_test`); label `unit`. CLI parser tests for `tui` live in `tests/unit/cli/30-39`.
 - **K4 Golden snapshots.** Plain text produced by `testing::render_to_text` (no ANSI codes) compared with `tests/unit/tui/golden/*.txt`; regenerate with `UPDATE_GOLDEN=1` and review the diff. Golden file names start with the diagram id (`d01_`, `d02_`, ...).
 - **K5 Mock seam.** Screens are tested with `MockCommandClient` + `InlinePoster` (tests/unit/tui/support/, created by 02 and 03; Task 07.0 subtask 22 extends the same mock, subtask 23 extends the 01 render harness); no terminal, registry or storage is needed.
 - **K7 JSON.** Results are read with `json_view` (02), a thin layer over the commands-layer scanner (Task 01.0 subtask 01); no TUI code tokenizes JSON itself (plan C9).
@@ -103,12 +114,12 @@ parallel with 04-08; 19 can start once 04/05 exist.
 - Never block the UI thread (ADR 0003 rule 3): all calls go through `AsyncCaller` (03).
 - Mutations confirm (rule 4, via the single `run_mutation` choke point in 08) unless `--yes`.
 - Read-only mode disables, never hides, write controls (rule 5, subtask 18); authorization stays in the registry (C7).
-- Layouts follow D1-D12; deviations amend ADR 0003 in the same change set. 80x24 minimum, `--theme mono` ASCII fallback.
+- Layouts follow D1-D13; deviations amend ADR 0003 in the same change set. 80x24 minimum, `--theme mono` ASCII fallback.
 
 ## Exit criteria
 
 1. `url_shortener tui` starts the D1 frame in Windows Terminal and a Linux terminal, and every command returned by `command.list` is runnable from the palette with a generated form.
-2. All of D1-D12 are covered (matrix below) by an automated snapshot or model test, and by a manual item for the interactive diagrams.
+2. All of D1-D13 are covered (matrix below) by an automated snapshot or model test, and by a manual item for the interactive diagrams.
 3. `ctest --test-dir cmake-build -L unit -R "^tui__"` is green; `ctest -R "^cli__30_"` is green; the pre-existing unit/contract suites are unchanged.
 4. `-DURLSHORTENER_ENABLE_TUI=OFF` configures and builds with no FTXUI fetch; `url_shortener tui` then exits 2 with a clear message.
 5. Boundary tests pass: no forbidden includes under `src/tui/` (02), no `HttpServer`/`uri.txt` references in the TUI entry (19).
@@ -131,6 +142,7 @@ parallel with 04-08; 19 can start once 04/05 exist.
 | D10 | Confirm and error toast | 06 | 08 (`run_mutation`) | `d10_*.txt` |
 | D11 | Screen state machine | 04 (`Router::is_legal`) | 11-16 (edges exercised) | `04_router_test` (exhaustive edge table) |
 | D12 | Sequence: create on every transport | 02 (client seam) | 03 (async hop), 08 (submit) | `02_in_process_client_test`, `08_form_screen_test` request bytes; cross-transport equality in 07.0 |
+| D13 | Shortener settings | 21 | 03.0/17 (`system.info`) | `d13_settings_*.txt` |
 
 ## Findings and risks recorded while elaborating this task
 
@@ -146,3 +158,4 @@ parallel with 04-08; 19 can start once 04/05 exist.
 - **Logging**: the TUI must not write to the console while the screen is active; verified that an uninitialized logger is enabled with a `stderr` sink, so 19 initializes logging to a file sink (default `./url_shortener-tui.log`, or `--log-file`), never the console (decision log D14).
 - **Manual checklist location**: repo agents say `docs/test/`, the repository actually uses `docs/testing/`; this task uses `docs/testing/tui_manual_smoke.md` (20).
 - Pinned FTXUI version, MSVC build, vcpkg port and Windows-console behaviour remain to be verified in subtask 01 (decision-log "Things to research").
+- **Settings screen added 2026-10-22** (subtask 21, ADR 0003 D13), after the headless design pass, at the user's explicit request alongside the Command Palette (11, pre-existing) and Tables browser / "DB viewer" (14, pre-existing). It is read-only by design - `ServerConfig` has no runtime-mutation path (verified against `src/main.cpp`'s startup flow), so there is deliberately no `settings.set` command; see ADR 0003's Non-goals. Backed by an extension to `system.info` (03.0/17) adding a `shortener` block of explicitly-named, non-secret `ServerConfig` fields - verified against `include/url_shortener/core/config.h` field-by-field so no secret (`tls`, `analytics_client_hash_salt`) or network setting (ports, HSTS) is included.
