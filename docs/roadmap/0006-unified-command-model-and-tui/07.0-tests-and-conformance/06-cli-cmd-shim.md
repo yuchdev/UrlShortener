@@ -43,7 +43,13 @@ class CliCmdAdapter(Adapter):
         proc = subprocess.run(argv, input=json.dumps(req.get("args", {})), capture_output=True,
                               text=True, timeout=30, cwd=ctx.tmp)
         env = json.loads(proc.stdout)                         # failure: report stdout+stderr
-        expected_exit = 0 if env["ok"] else CLI_EXIT[env["error"]["code"]] if step has no cli_exit else step["cli_exit"]
+        if "cli_exit" in step:
+            expected_exit = step["cli_exit"]
+        elif (step.get("await_job") and env["ok"]
+              and env["result"].get("state") in ("failed", "cancelled")):
+            expected_exit = 4
+        else:
+            expected_exit = 0 if env["ok"] else CLI_EXIT[env["error"]["code"]]
         assert proc.returncode == expected_exit
         return env
 ```
