@@ -28,8 +28,8 @@ namespace bhttp = beast::http;
 
 namespace url_shortener {
 
-static constexpr std::string_view request_id_header = "X-Request-Id";
-static constexpr std::string_view internal_request_id_header = "X-Internal-Request-Id";
+static constexpr const char* request_id_header = "X-Request-Id";
+static constexpr const char* internal_request_id_header = "X-Internal-Request-Id";
 
 static const http::Router& applicationRouter()
 {

@@ -42,7 +42,7 @@ set(URL_SHORTENER_CPP
 set(URL_SHORTENER_H
         ${CMAKE_CURRENT_SOURCE_DIR}/include/url_shortener/url_shortener.h
         ${CMAKE_CURRENT_SOURCE_DIR}/include/url_shortener/uri_map_singleton.h
-        ${CMAKE_CURRENT_SOURCE_DIR}/include/url_shortener/core/types.hpppp
+        ${CMAKE_CURRENT_SOURCE_DIR}/include/url_shortener/core/types.hpp
         ${CMAKE_CURRENT_SOURCE_DIR}/include/url_shortener/core/utils.h
         ${CMAKE_CURRENT_SOURCE_DIR}/include/url_shortener/analytics/click_event_queue.hpp
         ${CMAKE_CURRENT_SOURCE_DIR}/include/url_shortener/storage/link_repository.h

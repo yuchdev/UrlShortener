@@ -20,7 +20,7 @@ namespace ssl = net::ssl;
 
 namespace {
 constexpr auto request_timeout = std::chrono::seconds(30);
-constexpr std::string_view internal_request_id_header = "X-Internal-Request-Id";
+constexpr const char* internal_request_id_header = "X-Internal-Request-Id";
 }
 
 // PlainSession implementation

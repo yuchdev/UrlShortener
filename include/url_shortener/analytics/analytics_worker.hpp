@@ -5,7 +5,7 @@
 
 #include "url_shortener/analytics/analytics_config.hpp"
 #include "url_shortener/analytics/analytics_metrics.hpp"
-#include "url_shortener/analytics/bounded_click_event_queue.hpppp"
+#include "url_shortener/analytics/bounded_click_event_queue.hpp"
 #include "url_shortener/analytics/i_click_event_repository.hpp"
 
 namespace url_shortener::analytics
