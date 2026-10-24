@@ -68,7 +68,7 @@ clang-tidy <file> -p cmake-build
 
 ### Patterns (as used in this codebase)
 
-- **Domain models**: plain structs in `include/url_shortener/core/types.h` and
+- **Domain models**: plain structs in `../../include/url_shortener/core/types.hpppp` and
   `storage/models/` — no I/O, no HTTP/Beast coupling. Business rules live in
   services (`LinkService`), not in structs or handlers.
 - **Ports & adapters**: depend on interfaces (`IMetadataRepository`,

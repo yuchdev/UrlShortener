@@ -59,7 +59,7 @@ cache the reference. `linkStateError`, `passwordGuardCheck`,
 `rateLimitGuardAllow`, `redirectStatusFor`, `emitClickEvent` are unchanged.
 The `#include <url_shortener/storage/link_repository.h>` stays only if other
 symbols from it are still used in the file (UNVERIFIED; `Link`/`LinkStatus`
-come from `core/types.h`, so it can likely be dropped - remove it only if the
+come from `core/types.hpp`, so it can likely be dropped - remove it only if the
 compiler allows, to keep the redirect file free of the legacy singleton header).
 
 ## Implementation steps

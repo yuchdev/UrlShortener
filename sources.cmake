@@ -42,9 +42,9 @@ set(URL_SHORTENER_CPP
 set(URL_SHORTENER_H
         ${CMAKE_CURRENT_SOURCE_DIR}/include/url_shortener/url_shortener.h
         ${CMAKE_CURRENT_SOURCE_DIR}/include/url_shortener/uri_map_singleton.h
-        ${CMAKE_CURRENT_SOURCE_DIR}/include/url_shortener/core/types.h
+        ${CMAKE_CURRENT_SOURCE_DIR}/include/url_shortener/core/types.hpppp
         ${CMAKE_CURRENT_SOURCE_DIR}/include/url_shortener/core/utils.h
-        ${CMAKE_CURRENT_SOURCE_DIR}/include/url_shortener/analytics/click_event_queue.h
+        ${CMAKE_CURRENT_SOURCE_DIR}/include/url_shortener/analytics/click_event_queue.hpp
         ${CMAKE_CURRENT_SOURCE_DIR}/include/url_shortener/storage/link_repository.h
         ${CMAKE_CURRENT_SOURCE_DIR}/include/url_shortener/http/http_server.h
         ${CMAKE_CURRENT_SOURCE_DIR}/include/url_shortener/http/request_handlers.h
@@ -59,7 +59,7 @@ set(URL_SHORTENER_H
         ${CMAKE_CURRENT_SOURCE_DIR}/include/url_shortener/http/handlers/compatibility_handlers.hpp
         ${CMAKE_CURRENT_SOURCE_DIR}/include/url_shortener/http/handlers/redirect_handlers.hpp
         ${CMAKE_CURRENT_SOURCE_DIR}/include/url_shortener/http/handlers/fallback_handlers.hpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/include/url_shortener/cli/cli_parser.h
+        ${CMAKE_CURRENT_SOURCE_DIR}/include/url_shortener/cli/cli_parser.hpp
         ${CMAKE_CURRENT_SOURCE_DIR}/include/url_shortener/cli/link_command_args.hpp
         ${CMAKE_CURRENT_SOURCE_DIR}/include/url_shortener/cli/link_command_dispatch.hpp
         ${CMAKE_CURRENT_SOURCE_DIR}/include/url_shortener/observability/LogLevel.h

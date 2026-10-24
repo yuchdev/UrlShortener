@@ -135,6 +135,7 @@ desktop.ini
 # Logs and temporary files
 *.log
 .claude/logs/
+.claude/state/
 *.tmp
 *.temp
 *.bak

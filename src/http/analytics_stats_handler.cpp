@@ -3,7 +3,7 @@
 #include <chrono>
 #include <sstream>
 
-#include "url_shortener/core/utils.h"
+#include "url_shortener/core/utils.hpp"
 
 namespace url_shortener::http {
 namespace {

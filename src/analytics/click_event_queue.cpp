@@ -1,4 +1,4 @@
-#include <url_shortener/analytics/click_event_queue.h>
+#include <url_shortener/analytics/click_event_queue.hpp>
 #include <url_shortener/url_shortener.h>
 
 namespace url_shortener {

@@ -1,5 +1,5 @@
 /**
- * @file cli_parser.h
+ * @file cli_parser.hpp
  * @brief CLI argument parsing contract for url_shortener.
  */
 #pragma once
@@ -9,7 +9,7 @@
 #include <variant>
 
 #include <url_shortener/app/link_command_service.hpp>
-#include <url_shortener/core/config.h>
+#include <url_shortener/core/config.hpp>
 
 /// Link-management subcommand recognized as `link <verb>` on the command line.
 ///

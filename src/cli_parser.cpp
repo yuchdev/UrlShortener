@@ -2,7 +2,7 @@
  * @file cli_parser.cpp
  * @brief CLI parser implementation for runtime server configuration.
  */
-#include <url_shortener/cli/cli_parser.h>
+#include <url_shortener/cli/cli_parser.hpp>
 
 #include <cstdlib>
 #include <limits>

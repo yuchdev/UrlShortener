@@ -8,9 +8,9 @@
 #include <functional>
 #include <boost/beast/http.hpp>
 #include <boost/asio/ssl/context.hpp>
-#include <url_shortener/core/types.h>
-#include <url_shortener/core/config.h>
-#include <url_shortener/core/utils.h>
+#include <url_shortener/core/types.hpp>
+#include <url_shortener/core/config.hpp>
+#include <url_shortener/core/utils.hpp>
 
 namespace url_shortener {
 

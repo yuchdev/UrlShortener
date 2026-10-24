@@ -5,7 +5,7 @@
 #include <memory>
 #include <boost/asio.hpp>
 #include <boost/asio/ssl/context.hpp>
-#include <url_shortener/core/config.h>
+#include <url_shortener/core/config.hpp>
 
 namespace url_shortener {
 

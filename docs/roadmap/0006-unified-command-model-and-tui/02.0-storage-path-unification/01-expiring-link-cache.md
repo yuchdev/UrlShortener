@@ -23,7 +23,7 @@ The legacy class is left untouched; the new class lives in `app/`.
   are non-const).
 - `IClock` / `ManualClock` (`include/url_shortener/core/clock.hpp`, verified,
   global namespace).
-- `url_shortener::Link` (`include/url_shortener/core/types.h`).
+- `url_shortener::Link` (`../../../../include/url_shortener/core/types.hpppp`).
 
 ## Files affected
 

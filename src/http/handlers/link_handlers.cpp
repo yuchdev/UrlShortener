@@ -8,7 +8,7 @@
 #include <vector>
 
 #include <url_shortener/composition/link_command_service_factory.hpp>
-#include <url_shortener/core/utils.h>
+#include <url_shortener/core/utils.hpp>
 #include <url_shortener/http/analytics_stats_handler.hpp>
 #include <url_shortener/http/handlers/link_handlers.hpp>
 #include <url_shortener/http/request_handlers.h>

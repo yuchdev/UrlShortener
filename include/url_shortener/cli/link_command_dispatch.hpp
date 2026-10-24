@@ -12,11 +12,11 @@
 
 #include <url_shortener/app/app_error.hpp>
 
-/// Top-level server configuration (defined in url_shortener/core/config.h).
+/// Top-level server configuration (defined in url_shortener/core/config.hpp).
 struct ServerConfig;
 
 /// Recognized `link <verb>` invocation and its parsed argument DTO
-/// (defined in url_shortener/cli/cli_parser.h).
+/// (defined in url_shortener/cli/cli_parser.hpp).
 struct LinkCliCommand;
 
 namespace url_shortener::cli

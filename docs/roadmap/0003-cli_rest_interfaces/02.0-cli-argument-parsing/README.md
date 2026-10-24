@@ -6,7 +6,7 @@
 
 ## Scope
 
-`CliParser`/`ParseResult` (`include/url_shortener/cli/cli_parser.h`,
+`CliParser`/`ParseResult` (`../../../../include/url_shortener/cli/cli_parser.hpp`,
 `src/cli_parser.cpp`) currently produces only a `ServerConfig` for server
 startup. This task extends `ParseResult` to optionally carry a recognized
 `link <verb>` command plus its parsed DTO (one of the ten from the

@@ -18,7 +18,7 @@ never touch the filesystem.
 
 ## Dependencies
 
-- `ServerConfig` (`include/url_shortener/core/config.h`, verified).
+- `ServerConfig` (`include/url_shortener/core/config.hpp`, verified).
 - `CliParser::parse` and `parseLinkCommand` in `src/cli_parser.cpp` (verified):
   server options use Boost.ProgramOptions (`po::options_description`); the
   `link` branch strips nothing today and hands `verb_args` to strict per-verb
@@ -34,7 +34,7 @@ never touch the filesystem.
 
 | Path | Create / modify | What changes |
 |---|---|---|
-| `include/url_shortener/core/config.h` | modify | `std::optional<std::string> storage_config_path;` in `ServerConfig` |
+| `include/url_shortener/core/config.hpp` | modify | `std::optional<std::string> storage_config_path;` in `ServerConfig` |
 | `src/cli_parser.cpp` | modify | Server option `--storage-config`; env fallback; `link` branch extracts the global flag before verb parsing; help text |
 | `tests/unit/cli/01_cli_parser_link_commands.cpp` | modify | Update `kTopLevelHelpGolden` (and the `link --help` text assertions if they compare whole text) |
 | `tests/unit/cli/05_cli_storage_config_flag.cpp` | create | New flag tests |
@@ -43,7 +43,7 @@ never touch the filesystem.
 ## Classes and functions
 
 ```cpp
-// core/config.h (ServerConfig addition)
+// core/config.hpp (ServerConfig addition)
 std::optional<std::string> storage_config_path;   ///< Path of the storage YAML; unset = legacy in-memory backend.
 
 // src/cli_parser.cpp (file-local, reusable by later modes)

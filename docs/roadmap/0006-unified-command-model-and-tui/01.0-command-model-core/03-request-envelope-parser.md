@@ -22,9 +22,9 @@ generates the `srv-<n>` id when the client sends none. It does not validate
 - 01.0/01 `scan_object`, `find_member`, `decode_json_string`.
 - 01.0/02 `CommandErrorCode::invalid_envelope`, `make_error`.
 - `ServerConfig::request_id_max_length` (default 64) and
-  `max_request_body_bytes` exist in `include/url_shortener/core/config.h`
+  `max_request_body_bytes` exist in `include/url_shortener/core/config.hpp`
   (verified); the parser takes them through an `envelope_limits` struct rather
-  than including `core/config.h`.
+  than including `core/config.hpp`.
 
 ## Files affected
 
@@ -156,7 +156,7 @@ ctest --test-dir cmake-build -R "^commands__03_request_parse$" --output-on-failu
   (`request_id_max_length` is the existing hardening limit, CLAUDE.md).
 - No JSON library; only `json_scan.hpp`.
 - Milestone contracts: C2 (envelope is the only wire shape), C9.
-- Header must not include `core/config.h` (keeps `commands/` free of server
+- Header must not include `core/config.hpp` (keeps `commands/` free of server
   config coupling; limits are passed in).
 
 ## Success criteria

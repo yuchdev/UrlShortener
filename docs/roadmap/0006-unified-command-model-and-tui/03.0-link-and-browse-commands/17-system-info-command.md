@@ -25,7 +25,7 @@ and the `shortener` block emits only the explicitly-named, non-secret `ServerCon
   `metadata.backend` (default `inmemory`; also `sqlite`, `postgres`), `cache.backend` (default `none`; `redis`),
   `analytics.backend` (default `noop`), `rate_limit.enabled` + `rate_limit.backend` (default `inmemory`; `redis`).
   The same struct also holds `sqlite_path`, `postgres_dsn`, `redis_address`: those are **never** read here.
-- `ServerConfig` (verified, `include/url_shortener/core/config.h`, global namespace), the **non-secret** subset
+- `ServerConfig` (verified, `include/url_shortener/core/config.hpp`, global namespace), the **non-secret** subset
   only: `shortener_base_domain`, `shortener_generated_slug_length`, `shortener_default_redirect_type`,
   `shortener_default_expiry_seconds` (`std::optional<uint32_t>`, serialized as `null` when unset),
   `shortener_allow_private_targets`, `analytics_enabled`, `max_request_body_bytes`,

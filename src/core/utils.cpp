@@ -1,8 +1,8 @@
 #include <optional>
 #include <vector>
 #include <string_view>
-#include <url_shortener/core/utils.h>
-#include <url_shortener/core/config.h>
+#include <url_shortener/core/utils.hpp>
+#include <url_shortener/core/config.hpp>
 #include <algorithm>
 #include <cctype>
 #include <chrono>

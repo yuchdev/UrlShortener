@@ -32,10 +32,10 @@ async C++17 HTTP/HTTPS service (Boost.Asio + Boost.Beast + OpenSSL).
   `ControlSet{Admin,User}`, `FirstAdminBootstrap`); PBKDF2-SHA256 password
   hashes; opaque tokens stored only as SHA-256; TLS hardening in `TlsConfig`
   (min version, ciphers, curves, optional mTLS, SIGHUP reload).
-- **Domain types**: `include/url_shortener/core/types.h` (`Link`, `ClickEvent`,
+- **Domain types**: `../../include/url_shortener/core/types.hpppp` (`Link`, `ClickEvent`,
   `RedirectType`, `LinkStatus`) and `storage/models/*` (`LinkRecord`,
   `CreateLinkRequest`, `CacheValue`, `RateLimitDecision`).
-- **Config**: `ServerConfig`/`TlsConfig` (`core/config.h`) from CLI flags;
+- **Config**: `ServerConfig`/`TlsConfig` (`core/config.hpp`) from CLI flags;
   `StorageConfig` from YAML (`config/StorageConfig.hpp`).
 
 These are PRODUCT concerns. The `.claude/` dev fleet you belong to is separate —

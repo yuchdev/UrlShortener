@@ -1,8 +1,8 @@
 #define BOOST_TEST_MODULE PrefixedRedirectHandler
 #include <boost/test/unit_test.hpp>
 
-#include <url_shortener/core/config.h>
-#include <url_shortener/core/utils.h>
+#include <url_shortener/core/config.hpp>
+#include <url_shortener/core/utils.hpp>
 #include <url_shortener/analytics/aggregate_query.hpp>
 #include <url_shortener/analytics/aggregate_stats.hpp>
 #include <url_shortener/http/router_builder.hpp>

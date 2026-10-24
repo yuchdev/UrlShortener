@@ -82,8 +82,32 @@ maintainable C++ code.
 
 ### Docs
 
-Add or maintain Doxygen comments on every public entity you change. Update
-affected Markdown docs when behavior, build options, or CLI/API surface
+Doxygen documentation is **mandatory, not optional**, for every entity you add or
+touch - classes, structs, interfaces, methods/functions (including private ones
+whose behavior isn't obvious from their name), enums and every enumerator, template
+parameters, and any struct field whose meaning, unit, default rationale, or
+constraint isn't obvious from its name alone. Changing a method's behavior,
+preconditions, ownership, or threading guarantees without updating its comment is the
+same defect as not writing the comment at all.
+
+A doc comment is complete, not just present: every parameter (`@param`), the return
+value (`@return`) covering *every* distinct outcome - for this project's dominant
+`bool`-returning + `*error` out-param convention (`CLAUDE.md` "Storage: ports and
+adapters"), that means stating when `error` is written and enumerating the failure
+conditions that map to `false`, not just "false on failure" - and the lifetime/
+ownership contract for any constructor that captures a reference or pointer member
+(a sharp, easy-to-miss footgun in this codebase's analytics/storage layers). Follow
+`.claude/skills/doxygen-documentation/SKILL.md`'s templates and worked examples for
+the exact shape; don't invent a new comment style per file.
+
+If a file you are touching has pre-existing entities with thin or missing
+documentation beyond what your task's diff covers, either bring them up to the
+standard as part of the same change if the gap is small, or hand the file to
+`cpp-code-documenter` (via `/doxygen-documentation`) for a dedicated pass if the gap
+is larger than your current task. Don't leave newly-adjacent thin documentation
+behind just because the task didn't explicitly ask for it.
+
+Update affected Markdown docs when behavior, build options, or CLI/API surface
 changes.
 
 ## After you code

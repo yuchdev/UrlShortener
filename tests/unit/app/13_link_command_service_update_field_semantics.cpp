@@ -6,7 +6,7 @@
 #define BOOST_TEST_MODULE LinkCommandServiceUpdate
 #include <boost/test/unit_test.hpp>
 #include <url_shortener/app/link_command_service.hpp>
-#include <url_shortener/core/utils.h>
+#include <url_shortener/core/utils.hpp>
 
 #include "app_test_fakes.hpp"
 

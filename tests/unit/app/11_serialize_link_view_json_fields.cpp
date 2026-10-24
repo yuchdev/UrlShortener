@@ -6,7 +6,7 @@
 #define BOOST_TEST_MODULE SerializeLinkViewJsonFields
 #include <boost/test/unit_test.hpp>
 #include <url_shortener/app/link_command_service.hpp>
-#include <url_shortener/core/utils.h>
+#include <url_shortener/core/utils.hpp>
 
 using namespace url_shortener;
 using namespace url_shortener::app;

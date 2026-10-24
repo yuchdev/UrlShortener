@@ -4,8 +4,8 @@
 #include <string>
 #include <vector>
 
-#include <url_shortener/core/config.h>
-#include <url_shortener/core/utils.h>
+#include <url_shortener/core/config.hpp>
+#include <url_shortener/core/utils.hpp>
 #include <url_shortener/http/router_builder.hpp>
 #include <url_shortener/storage/link_repository.h>
 

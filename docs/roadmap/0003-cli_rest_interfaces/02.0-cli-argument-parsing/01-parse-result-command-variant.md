@@ -14,7 +14,7 @@ before falling through to today's server-flag parsing.
 
 ## Files to modify
 
-- `include/url_shortener/cli/cli_parser.h`:
+- `../../../../include/url_shortener/cli/cli_parser.hpp`:
 
 ```cpp
 enum class LinkCliVerb

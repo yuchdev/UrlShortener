@@ -28,7 +28,7 @@ subtasks 07-10 then contain no mapping code of their own (milestone contract C1)
 - Existing symbols reused (verified): `app::AppError {code, detail}`, `app::Result<T>`,
   `app::LinkView`, `app::LinkStatsView`, `app::serializeLinkViewJson`,
   `app::serializeLinkPreviewJson`, `app::serializeLinkStatsJson`
-  (`include/url_shortener/app/link_command_service.hpp`), `Link::Campaign` (`core/types.h`).
+  (`include/url_shortener/app/link_command_service.hpp`), `Link::Campaign` (`core/types.hpp`).
 
 ## Files affected
 

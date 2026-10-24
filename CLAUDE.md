@@ -94,7 +94,7 @@ Auth is **local-only** — the auth broker must never be exposed to the public i
 
 ### Config and wiring
 
-- `ServerConfig` (`core/config.h`) — top-level runtime config from CLI flags (`src/cli_parser.cpp`): ports, TLS, `shortener_base_domain`, `shortener_generated_slug_length`, analytics settings, request hardening limits.
+- `ServerConfig` (`core/config.hpp`) — top-level runtime config from CLI flags (`src/cli_parser.cpp`): ports, TLS, `shortener_base_domain`, `shortener_generated_slug_length`, analytics settings, request hardening limits.
 - `StorageConfig` — four independent backend sections (`metadata`, `cache`, `analytics`, `rate_limit`), parsed from YAML via `ParseStorageConfigFile`/`ParseStorageConfigYaml` (throws `std::runtime_error` on invalid config).
 - Key env vars: `SHORTENER_BASE_DOMAIN`, `SHORTENER_DEFAULT_REDIRECT_TYPE`, `SHORTENER_GENERATED_SLUG_LENGTH`, `SHORTENER_ALLOW_PRIVATE_TARGETS`, `URL_SHORTENER_ANALYTICS_HASH_SALT`.
 
@@ -108,6 +108,7 @@ Auth is **local-only** — the auth broker must never be exposed to the public i
 - **C++17 only** — do not use C++20 features.
 - **Naming** (enforced by `.clang-tidy`): everything `lower_case` except template parameters (`CamelCase`) and macros (`UPPER_CASE`). Private/protected members use `m_` prefix (e.g. `m_mutex_`); struct fields and public members are plain `lower_case`.
 - **Formatting** (enforced by `.clang-format`): 4-space indent, 80 columns, braces on their own line for class/function/enum/struct definitions, includes grouped std → system → local.
+- **Doxygen completeness:** every class/struct/interface, method/function, enum/enumerator, template parameter, and non-obvious struct field carries a complete Doxygen comment — not just a `@brief` that restates the name, but `@param`/`@return` (including every failure case for the `bool`+`*error`-out-param convention below) and the lifetime contract for any reference/pointer-capturing constructor. See `.claude/skills/doxygen-documentation/SKILL.md` for templates and worked examples; `cpp-code-documenter` runs dedicated backfill passes on legacy modules.
 - **JSON parsing:** manual string-scanning helpers in `core/utils.h` (`extractJsonStringField`, `extractJsonBoolField`, etc.) — no JSON library dependency. Use these, don't add a new JSON library.
 - **Redirect fast path is protected:** `GET /{slug}` and `GET /r/{slug}` must stay to cache lookup + repository fallback + redirect response. Do not add management-plane logic here — that belongs under `/api/v1/links`.
 - **API shape:** canonical resource is `/api/v1/links/{slug}`; `/api/v1/short-urls/...` and `/r/{slug}` are compatibility aliases. New endpoints target `/api/v1/links/`.
@@ -123,9 +124,10 @@ This repo defines specialized subagents in `.claude/agents/` for a design → im
 - **app-architect** — design decisions, ADRs, interface contracts (does not write code).
 - **cpp-expert** — all implementation in `src/`, `include/`, `tests/`.
 - **testing-expert** — test generation and coverage analysis; **test-documenter** — Boost.Test Scenario/Boundaries doc comments on existing tests.
+- **cpp-code-documenter** — brings existing C++ entity declarations up to full Doxygen completeness (parameters, return/error semantics, ownership/thread-safety) on a legacy module or dedicated backfill pass; not a substitute for `cpp-expert` writing docs on new code as it's authored.
 - **feature-reviewer** + **security-auditor** — review gate before merge (run together via the `/pr-review` skill).
 - **subtask-verifier** — checks an implementation against its spec in `docs/specs/` / `docs/agent/implementation-taskmap.md`.
 - **docs-writer** (net-new docs) / **docs-updater** (keeping existing docs in sync with code changes).
 - **agent-orchestrator** — coordinates the full sequence for multi-step work spanning several of the above.
 
-Useful skills: `/pr-review`, `/test-gap`, `/verify-subtask`, `/adr-write`, `/document-tests`, `/doc-xref`, `/doc-registry`, `/link-check`, `/secret-scan`.
+Useful skills: `/pr-review`, `/test-gap`, `/verify-subtask`, `/adr-write`, `/document-tests`, `/doxygen-documentation`, `/doc-xref`, `/doc-registry`, `/link-check`, `/secret-scan`.

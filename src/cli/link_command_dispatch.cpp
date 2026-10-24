@@ -16,9 +16,9 @@
 
 #include <url_shortener/app/app_error.hpp>
 #include <url_shortener/app/link_command_service.hpp>
-#include <url_shortener/cli/cli_parser.h>
+#include <url_shortener/cli/cli_parser.hpp>
 #include <url_shortener/composition/link_command_service_factory.hpp>
-#include <url_shortener/core/config.h>
+#include <url_shortener/core/config.hpp>
 
 namespace url_shortener::cli
 {

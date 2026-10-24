@@ -1,7 +1,7 @@
 #define BOOST_TEST_MODULE FallbackHandler
 #include <boost/test/unit_test.hpp>
 
-#include <url_shortener/core/config.h>
+#include <url_shortener/core/config.hpp>
 #include <url_shortener/http/route_context.hpp>
 #include <url_shortener/http/router_builder.hpp>
 #include <url_shortener/http/handlers/fallback_handlers.hpp>

@@ -1,8 +1,8 @@
 #pragma once
 
 #include <url_shortener/app/app_error.hpp>
-#include <url_shortener/core/config.h>
-#include <url_shortener/core/types.h>
+#include <url_shortener/core/config.hpp>
+#include <url_shortener/core/types.hpp>
 
 #include <map>
 #include <memory>

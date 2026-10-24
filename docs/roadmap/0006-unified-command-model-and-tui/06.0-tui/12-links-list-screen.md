@@ -71,7 +71,7 @@ class LinksScreen final : public IScreen { /* id() == ScreenId::links; hints() =
 3. Actions (via `on_extra_key`): `n` -> push `link_form` with `link.create` `FormModel`; `e` -> `link.update` form prefilled from `selected_raw()` (slug locked; target URL is not editable because `link.update` has no `target_url` arg - show hint "target URL cannot be changed; create a new link"); `t` -> `run_mutation(link.enable|disable)`; `d` -> `run_mutation(link.delete)` with typed-slug confirm; `u` -> `link.restore`; `p` -> `link.preview` shown in the result viewer (11); `s`/Enter -> push `link_detail` (13) with slug.
 4. After any successful mutation: toast + `refresh()` (D12 last step "toast + refreshed table").
 5. `on_enter()` refreshes if data older than 30 s; `r` refreshes manually.
-6. Row `status` text from JSON `status`: one of `active`, `disabled`, `expired`, `deleted` (verified `LinkStatus` enum in `core/types.h`; `link.list` `status` filter accepts the same values plus `all`, catalog 3.2).
+6. Row `status` text from JSON `status`: one of `active`, `disabled`, `expired`, `deleted` (verified `LinkStatus` enum in `core/types.hpp`; `link.list` `status` filter accepts the same values plus `all`, catalog 3.2).
 
 ## Commands
 

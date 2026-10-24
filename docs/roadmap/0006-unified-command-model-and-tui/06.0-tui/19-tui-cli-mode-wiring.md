@@ -20,7 +20,7 @@ word `tui` still parses and fails with a clear message.
 
 ## Dependencies
 
-- Verified existing code: `src/main.cpp` (`parsed.command` branch calls `url_shortener::cli::DispatchLinkCommand` and returns before `LoggerFactory::Initialize`, `HttpServer`, `UriMapSingleton`); `src/cli_parser.cpp` (the `argc >= 2 && std::string(argv[1]) == "link"` branch near the end of shared-config handling, ~line 383); `include/url_shortener/cli/cli_parser.h` (`ParseResult` with `config`, `help_requested`, `help_text`, `command`); `include/url_shortener/cli/link_command_dispatch.hpp` (`ExitCodeForAppError`, mapping 1/2/3/4).
+- Verified existing code: `src/main.cpp` (`parsed.command` branch calls `url_shortener::cli::DispatchLinkCommand` and returns before `LoggerFactory::Initialize`, `HttpServer`, `UriMapSingleton`); `src/cli_parser.cpp` (the `argc >= 2 && std::string(argv[1]) == "link"` branch near the end of shared-config handling, ~line 383); `../../../../include/url_shortener/cli/cli_parser.hpp` (`ParseResult` with `config`, `help_requested`, `help_text`, `command`); `include/url_shortener/cli/link_command_dispatch.hpp` (`ExitCodeForAppError`, mapping 1/2/3/4).
 - Storage: Task 02.0 subtask 10 adds `ServerConfig::storage_config_path`, the `--storage-config` flag, the env fallback `URL_SHORTENER_STORAGE_CONFIG` and the reusable file-local helper `extract_storage_config_flag(std::vector<std::string>&, ServerConfig&)`; the `tui` branch calls that helper (no second flag parser). Task 02.0 subtask 12 runs `InitLinkBackend` in `main` before any mode dispatch; the `tui` branch is placed **after** that call, so the TUI sees the configured backend.
 - Registry: `composition::build_command_runtime(config)` (03.0/18) with the process-wide job runtime of 05.0/20 (`runtime.job_runner`, `shutdown_process_job_runtime`).
 - Verified (`src/observability/logger_factory.cpp`): the global `LoggingConfig g_cfg{}` defaults to `enabled = true`, level `Info`, sink `Stderr`, so a logger that was never initialized **still writes to stderr**; the runtime's `LoggerAuditSink` (03.0/18) would therefore corrupt the screen unless logging is initialized explicitly.
@@ -31,7 +31,7 @@ word `tui` still parses and fails with a clear message.
 
 | Path | Action | What changes |
 |---|---|---|
-| `include/url_shortener/cli/cli_parser.h` | modify | `struct TuiCliOptions { bool read_only=false; bool assume_yes=false; std::string theme="dark"; std::optional<std::string> log_file; };` and `std::optional<TuiCliOptions> tui;` in `ParseResult` (no FTXUI include); the storage path goes to `ParseResult::config.storage_config_path` like every mode |
+| `../../../../include/url_shortener/cli/cli_parser.hpp` | modify | `struct TuiCliOptions { bool read_only=false; bool assume_yes=false; std::string theme="dark"; std::optional<std::string> log_file; };` and `std::optional<TuiCliOptions> tui;` in `ParseResult` (no FTXUI include); the storage path goes to `ParseResult::config.storage_config_path` like every mode |
 | `src/cli_parser.cpp` | modify | `if (argc >= 2 && std::string(argv[1]) == "tui")` branch beside the `link` branch; calls `extract_storage_config_flag`; own `boost::program_options` description; `tui --help` text; theme validated against `dark|light|mono` |
 | `include/url_shortener/tui/tui_entry.hpp` | create | `int run_tui(const TuiCliOptions&, const ServerConfig&);` (declaration only; no FTXUI types) |
 | `src/tui/tui_entry.cpp` | create | wiring (UI lib): logging init -> `build_command_runtime` -> `InProcessClient` -> `App::run` -> job runtime shutdown |
@@ -46,7 +46,7 @@ word `tui` still parses and fails with a clear message.
 ## Classes and functions
 
 ```cpp
-// cli_parser.h (existing file, additive)
+// cli_parser.hpp (existing file, additive)
 struct TuiCliOptions { bool read_only = false; bool assume_yes = false; std::string theme = "dark";
                        std::optional<std::string> log_file; };
 

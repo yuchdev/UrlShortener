@@ -19,7 +19,7 @@ role. This subtask adds the two configuration switches and the one helper every 
 
 ## Dependencies
 
-- Verified `ServerConfig` (`include/url_shortener/core/config.h`): flat struct of defaults; booleans are parsed from CLI strings by `parseBool`
+- Verified `ServerConfig` (`include/url_shortener/core/config.hpp`): flat struct of defaults; booleans are parsed from CLI strings by `parseBool`
   (`src/cli_parser.cpp`, e.g. `shortener-allow-private-targets`); options are declared in `CliParser::parse` (Boost.ProgramOptions groups
   `shortener_opts`, `analytics_opts`, `request_opts`) and listed in `--help`.
 - `ControlSet` (global enum in `security/control_set.hpp`): `Admin`, `User`.
@@ -30,7 +30,7 @@ role. This subtask adds the two configuration switches and the one helper every 
 
 | Path | Action | What changes |
 |---|---|---|
-| `include/url_shortener/core/config.h` | modify | Add `bool command_api_enabled = false;` and `std::string command_api_role = "user";` to `ServerConfig`. |
+| `include/url_shortener/core/config.hpp` | modify | Add `bool command_api_enabled = false;` and `std::string command_api_role = "user";` to `ServerConfig`. |
 | `src/cli_parser.cpp` | modify | Declare `--command-api-enabled <BOOL>` and `--command-api-role <user\|admin>` in a new "Command API options" group; validate the role; include in `--help`. |
 | `tests/unit/cli/11_cli_parser_command_api_flags.cpp` | create | Flag parsing and validation. |
 | `sources.cmake` | modify | `CLI_UNIT_SOURCES` += the test (target `cli__11_cli_parser_command_api_flags`); `HTTP_UNIT_SOURCES` += `tests/unit/http/24_command_api_caller.cpp`. |
@@ -51,7 +51,7 @@ not a secret; it is logged at startup as `command_api=enabled role=user` by the 
 pair in `main.cpp` is optional and **not** part of this subtask).
 
 Helpers (declared in `http/command_bridge.hpp`, implemented in `src/http/command_bridge.cpp`, subtask 02's file, so
-`core/config.h` does not include `security/control_set.hpp`):
+`core/config.hpp` does not include `security/control_set.hpp`):
 
 ```cpp
 /// Configured role, before the peer check.

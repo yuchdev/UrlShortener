@@ -42,7 +42,7 @@ Data flow:
 .
 ├── include/url_shortener/
 │   ├── core/
-│   │   ├── types.h              # domain models and enums
+│   │   ├── types.hpp              # domain models and enums
 │   │   ├── config.h             # server and TLS configuration structs
 │   │   └── utils.h              # string, time, and validation helpers
 │   ├── http/
@@ -55,7 +55,7 @@ Data flow:
 │   ├── storage/
 │   │   └── link_repository.h    # repository interface and singleton
 │   ├── analytics/
-│   │   └── click_event_queue.h  # metrics collection queue
+│   │   └── click_event_queue.hpp  # metrics collection queue
 │   └── url_shortener.h          # public facade (includes modular headers)
 ├── src/
 │   ├── core/

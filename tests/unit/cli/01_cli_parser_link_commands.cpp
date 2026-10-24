@@ -11,7 +11,7 @@
 #include <variant>
 #include <vector>
 
-#include <url_shortener/cli/cli_parser.h>
+#include <url_shortener/cli/cli_parser.hpp>
 
 namespace
 {

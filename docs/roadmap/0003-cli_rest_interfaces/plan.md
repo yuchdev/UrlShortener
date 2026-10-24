@@ -13,7 +13,7 @@ reference list of commands this milestone must also expose over a CLI.
 Two gaps block a CLI mode today:
 
 1. **No CLI entrypoint exists.** `CliParser`/`ParseResult`
-   (`include/url_shortener/cli/cli_parser.h`, `src/cli_parser.cpp`) parses
+   (`../../../include/url_shortener/cli/cli_parser.hpp`, `src/cli_parser.cpp`) parses
    only server-startup flags (ports, TLS, storage, analytics, request
    limits) into `ServerConfig`. `src/main.cpp` unconditionally constructs
    `HttpServer` and calls `io_context.run()` - there is no branch that runs a
@@ -209,7 +209,7 @@ src/http/handlers/
   link_handlers.cpp                (migrate patch/delete/lifecycle/preview onto LinkCommandService)
 
 include/url_shortener/cli/
-  cli_parser.h                     (extend: ParseResult command variant)
+  cli_parser.hpp                     (extend: ParseResult command variant)
   link_command_args.hpp            (new: argv -> DTO mapping per link verb)
 
 src/

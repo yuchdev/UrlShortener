@@ -20,7 +20,7 @@ Teach `CliParser` to recognize `url_shortener serve-stdio [options]` as a one-sh
 
 | Path | Action | What changes |
 |---|---|---|
-| `include/url_shortener/cli/cli_parser.h` | modify | `ServeStdioCliOptions`, `ParseResult::serve_stdio` |
+| `../../../../include/url_shortener/cli/cli_parser.hpp` | modify | `ServeStdioCliOptions`, `ParseResult::serve_stdio` |
 | `src/cli_parser.cpp` | modify | `serve-stdio` branch next to the `link` branch; usage/help text |
 | `tests/unit/cli/20_cli_parser_serve_stdio.cpp` | create | parser cases |
 | `sources.cmake` | modify | add the test to `CLI_UNIT_SOURCES` (no new `.cpp`) |
@@ -28,7 +28,7 @@ Teach `CliParser` to recognize `url_shortener serve-stdio [options]` as a one-sh
 ## Classes and functions
 
 ```cpp
-// cli_parser.h (global namespace like the existing LinkCliVerb / ParseResult)
+// cli_parser.hpp (global namespace like the existing LinkCliVerb / ParseResult)
 struct ServeStdioCliOptions
 {
     bool read_only = false;                 // --read-only: downgrade local caller to ControlSet::User

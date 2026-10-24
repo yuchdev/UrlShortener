@@ -21,8 +21,8 @@ The project requires:
 A few dependencies are fetched and built automatically at configure time via
 CMake `FetchContent`, so you do **not** need to install them yourself:
 
-- `yaml-cpp` (used unless a system package is found)
-- `hiredis` (used unless a system package is found)
+- `yaml-cpp` 0.9.0 (used unless a system package is found)
+- `hiredis` 1.5.0 (used unless a system package is found)
 - `SOCI` (SQLite + PostgreSQL backends; always fetched)
 
 The first configure therefore clones and builds these from source and will take
@@ -40,6 +40,23 @@ cmake --build .
 ```
 
 The server binary is produced at `cmake-build/url_shortener`.
+
+### CMake 4.x compatibility with older dependency checkouts
+
+If configuration fails in `_deps/yaml-cpp-src/CMakeLists.txt` or
+`_deps/hiredis-src/CMakeLists.txt` with
+`Compatibility with CMake < 3.5 has been removed`, the build is using the
+FetchContent fallback, not the corresponding package installed by vcpkg. The
+fallbacks now fetch yaml-cpp 0.9.0 (CMake 3.5...3.30 compatibility) and hiredis
+1.5.0 (CMake 3.15 minimum, also avoiding the CMake < 3.10 deprecation warning).
+Re-run CMake configuration (or reload the CMake project in CLion) to update the
+checkout.
+
+For an older project checkout that still pins yaml-cpp 0.8.0 or hiredis 1.2.0,
+a temporary workaround is to add `-DCMAKE_POLICY_VERSION_MINIMUM=3.5` to the
+existing CMake configure command or CLion's **CMake Profile → CMake options**.
+This asks CMake 4.x to apply at least the 3.5 policy baseline; upgrading the
+dependency is preferred to applying this override to all dependencies.
 
 ### Linux (Ubuntu 24.04 / 22.04)
 

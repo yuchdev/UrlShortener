@@ -15,7 +15,7 @@ registry is not touched, so it can be reviewed and tested with the parser alone.
 
 ## Dependencies
 
-- Verified current structure (`src/cli_parser.cpp`, `include/url_shortener/cli/cli_parser.h`): `CliParser::parse` loads environment defaults, then if `argv[1] == "link"` it returns early
+- Verified current structure (`src/cli_parser.cpp`, `../../../../include/url_shortener/cli/cli_parser.hpp`): `CliParser::parse` loads environment defaults, then if `argv[1] == "link"` it returns early
   after `linkHelpRequested` / `parseLinkCommand`, filling `ParseResult::command` (`std::optional<LinkCliCommand>`); otherwise Boost.ProgramOptions parses server flags.
   Parse errors are `std::invalid_argument`, which `main()` catches (logs and exits 1; unchanged and shared with `link`).
 - `is_valid_command_name(std::string_view)` (01.0/03) validates the dotted-name shape without a regex.
@@ -28,7 +28,7 @@ registry is not touched, so it can be reviewed and tested with the parser alone.
 
 | Path | Action | What changes |
 |---|---|---|
-| `include/url_shortener/cli/cli_parser.h` | modify | Add `struct CmdCliCommand` and `std::optional<CmdCliCommand> cmd;` to `ParseResult`. |
+| `../../../../include/url_shortener/cli/cli_parser.hpp` | modify | Add `struct CmdCliCommand` and `std::optional<CmdCliCommand> cmd;` to `ParseResult`. |
 | `src/cli_parser.cpp` | modify | Add `parseCmdCommand`, `buildCmdHelpText`; add the `argv[1] == "cmd"` branch next to the `link` branch. |
 | `tests/unit/cli/07_cli_parser_cmd.cpp` | create | Parser tests. |
 | `sources.cmake` | modify | `CLI_UNIT_SOURCES` += the test (target `cli__07_cli_parser_cmd`). |
@@ -36,7 +36,7 @@ registry is not touched, so it can be reviewed and tested with the parser alone.
 ## Classes and functions
 
 ```cpp
-// cli_parser.h
+// cli_parser.hpp
 struct CmdCliCommand
 {
     std::string command;                                   ///< dotted name, shape-checked only

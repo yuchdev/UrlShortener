@@ -7,8 +7,8 @@
 #include <ctime>
 #include <chrono>
 #include <boost/beast/http.hpp>
-#include <url_shortener/core/types.h>
-#include <url_shortener/core/config.h>
+#include <url_shortener/core/types.hpp>
+#include <url_shortener/core/config.hpp>
 
 namespace url_shortener {
 

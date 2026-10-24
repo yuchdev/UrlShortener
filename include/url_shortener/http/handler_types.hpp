@@ -1,6 +1,6 @@
 #pragma once
 
-#include <url_shortener/core/config.h>
+#include <url_shortener/core/config.hpp>
 #include <url_shortener/http/route_context.hpp>
 
 #include <boost/beast/http.hpp>

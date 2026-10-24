@@ -233,7 +233,7 @@ by both review rounds.
   decided not to reconcile the two storage paths).
 - Mid-task, `cli_parser.h` was found to pull in the entire HTTP stack
   (`HttpServer`, Boost.Asio) transitively, just to get `ServerConfig` for
-  `ParseResult::config` - narrowed to include `core/config.h` directly
+  `ParseResult::config` - narrowed to include `core/config.hpp` directly
   (`85e3fd4`), verified via the actual preprocessed compile command, not just
   a source grep.
 - The e2e no-server-socket guarantee (`13_cli_no_server_socket.sh`) was

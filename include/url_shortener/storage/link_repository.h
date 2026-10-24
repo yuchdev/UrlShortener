@@ -1,6 +1,6 @@
 #pragma once
 
-#include <url_shortener/core/types.h>
+#include <url_shortener/core/types.hpp>
 #include <optional>
 #include <string>
 #include <shared_mutex>

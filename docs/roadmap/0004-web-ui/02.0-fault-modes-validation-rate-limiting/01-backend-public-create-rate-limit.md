@@ -20,7 +20,7 @@ that wiring; it adds a distinct check in the create handler.
 
 ```text
 src/http/handlers/link_handlers.cpp   # add the rate-limit check in handleCreateLink
-src/core/config.h                     # add create-rate-limit config fields (edit)
+src/core/config.hpp                     # add create-rate-limit config fields (edit)
 src/cli_parser.cpp                    # parse the new flags (edit)
 sources.cmake                         # only if a new .cpp is introduced
 ```

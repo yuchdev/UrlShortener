@@ -15,7 +15,7 @@
 
 #include <boost/program_options.hpp>
 
-#include <url_shortener/core/utils.h>
+#include <url_shortener/core/utils.hpp>
 
 namespace po = boost::program_options;
 

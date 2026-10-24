@@ -92,7 +92,7 @@ Single-binary async HTTP/HTTPS server (Boost.Asio + Boost.Beast + OpenSSL).
 
 ### `core/` — Domain types and services
 
-**`include/url_shortener/core/types.h`** — canonical domain types:
+**`../include/url_shortener/core/types.hpppp`** — canonical domain types:
 - `Link` — full link entity with `id`, `slug`, `target_url`, `enabled`, `tags`, `metadata`, `campaign`, `stats`, `redirect_type`, soft-delete timestamp.
 - `ClickEvent` — analytics event tied to a redirect attempt.
 - `RedirectType` — `temporary` (302) / `permanent` (301).
@@ -286,7 +286,7 @@ struct StorageConfig {
 
 Parse from YAML: `ParseStorageConfigFile(path)` or `ParseStorageConfigYaml(yaml_string)`. Throws `std::runtime_error` on invalid config. Test config parsing: `tests/unit/config/` and `tests/integration/config/`.
 
-**`ServerConfig`** (in `core/config.h`) — top-level runtime config from CLI flags. Key fields: `http_port`, `tls.*`, `shortener_base_domain`, `shortener_generated_slug_length`, `analytics_enabled`, `analytics_client_hash_salt`, request hardening limits.
+**`ServerConfig`** (in `core/config.hpp`) — top-level runtime config from CLI flags. Key fields: `http_port`, `tls.*`, `shortener_base_domain`, `shortener_generated_slug_length`, `analytics_enabled`, `analytics_client_hash_salt`, request hardening limits.
 
 ---
 
