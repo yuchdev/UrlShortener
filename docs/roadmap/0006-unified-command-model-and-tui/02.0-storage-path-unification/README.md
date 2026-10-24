@@ -35,7 +35,7 @@ in-memory singleton". Reading the code shows something different and larger:
 - The redirect handlers (`src/http/handlers/redirect_handlers.cpp`), the REST
   link handlers (`link_handlers.cpp`), `request_handlers.cpp` and the CLI all go
   through the legacy global singletons `url_shortener::linkRepository()` /
-  `linkCache()` declared in `include/url_shortener/storage/link_repository.h`
+  `linkCache()` declared in `include/url_shortener/storage/link_repository.hpp`
   (directly, via `getLinkForRead` / `updateLinkAndInvalidateCache`, or via
   `LegacyLinkStore`). Inside one server process REST and redirects therefore
   already share one (in-memory) store; the CLI is a separate process with its

@@ -1,7 +1,7 @@
 /** @file 06_hooks_default_behavior_test.cpp @brief Unit test: default password/rate-limit hooks are pass-through. */
 #define BOOST_TEST_MODULE LinkManagementHookDefaultsTest
 #include <boost/test/unit_test.hpp>
-#include <url_shortener/url_shortener.h>
+#include <url_shortener/url_shortener.hpp>
 
 using namespace url_shortener;
 namespace http = boost::beast::http;

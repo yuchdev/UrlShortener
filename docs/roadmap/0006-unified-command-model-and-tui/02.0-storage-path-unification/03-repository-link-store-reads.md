@@ -145,7 +145,7 @@ ctest --test-dir cmake-build -R "^app__21_repository_link_store_reads$" --output
 - Cache failures never fail a request (cache-aside contract, CLAUDE.md).
 - Qualify global types (`::IMetadataRepository`, `::ICacheStore`, `::RepoError`)
   - the unqualified names inside `url_shortener` refer to the legacy
-  `link_repository.h` types.
+  `link_repository.hpp` types.
 - Log only slug and error names; never target URLs, tags or metadata.
 - C++17; `m_` members.
 

@@ -1,7 +1,7 @@
 /** @file 04_slug_accept_test.cpp @brief Unit test: slug validator accepts boundary valid values. */
 #define BOOST_TEST_MODULE SlugAcceptTest
 #include <boost/test/unit_test.hpp>
-#include <url_shortener/url_shortener.h>
+#include <url_shortener/url_shortener.hpp>
 
 using namespace url_shortener;
 

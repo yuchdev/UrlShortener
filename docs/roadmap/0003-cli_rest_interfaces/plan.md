@@ -30,7 +30,7 @@ Two gaps block a CLI mode today:
    the command service entirely and mutate links directly via
    `url_shortener::getLinkForRead()` /
    `url_shortener::updateLinkAndInvalidateCache()`
-   (`include/url_shortener/storage/link_repository.h`). A CLI adapter cannot
+   (`include/url_shortener/storage/link_repository.hpp`). A CLI adapter cannot
    reuse that inline logic without duplicating it.
 
 **Correction to prior CLI notes.** `docs/testing/cli_link_commands.md` and
@@ -40,7 +40,7 @@ assumes CLI mode loads/saves `uri.txt`. That is incorrect: `uri.txt` is
 `src/main.cpp` for the **Fallback** routes (`GET`/`POST`/`DELETE /{path}` and
 `/`) - it has nothing to do with `Link` records, which live behind
 `linkRepository()` (the process-global `InMemoryMetadataRepository` singleton
-in `include/url_shortener/storage/link_repository.h`). Task 06.0 below
+in `include/url_shortener/storage/link_repository.hpp`). Task 06.0 below
 corrects these documents; no CLI code in this milestone touches `uri.txt`.
 
 **Known pre-existing inconsistency, out of scope.** `LinkService::Resolve`

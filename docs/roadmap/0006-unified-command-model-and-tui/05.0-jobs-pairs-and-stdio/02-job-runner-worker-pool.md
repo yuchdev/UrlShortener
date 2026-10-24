@@ -15,7 +15,7 @@ Implement `JobRunner`: a small fixed worker pool fed by a bounded FIFO queue. `s
 
 - 05.0/01 (`JobStore`, `JobRecord`, `JobState`, `JobFailure`); 01.0/06 (`JobOutcome`, `JobBody`, `IJobContext`) and 01.0/08 (`IJobSubmitter`, `JobSubmitResult`). `JobOutcome::failure` is a `CommandError`; the runner stores it as `JobFailure{error_info_for(code).name, message}` (05.0/01 keeps its own type so the store stays free of envelope headers).
 - Design decision (research item 6, see below): this class does NOT reuse `AnalyticsWorker` or `BoundedClickEventQueue`.
-- `LoggerFactory::Component("job_runner")` / `Logger::info(msg, {{key, value}})` (verified in `observability/Logger.h`).
+- `LoggerFactory::Component("job_runner")` / `Logger::info(msg, {{key, value}})` (verified in `observability/logger.hpp`).
 
 ### Reuse decision: AnalyticsWorker / BoundedClickEventQueue
 

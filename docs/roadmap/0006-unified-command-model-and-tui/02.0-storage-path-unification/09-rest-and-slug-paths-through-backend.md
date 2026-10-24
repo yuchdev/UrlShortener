@@ -51,7 +51,7 @@ const auto link = app::LinkBackend::store().findBySlug(slug);   // link_handlers
 ```
 
 `#include <url_shortener/app/link_backend.hpp>` is added to both files; the
-`link_repository.h` include is dropped from either file only if nothing else
+`link_repository.hpp` include is dropped from either file only if nothing else
 from it is used (the compiler decides).
 
 ## Implementation steps

@@ -5,7 +5,7 @@
 #include <boost/test/unit_test.hpp>
 
 #include <url_shortener/http/route_registry.hpp>
-#include <url_shortener/url_shortener.h>
+#include <url_shortener/url_shortener.hpp>
 
 #include <algorithm>
 #include <string>

@@ -1,7 +1,7 @@
 /** @file 07_expiry_logic_test.cpp @brief Unit test: expiry evaluation logic. */
 #define BOOST_TEST_MODULE ExpiryLogicTest
 #include <boost/test/unit_test.hpp>
-#include <url_shortener/url_shortener.h>
+#include <url_shortener/url_shortener.hpp>
 
 using namespace url_shortener;
 

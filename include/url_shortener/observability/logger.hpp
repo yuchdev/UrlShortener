@@ -1,7 +1,7 @@
 #pragma once
 #include <string>
 #include <vector>
-#include "url_shortener/observability/LoggingConfig.h"
+#include "url_shortener/observability/logging_config.hpp"
 namespace url_shortener::observability {
 struct LogField { std::string key; std::string value; };
 class Logger {

@@ -160,7 +160,7 @@ include/url_shortener/http/
   router.hpp
   router_builder.hpp
   route_registry.hpp
-  request_handlers.h
+  request_handlers.hpp
   handlers/
     observability_handlers.hpp
     link_handlers.hpp

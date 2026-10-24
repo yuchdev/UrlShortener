@@ -18,7 +18,7 @@ The legacy class is left untouched; the new class lives in `app/`.
 
 ## Dependencies
 
-- `url_shortener::ILinkCacheStore` (`include/url_shortener/storage/link_repository.h`,
+- `url_shortener::ILinkCacheStore` (`include/url_shortener/storage/link_repository.hpp`,
   verified: `get(slug)`, `set(slug, link)`, `erase(slug)`; note `get` and `set`
   are non-const).
 - `IClock` / `ManualClock` (`include/url_shortener/core/clock.hpp`, verified,

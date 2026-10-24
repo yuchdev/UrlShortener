@@ -63,7 +63,7 @@ return resource_response(req, config, is_tls, response, 201);
 ```
 
 `request_id_of(req)` is the existing request-id extraction used by `makeApiErrorResponse` (`requestIdFromRequest`); if it is file-local to
-`request_handlers.cpp`, expose it through `request_handlers.h` (one declaration) rather than duplicating it.
+`request_handlers.cpp`, expose it through `request_handlers.hpp` (one declaration) rather than duplicating it.
 
 ## Implementation steps
 

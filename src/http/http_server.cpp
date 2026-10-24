@@ -1,6 +1,6 @@
-#include <url_shortener/http/http_server.h>
-#include <url_shortener/http/http_session.h>
-#include <url_shortener/http/request_handlers.h>
+#include <url_shortener/http/http_server.hpp>
+#include <url_shortener/http/http_session.hpp>
+#include <url_shortener/http/request_handlers.hpp>
 #include <url_shortener/core/utils.hpp>
 #include <url_shortener/core/config.hpp>
 #include <boost/asio/ssl.hpp>

@@ -11,7 +11,7 @@ Keep or move fallback implementation deliberately after router migration.
 
 ## Files to review and possibly modify
 
-- `include/url_shortener/http/request_handlers.h`
+- `include/url_shortener/http/request_handlers.hpp`
 - `src/http/request_handlers.cpp`
 - `include/url_shortener/http/handlers/FallbackHandlers.hpp`
 - `src/http/handlers/FallbackHandlers.cpp`
@@ -19,14 +19,14 @@ Keep or move fallback implementation deliberately after router migration.
 Implementation note: the handler files shipped as
 `include/url_shortener/http/handlers/fallback_handlers.hpp` and
 `src/http/handlers/fallback_handlers.cpp` (renamed to snake_case by commit
-`3f4c170 Rename files to snake_style`); `request_handlers.h`/`.cpp` match
+`3f4c170 Rename files to snake_style`); `request_handlers.hpp`/`.cpp` match
 their original names.
 
 ## Options
 
 Option A - keep `handleApplicationRequest()`:
 
-- keep declaration in `request_handlers.h`;
+- keep declaration in `request_handlers.hpp`;
 - document it as a fallback implementation detail;
 - `handleFallbackUriStore()` remains a wrapper.
 
@@ -53,7 +53,7 @@ Whichever option is selected:
 ## Success criteria
 
 - [x] Option A was selected: `handleApplicationRequest()` remains declared in
-      `include/url_shortener/http/request_handlers.h` and implemented in
+      `include/url_shortener/http/request_handlers.hpp` and implemented in
       `src/http/request_handlers.cpp`;
       `handleFallbackUriStore()` in `src/http/handlers/fallback_handlers.cpp`
       wraps it rather than duplicating `UriMapSingleton` logic.

@@ -1,6 +1,6 @@
-#include "url_shortener/observability/Logger.h"
-#include "url_shortener/observability/LoggerFactory.h"
-#include "url_shortener/observability/LogFields.h"
+#include "url_shortener/observability/logger.hpp"
+#include "url_shortener/observability/logger_factory.hpp"
+#include "url_shortener/observability/log_fields.hpp"
 #include <chrono>
 #include <ctime>
 #include <iomanip>

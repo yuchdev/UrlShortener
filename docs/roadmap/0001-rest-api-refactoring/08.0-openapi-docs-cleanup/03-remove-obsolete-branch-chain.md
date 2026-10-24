@@ -13,7 +13,7 @@ from `handleShortenerRequest()`.
 ## Files to modify
 
 - `src/http/request_handlers.cpp`
-- `include/url_shortener/http/request_handlers.h`
+- `include/url_shortener/http/request_handlers.hpp`
 - `sources.cmake`
 - `CMakeLists.txt`
 

@@ -1,7 +1,7 @@
 /** @file 05_reserved_slug_test.cpp @brief Unit test: reserved slug denylist is matched case-insensitively. */
 #define BOOST_TEST_MODULE LinkManagementReservedSlugTest
 #include <boost/test/unit_test.hpp>
-#include <url_shortener/url_shortener.h>
+#include <url_shortener/url_shortener.hpp>
 
 using namespace url_shortener;
 

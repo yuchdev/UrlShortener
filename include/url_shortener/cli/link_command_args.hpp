@@ -16,7 +16,7 @@
 #include <vector>
 
 #include <url_shortener/app/link_command_service.hpp>
-#include <url_shortener/url_shortener.h>
+#include <url_shortener/url_shortener.hpp>
 
 namespace url_shortener {
 namespace cli {

@@ -1,7 +1,7 @@
 /** @file 05_slug_reject_test.cpp @brief Unit test: slug validator rejects invalid chars/length. */
 #define BOOST_TEST_MODULE SlugRejectTest
 #include <boost/test/unit_test.hpp>
-#include <url_shortener/url_shortener.h>
+#include <url_shortener/url_shortener.hpp>
 
 using namespace url_shortener;
 

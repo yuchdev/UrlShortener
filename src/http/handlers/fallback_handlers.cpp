@@ -1,6 +1,6 @@
 #include <url_shortener/http/handlers/fallback_handlers.hpp>
 
-#include <url_shortener/http/request_handlers.h>
+#include <url_shortener/http/request_handlers.hpp>
 
 #include <string>
 

@@ -50,7 +50,7 @@ never create or read `uri.txt` / `UriMapSingleton`. Extends the existing
 
 | Case | Assertion |
 |---|---|
-| `cmd_dispatch_has_no_http_server_symbols` | source files of `cmd`/`serve-stdio`/`tui` entry (listed in a table inside the test, resolved via `SOURCE_DIR`) do not include `http/http_server.h` / `http_session.h` nor reference `HttpServer`, `acceptor`, `uri_map_singleton` |
+| `cmd_dispatch_has_no_http_server_symbols` | source files of `cmd`/`serve-stdio`/`tui` entry (listed in a table inside the test, resolved via `SOURCE_DIR`) do not include `http/http_server.hpp` / `http_session.hpp` nor reference `HttpServer`, `acceptor`, `uri_map_singleton` |
 | `tui_sources_include_no_service_headers` | every file under `src/tui/` and `include/url_shortener/tui/` includes none of `app/link_command_service`, `storage/`, `core/link_service`, `security/*service*` headers (C8) - allowlist: `commands/envelope.hpp`, `commands/arg_spec.hpp`, `commands/json_scan.hpp`, `tui/command_client.hpp`, `security/control_set.hpp`; `commands/command_registry.hpp` and `composition/command_runtime.hpp` only in `in_process_client.*` and `tui_entry.cpp` (06.0/02 boundary test is the primary guard; this is the cross-task duplicate check) |
 | `local_modes_build_no_registry` | `src/cli/cmd_dispatch.cpp`, `src/cli/serve_stdio_dispatch.cpp`, `src/tui/tui_entry.cpp` call `build_command_runtime` and construct no `CommandRegistry`/`JobRunner` (plan C11) |
 | `src_commands_do_not_touch_uri_store` | `src/commands/**`, `src/transport/**` do not mention `UriMapSingleton`/`uri.txt` |

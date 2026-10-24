@@ -45,7 +45,7 @@ if (parsed.command.has_value()) {
 - `tests/unit/cli/` - a dispatch-level test asserting `DispatchLinkCommand`
   is reachable and returns without constructing any `HttpServer`/
   `io_context` symbol (a compile-time/link-time argument: `link_command_dispatch.cpp`
-  must not `#include <url_shortener/http/http_server.h>` at all - enforce
+  must not `#include <url_shortener/http/http_server.hpp>` at all - enforce
   with a simple grep-based test or a note in the header's constraints if a
   runtime test is impractical).
 - E2E (Task 05.0 subtask 04) provides the strongest evidence: an actual

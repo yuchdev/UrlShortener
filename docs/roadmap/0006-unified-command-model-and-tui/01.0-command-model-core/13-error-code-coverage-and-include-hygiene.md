@@ -96,7 +96,7 @@ Forbidden in any header under `include/url_shortener/commands/`:
 `url_shortener/tui/`, `<regex>`. Allowed: std headers,
 `url_shortener/commands/`, `url_shortener/app/app_error.hpp`,
 `url_shortener/security/control_set.hpp`,
-`url_shortener/observability/Logger.h`.
+`url_shortener/observability/logger.hpp`.
 
 Boundary cases: a header with `#include <boost/beast/http.hpp>` in a temp
 directory fed to the same scanning function fails (negative test of the

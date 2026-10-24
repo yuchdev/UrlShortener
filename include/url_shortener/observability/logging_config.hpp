@@ -1,6 +1,6 @@
 #pragma once
 #include <string>
-#include "url_shortener/observability/LogLevel.h"
+#include "url_shortener/observability/log_level.hpp"
 
 namespace url_shortener::observability {
 enum class LogFormat { KeyValue, Json, Plain };

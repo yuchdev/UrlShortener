@@ -668,7 +668,7 @@ Tasks:
 
 1. Delete migrated branches from `handleShortenerRequest()`.
 2. Keep `handleShortenerRequest()` as the public entry point.
-3. Move helper declarations out of `request_handlers.h` if they become
+3. Move helper declarations out of `request_handlers.hpp` if they become
    handler-private.
 4. Keep response helpers public only if tests or other modules need them.
 5. Update README/API reference once implementation lands.

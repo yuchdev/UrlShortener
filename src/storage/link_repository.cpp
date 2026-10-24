@@ -1,4 +1,4 @@
-#include <url_shortener/storage/link_repository.h>
+#include <url_shortener/storage/link_repository.hpp>
 #include <mutex>
 
 namespace url_shortener {

@@ -1,5 +1,5 @@
 /**
- * @file uri_map_singleton.h
+ * @file uri_map_singleton.hpp
  * @brief Legacy URI payload map singleton API.
  */
 #pragma once

@@ -13,9 +13,9 @@
 #include <boost/asio.hpp>
 #include <url_shortener/cli/cli_parser.hpp>
 #include <url_shortener/cli/link_command_dispatch.hpp>
-#include <url_shortener/observability/LoggerFactory.h>
-#include <url_shortener/url_shortener.h>
-#include <url_shortener/uri_map_singleton.h>
+#include <url_shortener/observability/logger_factory.hpp>
+#include <url_shortener/url_shortener.hpp>
+#include <url_shortener/uri_map_singleton.hpp>
 
 using namespace url_shortener;
 

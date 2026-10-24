@@ -5,7 +5,7 @@
 #include <url_shortener/core/utils.hpp>
 #include <url_shortener/http/router_builder.hpp>
 #include <url_shortener/http/handlers/compatibility_handlers.hpp>
-#include <url_shortener/storage/link_repository.h>
+#include <url_shortener/storage/link_repository.hpp>
 
 namespace bhttp = boost::beast::http;
 using url_shortener::Link;

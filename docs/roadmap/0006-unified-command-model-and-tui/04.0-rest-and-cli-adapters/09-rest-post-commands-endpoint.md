@@ -39,7 +39,7 @@ dedicated resource route. It is disabled unless `--command-api-enabled true`, an
 | `include/url_shortener/http/handlers/command_handlers.hpp` | create | `handleExecuteCommand` declaration. |
 | `src/http/handlers/command_handlers.cpp` | create | Implementation. Add to `COMMON_CPP_SOURCES`. |
 | `include/url_shortener/http/route_context.hpp` | modify | `RouteContext` += `std::optional<boost::asio::ip::address> peer;` (default empty). |
-| `include/url_shortener/http/request_handlers.h`, `src/http/request_handlers.cpp` (line ~465) | modify | `handleShortenerRequest(req, config, is_tls, std::optional<boost::asio::ip::address> peer = std::nullopt)` forwards `peer` to `dispatch`. |
+| `include/url_shortener/http/request_handlers.hpp`, `src/http/request_handlers.cpp` (line ~465) | modify | `handleShortenerRequest(req, config, is_tls, std::optional<boost::asio::ip::address> peer = std::nullopt)` forwards `peer` to `dispatch`. |
 | `include/url_shortener/http/router.hpp` (line ~39), `src/http/router.cpp` (line ~119) | modify | `Router::dispatch(req, config, is_tls, std::optional<boost::asio::ip::address> peer = std::nullopt) const`; sets `context.peer = peer` on both `RouteContext` instances it builds. |
 | `src/http/http_session.cpp` (lines ~67 and ~156) | modify | Plain: `socket_.socket().remote_endpoint(ec)`; TLS: `boost::beast::get_lowest_layer(stream_).socket().remote_endpoint(ec)`; error-code overload, `ec` -> `std::nullopt`; pass `.address()` to `handleShortenerRequest`. Not logged. |
 | `src/http/router_builder.cpp` | modify | `router.add(post, "/api/v1/commands", "api_commands", handleExecuteCommand)` in the API block, before the `/{path}` fallbacks. |

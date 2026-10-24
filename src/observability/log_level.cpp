@@ -1,4 +1,4 @@
-#include "url_shortener/observability/LogLevel.h"
+#include "url_shortener/observability/log_level.hpp"
 #include <algorithm>
 namespace url_shortener::observability {
 std::string ToString(LogLevel l){switch(l){case LogLevel::Trace:return"TRACE";case LogLevel::Debug:return"DEBUG";case LogLevel::Info:return"INFO";case LogLevel::Warn:return"WARN";case LogLevel::Error:return"ERROR";case LogLevel::Fatal:return"FATAL";case LogLevel::Off:return"OFF";}return"INFO";}

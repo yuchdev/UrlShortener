@@ -1,5 +1,5 @@
 #pragma once
-#include "url_shortener/observability/Logger.h"
+#include "url_shortener/observability/logger.hpp"
 namespace url_shortener::observability {
 class LoggerFactory {
 public:

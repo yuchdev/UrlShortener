@@ -2,7 +2,7 @@
 #define BOOST_TEST_MODULE LinkManagementTagValidationTest
 #include <boost/test/unit_test.hpp>
 #include <vector>
-#include <url_shortener/url_shortener.h>
+#include <url_shortener/url_shortener.hpp>
 
 using namespace url_shortener;
 

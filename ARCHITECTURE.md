@@ -46,17 +46,17 @@ Data flow:
 │   │   ├── config.h             # server and TLS configuration structs
 │   │   └── utils.h              # string, time, and validation helpers
 │   ├── http/
-│   │   ├── http_server.h        # main server lifecycle
-│   │   ├── http_session.h       # async session handling
+│   │   ├── http_server.hpp        # main server lifecycle
+│   │   ├── http_session.hpp       # async session handling
 │   │   ├── RouteRegistry.hpp     # route metadata source of truth
 │   │   ├── Router.hpp            # small in-process router
 │   │   ├── handlers/             # route-specific handlers
-│   │   └── request_handlers.h    # HTTP entry point and shared helpers
+│   │   └── request_handlers.hpp    # HTTP entry point and shared helpers
 │   ├── storage/
-│   │   └── link_repository.h    # repository interface and singleton
+│   │   └── link_repository.hpp    # repository interface and singleton
 │   ├── analytics/
 │   │   └── click_event_queue.hpp  # metrics collection queue
-│   └── url_shortener.h          # public facade (includes modular headers)
+│   └── url_shortener.hpp          # public facade (includes modular headers)
 ├── src/
 │   ├── core/
 │   │   └── utils.cpp            # utility implementations

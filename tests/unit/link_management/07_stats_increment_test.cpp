@@ -1,7 +1,7 @@
 /** @file 07_stats_increment_test.cpp @brief Unit test: stats counters increment only for successful redirects. */
 #define BOOST_TEST_MODULE LinkManagementStatsIncrementTest
 #include <boost/test/unit_test.hpp>
-#include <url_shortener/url_shortener.h>
+#include <url_shortener/url_shortener.hpp>
 
 using namespace url_shortener;
 namespace http = boost::beast::http;

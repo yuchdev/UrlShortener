@@ -40,15 +40,15 @@ set(URL_SHORTENER_CPP
 )
 
 set(URL_SHORTENER_H
-        ${CMAKE_CURRENT_SOURCE_DIR}/include/url_shortener/url_shortener.h
-        ${CMAKE_CURRENT_SOURCE_DIR}/include/url_shortener/uri_map_singleton.h
+        ${CMAKE_CURRENT_SOURCE_DIR}/include/url_shortener/url_shortener.hpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/include/url_shortener/uri_map_singleton.hpp
         ${CMAKE_CURRENT_SOURCE_DIR}/include/url_shortener/core/types.hpp
         ${CMAKE_CURRENT_SOURCE_DIR}/include/url_shortener/core/utils.h
         ${CMAKE_CURRENT_SOURCE_DIR}/include/url_shortener/analytics/click_event_queue.hpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/include/url_shortener/storage/link_repository.h
-        ${CMAKE_CURRENT_SOURCE_DIR}/include/url_shortener/http/http_server.h
-        ${CMAKE_CURRENT_SOURCE_DIR}/include/url_shortener/http/request_handlers.h
-        ${CMAKE_CURRENT_SOURCE_DIR}/include/url_shortener/http/http_session.h
+        ${CMAKE_CURRENT_SOURCE_DIR}/include/url_shortener/storage/link_repository.hpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/include/url_shortener/http/http_server.hpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/include/url_shortener/http/request_handlers.hpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/include/url_shortener/http/http_session.hpp
         ${CMAKE_CURRENT_SOURCE_DIR}/include/url_shortener/http/route_registry.hpp
         ${CMAKE_CURRENT_SOURCE_DIR}/include/url_shortener/http/route_context.hpp
         ${CMAKE_CURRENT_SOURCE_DIR}/include/url_shortener/http/handler_types.hpp
@@ -62,11 +62,11 @@ set(URL_SHORTENER_H
         ${CMAKE_CURRENT_SOURCE_DIR}/include/url_shortener/cli/cli_parser.hpp
         ${CMAKE_CURRENT_SOURCE_DIR}/include/url_shortener/cli/link_command_args.hpp
         ${CMAKE_CURRENT_SOURCE_DIR}/include/url_shortener/cli/link_command_dispatch.hpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/include/url_shortener/observability/LogLevel.h
-        ${CMAKE_CURRENT_SOURCE_DIR}/include/url_shortener/observability/LoggingConfig.h
-        ${CMAKE_CURRENT_SOURCE_DIR}/include/url_shortener/observability/LogFields.h
-        ${CMAKE_CURRENT_SOURCE_DIR}/include/url_shortener/observability/Logger.h
-        ${CMAKE_CURRENT_SOURCE_DIR}/include/url_shortener/observability/LoggerFactory.h
+        ${CMAKE_CURRENT_SOURCE_DIR}/include/url_shortener/observability/log_level.hpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/include/url_shortener/observability/logging_config.hpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/include/url_shortener/observability/log_fields.hpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/include/url_shortener/observability/logger.hpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/include/url_shortener/observability/logger_factory.hpp
 )
 
 set(URL_SHORTENER_SOURCES

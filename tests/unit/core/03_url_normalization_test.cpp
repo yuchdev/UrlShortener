@@ -1,7 +1,7 @@
 /** @file 03_url_normalization_test.cpp @brief Unit test: normalization lowercases and strips default ports. */
 #define BOOST_TEST_MODULE UrlNormalizationTest
 #include <boost/test/unit_test.hpp>
-#include <url_shortener/url_shortener.h>
+#include <url_shortener/url_shortener.hpp>
 
 using namespace url_shortener;
 

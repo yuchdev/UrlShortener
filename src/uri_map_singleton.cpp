@@ -3,8 +3,8 @@
  * @brief Legacy URI payload singleton implementation.
  */
 #include <fstream>
-#include <url_shortener/uri_map_singleton.h>
-#include <url_shortener/observability/LoggerFactory.h>
+#include <url_shortener/uri_map_singleton.hpp>
+#include <url_shortener/observability/logger_factory.hpp>
 
 /**
  * @brief Return global singleton instance.

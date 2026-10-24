@@ -2,7 +2,7 @@
 
 #include <url_shortener/analytics/aggregate_query.hpp>
 #include <url_shortener/analytics/aggregate_stats.hpp>
-#include <url_shortener/storage/link_repository.h>
+#include <url_shortener/storage/link_repository.hpp>
 #include "url_shortener/storage/memory/in_memory_click_event_repository.hpp"
 
 #include <chrono>

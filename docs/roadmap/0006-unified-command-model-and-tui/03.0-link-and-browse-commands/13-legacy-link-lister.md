@@ -18,7 +18,7 @@ round-tripping the snapshot through the 02.0 codec, so there is still one implem
 
 - Subtask 12 (`ILinkLister`, `LinkListQuery`, `build_list_links_query`, `RepositoryLinkLister` internals).
 - 02.0/02 codec: `link_to_record(const Link&, ::LinkRecord*, std::string* error)` and `record_to_link`.
-- Verified legacy facts (`include/url_shortener/storage/link_repository.h`, `src/storage/link_repository.cpp`):
+- Verified legacy facts (`include/url_shortener/storage/link_repository.hpp`, `src/storage/link_repository.cpp`):
   `url_shortener::IMetadataRepository` (Link-based; `create/getBySlug/getById/slugExists/update`, no list) has exactly **one**
   implementer, `url_shortener::InMemoryMetadataRepository`, which stores `by_id_` (`unordered_map<string, Link>`) behind a
   `std::shared_mutex`. The global `::IMetadataRepository` (record-based) is a different type - do not confuse them.
@@ -29,7 +29,7 @@ round-tripping the snapshot through the 02.0 codec, so there is still one implem
 
 | Path | Action | What changes |
 |---|---|---|
-| `include/url_shortener/storage/link_repository.h` | modify | Add pure `virtual std::vector<Link> snapshot() const = 0;` to `url_shortener::IMetadataRepository`; declare the override on the in-memory class. |
+| `include/url_shortener/storage/link_repository.hpp` | modify | Add pure `virtual std::vector<Link> snapshot() const = 0;` to `url_shortener::IMetadataRepository`; declare the override on the in-memory class. |
 | `src/storage/link_repository.cpp` | modify | Implement `snapshot()` under a shared lock (copy all `by_id_` values). |
 | `include/url_shortener/app/legacy_link_lister.hpp` | create | `LegacyLinkLister`. |
 | `src/app/legacy_link_lister.cpp` | create | Implementation. Add to `COMMON_CPP_SOURCES`. |

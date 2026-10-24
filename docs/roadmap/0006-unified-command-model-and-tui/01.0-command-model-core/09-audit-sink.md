@@ -18,7 +18,7 @@ appear in a record (ADR 0002 "Authorization", milestone C6).
 
 - 01.0/07 pipeline (the hook points are its early returns).
 - `url_shortener::observability::Logger` / `LogField` (verified in
-  `include/url_shortener/observability/Logger.h`; `info(msg, std::vector<LogField>)`)
+  `include/url_shortener/observability/logger.hpp`; `info(msg, std::vector<LogField>)`)
   for the production sink. Logger initialisation is the caller's job
   (`LoggerFactory::Initialize`); the sink must work when it was not
   initialised (UNVERIFIED how `Logger` behaves uninitialised; the test does not

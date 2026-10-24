@@ -1,6 +1,6 @@
 #include <url_shortener/http/handlers/observability_handlers.hpp>
 
-#include <url_shortener/http/request_handlers.h>
+#include <url_shortener/http/request_handlers.hpp>
 
 namespace url_shortener {
 namespace http {
