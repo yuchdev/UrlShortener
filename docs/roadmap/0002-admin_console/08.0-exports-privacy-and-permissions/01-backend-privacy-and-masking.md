@@ -15,9 +15,9 @@ by tasks 03.0-07.0) to call it.
 ## Files to add
 
 ```text
-src/admin/privacy/PrivacyPolicy.h
+src/admin/privacy/PrivacyPolicy.hpp
 src/admin/privacy/PrivacyPolicy.cpp
-src/admin/privacy/MaskingService.h
+src/admin/privacy/MaskingService.hpp
 src/admin/privacy/MaskingService.cpp
 ```
 

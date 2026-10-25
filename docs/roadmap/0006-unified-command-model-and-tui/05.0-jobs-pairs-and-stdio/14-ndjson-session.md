@@ -16,7 +16,7 @@ Implement the transport-independent heart of `serve-stdio`: `NdjsonSession`, whi
 - 05.0/13 (`NdjsonLineReader`, framing table).
 - 01.0/03 (`parse_request`), 01.0/04 (`serialize_response`, `make_error` response), 01.0/07 (`execute`). Symbols below marked NEW-in-01.0 are partly UNVERIFIED names; the capabilities required are: parse a line into `CommandRequest` with a structured `invalid_envelope` error, serialize a `CommandResponse` to a single-line string, build an error `CommandResponse` from a code and message, and `CommandRegistry::execute(const CallerContext&, const CommandRequest&) const` (verified in ADR 0002 section 2).
 - Best-effort `id` recovery from a rejected line uses the sanctioned scanner (`commands::scan_object` + `find_member("id")`, 01.0/01),
-  not `core/utils.h::extractJsonStringField` (which would match a nested `id`, plan C9).
+  not `core/utils.hpp::extractJsonStringField` (which would match a nested `id`, plan C9).
 
 ## Files affected
 

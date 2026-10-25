@@ -30,7 +30,7 @@ includes and therefore allowed under `src/tui/`).
 - Internal: envelope types `CommandRequest`/`CommandResponse` (01.0/03-04), `ArgSpec`/`ArgType` with `nullable` and object `fields`
   (01.0/05, specified), `CommandRegistry`/`CallerContext`/`CommandDescriptor` (01.0/06-07), all in namespace `url_shortener::commands`
   under `include/url_shortener/commands/`; `security::ControlSet` (`include/url_shortener/security/control_set.hpp`, verified);
-  `jsonEscape` from `core/utils.h` only inside `.cpp` files (it pulls in Beast).
+  `jsonEscape` from `core/utils.hpp` only inside `.cpp` files (it pulls in Beast).
 - The scanner of 01.0/01: `scan_object`, `scan_array`, `find_member`, `decode_json_string`, `json_kind`.
 - Registry construction for the in-process client is **not** done here: `tui_entry.cpp` (subtask 19) calls
   `composition::build_command_runtime` (Task 03.0 subtask 18, extended for jobs by Task 05.0 subtask 20) and hands

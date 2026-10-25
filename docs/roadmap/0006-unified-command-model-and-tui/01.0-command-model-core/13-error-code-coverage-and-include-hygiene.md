@@ -92,7 +92,7 @@ ctest --test-dir cmake-build -R "^commands__" --output-on-failure
 Forbidden in any header under `include/url_shortener/commands/`:
 `boost/beast`, `boost/asio`, `boost/program_options`, `ftxui`,
 `url_shortener/http/`, `url_shortener/storage/`, `url_shortener/composition/`,
-`url_shortener/core/utils.h` (it pulls in Beast), `url_shortener/cli/`,
+`url_shortener/core/utils.hpp` (it pulls in Beast), `url_shortener/cli/`,
 `url_shortener/tui/`, `<regex>`. Allowed: std headers,
 `url_shortener/commands/`, `url_shortener/app/app_error.hpp`,
 `url_shortener/security/control_set.hpp`,
@@ -105,7 +105,7 @@ checker itself).
 ## Constraints
 
 - Tests may include any header; the hygiene rule is about public headers only
-  (`.cpp` files in `src/commands/` may use `core/utils.h` and `app/`).
+  (`.cpp` files in `src/commands/` may use `core/utils.hpp` and `app/`).
 - No dependence on network, time or ordering.
 - Milestone contracts: C2 (all codes in the envelope), C8-style layering for
   the core, C9.
@@ -126,6 +126,6 @@ checker itself).
 - Behavioral coverage of real link commands (Task 03.0) and cross-transport
   replay (Task 07.0).
 - The hygiene test is textual; it cannot see transitive includes. It
-  compensates by banning `core/utils.h` explicitly.
+  compensates by banning `core/utils.hpp` explicitly.
 - Test numbering: 13 and 14 exist as files while subtask numbering stops at 13
   (this subtask owns both files).

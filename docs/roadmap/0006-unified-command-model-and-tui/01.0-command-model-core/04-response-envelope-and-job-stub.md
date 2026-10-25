@@ -96,8 +96,8 @@ exactly one of result/job/error; `ok == true` implies `error.ok()`;
 1. Append the types to `envelope.hpp`.
 2. Implement `job_state_name` / `from_name` with a static table.
 3. Implement the three factory functions and `serialize_response` using
-   `url_shortener::jsonString` (verified in `core/utils.h`/`utils.cpp`). Note
-   that `core/utils.h` includes `boost/beast/http.hpp`, so it may be included
+   `url_shortener::jsonString` (verified in `core/utils.hpp`/`utils.cpp`). Note
+   that `core/utils.hpp` includes `boost/beast/http.hpp`, so it may be included
    only from `src/commands/*.cpp`, never from a header under
    `include/url_shortener/commands/` (enforced by subtask 13).
 4. Implement `parse_response` via `scan_object` (top-level) and one nested

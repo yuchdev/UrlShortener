@@ -34,8 +34,8 @@ subtasks 07-10 then contain no mapping code of their own (milestone contract C1)
 
 | Path | Action | What changes |
 |---|---|---|
-| `include/url_shortener/commands/link_command_codec.hpp` | create | Declarations below. Must not include `core/utils.h` (it pulls in Beast) nor storage/http headers (01.0/13 hygiene test). |
-| `src/commands/link_command_codec.cpp` | create | Definitions; may include `core/utils.h`. Add to `COMMON_CPP_SOURCES` in `sources.cmake`. |
+| `include/url_shortener/commands/link_command_codec.hpp` | create | Declarations below. Must not include `core/utils.hpp` (it pulls in Beast) nor storage/http headers (01.0/13 hygiene test). |
+| `src/commands/link_command_codec.cpp` | create | Definitions; may include `core/utils.hpp`. Add to `COMMON_CPP_SOURCES` in `sources.cmake`. |
 | `tests/unit/commands/20_link_command_codec.cpp` | create | Unit tests via a probe descriptor on a real `CommandRegistry`. |
 | `sources.cmake` | modify | `COMMON_CPP_SOURCES` += codec .cpp; `COMMANDS_UNIT_SOURCES` += the test. |
 
@@ -118,7 +118,7 @@ Manual check: none.
 1. `commands__20_link_command_codec` passes.
 2. `link_view_result` output equals `app::serializeLinkViewJson` for the same view, byte for byte (test).
 3. `grep -n "#include" include/url_shortener/commands/link_command_codec.hpp` shows no
-   `core/utils.h`, `http/`, `storage/` or `boost/`.
+   `core/utils.hpp`, `http/`, `storage/` or `boost/`.
 
 ## Out of scope / risks
 

@@ -13,11 +13,11 @@ backing `/admin/url-pairs` and the admin-only disable action.
 ## Files to add
 
 ```text
-src/admin/controllers/UrlPairsAdminController.h
+src/admin/controllers/UrlPairsAdminController.hpp
 src/admin/controllers/UrlPairsAdminController.cpp
-src/admin/storage/UrlPairsAdminRepository.h
+src/admin/storage/UrlPairsAdminRepository.hpp
 src/admin/storage/UrlPairsAdminRepository.cpp
-src/admin/dto/UrlPairAdminDto.h
+src/admin/dto/UrlPairAdminDto.hpp
 src/admin/dto/UrlPairAdminDto.cpp
 ```
 

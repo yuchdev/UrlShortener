@@ -18,17 +18,17 @@ Create or extend (if equivalent files already exist from the safe-login
 task, extend them instead of duplicating):
 
 ```text
-src/admin/http/AdminRouter.h
+src/admin/http/AdminRouter.hpp
 src/admin/http/AdminRouter.cpp
-src/admin/http/AdminStaticAssetsHandler.h
+src/admin/http/AdminStaticAssetsHandler.hpp
 src/admin/http/AdminStaticAssetsHandler.cpp
-src/admin/auth/AdminSessionMiddleware.h
+src/admin/auth/AdminSessionMiddleware.hpp
 src/admin/auth/AdminSessionMiddleware.cpp
-src/admin/auth/AdminPermissionMiddleware.h
+src/admin/auth/AdminPermissionMiddleware.hpp
 src/admin/auth/AdminPermissionMiddleware.cpp
-src/admin/controllers/AdminAuthController.h
+src/admin/controllers/AdminAuthController.hpp
 src/admin/controllers/AdminAuthController.cpp
-src/admin/model/AdminUserDto.h
+src/admin/model/AdminUserDto.hpp
 src/admin/model/AdminUserDto.cpp
 ```
 

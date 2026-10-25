@@ -163,7 +163,7 @@ Background correction above; CLI command dispatch happens before the
 `UriMapSingleton::getInstance()`.
 
 **C6. No new JSON dependency, no C++20.** Same as `CLAUDE.md` / Milestone
-0001 C6/C7 - manual JSON helpers in `core/utils.h`, C++17 only.
+0001 C6/C7 - manual JSON helpers in `core/utils.hpp`, C++17 only.
 
 **C7. Register every new `.cpp` in `sources.cmake`** (and `CMakeLists.txt`
 for new test targets), per `CLAUDE.md`'s Build section.

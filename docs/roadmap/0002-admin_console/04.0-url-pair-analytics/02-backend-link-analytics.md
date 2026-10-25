@@ -14,11 +14,11 @@ visitors, and recent events for a single URL pair.
 ## Files to add
 
 ```text
-src/admin/controllers/LinkAnalyticsController.h
+src/admin/controllers/LinkAnalyticsController.hpp
 src/admin/controllers/LinkAnalyticsController.cpp
-src/admin/analytics/LinkAnalyticsService.h
+src/admin/analytics/LinkAnalyticsService.hpp
 src/admin/analytics/LinkAnalyticsService.cpp
-src/admin/dto/LinkAnalyticsDto.h
+src/admin/dto/LinkAnalyticsDto.hpp
 src/admin/dto/LinkAnalyticsDto.cpp
 ```
 

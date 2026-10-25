@@ -14,17 +14,17 @@ analytics-overview page.
 ## Files to add
 
 ```text
-src/admin/controllers/AnalyticsController.h
+src/admin/controllers/AnalyticsController.hpp
 src/admin/controllers/AnalyticsController.cpp
-src/admin/analytics/AnalyticsQueryService.h
+src/admin/analytics/AnalyticsQueryService.hpp
 src/admin/analytics/AnalyticsQueryService.cpp
-src/admin/analytics/AnalyticsOverviewDto.h
+src/admin/analytics/AnalyticsOverviewDto.hpp
 src/admin/analytics/AnalyticsOverviewDto.cpp
-src/admin/analytics/AnalyticsTimeseriesDto.h
+src/admin/analytics/AnalyticsTimeseriesDto.hpp
 src/admin/analytics/AnalyticsTimeseriesDto.cpp
-src/admin/analytics/AnalyticsTopListDto.h
+src/admin/analytics/AnalyticsTopListDto.hpp
 src/admin/analytics/AnalyticsTopListDto.cpp
-src/admin/storage/AnalyticsRepository.h
+src/admin/storage/AnalyticsRepository.hpp
 src/admin/storage/AnalyticsRepository.cpp
 ```
 

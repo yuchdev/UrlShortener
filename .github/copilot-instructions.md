@@ -108,7 +108,7 @@ Single-binary async HTTP/HTTPS server (Boost.Asio + Boost.Beast + OpenSSL).
 - `SystemClock` — production wall clock.
 - `ManualClock` — injectable test clock with `set()` and `advance()`. Pass to `LinkService` and storage adapters in tests instead of `SystemClock`.
 
-**`include/url_shortener/core/utils.h`** — utilities called across modules:
+**`include/url_shortener/core/utils.hpp`** — utilities called across modules:
 - URL validation: `isValidHttpUrl`, `isValidSlug`, `isReservedSlug`, `normalizeTargetUrl`, `isPrivateHost`.
 - JSON helpers: `extractJsonStringField`, `extractJsonBoolField`, `extractJsonStringArrayField`, `extractJsonFlatObjectStringField` — all operate on raw string bodies without a JSON library. Used throughout `request_handlers.cpp`.
 - ID/slug generation: `generateSlug(length)`, `generateId()` (UUID-like).
@@ -318,7 +318,7 @@ Parse from YAML: `ParseStorageConfigFile(path)` or `ParseStorageConfigYaml(yaml_
 
 **Analytics is best-effort:** Queue overflow is silent. Analytics failures must never affect redirect response behavior or latency.
 
-**JSON parsing:** Uses manual string scanning helpers from `core/utils.h` (`extractJsonStringField` etc.) — no JSON library. These are the approved parsing utilities; do not add a JSON dependency.
+**JSON parsing:** Uses manual string scanning helpers from `core/utils.hpp` (`extractJsonStringField` etc.) — no JSON library. These are the approved parsing utilities; do not add a JSON dependency.
 
 **API shape:** Canonical resource is `/api/v1/links/{slug}`. Endpoints `/api/v1/short-urls/...` and `/r/{slug}` are compatibility aliases. New work targets the `/api/v1/links/` prefix.
 

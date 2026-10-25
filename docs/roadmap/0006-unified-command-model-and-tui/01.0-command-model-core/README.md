@@ -10,7 +10,7 @@
 Build the transport-agnostic core of [ADR 0002](/docs/adr/0002-unified-command-model.md)
 in a new `url_shortener::commands` namespace:
 
-- a depth- and size-bounded JSON object scanner (the existing `core/utils.h`
+- a depth- and size-bounded JSON object scanner (the existing `core/utils.hpp`
   helpers cannot enumerate keys or read numbers, see the design note below);
 - the single error-code / HTTP-status / CLI-exit-code table;
 - the request and response envelope types, parser and serializer, including
@@ -31,7 +31,7 @@ with fake handlers.
 ### Design note: why a scanner subtask exists
 
 An earlier draft of ADR 0002 called `ArgsView` "a thin accessor over the
-`core/utils.h` helpers". The current ADR text (section 2, "One sanctioned
+`core/utils.hpp` helpers". The current ADR text (section 2, "One sanctioned
 deviation") already names the scanner `commands::scan_object`/`scan_array` as
 the only JSON tokenizer in product code; this note records why. Reading the
 code shows the helpers are not enough:
@@ -47,7 +47,7 @@ code shows the helpers are not enough:
 
 Subtask 01 therefore adds one small depth-aware top-level object scanner in
 `src/commands/`. It is not a JSON library (no DOM, no dependency, objects only,
-leaf decoding reuses `core/utils.h` where it can). This is the smallest
+leaf decoding reuses `core/utils.hpp` where it can). This is the smallest
 deviation from "no new JSON library" that makes the ADR implementable; it is
 recorded as a risk below and as open decision D3 in the decision log.
 
@@ -98,7 +98,7 @@ use the current numbers.
 ## Key constraints
 
 - No JSON library (CLAUDE.md, milestone C9). Only `src/commands/json_scan.cpp`
-  scans JSON text; everything else goes through it or `core/utils.h`.
+  scans JSON text; everything else goes through it or `core/utils.hpp`.
 - `include/url_shortener/commands/` must not include Beast, Boost.Asio,
   Boost.ProgramOptions, FTXUI, `url_shortener/http/` or `url_shortener/storage/`
   headers. Enforced by a test in subtask 13.

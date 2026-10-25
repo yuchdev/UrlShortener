@@ -13,14 +13,14 @@ Add a small, bounded, dependency-free scanner that splits one JSON *object*
 into its top-level members (key, kind, raw token). It is the only code in the
 commands layer that walks JSON text; the envelope parser (03) and `ArgsView`
 (05) are built on it. It replaces the first-occurrence key search of
-`core/utils.h` for envelopes, because that search matches nested keys and
+`core/utils.hpp` for envelopes, because that search matches nested keys and
 string contents, cannot read numbers/booleans and cannot enumerate keys
 (needed for "unknown keys are rejected").
 
 ## Dependencies
 
 - None in the commands layer.
-- Reuses nothing at runtime from `core/utils.h` except (optionally) leaf
+- Reuses nothing at runtime from `core/utils.hpp` except (optionally) leaf
   string un-escaping if a verified helper exists; otherwise this subtask owns
   a small decoder (see "Classes and functions").
 - No new library (CLAUDE.md, milestone C9).
@@ -105,7 +105,7 @@ header, so `src/tui/` (Task 06.0 subtask 02), the args builder (Task 04.0
 subtask 01) and the pair/stdio code (Task 05.0) include it directly instead of
 writing their own scanners.
 
-UNVERIFIED: whether `core/utils.h::extractJsonStringField` already decodes
+UNVERIFIED: whether `core/utils.hpp::extractJsonStringField` already decodes
 `\uXXXX`; the spec assumes it does not and owns the decoder. Do not call
 `extractJsonStringField` for envelope fields.
 

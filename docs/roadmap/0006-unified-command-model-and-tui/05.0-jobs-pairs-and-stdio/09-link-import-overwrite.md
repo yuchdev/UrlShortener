@@ -16,7 +16,7 @@ Make `on_conflict=overwrite` real. Today nothing in the app layer can change a l
 ## Dependencies
 
 - 05.0/08 (the import body and its policy switch).
-- Verified: `LinkCommandService::UpdateLink` (PATCH, no target field), `ILinkStore::update(const Link&, AppError*)`, `ILinkStore::findBySlug`, `normalizeTargetUrl(url, ServerConfig)` in `core/utils.h`, `currentTimestamp()`.
+- Verified: `LinkCommandService::UpdateLink` (PATCH, no target field), `ILinkStore::update(const Link&, AppError*)`, `ILinkStore::findBySlug`, `normalizeTargetUrl(url, ServerConfig)` in `core/utils.hpp`, `currentTimestamp()`.
 - Design decision (see Out of scope): the new method is separate from `link.update` so the public `link.update` contract and ArgSpec (catalog 3.1) stay unchanged (C3).
 
 ## Files affected

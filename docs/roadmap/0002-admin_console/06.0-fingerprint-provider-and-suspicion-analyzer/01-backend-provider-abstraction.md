@@ -14,19 +14,19 @@ fingerprinting config section.
 ## Files to add
 
 ```text
-src/fingerprint/FingerprintEnvelope.h
+src/fingerprint/FingerprintEnvelope.hpp
 src/fingerprint/FingerprintEnvelope.cpp
-src/fingerprint/FingerprintProvider.h
+src/fingerprint/FingerprintProvider.hpp
 src/fingerprint/FingerprintProvider.cpp
-src/fingerprint/FingerprintNormalizer.h
+src/fingerprint/FingerprintNormalizer.hpp
 src/fingerprint/FingerprintNormalizer.cpp
-src/fingerprint/FingerprintConfig.h
+src/fingerprint/FingerprintConfig.hpp
 src/fingerprint/FingerprintConfig.cpp
-src/fingerprint/providers/FingerprintProProvider.h
+src/fingerprint/providers/FingerprintProProvider.hpp
 src/fingerprint/providers/FingerprintProProvider.cpp
-src/fingerprint/providers/ThumbmarkProvider.h
+src/fingerprint/providers/ThumbmarkProvider.hpp
 src/fingerprint/providers/ThumbmarkProvider.cpp
-src/fingerprint/providers/NoopFingerprintProvider.h
+src/fingerprint/providers/NoopFingerprintProvider.hpp
 src/fingerprint/providers/NoopFingerprintProvider.cpp
 ```
 

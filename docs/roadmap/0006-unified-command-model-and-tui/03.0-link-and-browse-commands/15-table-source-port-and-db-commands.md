@@ -105,7 +105,7 @@ Results: `db.tables` -> `{"tables":[{"name","rows","writable","columns":[{"name"
 ## Implementation steps
 
 1. Write `table_source.hpp` and `table_catalog.cpp` (name validation by hand, no `<regex>`).
-2. Write the two serializers using `jsonString` (in the .cpp only; the header must not include `core/utils.h`).
+2. Write the two serializers using `jsonString` (in the .cpp only; the header must not include `core/utils.hpp`).
 3. Write the two descriptors/handlers.
 4. Tests with an in-test `FakeTableSource` (configurable rows, columns, failure injection).
 5. Register in `sources.cmake`; build; run.

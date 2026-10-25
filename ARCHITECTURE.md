@@ -43,8 +43,8 @@ Data flow:
 ├── include/url_shortener/
 │   ├── core/
 │   │   ├── types.hpp              # domain models and enums
-│   │   ├── config.h             # server and TLS configuration structs
-│   │   └── utils.h              # string, time, and validation helpers
+│   │   ├── config.hpp             # server and TLS configuration structs
+│   │   └── utils.hpp              # string, time, and validation helpers
 │   ├── http/
 │   │   ├── http_server.hpp        # main server lifecycle
 │   │   ├── http_session.hpp       # async session handling

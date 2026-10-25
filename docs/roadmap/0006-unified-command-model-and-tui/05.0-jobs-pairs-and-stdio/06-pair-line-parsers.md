@@ -13,7 +13,7 @@ Provide the pure, line-oriented parsers used by `link.import`: CSV (`full_url,sl
 
 ## Dependencies
 
-- None at build time besides the standard library. `core/utils.h` helpers (`trim`) may be used in the `.cpp` only.
+- None at build time besides the standard library. `core/utils.hpp` helpers (`trim`) may be used in the `.cpp` only.
 - Format contract: catalog section 3.3 (`csv`: `full_url,slug` per line, slug may be blank; `ndjson`: one `link.create` args object per line).
 
 ## Files affected

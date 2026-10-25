@@ -18,7 +18,7 @@ commands.
 ## Dependencies
 
 - `src/http/handlers/redirect_handlers.cpp` and `include/url_shortener/http/handlers/redirect_handlers.hpp`; `RouterBuilder` (`include/url_shortener/http/router_builder.hpp`); `RouteRegistry` (`registeredRoutes()`).
-- Includes of `redirect_handlers.cpp` on master (verified): `http/handlers/redirect_handlers.hpp`, `analytics/click_event_queue.h`, `core/utils.h`, `http/request_handlers.hpp`, `storage/link_repository.hpp`, `storage/memory/in_memory_click_event_repository.hpp`. Task 02.0 subtask 08 adds `app/link_backend.hpp` and may drop `storage/link_repository.hpp`; the allowlist is therefore captured from the file **after** 02.0/08 has landed (hence the dependency), not from master.
+- Includes of `redirect_handlers.cpp` on master (verified): `http/handlers/redirect_handlers.hpp`, `analytics/click_event_queue.hpp`, `core/utils.hpp`, `http/request_handlers.hpp`, `storage/link_repository.hpp`, `storage/memory/in_memory_click_event_repository.hpp`. Task 02.0 subtask 08 adds `app/link_backend.hpp` and may drop `storage/link_repository.hpp`; the allowlist is therefore captured from the file **after** 02.0/08 has landed (hence the dependency), not from master.
 - Analytics today (verified): the handlers call the file-local `emitClickEvent(...)`, which calls `analyticsClickRepository().InsertBatch(...)`; there is no `RedirectAnalyticsHook`/`AnalyticsService` use in this file.
 
 ## Files affected

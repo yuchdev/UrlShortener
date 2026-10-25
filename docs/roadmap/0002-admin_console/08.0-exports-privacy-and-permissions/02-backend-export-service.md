@@ -13,13 +13,13 @@ lifecycle (creation, retrieval, expiration).
 ## Files to add
 
 ```text
-src/admin/controllers/ExportController.h
+src/admin/controllers/ExportController.hpp
 src/admin/controllers/ExportController.cpp
-src/admin/export/ExportService.h
+src/admin/export/ExportService.hpp
 src/admin/export/ExportService.cpp
-src/admin/export/ExportPolicy.h
+src/admin/export/ExportPolicy.hpp
 src/admin/export/ExportPolicy.cpp
-src/admin/dto/ExportDto.h
+src/admin/dto/ExportDto.hpp
 src/admin/dto/ExportDto.cpp
 ```
 

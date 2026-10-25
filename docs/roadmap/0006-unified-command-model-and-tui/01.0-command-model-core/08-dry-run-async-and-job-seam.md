@@ -33,7 +33,7 @@ The registry itself never runs jobs; it only defines the seam and returns the
   to `async_capable` commands, `kind == job` commands always run as jobs,
   `dry_run` only where `supports_dry_run`.
 - OpenSSL `SHA256` (already linked via `url_shortener_common`) and
-  `hexEncode(const unsigned char*, size_t)` from `core/utils.h` (verified) for
+  `hexEncode(const unsigned char*, size_t)` from `core/utils.hpp` (verified) for
   `args_digest`, used in the `.cpp` only.
 
 ## Files affected

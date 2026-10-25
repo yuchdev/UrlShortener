@@ -106,7 +106,7 @@ Register new files in `CMakeLists.txt`'s app unit-test source list.
 
 - No Beast/HTTP type appears in any new DTO or method signature (C2).
 - Validation logic (`validateTags`, `validateMetadata`, `validateCampaign`,
-  RFC3339 parsing) is reused from `core/utils.h`, not reimplemented.
+  RFC3339 parsing) is reused from `core/utils.hpp`, not reimplemented.
 - New public symbols carry Doxygen comments.
 
 ## Success criteria

@@ -22,7 +22,7 @@ no other client identifier.
 - Verified `ClickEvent` fields (`analytics/click_event.hpp`): `event_id, occurred_at, slug, link_id, domain,
   status_code, referrer, user_agent, client_id_hash`. Free-text fields (`referrer`, `user_agent`) are untrusted
   and length-bounded upstream by `ClickEventSanitizer`; they must be JSON-escaped.
-- Verified timestamp helper: `url_shortener::formatTimestamp(std::chrono::system_clock::time_point)` (`core/utils.h`;
+- Verified timestamp helper: `url_shortener::formatTimestamp(std::chrono::system_clock::time_point)` (`core/utils.hpp`;
   include only from the .cpp because that header pulls in Beast).
 - **Open wiring question (verified facts):** the click repository the running server writes to is the
   process-global `analyticsClickRepository()` (an `InMemoryClickEventRepository`, `src/http/request_handlers.cpp`);

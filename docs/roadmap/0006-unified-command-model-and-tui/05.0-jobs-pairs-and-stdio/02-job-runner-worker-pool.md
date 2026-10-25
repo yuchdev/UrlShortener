@@ -94,7 +94,7 @@ Semantics:
 
 ## Implementation steps
 
-1. Header with the types above; keep Beast and `utils.h` out of it.
+1. Header with the types above; keep Beast and `utils.hpp` out of it.
 2. Constructor: build `JobStore(clock, max_retained_jobs)`, spawn `worker_count` threads running `worker_loop`.
 3. `worker_loop`: `unique_lock`, `m_cv.wait(lock, [&]{ return m_stopping || !m_queue.empty(); })`; on stopping with empty queue return; pop under lock, release lock before running the body.
 4. Implement `submit`, `get`, `list`, `cancel` as specified; take `m_mutex` only to touch `m_queue`/`m_flags`, never while running a body or calling into the logger.

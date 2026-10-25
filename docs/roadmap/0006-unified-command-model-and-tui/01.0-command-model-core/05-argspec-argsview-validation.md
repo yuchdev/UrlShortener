@@ -19,7 +19,7 @@ purely descriptive data plus validation; it knows nothing about transports.
 
 - 01.0/01 `scan_object`, `decode_json_string`, `json_kind`.
 - 01.0/02 `CommandError` (`invalid_field`).
-- `url_shortener::parseRfc3339Zulu` (verified in `core/utils.h`) for the
+- `url_shortener::parseRfc3339Zulu` (verified in `core/utils.hpp`) for the
   `timestamp` type, called only from the `.cpp`.
 - Catalog argument types: `string`, `bool`, `int`, `timestamp`, `list<string>`,
   `map<string,string>`, `object`, `enum`.

@@ -17,7 +17,7 @@ write local files.
 
 ## Dependencies
 
-- `include/url_shortener/core/utils.h` (`isPrivateHost`, `SHORTENER_ALLOW_PRIVATE_TARGETS` / `shortener_allow_private_targets`), request hardening limits (`--max-request-body-bytes` default 65536).
+- `include/url_shortener/core/utils.hpp` (`isPrivateHost`, `SHORTENER_ALLOW_PRIVATE_TARGETS` / `shortener_allow_private_targets`), request hardening limits (`--max-request-body-bytes` default 65536).
 - 05.0 decisions this subtask asserts (Task 05.0 subtasks 06, 07, 10, 16; decision log Q6): without `--path-root` any path is allowed for the local operator (no `..` restriction); with `serve-stdio --path-root <dir>` the canonicalized path (symlinks resolved, component-wise prefix) must lie inside the root, else `invalid_field`; `--no-file-paths` -> `unsupported`; UNC/device paths and special files rejected; import file cap `kMaxImportFileBytes` (64 MiB), line cap `kMaxImportLineBytes`, inline `data` cap `max_request_body_bytes`; export is create-new only (never overwrites); `path` on REST -> `unsupported`; export to `path` by a read-only caller -> `not_authorized`; CSV cells are not formula-escaped because targets are `http(s)://` and slugs match `^[A-Za-z0-9][A-Za-z0-9_-]{2,63}$`.
 - Existing oracle: `tests/unit/core/*` URL validation tests for the SSRF vocabulary (private ranges, localhost, link-local, IPv6 forms, userinfo tricks).
 

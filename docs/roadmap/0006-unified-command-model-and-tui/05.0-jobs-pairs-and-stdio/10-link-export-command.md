@@ -18,7 +18,7 @@ Register `link.export` (catalog 3.3): a `kind=job`, `read` command that pages th
   03.0/14: `status` incl. `expired`, `q`, `tag`, `campaign`, `sort`, `order`, `offset`, `limit` 1..500, returning items plus `total`). This spec
   wraps it as `LinkPageSource`; `build_command_runtime` (05.0/20) binds it with `list_page_from(std::shared_ptr<ILinkLister>)`, capturing the
   `shared_ptr` by value so the job may outlive a per-request runtime. Export must NOT call `IMetadataRepository` directly: that would be a second query path next to `link.list`.
-- Verified: `app::LinkView` fields (`slug`, `target_url`, `redirect_type`, `expires_at`, `enabled`, `tags`, `metadata`, `campaign`, `status`), `redirectTypeToString` in `core/utils.h`.
+- Verified: `app::LinkView` fields (`slug`, `target_url`, `redirect_type`, `expires_at`, `enabled`, `tags`, `metadata`, `campaign`, `status`), `redirectTypeToString` in `core/utils.hpp`.
 
 ## Files affected
 

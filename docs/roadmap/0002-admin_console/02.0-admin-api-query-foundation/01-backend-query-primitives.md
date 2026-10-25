@@ -14,19 +14,19 @@ response, sort spec, time range, filter parsing, and the common error type.
 ## Files to add
 
 ```text
-src/admin/query/PageRequest.h
+src/admin/query/PageRequest.hpp
 src/admin/query/PageRequest.cpp
-src/admin/query/PageResponse.h
+src/admin/query/PageResponse.hpp
 src/admin/query/PageResponse.cpp
-src/admin/query/SortSpec.h
+src/admin/query/SortSpec.hpp
 src/admin/query/SortSpec.cpp
-src/admin/query/TimeRange.h
+src/admin/query/TimeRange.hpp
 src/admin/query/TimeRange.cpp
-src/admin/query/AdminFilterParser.h
+src/admin/query/AdminFilterParser.hpp
 src/admin/query/AdminFilterParser.cpp
-src/admin/query/AdminQueryError.h
+src/admin/query/AdminQueryError.hpp
 src/admin/query/AdminQueryError.cpp
-src/admin/dto/PaginationDto.h
+src/admin/dto/PaginationDto.hpp
 src/admin/dto/PaginationDto.cpp
 ```
 

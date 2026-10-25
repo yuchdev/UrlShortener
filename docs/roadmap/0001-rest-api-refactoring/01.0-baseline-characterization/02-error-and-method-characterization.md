@@ -20,7 +20,7 @@ work does not accidentally change client-visible behavior.
 
 - `handleShortenerRequest(...)`
 - `makeApiErrorResponse(...)`
-- JSON helpers in `include/url_shortener/core/utils.h`
+- JSON helpers in `include/url_shortener/core/utils.hpp`
 
 ## Required cases
 

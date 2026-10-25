@@ -23,7 +23,7 @@ replace the packing with real columns without touching callers.
   `::CreateLinkRequest` (`.../create_link_request.hpp`), both global-namespace,
   verified. `CreateLinkRequest::isValid()` requires non-empty target and a
   short code matching `^[A-Za-z0-9_-]{3,64}$` (looser than `isValidSlug`).
-- `url_shortener::formatTimestamp`, `parseRfc3339Zulu` (`core/utils.h`,
+- `url_shortener::formatTimestamp`, `parseRfc3339Zulu` (`core/utils.hpp`,
   verified) for the string <-> `time_point` conversion (second precision).
 - Verified storage facts that dictate the design:
   - `SqlMetadataRowMapper` (`src/storage/sql/sql_metadata_row_mapper.cpp`)

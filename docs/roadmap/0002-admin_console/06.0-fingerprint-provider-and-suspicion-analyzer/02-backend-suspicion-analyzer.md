@@ -14,9 +14,9 @@ context into `risk_score`, `risk_level`, and `risk_reasons[]`.
 ## Files to add
 
 ```text
-src/fingerprint/SuspicionAnalyzer.h
+src/fingerprint/SuspicionAnalyzer.hpp
 src/fingerprint/SuspicionAnalyzer.cpp
-src/fingerprint/RiskScore.h
+src/fingerprint/RiskScore.hpp
 src/fingerprint/RiskScore.cpp
 ```
 

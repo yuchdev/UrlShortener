@@ -20,7 +20,7 @@ validates advisory-only on the client, and produces the exact
 
 ## Dependencies
 
-- Internal: 06.0/02 (`CommandInfo`, `ArgInfo`, `ArgKind`, `json_view`), 06.0/06 (`equivalent_cli`, `equivalent_envelope`), 06.0/03 (`RequestIdGenerator`). From `core/utils.h` (include from the `.cpp` only, it pulls in Beast): `jsonEscape`, `jsonString` (verified); the RFC 3339 parser the REST handlers use for `expires_at`, `url_shortener::parseRfc3339Zulu` (verified in `link_handlers.cpp::createLinkFromRequest`; reuse it, do not write a second parser).
+- Internal: 06.0/02 (`CommandInfo`, `ArgInfo`, `ArgKind`, `json_view`), 06.0/06 (`equivalent_cli`, `equivalent_envelope`), 06.0/03 (`RequestIdGenerator`). From `core/utils.hpp` (include from the `.cpp` only, it pulls in Beast): `jsonEscape`, `jsonString` (verified); the RFC 3339 parser the REST handlers use for `expires_at`, `url_shortener::parseRfc3339Zulu` (verified in `link_handlers.cpp::createLinkFromRequest`; reuse it, do not write a second parser).
 - External: none (model lib).
 
 ## Files affected

@@ -15,7 +15,7 @@ Define the job vocabulary (`JobState`, `JobProgress`, `JobFailure`, `JobRecord`)
 
 - `IClock` / `ManualClock` in `include/url_shortener/core/clock.hpp` (verified; global namespace) for deterministic timestamps.
 - No dependency on 01.0: the store deliberately uses its own `JobFailure {code, message}` instead of the envelope's error type so that it stays free of envelope headers; subtask 04/05 convert.
-- `include/url_shortener/commands/` must not include Beast (01.0 constraint). `core/utils.h` pulls `boost/beast/http.hpp`, so these headers must NOT include it; timestamp formatting happens in subtask 05 `.cpp` only.
+- `include/url_shortener/commands/` must not include Beast (01.0 constraint). `core/utils.hpp` pulls `boost/beast/http.hpp`, so these headers must NOT include it; timestamp formatting happens in subtask 05 `.cpp` only.
 
 ## Files affected
 
@@ -80,7 +80,7 @@ Error handling: expected conditions (unknown id, illegal transition) return `fal
 
 ## Implementation steps
 
-1. Create `job_types.hpp` with the enums/structs; keep it free of `<boost/...>` and `utils.h`.
+1. Create `job_types.hpp` with the enums/structs; keep it free of `<boost/...>` and `utils.hpp`.
 2. Implement `to_string`/`parse_job_state`/`is_terminal` in `job_store.cpp`.
 3. Implement `JobStore` under a single `std::mutex`; `create` stamps `created_at = m_clock.now()`, allocates `"j-" + std::to_string(m_next_id++)`.
 4. Transitions: `mark_running` sets `started_at`; `finish` sets `finished_at` and clears nothing else; both reject terminal records. `update_progress` rejects non-running jobs and a decreasing `done`.
@@ -115,7 +115,7 @@ Manual check: none.
 ## Success criteria
 
 1. `commands__50_job_store` passes (`ctest -R "^commands__50_job_store$"`).
-2. `grep -rn "boost\|utils.h" include/url_shortener/commands/job_types.hpp include/url_shortener/commands/job_store.hpp` returns nothing.
+2. `grep -rn "boost\|utils.hpp" include/url_shortener/commands/job_types.hpp include/url_shortener/commands/job_store.hpp` returns nothing.
 3. Illegal transitions are rejected: asserted by the test cases above.
 4. The full `unit` label is still green: `ctest --test-dir cmake-build -L unit --output-on-failure`.
 

@@ -13,11 +13,11 @@ reset-password, and disable.
 ## Files to add
 
 ```text
-src/admin/controllers/ConsoleUsersController.h
+src/admin/controllers/ConsoleUsersController.hpp
 src/admin/controllers/ConsoleUsersController.cpp
-src/admin/storage/ConsoleUsersRepository.h
+src/admin/storage/ConsoleUsersRepository.hpp
 src/admin/storage/ConsoleUsersRepository.cpp
-src/admin/dto/ConsoleUserDto.h
+src/admin/dto/ConsoleUserDto.hpp
 src/admin/dto/ConsoleUserDto.cpp
 ```
 

@@ -231,7 +231,7 @@ by both review rounds.
   current in-memory backend - this is a real, user-facing limitation Task
   06.0 must document explicitly, not a bug to fix in this milestone (plan.md
   decided not to reconcile the two storage paths).
-- Mid-task, `cli_parser.h` was found to pull in the entire HTTP stack
+- Mid-task, `cli_parser.hpp` was found to pull in the entire HTTP stack
   (`HttpServer`, Boost.Asio) transitively, just to get `ServerConfig` for
   `ParseResult::config` - narrowed to include `core/config.hpp` directly
   (`85e3fd4`), verified via the actual preprocessed compile command, not just

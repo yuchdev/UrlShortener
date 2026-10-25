@@ -24,7 +24,7 @@ truth for flag names".
   - `stats`: `--slug --from --to --bucket`, all required (stricter than the command, where the range is optional).
 - **Design deviation (flag for review):** ADR 0002 says verb flags are "compiled from the command's `ArgSpec`". That cannot reproduce today's grammar: `--expires-at clear`, `--clear-campaign`, comma lists, six `--campaign-*` flags and two config-only flags have no `ArgSpec` representation, and C4 forbids changing the flags. So flags stay hand-parsed into the existing DTOs, the DTOs are converted to `args`, and drift is prevented by the coverage test below instead of by generation.
 - DTO shapes (verified, `link_command_service.hpp`): `CreateLinkCommand {target_url, slug, redirect_type, expires_at, enabled, tags, metadata, campaign}`, `GetLinkQuery {by, value}`, `UpdateLinkCommand` (double-optionals), `DeleteLinkCommand`/`SetLinkEnabledCommand`/`RestoreLinkCommand {slug,...}`, `GetLinkStatsQuery {slug, from, to, bucket}`.
-- `redirectTypeToString` is in `core/utils.h` (Beast-including): call it only from the `.cpp`.
+- `redirectTypeToString` is in `core/utils.hpp` (Beast-including): call it only from the `.cpp`.
 
 ## Files affected
 

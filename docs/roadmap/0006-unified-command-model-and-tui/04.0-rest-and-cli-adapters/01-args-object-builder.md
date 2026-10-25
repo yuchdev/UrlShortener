@@ -16,7 +16,7 @@ build their requests through it, so escaping and key rules exist exactly once.
 
 ## Dependencies
 
-- Verified: `url_shortener::jsonString(const std::string&)` in `core/utils.h` produces correctly
+- Verified: `url_shortener::jsonString(const std::string&)` in `core/utils.hpp` produces correctly
   escaped JSON string literals. That header includes `boost/beast/http.hpp`, so it may only be included
   from the `.cpp`, never from `include/url_shortener/commands/` (01.0/13 hygiene rule).
 - `CommandRequest` (01.0/03): `{v, id, command, args_json = "{}", options}`; `args_json` is raw JSON text
@@ -94,7 +94,7 @@ Manual check: none.
 ## Constraints
 
 - C9: no JSON library; C++17 only; naming per `.clang-tidy` (`lower_case` class name matches 01.0's style).
-- The header must not include `core/utils.h`, Beast, storage or http headers.
+- The header must not include `core/utils.hpp`, Beast, storage or http headers.
 - Untrusted input is escaped, never concatenated raw. `add_raw` is for tokens produced by already-validated sources only
   (documented in Doxygen; the REST layer passes tokens it has just scanned).
 - Every new `.cpp` in `COMMON_CPP_SOURCES`.

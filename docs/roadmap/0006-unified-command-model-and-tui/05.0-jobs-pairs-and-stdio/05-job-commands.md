@@ -15,7 +15,7 @@ Register the three job inspection commands from catalog section 3.4 on the regis
 
 - 05.0/01-02 for the runner API, 05.0/04 so a runner is attached to the registry.
 - 01.0/05 `ArgSpec`, 01.0/06 `CommandRegistry::add`, `CommandDescriptor` (names partly UNVERIFIED, see 04).
-- `jsonString`/`formatTimestamp` from `core/utils.h` (verified), used in the `.cpp` only.
+- `jsonString`/`formatTimestamp` from `core/utils.hpp` (verified), used in the `.cpp` only.
 
 ## Files affected
 

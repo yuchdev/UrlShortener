@@ -12,11 +12,11 @@ Implement the visitor-profile listing, detail, and related-object endpoints.
 ## Files to add
 
 ```text
-src/admin/controllers/VisitorProfilesController.h
+src/admin/controllers/VisitorProfilesController.hpp
 src/admin/controllers/VisitorProfilesController.cpp
-src/admin/storage/VisitorProfilesRepository.h
+src/admin/storage/VisitorProfilesRepository.hpp
 src/admin/storage/VisitorProfilesRepository.cpp
-src/admin/dto/VisitorProfileDto.h
+src/admin/dto/VisitorProfileDto.hpp
 src/admin/dto/VisitorProfileDto.cpp
 ```
 

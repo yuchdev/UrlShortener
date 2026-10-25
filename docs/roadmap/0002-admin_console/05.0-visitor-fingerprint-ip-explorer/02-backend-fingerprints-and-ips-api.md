@@ -13,17 +13,17 @@ endpoints, including the IP masking-policy hook.
 ## Files to add
 
 ```text
-src/admin/controllers/FingerprintsController.h
+src/admin/controllers/FingerprintsController.hpp
 src/admin/controllers/FingerprintsController.cpp
-src/admin/controllers/IpAddressesController.h
+src/admin/controllers/IpAddressesController.hpp
 src/admin/controllers/IpAddressesController.cpp
-src/admin/storage/FingerprintsRepository.h
+src/admin/storage/FingerprintsRepository.hpp
 src/admin/storage/FingerprintsRepository.cpp
-src/admin/storage/IpAddressesRepository.h
+src/admin/storage/IpAddressesRepository.hpp
 src/admin/storage/IpAddressesRepository.cpp
-src/admin/dto/FingerprintDto.h
+src/admin/dto/FingerprintDto.hpp
 src/admin/dto/FingerprintDto.cpp
-src/admin/dto/IpAddressDto.h
+src/admin/dto/IpAddressDto.hpp
 src/admin/dto/IpAddressDto.cpp
 ```
 

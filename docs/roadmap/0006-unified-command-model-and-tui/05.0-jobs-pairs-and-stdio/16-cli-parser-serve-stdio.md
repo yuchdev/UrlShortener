@@ -55,7 +55,7 @@ Usage text lists the framing contract in two lines (NDJSON, EOF = shutdown) and 
 
 ## Implementation steps
 
-1. Add the struct and field to `cli_parser.h` with Doxygen comments in the file's existing style.
+1. Add the struct and field to `cli_parser.hpp` with Doxygen comments in the file's existing style.
 2. In `parse`, add `if (argc >= 2 && std::string(argv[1]) == "serve-stdio")` before the server-option parse and after the `link` branch; delegate to a new static helper `parse_serve_stdio(argc, argv)` in the anonymous namespace.
 3. Reuse the global-flag parsing helper that the `link` branch uses for `--base-domain` (UNVERIFIED helper name); keep `argv[1] != "serve-stdio"` behavior byte-identical for server mode.
 4. Add tests in the style of `tests/unit/cli/01_cli_parser_link_commands.cpp`.

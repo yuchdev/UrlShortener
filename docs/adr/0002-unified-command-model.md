@@ -138,9 +138,9 @@ of `docs/commands/README.md` is generated from the registry the same way
 hand-written and drift-tested).
 
 No JSON library is added (CLAUDE.md constraint). **One sanctioned deviation
-from the manual `core/utils.h` helpers:** a bounded, iterative,
+from the manual `core/utils.hpp` helpers:** a bounded, iterative,
 dependency-free *top-level* scanner (`url_shortener::commands::scan_object` /
-`scan_array`, Milestone 0006 Task 01.0 subtask 01). The `core/utils.h`
+`scan_array`, Milestone 0006 Task 01.0 subtask 01). The `core/utils.hpp`
 first-occurrence key search matches nested keys and string contents and cannot
 enumerate keys, so it cannot implement "unknown keys are rejected" or a safe
 envelope parse. The scanner is the only JSON tokenizer in product code: the

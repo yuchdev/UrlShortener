@@ -15,13 +15,13 @@ call through it instead of whatever stub they used.
 ## Files to add
 
 ```text
-src/admin/controllers/AuditLogController.h
+src/admin/controllers/AuditLogController.hpp
 src/admin/controllers/AuditLogController.cpp
-src/admin/storage/AuditLogRepository.h
+src/admin/storage/AuditLogRepository.hpp
 src/admin/storage/AuditLogRepository.cpp
-src/admin/audit/AuditLogger.h
+src/admin/audit/AuditLogger.hpp
 src/admin/audit/AuditLogger.cpp
-src/admin/dto/AuditLogDto.h
+src/admin/dto/AuditLogDto.hpp
 src/admin/dto/AuditLogDto.cpp
 ```
 

@@ -15,7 +15,7 @@ route. This is new backend work handed to `cpp-expert`.
 ## Files to add
 
 ```text
-src/http/handlers/app_static_assets_handler.h
+src/http/handlers/app_static_assets_handler.hpp
 src/http/handlers/app_static_assets_handler.cpp
 ```
 

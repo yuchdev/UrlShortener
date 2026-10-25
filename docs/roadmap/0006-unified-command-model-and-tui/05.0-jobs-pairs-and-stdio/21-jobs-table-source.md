@@ -24,7 +24,7 @@ result can carry the whole link table inline) and never error messages
 - `JobRunner::list(std::optional<JobState>, offset, limit) -> JobPage {items,total}`
   (newest first) and `JobRecord` fields `id, command, state, progress{done,total},
   failure{code,message}, created_at, started_at, finished_at` (subtasks 01-02).
-- Timestamp formatting with `url_shortener::formatTimestamp` (`core/utils.h`;
+- Timestamp formatting with `url_shortener::formatTimestamp` (`core/utils.hpp`;
   include it from the `.cpp` only, it pulls in Beast).
 
 ## Files affected

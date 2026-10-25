@@ -55,7 +55,7 @@ int RunServeStdio(const ServerConfig& config, const ServeStdioCliOptions& option
 `RunServeStdio` setup, in order, before the first read or write:
 
 1. `std::ios::sync_with_stdio(false); std::cin.tie(nullptr);`
-2. Windows: `_setmode(_fileno(stdin), _O_BINARY); _setmode(_fileno(stdout), _O_BINARY);` (`<io.h>`, `<fcntl.h>`, `#ifdef _WIN32`) so `\n` is not rewritten to `\r\n` and Ctrl-Z does not end input. POSIX: `std::signal(SIGPIPE, SIG_IGN)` so a closed stdout becomes a stream failure (exit 4) instead of a kill.
+2. Windows: `_setmode(_fileno(stdin), _O_BINARY); _setmode(_fileno(stdout), _O_BINARY);` (`<io.hpp>`, `<fcntl.hpp>`, `#ifdef _WIN32`) so `\n` is not rewritten to `\r\n` and Ctrl-Z does not end input. POSIX: `std::signal(SIGPIPE, SIG_IGN)` so a closed stdout becomes a stream failure (exit 4) instead of a kill.
 3. Logging (decision log D14): `LoggerFactory::Initialize(cfg)` with `enabled = true`, `cfg.sink = LogSink::Stderr` forced regardless of any configuration (no file-sink flag in this milestone; `Stdout` is never allowed in this mode). Log lines, **including the audit records of the runtime's `LoggerAuditSink`**, go to stderr only, so the parent process (an MCP host or script) owns the audit trail by capturing stderr; stdout carries envelopes only.
 
 `RunServeStdioOn`:

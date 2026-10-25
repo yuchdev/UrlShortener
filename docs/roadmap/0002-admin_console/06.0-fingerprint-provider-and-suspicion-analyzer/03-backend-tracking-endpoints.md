@@ -15,9 +15,9 @@ and persisting the result.
 ## Files to add
 
 ```text
-src/tracking/controllers/FingerprintTrackingController.h
+src/tracking/controllers/FingerprintTrackingController.hpp
 src/tracking/controllers/FingerprintTrackingController.cpp
-src/tracking/storage/FingerprintTrackingRepository.h
+src/tracking/storage/FingerprintTrackingRepository.hpp
 src/tracking/storage/FingerprintTrackingRepository.cpp
 ```
 
