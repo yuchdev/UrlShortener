@@ -20,12 +20,12 @@ struct RetentionCleanupResult
     ///< `cutoff`/`deleted_count`/`error` below are left at their
     ///< defaults and no delete was attempted. `true` otherwise.
     bool enabled = false;
-    
+
     ///< The computed deletion boundary (`now() - 24h *
     ///< retention_days`), set whenever `enabled` is `true` -
     ///< regardless of whether the delete itself succeeded.
     std::optional<Timestamp> cutoff;
-    
+
     ///< @note Currently always `0`, even on a successful delete:
     ///< `IClickEventRepository::DeleteOlderThan` does not report how
     ///< many rows it removed, so this field does not yet reflect the
@@ -87,9 +87,20 @@ public:
     RetentionCleanupResult Run() noexcept;
 
 private:
+    ///< Supplies `retention.retention_days`. Not owned; must outlive this
+    ///< object.
     const AnalyticsConfig& config_;
+
+    ///< Repository `DeleteOlderThan` is issued against. Not owned; must
+    ///< outlive this object.
     IClickEventRepository& repo_;
+
+    ///< Metrics sink notified via `OnWorkerFailure()` when a delete
+    ///< fails. Not owned; must outlive this object.
     IAnalyticsMetrics& metrics_;
+
+    ///< Clock used to compute the deletion cutoff; defaults to
+    ///< `std::chrono::system_clock::now` when none was injected.
     Clock now_;
 };
 

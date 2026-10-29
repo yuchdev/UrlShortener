@@ -62,8 +62,16 @@ public:
     void RecordRedirectAttempt(const RedirectEventContext& context) noexcept;
 
 private:
+    ///< Analytics configuration, read on every `RecordRedirectAttempt`
+    ///< call (not copied). Not owned; must outlive this object.
     const AnalyticsConfig& config_;
+
+    ///< Destination for built click events. Not owned; must outlive this
+    ///< object and be safe for concurrent `TryEnqueue` calls.
     IClickEventQueue& queue_;
+
+    ///< Metrics sink for enqueue/drop counts and latency. Not owned; must
+    ///< outlive this object and be safe for concurrent use.
     IAnalyticsMetrics& metrics_;
 };
 

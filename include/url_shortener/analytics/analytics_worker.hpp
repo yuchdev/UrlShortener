@@ -24,12 +24,12 @@ enum class AnalyticsWorkerState
     ///< `Start()` has spawned the background thread and it is
     ///< actively draining the queue in a loop.
     Running,
-    
+
     ///< `Stop()` has requested a shutdown and woken the queue via
     ///< `BoundedClickEventQueue::NotifyStop`; the background
     ///< thread is draining any remaining buffered events before
     ///< it exits and the state moves to `Stopped`.
-    Stopping,
+    Stopping
 };
 
 /**
@@ -110,7 +110,6 @@ public:
     void FlushOnce();
 
 private:
-
     /**
      * @brief Background-thread loop: calls `FlushOnce()` repeatedly while
      * in state `Running` or `Stopping`, and exits once in state `Stopping`
@@ -129,16 +128,29 @@ private:
      */
     bool PersistWithRetry(const std::vector<ClickEvent>& batch);
 
+    ///< Analytics configuration (enabled flag, batch size, flush interval,
+    ///< retry policy). Not owned; must outlive this object.
     const AnalyticsConfig& config_;
-    
+
+    ///< Queue drained by `FlushOnce()`. Not owned; must outlive this
+    ///< object.
     BoundedClickEventQueue& queue_;
-    
+
+    ///< Repository each batch is persisted to by `PersistWithRetry()`.
+    ///< Not owned; must outlive this object.
     IClickEventRepository& repo_;
-    
+
+    ///< Metrics sink updated after every flush. Not owned; must outlive
+    ///< this object.
     IAnalyticsMetrics& metrics_;
-    
+
+    ///< Current lifecycle state. Atomic so `State()` and the background
+    ///< thread's `Run()` loop can read it without locking while
+    ///< `Start()`/`Stop()` transition it.
     std::atomic<AnalyticsWorkerState> state_ {AnalyticsWorkerState::Stopped};
-    
+
+    ///< Background thread executing `Run()`; joinable only between
+    ///< `Start()` and the matching `Stop()`.
     std::thread thread_;
 };
 

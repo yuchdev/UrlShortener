@@ -38,7 +38,7 @@ enum class AnalyticsErrorCode
     ///< `RetentionCleanupJob::Run` currently surfaces a failed
     ///< delete pass via the `repository` code from
     ///< `IClickEventRepository::DeleteOlderThan`, not this one.
-    retention,
+    retention
 };
 
 /**
@@ -53,7 +53,7 @@ struct AnalyticsError
     ///< callers should check the method's `bool`
     ///< return, not this field, to detect
     ///< failure.
-    AnalyticsErrorCode code = AnalyticsErrorCode::none;  
+    AnalyticsErrorCode code = AnalyticsErrorCode::none;
 
     ///< Human-readable detail for logs/diagnostics; not
     ///< guaranteed stable across versions and not meant
@@ -65,7 +65,8 @@ struct AnalyticsError
  * @brief Stream formatter for analytics error codes.
  * @param os Stream to write to.
  * @param code Value to format.
- * @return `os`, with the code's symbolic name (e.g. `"AnalyticsErrorCode::validation"`) written to it.
+ * @return `os`, with the code's symbolic name (e.g.
+ * `"AnalyticsErrorCode::validation"`) written to it.
  */
 inline std::ostream& operator<<(std::ostream& os, AnalyticsErrorCode code)
 {
@@ -95,8 +96,7 @@ inline std::ostream& operator<<(std::ostream& os, AnalyticsErrorCode code)
  */
 inline std::ostream& operator<<(std::ostream& os, const AnalyticsError& error)
 {
-    return os << "AnalyticsError{code=" 
-              << error.code << ", message='"
+    return os << "AnalyticsError{code=" << error.code << ", message='"
               << error.message << "'}";
 }
 

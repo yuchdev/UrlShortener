@@ -82,18 +82,35 @@ public:
     void NotifyStop() noexcept;
 
 private:
+    ///< Maximum number of buffered events; fixed at construction and
+    ///< never changed afterwards, so it is read without holding `mutex_`.
     const std::size_t capacity_;
 
+    ///< Guards `queue_`, `enqueued_total_`, `dropped_total_` and `stop_`.
+    ///< `mutable` so that const methods such as `GetStats()` can lock it.
     mutable std::mutex mutex_;
-    
+
+    ///< Signalled when an event is enqueued or `NotifyStop()` is called,
+    ///< waking consumers blocked in `WaitDequeue`. Always waited on
+    ///< together with `mutex_`.
     std::condition_variable cv_;
-    
+
+    ///< FIFO buffer of pending events; its size never exceeds
+    ///< `capacity_`. Guarded by `mutex_`.
     std::deque<ClickEvent> queue_;
-    
+
+    ///< Lifetime count of events successfully buffered by `TryEnqueue`;
+    ///< reported as `QueueStats` and never reset. Guarded by `mutex_`.
     std::uint64_t enqueued_total_ = 0;
-    
+
+    ///< Lifetime count of events discarded by `TryEnqueue` because the
+    ///< queue was full or the enqueue threw; reported as `QueueStats`
+    ///< and never reset. Guarded by `mutex_`.
     std::uint64_t dropped_total_ = 0;
-    
+
+    ///< Set by `NotifyStop()` so that blocked `WaitDequeue` calls return
+    ///< `false` on an empty queue instead of waiting out their timeout.
+    ///< Guarded by `mutex_`.
     bool stop_ = false;
 };
 

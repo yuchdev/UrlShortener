@@ -61,11 +61,22 @@ public:
     bool tryEnqueue(ClickEvent event);
 
 private:
-    std::mutex mutex_;  ///< Protects queue internals.
-    size_t capacity_;  ///< Maximum queue capacity.
-    std::deque<ClickEvent> events_;  ///< Buffered click events.
-    uint64_t enqueued_total_ = 0;  ///< Total enqueued events.
-    uint64_t dropped_total_ = 0;  ///< Total dropped events.
+    ///< Guards every other member of this class.
+    std::mutex mutex_;
+
+    ///< Maximum number of buffered events; changed by `resetCapacity`.
+    size_t capacity_;
+
+    ///< Buffered click events, oldest first; never larger than
+    ///< `capacity_` once `resetCapacity` has run.
+    std::deque<ClickEvent> events_;
+
+    ///< Lifetime count of events accepted by `tryEnqueue`.
+    uint64_t enqueued_total_ = 0;
+
+    ///< Lifetime count of events rejected by `tryEnqueue` or evicted by
+    ///< `resetCapacity`.
+    uint64_t dropped_total_ = 0;
 };
 
 /**
