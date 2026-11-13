@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <string>
 #include <string_view>
+#include <unordered_set>
 #include <vector>
 
 namespace url_shortener::commands
@@ -541,6 +542,13 @@ scan_result scan_object(std::string_view text, const scan_limits& limits)
 {
     scan_result result;
 
+    // Decoded keys seen so far, used for O(1)-amortized duplicate detection.
+    // A linear `find_member` scan would be O(m^2) across all members, which
+    // matters now that a nested `string_map` arg can request up to 4096 members
+    // (decision D10); the set keeps the per-key cost constant while preserving
+    // the exact "first duplicate rejected" behavior.
+    std::unordered_set<std::string> seen_keys;
+
     if (text.size() > limits.max_bytes)
     {
         result.error = "too_large";
@@ -625,7 +633,7 @@ scan_result scan_object(std::string_view text, const scan_limits& limits)
             return result;
         }
 
-        if (find_member(result.members, *decoded) != nullptr)
+        if (!seen_keys.insert(*decoded).second)
         {
             result.members.clear();
             result.error = "duplicate_key";
