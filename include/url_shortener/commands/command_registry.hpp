@@ -14,6 +14,8 @@ namespace url_shortener::commands
 {
 
 class IJobSubmitter;
+class IAuditSink;
+struct AuditRecord;
 
 /**
  * @brief The in-process catalog of command descriptors and the one entry point
@@ -220,6 +222,32 @@ public:
      */
     void set_job_submitter(std::shared_ptr<IJobSubmitter> submitter);
 
+    /**
+     * @brief Installs the one audit sink the registry emits a `command_audit`
+     * record through for every attempted execution of a *mutating* command
+     * (milestone contracts C6/C11, threat model T-14).
+     *
+     * Startup-only configuration, mirroring @ref set_job_submitter: it replaces
+     * any previous sink, is **not** thread-safe, and must be called before
+     * serving starts. The registry keeps a `std::shared_ptr`, so a per-request
+     * registry can share the one process-wide sink. Every production runtime
+     * installs a @ref LoggerAuditSink here in
+     * `composition::build_command_runtime` (Task 03.0 subtask 18); leaving the
+     * sink null disables emission and is intended for unit tests only.
+     *
+     * When a sink is installed, @ref execute emits exactly one @ref AuditRecord
+     * per attempted execution of a mutating command that reached a descriptor
+     * (success, denial, invalid arguments, unsupported mode, a busy queue, an
+     * accepted job, or an internal failure); non-mutating commands and an
+     * unknown command name emit nothing. Records never carry argument values or
+     * raw client identifiers (contract C6).
+     *
+     * @param sink The sink to install; shared ownership is taken. A null
+     * pointer clears the seam and disables auditing (a non-null followed by a
+     * null disables a previously enabled sink).
+     */
+    void set_audit_sink(std::shared_ptr<IAuditSink> sink);
+
 private:
     /**
      * @brief Checks that a descriptor is internally consistent, independent of
@@ -244,6 +272,32 @@ private:
     static bool is_valid_descriptor(const CommandDescriptor& descriptor,
                                     std::string* why);
 
+    /**
+     * @brief Emits one @ref AuditRecord for a mutating command attempt, if a
+     * sink is installed.
+     *
+     * Called by @ref execute exactly once per attempt at a mutating command
+     * that reached a descriptor, after the response is known. It builds an
+     * @ref AuditRecord from the caller's identity, the descriptor name and the
+     * supplied outcome/target, caps @p target to 64 bytes, and hands it to the
+     * installed @ref IAuditSink. The sink call is wrapped in `catch (...)` so a
+     * sink failure can never alter the command response (threat model T-14); a
+     * null sink is a no-op. No argument value ever reaches the record (contract
+     * C6).
+     *
+     * @param descriptor The resolved descriptor whose `name` is recorded; the
+     * caller guarantees `descriptor.mutating` is `true`.
+     * @param caller The authenticated caller; `principal` and `transport` are
+     * copied as diagnostic labels.
+     * @param outcome How the attempt ended (`"ok"`, `"dry_run"`,
+     * `"job_accepted"`, or an error-code wire name); moved into the record.
+     * @param target The affected slug/id/job id from a validated source; moved
+     * in and capped to 64 bytes. Empty when there is no meaningful target.
+     */
+    void emit_audit(const CommandDescriptor& descriptor,
+                    const CallerContext& caller, std::string outcome,
+                    std::string target) const;
+
     ///< The registered descriptors keyed by name. `std::less<>` enables
     ///< heterogeneous `std::string_view` lookup; the node-based container keeps
     ///< element pointers stable across inserts, which @ref find relies on.
@@ -254,6 +308,12 @@ private:
     ///< registry can point at the one process-wide runner. Set by
     ///< @ref set_job_submitter before serving; read by @ref execute.
     std::shared_ptr<IJobSubmitter> m_job_submitter_;
+
+    ///< The installed audit sink, or `nullptr` when none is set (auditing
+    ///< disabled, the unit-test default). Shared, not owned exclusively, so a
+    ///< per-request registry can point at the one process-wide sink. Set by
+    ///< @ref set_audit_sink before serving; read by @ref execute.
+    std::shared_ptr<IAuditSink> m_audit;
 };
 
 }  // namespace url_shortener::commands

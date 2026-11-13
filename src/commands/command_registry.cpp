@@ -15,6 +15,7 @@
 #include <vector>
 
 #include "url_shortener/commands/arg_spec.hpp"
+#include "url_shortener/commands/audit.hpp"
 #include "url_shortener/commands/envelope.hpp"
 #include "url_shortener/commands/error_codes.hpp"
 #include "url_shortener/commands/job_submitter.hpp"
@@ -374,6 +375,34 @@ CommandResponse submit_job(const CommandDescriptor& descriptor,
     }
 }
 
+/**
+ * @brief Derives the audit `outcome` string from a finished response and the
+ * resolved dry_run flag (subtask-09 emission rules).
+ *
+ * The single place that maps a @ref CommandResponse to the one-word outcome an
+ * @ref AuditRecord carries: a failure yields the error code's wire name
+ * (`not_authorized`, `invalid_field`, `unsupported`, `busy`, `internal`, ...);
+ * an accepted job yields `job_accepted`; any other success yields `dry_run`
+ * when the run was a dry run, else `ok`.
+ *
+ * @param response The response `execute` is about to return.
+ * @param dry_run `true` when the execution ran under `options.dry_run` (a sync
+ * `supports_dry_run` handler or a synchronous dry_run job body).
+ * @return The outcome word for the audit record.
+ */
+std::string derive_audit_outcome(const CommandResponse& response, bool dry_run)
+{
+    if (!response.ok)
+    {
+        return std::string(error_info_for(response.error.code).name);
+    }
+    if (response.job.has_value())
+    {
+        return "job_accepted";
+    }
+    return dry_run ? "dry_run" : "ok";
+}
+
 }  // namespace
 
 bool CommandRegistry::is_valid_descriptor(const CommandDescriptor& descriptor,
@@ -482,6 +511,46 @@ void CommandRegistry::set_job_submitter(
     m_job_submitter_ = std::move(submitter);
 }
 
+void CommandRegistry::set_audit_sink(std::shared_ptr<IAuditSink> sink)
+{
+    // Startup-only, not synchronized; replaces any previous sink. A null
+    // argument clears the seam, disabling emission.
+    m_audit = std::move(sink);
+}
+
+void CommandRegistry::emit_audit(const CommandDescriptor& descriptor,
+                                 const CallerContext& caller,
+                                 std::string outcome, std::string target) const
+{
+    if (!m_audit)
+    {
+        return;
+    }
+
+    AuditRecord record;
+    record.principal = caller.principal;
+    record.transport = caller.transport;
+    record.command = descriptor.name;
+    // Cap the target at the AuditRecord bound (64); audit_fields later
+    // neutralizes any byte a cap might have split (threat model T-15).
+    if (target.size() > 64)
+    {
+        target.resize(64);
+    }
+    record.target = std::move(target);
+    record.outcome = std::move(outcome);
+
+    // The sink is noexcept by contract; wrap anyway so a throwing fake can
+    // never alter the response (threat model T-14).
+    try
+    {
+        m_audit->record(record);
+    }
+    catch (...)
+    {
+    }
+}
+
 CommandResponse CommandRegistry::execute(const CallerContext& caller,
                                          const CommandRequest& request) const
 {
@@ -503,36 +572,104 @@ CommandResponse CommandRegistry::execute(const CallerContext& caller,
             make_error(CommandErrorCode::unknown_command, "unknown command"));
     }
 
-    // Step 3: base permission, BEFORE argument validation, so an unauthorized
-    // caller learns nothing about the arg schema and the handler is never
-    // entered on denial (threat model T-08).
-    if (!permission_check(caller, descriptor->permission))
-    {
-        return make_failure(
-            request.id,
-            make_error(CommandErrorCode::not_authorized, "permission denied"));
-    }
+    // From here on the command has a descriptor, so a mutating command must
+    // produce exactly one audit record. Steps 3-7 run inside `pipeline` so
+    // every exit funnels through the single `emit_audit` call below (one record
+    // per attempt, threat model T-14). `audit_dry_run`/`audit_target` capture
+    // the two facts the response alone cannot carry (whether the run was a
+    // dry_run, and the handler's validated target).
+    bool audit_dry_run = false;
+    std::string audit_target;
 
-    // Step 4: argument validation. The message names the arg and a fixed
-    // reason, never an argument value (contract C6).
-    ArgsView view;
-    CommandError arg_error;
-    if (!validate_args(descriptor->args, request.args_json, &view, &arg_error))
-    {
-        return make_failure(request.id, std::move(arg_error));
-    }
+    const auto pipeline = [&]() -> CommandResponse {
+        // Step 3: base permission, BEFORE argument validation, so an
+        // unauthorized caller learns nothing about the arg schema and the
+        // handler is never entered on denial (threat model T-08).
+        if (!permission_check(caller, descriptor->permission))
+        {
+            return make_failure(request.id,
+                                make_error(CommandErrorCode::not_authorized,
+                                           "permission denied"));
+        }
 
-    // Step 4a: argument-dependent permission re-check (decision log D16). The
-    // hook runs only on the validated view; the effective permission is
-    // max(base, hook) over the contractual order, so it can only tighten
-    // (threat model T-09). A throwing hook maps to internal.
-    if (descriptor->permission_for)
-    {
-        Permission required = descriptor->permission;
+        // Step 4: argument validation. The message names the arg and a fixed
+        // reason, never an argument value (contract C6).
+        ArgsView view;
+        CommandError arg_error;
+        if (!validate_args(descriptor->args, request.args_json, &view,
+                           &arg_error))
+        {
+            return make_failure(request.id, std::move(arg_error));
+        }
+
+        // Step 4a: argument-dependent permission re-check (decision log D16).
+        // The hook runs only on the validated view; the effective permission is
+        // max(base, hook) over the contractual order, so it can only tighten
+        // (threat model T-09). A throwing hook maps to internal.
+        if (descriptor->permission_for)
+        {
+            Permission required = descriptor->permission;
+            try
+            {
+                const Permission hinted = descriptor->permission_for(view);
+                required = std::max(descriptor->permission, hinted);
+            }
+            catch (const std::exception&)
+            {
+                return make_failure(
+                    request.id,
+                    make_error(CommandErrorCode::internal, "internal error"));
+            }
+            catch (...)
+            {
+                return make_failure(
+                    request.id,
+                    make_error(CommandErrorCode::internal, "internal error"));
+            }
+
+            if (!permission_check(caller, required))
+            {
+                return make_failure(request.id,
+                                    make_error(CommandErrorCode::not_authorized,
+                                               "permission denied"));
+            }
+        }
+
+        // Step 5: options/job handling (subtask 08). resolve_dispatch encodes
+        // the whole options table; the handler cases fall through to step 6 and
+        // the job cases return here. The job/dry_run paths run only after steps
+        // 3-4a, so an unauthorized or invalid request never reaches the factory
+        // (T-12).
+        bool handler_dry_run = false;
+        std::string unsupported_reason;
+        switch (resolve_dispatch(*descriptor, request.options,
+                                 &unsupported_reason))
+        {
+        case dispatch::handler:
+            break;
+        case dispatch::dry_run:
+            handler_dry_run = true;
+            break;
+        case dispatch::dry_run_job:
+            audit_dry_run = true;
+            return run_dry_run_job(*descriptor, caller, request, view);
+        case dispatch::job:
+            return submit_job(*descriptor, caller, request, view,
+                              m_job_submitter_);
+        case dispatch::error:
+            return make_failure(request.id,
+                                make_error(CommandErrorCode::unsupported,
+                                           std::move(unsupported_reason)));
+        }
+
+        // Step 6: dispatch with exception isolation. e.what() is never
+        // surfaced: it may carry paths, SQL or a DSN (threat model T-10).
+        audit_dry_run = handler_dry_run;
+        CommandResult result;
         try
         {
-            const Permission hinted = descriptor->permission_for(view);
-            required = std::max(descriptor->permission, hinted);
+            CommandContext ctx {caller, request, handler_dry_run};
+            result = descriptor->handler(ctx, view);
         }
         catch (const std::exception&)
         {
@@ -547,74 +684,41 @@ CommandResponse CommandRegistry::execute(const CallerContext& caller,
                 make_error(CommandErrorCode::internal, "internal error"));
         }
 
-        if (!permission_check(caller, required))
+        // The target is recorded for both success and expected failure; it is a
+        // validated slug/id the handler set, never an argument value (C6).
+        audit_target = result.audit_target;
+
+        // Step 7: convert the handler outcome into a response.
+        if (!result.ok())
         {
+            return make_failure(request.id, std::move(result.error));
+        }
+        if (result.result_json.empty())
+        {
+            // A successful handler must produce a payload; an empty one is a
+            // handler programming error, reported as internal.
             return make_failure(
                 request.id,
-                make_error(CommandErrorCode::not_authorized,
-                           "permission denied"));
+                make_error(CommandErrorCode::internal, "internal error"));
         }
+        return make_success(request.id, std::move(result.result_json));
+    };
+
+    CommandResponse response = pipeline();
+
+    // Step 8: exactly one audit record per attempt at a mutating command
+    // (subtask 09, threat model T-14). Non-mutating commands emit nothing; an
+    // accepted job records its job id, every other outcome its derived word.
+    if (descriptor->mutating)
+    {
+        std::string target =
+            response.job.has_value() ? response.job->id : audit_target;
+        emit_audit(*descriptor, caller,
+                   derive_audit_outcome(response, audit_dry_run),
+                   std::move(target));
     }
 
-    // Step 5: options/job handling (subtask 08). resolve_dispatch encodes the
-    // whole options table; the handler cases fall through to step 6 and the
-    // job cases return here. The job/dry_run paths run only after steps 3-4a,
-    // so an unauthorized or invalid request never reaches the factory (T-12).
-    bool handler_dry_run = false;
-    std::string unsupported_reason;
-    switch (resolve_dispatch(*descriptor, request.options, &unsupported_reason))
-    {
-    case dispatch::handler:
-        break;
-    case dispatch::dry_run:
-        handler_dry_run = true;
-        break;
-    case dispatch::dry_run_job:
-        return run_dry_run_job(*descriptor, caller, request, view);
-    case dispatch::job:
-        return submit_job(*descriptor, caller, request, view,
-                          m_job_submitter_);
-    case dispatch::error:
-        return make_failure(request.id,
-                            make_error(CommandErrorCode::unsupported,
-                                       std::move(unsupported_reason)));
-    }
-
-    // Step 6: dispatch with exception isolation. e.what() is never surfaced:
-    // it may carry paths, SQL or a DSN (threat model T-10).
-    CommandResult result;
-    try
-    {
-        CommandContext ctx {caller, request, handler_dry_run};
-        result = descriptor->handler(ctx, view);
-    }
-    catch (const std::exception&)
-    {
-        return make_failure(
-            request.id,
-            make_error(CommandErrorCode::internal, "internal error"));
-    }
-    catch (...)
-    {
-        return make_failure(
-            request.id,
-            make_error(CommandErrorCode::internal, "internal error"));
-    }
-
-    // Step 7: convert the handler outcome into a response.
-    if (!result.ok())
-    {
-        return make_failure(request.id, std::move(result.error));
-    }
-    if (result.result_json.empty())
-    {
-        // A successful handler must produce a payload; an empty one is a
-        // handler programming error, reported as internal.
-        return make_failure(
-            request.id,
-            make_error(CommandErrorCode::internal, "internal error"));
-    }
-    return make_success(request.id, std::move(result.result_json));
+    return response;
 }
 
 CommandResponse CommandRegistry::execute_json(
