@@ -6,7 +6,7 @@ Tracks progress against [plan.md](/docs/roadmap/0006-unified-command-model-and-t
 
 | Task | Name | Status | Tests |
 |------|------|--------|-------|
-| 01.0 | Command model core | 🔶 In progress (7/13 subtasks) | 7 (`commands__01`-`07`) |
+| 01.0 | Command model core | 🔶 In progress (8/13 subtasks) | 8 (`commands__01`-`08`) |
 | 02.0 | Storage path unification | ⬜ Not started | 0 |
 | 03.0 | Link and browse commands | ⬜ Not started | 0 |
 | 04.0 | REST and CLI adapters | ⬜ Not started | 0 |
@@ -132,5 +132,7 @@ C1-C11 changed:
   (3) `validate_args` enforces the 64 KiB byte cap itself.
 - *2026-11-14, 01.0/06:* two registration rules added beyond spec 06 after
   the security review: a `mutating` command needs write-or-higher base
-  permission unless a `permission_for` hook can raise it (D16), and a
-  dry_run-capable job command needs a `handler`.
+  permission unless a `permission_for` hook can raise it (D16). (A second
+  rule, "dry_run-capable job command needs a `handler`", was removed after
+  01.0/08: per spec 08 / T-21 a job command's dry_run runs the
+  `job_factory` body, not the handler.)
