@@ -379,6 +379,7 @@ set(URL_SHORTENER_SOURCES
       tests/unit/commands/08_options_dry_run_async.cpp
       tests/unit/commands/09_audit.cpp
       tests/unit/commands/10_command_list.cpp
+      tests/unit/commands/11_catalog_render.cpp
   )
 
   set(COMMON_CPP_SOURCES
@@ -390,6 +391,7 @@ set(URL_SHORTENER_SOURCES
       ${CMAKE_CURRENT_SOURCE_DIR}/src/commands/command_registry.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/commands/audit.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/commands/builtin_commands.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/commands/catalog.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/cli_parser.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/cli/link_command_args.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/cli/link_command_dispatch.cpp
