@@ -1,6 +1,9 @@
 #include <url_shortener/commands/error_codes.hpp>
 
+#include <algorithm>
 #include <cstddef>
+#include <string>
+#include <string_view>
 #include <utility>
 
 namespace url_shortener::commands
@@ -108,6 +111,31 @@ CommandError make_error(CommandErrorCode code, std::string message)
     error.code = code;
     error.message = std::move(message);
     return error;
+}
+
+std::string sanitize_error_message(std::string_view message)
+{
+    // C6/T-02/T-15 defense in depth: callers are required to pass fixed,
+    // value-free text, but neutralize control characters so a message can
+    // never inject a log line, and bound the length so no caller can smuggle
+    // unbounded text into a response or audit field.
+    static constexpr std::size_t max_len = 128;
+    const std::size_t count = std::min(message.size(), max_len);
+    std::string out;
+    out.reserve(count);
+    for (std::size_t i = 0; i < count; ++i)
+    {
+        const auto ch = static_cast<unsigned char>(message[i]);
+        if (ch < 0x20 || ch == 0x7f)
+        {
+            out.push_back('?');
+        }
+        else
+        {
+            out.push_back(static_cast<char>(ch));
+        }
+    }
+    return out;
 }
 
 }  // namespace url_shortener::commands

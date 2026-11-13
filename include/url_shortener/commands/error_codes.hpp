@@ -201,4 +201,23 @@ CommandErrorCode from_app_error(app::AppErrorCode code);
  */
 CommandError make_error(CommandErrorCode code, std::string message);
 
+/**
+ * @brief Neutralizes a human-readable error/audit message for safe emission.
+ *
+ * Defense in depth for milestone contract C6 and threat-model T-02/T-15:
+ * command-layer callers are required to pass only fixed, value-free text, but
+ * `make_error` and the audit sink accept whatever they are given, so this
+ * helper guarantees the output can never inject a log line or smuggle unbounded
+ * text. It (1) truncates to at most 128 bytes and (2) replaces every control
+ * character (any byte below `0x20`, including NUL, and `0x7f`) with `'?'`.
+ * Printable bytes (including non-ASCII UTF-8) pass through unchanged. The
+ * parser, the arg validator (subtask 05) and the audit sink (subtask 09) route
+ * their messages through this one helper so the invariant holds everywhere.
+ *
+ * @param message Candidate message text; may be any bytes, trusted or not.
+ * @return A copy truncated to 128 bytes with all control characters replaced by
+ * `'?'`.
+ */
+std::string sanitize_error_message(std::string_view message);
+
 }  // namespace url_shortener::commands
