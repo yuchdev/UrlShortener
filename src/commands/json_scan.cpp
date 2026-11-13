@@ -1,11 +1,11 @@
-#include "url_shortener/commands/json_scan.hpp"
-
 #include <cstddef>
 #include <cstdint>
 #include <string>
 #include <string_view>
 #include <unordered_set>
 #include <vector>
+
+#include "url_shortener/commands/json_scan.hpp"
 
 namespace url_shortener::commands
 {
@@ -41,8 +41,7 @@ bool is_digit(char c) noexcept
  */
 void skip_ws(std::string_view text, std::size_t& i) noexcept
 {
-    while (i < text.size() && is_ws(text[i]))
-    {
+    while (i < text.size() && is_ws(text[i])) {
         ++i;
     }
 }
@@ -60,28 +59,24 @@ void skip_ws(std::string_view text, std::size_t& i) noexcept
  * @return `true` if a closing quote was found; `false` if the token is
  * unterminated (including a trailing lone backslash).
  */
-bool scan_string_token(std::string_view text, std::size_t start,
+bool scan_string_token(std::string_view text,
+                       std::size_t start,
                        std::size_t& end) noexcept
 {
     std::size_t j = start + 1;
-    while (j < text.size())
-    {
+    while (j < text.size()) {
         const char c = text[j];
-        if (c == '\\')
-        {
-            if (j + 1 >= text.size())
-            {
+        if (c == '\\') {
+            if (j + 1 >= text.size()) {
                 return false;
             }
             j += 2;
         }
-        else if (c == '"')
-        {
+        else if (c == '"') {
             end = j + 1;
             return true;
         }
-        else
-        {
+        else {
             ++j;
         }
     }
@@ -102,67 +97,55 @@ bool scan_string_token(std::string_view text, std::size_t start,
  * @return `true` if a grammatically valid number was consumed; `false`
  * otherwise.
  */
-bool scan_number_token(std::string_view text, std::size_t start,
+bool scan_number_token(std::string_view text,
+                       std::size_t start,
                        std::size_t& end) noexcept
 {
     const std::size_t n = text.size();
     std::size_t j = start;
 
-    if (j < n && text[j] == '-')
-    {
+    if (j < n && text[j] == '-') {
         ++j;
     }
 
     // Integer part: a single '0', or a 1-9 digit followed by more digits.
-    if (j >= n)
-    {
+    if (j >= n) {
         return false;
     }
-    if (text[j] == '0')
-    {
+    if (text[j] == '0') {
         ++j;
     }
-    else if (text[j] >= '1' && text[j] <= '9')
-    {
+    else if (text[j] >= '1' && text[j] <= '9') {
         ++j;
-        while (j < n && is_digit(text[j]))
-        {
+        while (j < n && is_digit(text[j])) {
             ++j;
         }
     }
-    else
-    {
+    else {
         return false;
     }
 
     // Optional fraction.
-    if (j < n && text[j] == '.')
-    {
+    if (j < n && text[j] == '.') {
         ++j;
-        if (j >= n || !is_digit(text[j]))
-        {
+        if (j >= n || !is_digit(text[j])) {
             return false;
         }
-        while (j < n && is_digit(text[j]))
-        {
+        while (j < n && is_digit(text[j])) {
             ++j;
         }
     }
 
     // Optional exponent.
-    if (j < n && (text[j] == 'e' || text[j] == 'E'))
-    {
+    if (j < n && (text[j] == 'e' || text[j] == 'E')) {
         ++j;
-        if (j < n && (text[j] == '+' || text[j] == '-'))
-        {
+        if (j < n && (text[j] == '+' || text[j] == '-')) {
             ++j;
         }
-        if (j >= n || !is_digit(text[j]))
-        {
+        if (j >= n || !is_digit(text[j])) {
             return false;
         }
-        while (j < n && is_digit(text[j]))
-        {
+        while (j < n && is_digit(text[j])) {
             ++j;
         }
     }
@@ -189,8 +172,10 @@ bool scan_number_token(std::string_view text, std::size_t start,
  * depth overflow (with @p too_deep set) or a structural error (mismatched or
  * unterminated container, unterminated string).
  */
-bool scan_container_token(std::string_view text, std::size_t start,
-                          int max_depth, std::size_t& end,
+bool scan_container_token(std::string_view text,
+                          std::size_t start,
+                          int max_depth,
+                          std::size_t& end,
                           bool& too_deep) noexcept
 {
     too_deep = false;
@@ -198,44 +183,35 @@ bool scan_container_token(std::string_view text, std::size_t start,
     std::size_t j = start;
     const std::size_t n = text.size();
 
-    while (j < n)
-    {
+    while (j < n) {
         const char c = text[j];
-        if (c == '"')
-        {
+        if (c == '"') {
             std::size_t str_end = 0;
-            if (!scan_string_token(text, j, str_end))
-            {
+            if (!scan_string_token(text, j, str_end)) {
                 return false;
             }
             j = str_end;
         }
-        else if (c == '{' || c == '[')
-        {
+        else if (c == '{' || c == '[') {
             expected_close.push_back(c == '{' ? '}' : ']');
-            if (static_cast<int>(expected_close.size()) > max_depth)
-            {
+            if (static_cast<int>(expected_close.size()) > max_depth) {
                 too_deep = true;
                 return false;
             }
             ++j;
         }
-        else if (c == '}' || c == ']')
-        {
-            if (expected_close.empty() || expected_close.back() != c)
-            {
+        else if (c == '}' || c == ']') {
+            if (expected_close.empty() || expected_close.back() != c) {
                 return false;
             }
             expected_close.pop_back();
             ++j;
-            if (expected_close.empty())
-            {
+            if (expected_close.empty()) {
                 end = j;
                 return true;
             }
         }
-        else
-        {
+        else {
             ++j;
         }
     }
@@ -271,59 +247,50 @@ struct value_scan
  * @return A `value_scan`; on failure `ok` is `false` and `too_deep` indicates
  * whether the cause was a depth overflow.
  */
-value_scan scan_value(std::string_view text, std::size_t start,
+value_scan scan_value(std::string_view text,
+                      std::size_t start,
                       int max_depth) noexcept
 {
     value_scan out;
-    if (start >= text.size())
-    {
+    if (start >= text.size()) {
         return out;
     }
 
     const char c = text[start];
-    if (c == '"')
-    {
+    if (c == '"') {
         std::size_t end = 0;
-        if (scan_string_token(text, start, end))
-        {
+        if (scan_string_token(text, start, end)) {
             out.ok = true;
             out.kind = json_kind::string;
             out.end = end;
         }
         return out;
     }
-    if (c == '{' || c == '[')
-    {
+    if (c == '{' || c == '[') {
         std::size_t end = 0;
         bool too_deep = false;
-        if (scan_container_token(text, start, max_depth, end, too_deep))
-        {
+        if (scan_container_token(text, start, max_depth, end, too_deep)) {
             out.ok = true;
             out.kind = (c == '{') ? json_kind::object : json_kind::array;
             out.end = end;
         }
-        else
-        {
+        else {
             out.too_deep = too_deep;
         }
         return out;
     }
-    if (c == 't' || c == 'f')
-    {
+    if (c == 't' || c == 'f') {
         const std::string_view lit = (c == 't') ? "true" : "false";
-        if (text.substr(start, lit.size()) == lit)
-        {
+        if (text.substr(start, lit.size()) == lit) {
             out.ok = true;
             out.kind = json_kind::boolean;
             out.end = start + lit.size();
         }
         return out;
     }
-    if (c == 'n')
-    {
+    if (c == 'n') {
         const std::string_view lit = "null";
-        if (text.substr(start, lit.size()) == lit)
-        {
+        if (text.substr(start, lit.size()) == lit) {
             out.ok = true;
             out.kind = json_kind::null;
             out.end = start + lit.size();
@@ -332,8 +299,7 @@ value_scan scan_value(std::string_view text, std::size_t start,
     }
 
     std::size_t end = 0;
-    if (scan_number_token(text, start, end))
-    {
+    if (scan_number_token(text, start, end)) {
         out.ok = true;
         out.kind = json_kind::number;
         out.end = end;
@@ -348,32 +314,27 @@ value_scan scan_value(std::string_view text, std::size_t start,
  * @param out Receives the parsed 16-bit value on success.
  * @return `true` if four valid hex digits were present; `false` otherwise.
  */
-bool parse_hex4(std::string_view text, std::size_t pos,
+bool parse_hex4(std::string_view text,
+                std::size_t pos,
                 std::uint32_t& out) noexcept
 {
-    if (pos + 4 > text.size())
-    {
+    if (pos + 4 > text.size()) {
         return false;
     }
     std::uint32_t value = 0;
-    for (std::size_t k = 0; k < 4; ++k)
-    {
+    for (std::size_t k = 0; k < 4; ++k) {
         const char c = text[pos + k];
         value <<= 4;
-        if (c >= '0' && c <= '9')
-        {
+        if (c >= '0' && c <= '9') {
             value |= static_cast<std::uint32_t>(c - '0');
         }
-        else if (c >= 'a' && c <= 'f')
-        {
+        else if (c >= 'a' && c <= 'f') {
             value |= static_cast<std::uint32_t>(c - 'a' + 10);
         }
-        else if (c >= 'A' && c <= 'F')
-        {
+        else if (c >= 'A' && c <= 'F') {
             value |= static_cast<std::uint32_t>(c - 'A' + 10);
         }
-        else
-        {
+        else {
             return false;
         }
     }
@@ -388,23 +349,19 @@ bool parse_hex4(std::string_view text, std::size_t pos,
  */
 void append_utf8(std::string& out, std::uint32_t cp)
 {
-    if (cp <= 0x7F)
-    {
+    if (cp <= 0x7F) {
         out.push_back(static_cast<char>(cp));
     }
-    else if (cp <= 0x7FF)
-    {
+    else if (cp <= 0x7FF) {
         out.push_back(static_cast<char>(0xC0 | (cp >> 6)));
         out.push_back(static_cast<char>(0x80 | (cp & 0x3F)));
     }
-    else if (cp <= 0xFFFF)
-    {
+    else if (cp <= 0xFFFF) {
         out.push_back(static_cast<char>(0xE0 | (cp >> 12)));
         out.push_back(static_cast<char>(0x80 | ((cp >> 6) & 0x3F)));
         out.push_back(static_cast<char>(0x80 | (cp & 0x3F)));
     }
-    else
-    {
+    else {
         out.push_back(static_cast<char>(0xF0 | (cp >> 18)));
         out.push_back(static_cast<char>(0x80 | ((cp >> 12) & 0x3F)));
         out.push_back(static_cast<char>(0x80 | ((cp >> 6) & 0x3F)));
@@ -412,114 +369,103 @@ void append_utf8(std::string& out, std::uint32_t cp)
     }
 }
 
-} // namespace
+}  // namespace
 
 std::optional<std::string> decode_json_string(std::string_view raw_token)
 {
-    if (raw_token.size() < 2 || raw_token.front() != '"' ||
-        raw_token.back() != '"')
+    if (raw_token.size() < 2 || raw_token.front() != '"'
+        || raw_token.back() != '"')
     {
         return std::nullopt;
     }
 
     std::string out;
     out.reserve(raw_token.size());
-    const std::size_t last = raw_token.size() - 1; // index of closing quote
+    const std::size_t last = raw_token.size() - 1;  // index of closing quote
 
     std::size_t i = 1;
-    while (i < last)
-    {
+    while (i < last) {
         const char c = raw_token[i];
-        if (c != '\\')
-        {
+        if (c != '\\') {
             out.push_back(c);
             ++i;
             continue;
         }
 
         // Escape sequence: need at least one more character before the quote.
-        if (i + 1 >= last)
-        {
+        if (i + 1 >= last) {
             return std::nullopt;
         }
         const char esc = raw_token[i + 1];
-        switch (esc)
-        {
-        case '"':
-            out.push_back('"');
-            i += 2;
-            break;
-        case '\\':
-            out.push_back('\\');
-            i += 2;
-            break;
-        case '/':
-            out.push_back('/');
-            i += 2;
-            break;
-        case 'b':
-            out.push_back('\b');
-            i += 2;
-            break;
-        case 'f':
-            out.push_back('\f');
-            i += 2;
-            break;
-        case 'n':
-            out.push_back('\n');
-            i += 2;
-            break;
-        case 'r':
-            out.push_back('\r');
-            i += 2;
-            break;
-        case 't':
-            out.push_back('\t');
-            i += 2;
-            break;
-        case 'u':
-        {
-            std::uint32_t unit = 0;
-            if (!parse_hex4(raw_token, i + 2, unit) || i + 6 > last)
-            {
-                return std::nullopt;
-            }
-            i += 6;
-            if (unit >= 0xD800 && unit <= 0xDBFF)
-            {
-                // High surrogate: require a following low-surrogate escape.
-                if (i + 6 > last || raw_token[i] != '\\' ||
-                    raw_token[i + 1] != 'u')
-                {
-                    return std::nullopt;
-                }
-                std::uint32_t low = 0;
-                if (!parse_hex4(raw_token, i + 2, low))
-                {
-                    return std::nullopt;
-                }
-                if (low < 0xDC00 || low > 0xDFFF)
-                {
+        switch (esc) {
+            case '"':
+                out.push_back('"');
+                i += 2;
+                break;
+            case '\\':
+                out.push_back('\\');
+                i += 2;
+                break;
+            case '/':
+                out.push_back('/');
+                i += 2;
+                break;
+            case 'b':
+                out.push_back('\b');
+                i += 2;
+                break;
+            case 'f':
+                out.push_back('\f');
+                i += 2;
+                break;
+            case 'n':
+                out.push_back('\n');
+                i += 2;
+                break;
+            case 'r':
+                out.push_back('\r');
+                i += 2;
+                break;
+            case 't':
+                out.push_back('\t');
+                i += 2;
+                break;
+            case 'u': {
+                std::uint32_t unit = 0;
+                if (!parse_hex4(raw_token, i + 2, unit) || i + 6 > last) {
                     return std::nullopt;
                 }
                 i += 6;
-                const std::uint32_t cp =
-                    0x10000 + ((unit - 0xD800) << 10) + (low - 0xDC00);
-                append_utf8(out, cp);
+                if (unit >= 0xD800 && unit <= 0xDBFF) {
+                    // High surrogate: require a following low-surrogate escape.
+                    if (i + 6 > last || raw_token[i] != '\\'
+                        || raw_token[i + 1] != 'u')
+                    {
+                        return std::nullopt;
+                    }
+                    std::uint32_t low = 0;
+                    if (!parse_hex4(raw_token, i + 2, low)) {
+                        return std::nullopt;
+                    }
+                    if (low < 0xDC00 || low > 0xDFFF) {
+                        return std::nullopt;
+                    }
+                    i += 6;
+                    const std::uint32_t cp =
+                        0x10000 + ((unit - 0xD800) << 10) + (low - 0xDC00);
+                    append_utf8(out, cp);
+                }
+                else if (unit >= 0xDC00 && unit <= 0xDFFF) {
+                    // Lone low surrogate.
+                    return std::nullopt;
+                }
+                else {
+                    append_utf8(out, unit);
+                }
+                break;
             }
-            else if (unit >= 0xDC00 && unit <= 0xDFFF)
-            {
-                // Lone low surrogate.
+            default:
                 return std::nullopt;
-            }
-            else
-            {
-                append_utf8(out, unit);
-            }
-            break;
-        }
-        default:
-            return std::nullopt;
         }
     }
     return out;
@@ -528,10 +474,8 @@ std::optional<std::string> decode_json_string(std::string_view raw_token)
 const json_member* find_member(const std::vector<json_member>& members,
                                std::string_view key)
 {
-    for (const json_member& member : members)
-    {
-        if (member.key == key)
-        {
+    for (const json_member& member : members) {
+        if (member.key == key) {
             return &member;
         }
     }
@@ -549,28 +493,24 @@ scan_result scan_object(std::string_view text, const scan_limits& limits)
     // the exact "first duplicate rejected" behavior.
     std::unordered_set<std::string> seen_keys;
 
-    if (text.size() > limits.max_bytes)
-    {
+    if (text.size() > limits.max_bytes) {
         result.error = "too_large";
         return result;
     }
 
     std::size_t i = 0;
     skip_ws(text, i);
-    if (i >= text.size() || text[i] != '{')
-    {
+    if (i >= text.size() || text[i] != '{') {
         result.error = "not_an_object";
         return result;
     }
-    ++i; // consume '{'
+    ++i;  // consume '{'
 
     skip_ws(text, i);
-    if (i < text.size() && text[i] == '}')
-    {
+    if (i < text.size() && text[i] == '}') {
         ++i;
         skip_ws(text, i);
-        if (i != text.size())
-        {
+        if (i != text.size()) {
             result.error = "trailing_data";
             return result;
         }
@@ -578,10 +518,8 @@ scan_result scan_object(std::string_view text, const scan_limits& limits)
         return result;
     }
 
-    while (true)
-    {
-        if (result.members.size() >= limits.max_members)
-        {
+    while (true) {
+        if (result.members.size() >= limits.max_members) {
             result.members.clear();
             result.error = "too_many_members";
             return result;
@@ -589,23 +527,21 @@ scan_result scan_object(std::string_view text, const scan_limits& limits)
 
         // Key: must be a string token.
         skip_ws(text, i);
-        if (i >= text.size() || text[i] != '"')
-        {
+        if (i >= text.size() || text[i] != '"') {
             result.members.clear();
             result.error = "malformed";
             return result;
         }
         std::size_t key_end = 0;
-        if (!scan_string_token(text, i, key_end))
-        {
+        if (!scan_string_token(text, i, key_end)) {
             result.members.clear();
             result.error = "malformed";
             return result;
         }
         std::optional<std::string> decoded =
             decode_json_string(text.substr(i, key_end - i));
-        if (!decoded || decoded->size() > limits.max_key_len ||
-            decoded->find('\0') != std::string::npos)
+        if (!decoded || decoded->size() > limits.max_key_len
+            || decoded->find('\0') != std::string::npos)
         {
             result.members.clear();
             result.error = "malformed";
@@ -615,8 +551,7 @@ scan_result scan_object(std::string_view text, const scan_limits& limits)
 
         // Separator.
         skip_ws(text, i);
-        if (i >= text.size() || text[i] != ':')
-        {
+        if (i >= text.size() || text[i] != ':') {
             result.members.clear();
             result.error = "malformed";
             return result;
@@ -626,15 +561,13 @@ scan_result scan_object(std::string_view text, const scan_limits& limits)
         // Value.
         skip_ws(text, i);
         const value_scan vs = scan_value(text, i, limits.max_depth);
-        if (!vs.ok)
-        {
+        if (!vs.ok) {
             result.members.clear();
             result.error = vs.too_deep ? "too_deep" : "malformed";
             return result;
         }
 
-        if (!seen_keys.insert(*decoded).second)
-        {
+        if (!seen_keys.insert(*decoded).second) {
             result.members.clear();
             result.error = "duplicate_key";
             return result;
@@ -649,19 +582,16 @@ scan_result scan_object(std::string_view text, const scan_limits& limits)
 
         // Next: ',' continues, '}' ends.
         skip_ws(text, i);
-        if (i >= text.size())
-        {
+        if (i >= text.size()) {
             result.members.clear();
             result.error = "malformed";
             return result;
         }
-        if (text[i] == ',')
-        {
+        if (text[i] == ',') {
             ++i;
             continue;
         }
-        if (text[i] == '}')
-        {
+        if (text[i] == '}') {
             ++i;
             break;
         }
@@ -671,8 +601,7 @@ scan_result scan_object(std::string_view text, const scan_limits& limits)
     }
 
     skip_ws(text, i);
-    if (i != text.size())
-    {
+    if (i != text.size()) {
         result.members.clear();
         result.error = "trailing_data";
         return result;
@@ -686,28 +615,24 @@ array_scan_result scan_array(std::string_view text, const scan_limits& limits)
 {
     array_scan_result result;
 
-    if (text.size() > limits.max_bytes)
-    {
+    if (text.size() > limits.max_bytes) {
         result.error = "too_large";
         return result;
     }
 
     std::size_t i = 0;
     skip_ws(text, i);
-    if (i >= text.size() || text[i] != '[')
-    {
+    if (i >= text.size() || text[i] != '[') {
         result.error = "not_an_array";
         return result;
     }
-    ++i; // consume '['
+    ++i;  // consume '['
 
     skip_ws(text, i);
-    if (i < text.size() && text[i] == ']')
-    {
+    if (i < text.size() && text[i] == ']') {
         ++i;
         skip_ws(text, i);
-        if (i != text.size())
-        {
+        if (i != text.size()) {
             result.error = "trailing_data";
             return result;
         }
@@ -715,10 +640,8 @@ array_scan_result scan_array(std::string_view text, const scan_limits& limits)
         return result;
     }
 
-    while (true)
-    {
-        if (result.elements.size() >= limits.max_members)
-        {
+    while (true) {
+        if (result.elements.size() >= limits.max_members) {
             result.elements.clear();
             result.error = "too_many_members";
             return result;
@@ -726,8 +649,7 @@ array_scan_result scan_array(std::string_view text, const scan_limits& limits)
 
         skip_ws(text, i);
         const value_scan vs = scan_value(text, i, limits.max_depth);
-        if (!vs.ok)
-        {
+        if (!vs.ok) {
             result.elements.clear();
             result.error = vs.too_deep ? "too_deep" : "malformed";
             return result;
@@ -740,19 +662,16 @@ array_scan_result scan_array(std::string_view text, const scan_limits& limits)
         i = vs.end;
 
         skip_ws(text, i);
-        if (i >= text.size())
-        {
+        if (i >= text.size()) {
             result.elements.clear();
             result.error = "malformed";
             return result;
         }
-        if (text[i] == ',')
-        {
+        if (text[i] == ',') {
             ++i;
             continue;
         }
-        if (text[i] == ']')
-        {
+        if (text[i] == ']') {
             ++i;
             break;
         }
@@ -762,8 +681,7 @@ array_scan_result scan_array(std::string_view text, const scan_limits& limits)
     }
 
     skip_ws(text, i);
-    if (i != text.size())
-    {
+    if (i != text.size()) {
         result.elements.clear();
         result.error = "trailing_data";
         return result;
@@ -773,4 +691,4 @@ array_scan_result scan_array(std::string_view text, const scan_limits& limits)
     return result;
 }
 
-} // namespace url_shortener::commands
+}  // namespace url_shortener::commands

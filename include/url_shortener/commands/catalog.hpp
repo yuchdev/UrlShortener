@@ -74,8 +74,8 @@ std::string render_catalog_markdown(const CommandRegistry& registry);
  * `Arguments:` section, and a footer line
  * `Permission: <perm>; mutating: yes|no; dry_run: yes|no; kind: sync|job`.
  * Each argument is rendered as
- * `  --arg <name> <type> (required|optional) [enum a|b] [default <token>] <doc>`,
- * where the type comes from @ref arg_type_name, the `[enum ...]` and
+ * `  --arg <name> <type> (required|optional) [enum a|b] [default <token>]
+ * <doc>`, where the type comes from @ref arg_type_name, the `[enum ...]` and
  * `[default ...]` segments appear only when applicable, and an argument in a
  * @ref ArgSpec::one_of_group reads `required (one of: slug, id)` listing every
  * member of its group in declaration order. A command with no arguments prints

@@ -42,10 +42,9 @@ CommandResult noop_handler(CommandContext&, const ArgsView&)
 // A trivial job factory; registered but never invoked by the renderers.
 JobHandlerFactory noop_job_factory()
 {
-    return [](const CommandContext&, const ArgsView&)
-               -> std::variant<JobBody, CommandError> {
-        return JobBody{[](IJobContext&) { return JobOutcome{}; }};
-    };
+    return [](const CommandContext&,
+              const ArgsView&) -> std::variant<JobBody, CommandError>
+    { return JobBody {[](IJobContext&) { return JobOutcome {}; }}; };
 }
 
 // A mutating, dry-run-capable sync command exercising required/optional args,
@@ -137,14 +136,12 @@ CommandDescriptor fixture_list()
 // Populates a registry with the three fixtures (insertion order controllable).
 void fill_registry(CommandRegistry& registry, bool reversed)
 {
-    if (reversed)
-    {
+    if (reversed) {
         registry.add(fixture_list());
         registry.add(fixture_get());
         registry.add(fixture_create());
     }
-    else
-    {
+    else {
         registry.add(fixture_create());
         registry.add(fixture_get());
         registry.add(fixture_list());
@@ -155,10 +152,8 @@ void fill_registry(CommandRegistry& registry, bool reversed)
 void assert_clean_whitespace(const std::string& text)
 {
     std::string line;
-    for (const char c : text)
-    {
-        if (c == '\n')
-        {
+    for (const char c : text) {
+        if (c == '\n') {
             BOOST_TEST((line.empty() || line.back() != ' '),
                        "trailing space on line: '" + line + "'");
             line.clear();
@@ -174,12 +169,11 @@ void assert_clean_whitespace(const std::string& text)
 
 // Counts non-overlapping occurrences of needle in haystack.
 std::size_t count_occurrences(const std::string& haystack,
-                             const std::string& needle)
+                              const std::string& needle)
 {
     std::size_t count = 0;
     std::size_t pos = 0;
-    while ((pos = haystack.find(needle, pos)) != std::string::npos)
-    {
+    while ((pos = haystack.find(needle, pos)) != std::string::npos) {
         ++count;
         pos += needle.size();
     }
@@ -289,9 +283,10 @@ BOOST_AUTO_TEST_CASE(catalog_escapes_pipe_and_backtick)
     registry.add(std::move(descriptor));
 
     const std::string markdown = render_catalog_markdown(registry);
-    BOOST_TEST(markdown.find(
-                   "| `weird` | string | no | pipe \\| and &#96;code&#96; "
-                   "here |") != std::string::npos);
+    BOOST_TEST(
+        markdown.find("| `weird` | string | no | pipe \\| and &#96;code&#96; "
+                      "here |")
+        != std::string::npos);
     // The escaped doc introduces no new unescaped pipe that would add a cell.
     BOOST_TEST(markdown.find("code` here") == std::string::npos);
 }
@@ -356,8 +351,7 @@ BOOST_AUTO_TEST_CASE(help_names_every_arg_once)
 {
     const CommandDescriptor descriptor = fixture_create();
     const std::string help = render_command_help(descriptor);
-    for (const ArgSpec& arg : descriptor.args)
-    {
+    for (const ArgSpec& arg : descriptor.args) {
         BOOST_TEST(count_occurrences(help, "--arg " + arg.name + " ") == 1u,
                    "arg not named exactly once: " + arg.name);
     }

@@ -1,12 +1,12 @@
 #define BOOST_TEST_MODULE CommandsErrorTableTest
-#include <boost/test/unit_test.hpp>
-
 #include <algorithm>
 #include <cstddef>
 #include <string>
 #include <string_view>
 #include <utility>
 #include <vector>
+
+#include <boost/test/unit_test.hpp>
 
 #include "url_shortener/app/app_error.hpp"
 #include "url_shortener/cli/link_command_dispatch.hpp"
@@ -54,10 +54,14 @@ const std::vector<CommandErrorCode>& all_command_codes()
 const std::vector<AppErrorCode>& all_app_codes()
 {
     static const std::vector<AppErrorCode> codes = {
-        AppErrorCode::none,          AppErrorCode::invalid_url,
-        AppErrorCode::invalid_slug,  AppErrorCode::reserved_slug,
-        AppErrorCode::slug_conflict, AppErrorCode::invalid_field,
-        AppErrorCode::not_found,     AppErrorCode::storage_failure,
+        AppErrorCode::none,
+        AppErrorCode::invalid_url,
+        AppErrorCode::invalid_slug,
+        AppErrorCode::reserved_slug,
+        AppErrorCode::slug_conflict,
+        AppErrorCode::invalid_field,
+        AppErrorCode::not_found,
+        AppErrorCode::storage_failure,
         AppErrorCode::internal,
     };
     return codes;
@@ -65,15 +69,12 @@ const std::vector<AppErrorCode>& all_app_codes()
 
 bool is_lower_snake_case(std::string_view name)
 {
-    if (name.empty())
-    {
+    if (name.empty()) {
         return false;
     }
-    for (const char c : name)
-    {
+    for (const char c : name) {
         const bool ok = (c >= 'a' && c <= 'z') || c == '_';
-        if (!ok)
-        {
+        if (!ok) {
             return false;
         }
     }
@@ -93,8 +94,7 @@ BOOST_AUTO_TEST_CASE(table_has_one_row_per_enumerator_in_enum_order)
     const std::vector<CommandErrorCode>& codes = all_command_codes();
 
     BOOST_REQUIRE_EQUAL(table.size(), codes.size());
-    for (std::size_t i = 0; i < table.size(); ++i)
-    {
+    for (std::size_t i = 0; i < table.size(); ++i) {
         // Row i must describe the enumerator whose value is i so that
         // error_info_for can index by static_cast<size_t>(code).
         BOOST_TEST((table[i].code == codes[i]));
@@ -106,8 +106,7 @@ BOOST_AUTO_TEST_CASE(table_names_are_unique_and_lower_snake_case)
 {
     const std::vector<error_info>& table = all_error_infos();
     std::vector<std::string> seen;
-    for (const error_info& info : table)
-    {
+    for (const error_info& info : table) {
         BOOST_TEST(is_lower_snake_case(info.name),
                    "name not lower_snake_case: " << info.name);
         const std::string name(info.name);
@@ -120,8 +119,7 @@ BOOST_AUTO_TEST_CASE(table_names_are_unique_and_lower_snake_case)
 
 BOOST_AUTO_TEST_CASE(error_info_for_indexes_the_table_directly)
 {
-    for (const CommandErrorCode code : all_command_codes())
-    {
+    for (const CommandErrorCode code : all_command_codes()) {
         BOOST_TEST((error_info_for(code).code == code));
     }
 }
@@ -142,8 +140,7 @@ BOOST_AUTO_TEST_CASE(error_info_for_out_of_range_value_maps_to_internal)
 
 BOOST_AUTO_TEST_CASE(name_round_trips_for_every_code)
 {
-    for (const CommandErrorCode code : all_command_codes())
-    {
+    for (const CommandErrorCode code : all_command_codes()) {
         const auto decoded = error_code_from_name(error_info_for(code).name);
         BOOST_REQUIRE(decoded.has_value());
         BOOST_TEST((*decoded == code));
@@ -164,8 +161,7 @@ BOOST_AUTO_TEST_CASE(unknown_and_empty_names_yield_nullopt)
 
 BOOST_AUTO_TEST_CASE(exit_code_parity_with_cli_mapping)
 {
-    for (const AppErrorCode app_code : all_app_codes())
-    {
+    for (const AppErrorCode app_code : all_app_codes()) {
         const error_info& info = error_info_for(from_app_error(app_code));
         BOOST_TEST(info.exit_code == ExitCodeForAppError(app_code),
                    "exit-code parity broken for app code "
@@ -178,13 +174,16 @@ BOOST_AUTO_TEST_CASE(legacy_rest_status_parity_with_status_for_app_error)
     // Hard-coded from statusForAppError in link_handlers.cpp. These assert the
     // legacy_rest_status column still matches today's resource-route statuses.
     const std::vector<std::pair<AppErrorCode, unsigned>> expected = {
-        {AppErrorCode::invalid_url, 400},    {AppErrorCode::invalid_slug, 400},
-        {AppErrorCode::invalid_field, 400},  {AppErrorCode::reserved_slug, 409},
-        {AppErrorCode::slug_conflict, 409},  {AppErrorCode::not_found, 404},
-        {AppErrorCode::storage_failure, 500}, {AppErrorCode::internal, 500},
+        {AppErrorCode::invalid_url, 400},
+        {AppErrorCode::invalid_slug, 400},
+        {AppErrorCode::invalid_field, 400},
+        {AppErrorCode::reserved_slug, 409},
+        {AppErrorCode::slug_conflict, 409},
+        {AppErrorCode::not_found, 404},
+        {AppErrorCode::storage_failure, 500},
+        {AppErrorCode::internal, 500},
     };
-    for (const auto& [app_code, status] : expected)
-    {
+    for (const auto& [app_code, status] : expected) {
         const error_info& info = error_info_for(from_app_error(app_code));
         BOOST_TEST(info.legacy_rest_status == status,
                    "legacy status mismatch for app code "
@@ -205,12 +204,11 @@ BOOST_AUTO_TEST_CASE(legacy_rest_code_parity_with_code_for_app_error)
         {AppErrorCode::invalid_field, "invalid_request"},
         {AppErrorCode::internal, "internal_error"},
     };
-    for (const auto& [app_code, code_string] : expected)
-    {
+    for (const auto& [app_code, code_string] : expected) {
         const error_info& info = error_info_for(from_app_error(app_code));
-        BOOST_TEST(info.legacy_rest_code == code_string,
-                   "legacy code mismatch for app code "
-                       << static_cast<int>(app_code));
+        BOOST_TEST(
+            info.legacy_rest_code == code_string,
+            "legacy code mismatch for app code " << static_cast<int>(app_code));
     }
 }
 
@@ -226,12 +224,12 @@ BOOST_AUTO_TEST_CASE(from_app_error_maps_none_to_none)
 
 BOOST_AUTO_TEST_CASE(from_app_error_maps_same_named_codes_to_themselves)
 {
-    BOOST_TEST((from_app_error(AppErrorCode::invalid_url) ==
-                CommandErrorCode::invalid_url));
-    BOOST_TEST((from_app_error(AppErrorCode::slug_conflict) ==
-                CommandErrorCode::slug_conflict));
-    BOOST_TEST((from_app_error(AppErrorCode::storage_failure) ==
-                CommandErrorCode::storage_failure));
+    BOOST_TEST((from_app_error(AppErrorCode::invalid_url)
+                == CommandErrorCode::invalid_url));
+    BOOST_TEST((from_app_error(AppErrorCode::slug_conflict)
+                == CommandErrorCode::slug_conflict));
+    BOOST_TEST((from_app_error(AppErrorCode::storage_failure)
+                == CommandErrorCode::storage_failure));
 }
 
 BOOST_AUTO_TEST_CASE(make_error_preserves_code_and_message)
@@ -256,7 +254,8 @@ BOOST_AUTO_TEST_CASE(invalid_url_is_indistinguishable_for_malformed_and_ssrf)
     // Both failure causes map through the single app code -> single command
     // code, so status and exit code are identical and carry no distinguishing
     // signal. Callers pass a fixed, value-free message.
-    const CommandErrorCode malformed = from_app_error(AppErrorCode::invalid_url);
+    const CommandErrorCode malformed =
+        from_app_error(AppErrorCode::invalid_url);
     const CommandErrorCode blocked = from_app_error(AppErrorCode::invalid_url);
     BOOST_TEST((malformed == blocked));
     BOOST_TEST((malformed == CommandErrorCode::invalid_url));
@@ -306,8 +305,7 @@ BOOST_AUTO_TEST_CASE(table_agrees_with_catalog_row_by_row)
         {"internal", 500, 4, 500, "internal_error"},
     };
 
-    for (const catalog_row& row : catalog)
-    {
+    for (const catalog_row& row : catalog) {
         const auto code = error_code_from_name(row.name);
         BOOST_REQUIRE_MESSAGE(code.has_value(),
                               "catalog code missing from table: " << row.name);

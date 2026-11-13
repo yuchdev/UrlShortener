@@ -29,18 +29,14 @@ std::string markdown_escape(std::string_view text)
 {
     std::string out;
     out.reserve(text.size());
-    for (const char c : text)
-    {
-        if (c == '|')
-        {
+    for (const char c : text) {
+        if (c == '|') {
             out += "\\|";
         }
-        else if (c == '`')
-        {
+        else if (c == '`') {
             out += "&#96;";
         }
-        else
-        {
+        else {
             out += c;
         }
     }
@@ -74,14 +70,11 @@ std::string code_span(std::string_view text)
 std::string catalog_type_cell(const ArgSpec& arg)
 {
     std::string out(arg_type_name(arg.type));
-    if (arg.type == ArgType::enumeration && !arg.enum_values.empty())
-    {
+    if (arg.type == ArgType::enumeration && !arg.enum_values.empty()) {
         out += " ";
         bool first = true;
-        for (const std::string& value : arg.enum_values)
-        {
-            if (!first)
-            {
+        for (const std::string& value : arg.enum_values) {
+            if (!first) {
                 out += "\\|";
             }
             first = false;
@@ -100,8 +93,7 @@ std::string catalog_type_cell(const ArgSpec& arg)
  */
 std::string_view req_cell(const ArgSpec& arg)
 {
-    if (!arg.one_of_group.empty())
-    {
+    if (!arg.one_of_group.empty()) {
         return "one of";
     }
     return arg.required ? "yes" : "no";
@@ -123,12 +115,10 @@ std::string heading_meta(const CommandDescriptor& descriptor)
     out += code_span(permission_name(descriptor.permission));
     out += ", ";
     out += kind_name(descriptor.kind);
-    if (descriptor.mutating)
-    {
+    if (descriptor.mutating) {
         out += ", Mut";
     }
-    if (descriptor.supports_dry_run)
-    {
+    if (descriptor.supports_dry_run) {
         out += ", ";
         out += code_span("dry_run");
         out += " yes";
@@ -148,12 +138,9 @@ std::string one_of_members(const CommandDescriptor& descriptor,
                            std::string_view group)
 {
     std::string out;
-    for (const ArgSpec& arg : descriptor.args)
-    {
-        if (arg.one_of_group == group)
-        {
-            if (!out.empty())
-            {
+    for (const ArgSpec& arg : descriptor.args) {
+        if (arg.one_of_group == group) {
+            if (!out.empty()) {
                 out += ", ";
             }
             out += arg.name;
@@ -174,30 +161,25 @@ std::string one_of_members(const CommandDescriptor& descriptor,
  * @return The complete help line, without a trailing newline.
  */
 std::string help_arg_line(const CommandDescriptor& descriptor,
-                         const ArgSpec& arg)
+                          const ArgSpec& arg)
 {
     std::vector<std::string> tokens;
     tokens.push_back("--arg");
     tokens.push_back(arg.name);
     tokens.push_back(std::string(arg_type_name(arg.type)));
 
-    if (!arg.one_of_group.empty())
-    {
-        tokens.push_back("required (one of: " +
-                         one_of_members(descriptor, arg.one_of_group) + ")");
+    if (!arg.one_of_group.empty()) {
+        tokens.push_back("required (one of: "
+                         + one_of_members(descriptor, arg.one_of_group) + ")");
     }
-    else
-    {
+    else {
         tokens.push_back(arg.required ? "required" : "optional");
     }
 
-    if (arg.type == ArgType::enumeration && !arg.enum_values.empty())
-    {
+    if (arg.type == ArgType::enumeration && !arg.enum_values.empty()) {
         std::string values;
-        for (const std::string& value : arg.enum_values)
-        {
-            if (!values.empty())
-            {
+        for (const std::string& value : arg.enum_values) {
+            if (!values.empty()) {
                 values += "|";
             }
             values += value;
@@ -205,22 +187,18 @@ std::string help_arg_line(const CommandDescriptor& descriptor,
         tokens.push_back("[enum " + values + "]");
     }
 
-    if (arg.default_value.has_value())
-    {
+    if (arg.default_value.has_value()) {
         tokens.push_back("[default " + *arg.default_value + "]");
     }
 
-    if (!arg.doc.empty())
-    {
+    if (!arg.doc.empty()) {
         tokens.push_back(arg.doc);
     }
 
     std::string line = "  ";
     bool first = true;
-    for (const std::string& token : tokens)
-    {
-        if (!first)
-        {
+    for (const std::string& token : tokens) {
+        if (!first) {
             line += " ";
         }
         first = false;
@@ -239,8 +217,7 @@ std::string render_catalog_markdown(const CommandRegistry& registry)
     lines.emplace_back("| Command | Perm | Kind | Mut | dry_run | Summary |");
     lines.emplace_back("|---|---|---|---|---|---|");
 
-    for (const CommandDescriptor* descriptor : descriptors)
-    {
+    for (const CommandDescriptor* descriptor : descriptors) {
         std::string row = "| ";
         row += code_span(descriptor->name);
         row += " | ";
@@ -257,8 +234,7 @@ std::string render_catalog_markdown(const CommandRegistry& registry)
         lines.push_back(std::move(row));
     }
 
-    for (const CommandDescriptor* descriptor : descriptors)
-    {
+    for (const CommandDescriptor* descriptor : descriptors) {
         lines.emplace_back("");
 
         std::string heading = "#### ";
@@ -269,13 +245,11 @@ std::string render_catalog_markdown(const CommandRegistry& registry)
 
         lines.push_back(markdown_escape(descriptor->summary));
 
-        if (!descriptor->args.empty())
-        {
+        if (!descriptor->args.empty()) {
             lines.emplace_back("");
             lines.emplace_back("| Arg | Type | Req | Description |");
             lines.emplace_back("|---|---|---|---|");
-            for (const ArgSpec& arg : descriptor->args)
-            {
+            for (const ArgSpec& arg : descriptor->args) {
                 std::string row = "| ";
                 row += code_span(arg.name);
                 row += " | ";
@@ -289,15 +263,12 @@ std::string render_catalog_markdown(const CommandRegistry& registry)
             }
         }
 
-        if (!descriptor->maps_to.empty())
-        {
+        if (!descriptor->maps_to.empty()) {
             lines.emplace_back("");
             std::string maps = "Maps to: ";
             bool first = true;
-            for (const std::string& target : descriptor->maps_to)
-            {
-                if (!first)
-                {
+            for (const std::string& target : descriptor->maps_to) {
+                if (!first) {
                     maps += ", ";
                 }
                 first = false;
@@ -309,8 +280,7 @@ std::string render_catalog_markdown(const CommandRegistry& registry)
     }
 
     std::string out;
-    for (const std::string& line : lines)
-    {
+    for (const std::string& line : lines) {
         out += line;
         out += "\n";
     }
@@ -321,19 +291,16 @@ std::string render_command_help(const CommandDescriptor& descriptor)
 {
     std::vector<std::string> lines;
 
-    lines.push_back("Usage: url_shortener cmd " + descriptor.name +
-                   " [--json '<args-object>' | --arg key=value ...]");
+    lines.push_back("Usage: url_shortener cmd " + descriptor.name
+                    + " [--json '<args-object>' | --arg key=value ...]");
     lines.push_back(descriptor.summary);
 
-    if (descriptor.args.empty())
-    {
+    if (descriptor.args.empty()) {
         lines.emplace_back("Arguments: (none)");
     }
-    else
-    {
+    else {
         lines.emplace_back("Arguments:");
-        for (const ArgSpec& arg : descriptor.args)
-        {
+        for (const ArgSpec& arg : descriptor.args) {
             lines.push_back(help_arg_line(descriptor, arg));
         }
     }
@@ -349,8 +316,7 @@ std::string render_command_help(const CommandDescriptor& descriptor)
     lines.push_back(std::move(footer));
 
     std::string out;
-    for (const std::string& line : lines)
-    {
+    for (const std::string& line : lines) {
         out += line;
         out += "\n";
     }

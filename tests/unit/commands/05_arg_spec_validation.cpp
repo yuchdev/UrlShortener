@@ -183,7 +183,7 @@ BOOST_AUTO_TEST_CASE(integer_bounds_and_type_confusion)
     n.min = 0;
     n.max = 100;
 
-    BOOST_TEST(accepts({n}, R"({"n":0})"));    // min
+    BOOST_TEST(accepts({n}, R"({"n":0})"));  // min
     BOOST_TEST(accepts({n}, R"({"n":100})"));  // max
     BOOST_TEST(reason_is(run({n}, R"({"n":-1})"), "out_of_range"));
     BOOST_TEST(reason_is(run({n}, R"({"n":101})"), "out_of_range"));
@@ -233,11 +233,10 @@ BOOST_AUTO_TEST_CASE(timestamp_cases)
     t.name = "t";
     t.type = ArgType::timestamp;
     BOOST_TEST(accepts({t}, R"({"t":"2026-01-01T00:00:00Z"})"));
-    BOOST_TEST(
-        reason_is(run({t}, R"({"t":"2026-13-01T00:00:00Z"})"),
-                  "invalid_timestamp"));
-    BOOST_TEST(reason_is(run({t}, R"({"t":"not-a-timestamp"})"),
+    BOOST_TEST(reason_is(run({t}, R"({"t":"2026-13-01T00:00:00Z"})"),
                          "invalid_timestamp"));
+    BOOST_TEST(
+        reason_is(run({t}, R"({"t":"not-a-timestamp"})"), "invalid_timestamp"));
     BOOST_TEST(reason_is(run({t}, R"({"t":5})"), "invalid_timestamp"));
     // Pinned leniency of the mandated validator (missing trailing Z accepted).
     BOOST_TEST(accepts({t}, R"({"t":"2026-01-01T00:00:00"})"));
@@ -297,8 +296,8 @@ BOOST_AUTO_TEST_CASE(nested_object)
         run({campaign}, R"({"campaign":{"bogus":"x"}})");
     BOOST_TEST(reason_is(unknown, "unknown"));
     BOOST_TEST(unknown.message.find("campaign.bogus") != std::string::npos);
-    BOOST_TEST(reason_is(run({campaign}, R"({"campaign":{"name":1}})"),
-                         "wrong_type"));
+    BOOST_TEST(
+        reason_is(run({campaign}, R"({"campaign":{"name":1}})"), "wrong_type"));
 }
 
 // ---------------------------------------------------------------------------
@@ -318,8 +317,8 @@ BOOST_AUTO_TEST_CASE(one_of_group)
     BOOST_TEST(reason_is(run(specs, R"({})"), "one_of_violation"));
     BOOST_TEST(accepts(specs, R"({"slug":"x"})"));
     BOOST_TEST(accepts(specs, R"({"id":"y"})"));
-    BOOST_TEST(reason_is(run(specs, R"({"slug":"x","id":"y"})"),
-                         "one_of_violation"));
+    BOOST_TEST(
+        reason_is(run(specs, R"({"slug":"x","id":"y"})"), "one_of_violation"));
 }
 
 // ---------------------------------------------------------------------------
@@ -372,9 +371,8 @@ BOOST_AUTO_TEST_CASE(argsview_accessors)
     o.fields = {string_arg("name")};
     specs.push_back(o);
 
-    const std::string args =
-        R"({"s":"line\nbreak A","n":-42,"b":true,)"
-        R"("l":["x","y"],"m":{"k":"v"},"o":{"name":"z"}})";
+    const std::string args = R"({"s":"line\nbreak A","n":-42,"b":true,)"
+                             R"("l":["x","y"],"m":{"k":"v"},"o":{"name":"z"}})";
     ArgsView view;
     BOOST_REQUIRE(validate_args(specs, args, &view, nullptr));
 
@@ -453,12 +451,21 @@ std::vector<ArgSpec> link_create_specs()
     campaign.name = "campaign";
     campaign.type = ArgType::object;
     campaign.nullable = true;
-    campaign.fields = {string_arg("name"),   string_arg("source"),
-                       string_arg("medium"), string_arg("term"),
-                       string_arg("content"), string_arg("id")};
+    campaign.fields = {string_arg("name"),
+                       string_arg("source"),
+                       string_arg("medium"),
+                       string_arg("term"),
+                       string_arg("content"),
+                       string_arg("id")};
 
-    return {target_url, slug,     redirect_type, expires_at,
-            enabled,    tags,     metadata,      campaign};
+    return {target_url,
+            slug,
+            redirect_type,
+            expires_at,
+            enabled,
+            tags,
+            metadata,
+            campaign};
 }
 
 // Spec set mirroring the link.update table.
@@ -491,9 +498,12 @@ std::vector<ArgSpec> link_update_specs()
     campaign.name = "campaign";
     campaign.type = ArgType::object;
     campaign.nullable = true;
-    campaign.fields = {string_arg("name"),   string_arg("source"),
-                       string_arg("medium"), string_arg("term"),
-                       string_arg("content"), string_arg("id")};
+    campaign.fields = {string_arg("name"),
+                       string_arg("source"),
+                       string_arg("medium"),
+                       string_arg("term"),
+                       string_arg("content"),
+                       string_arg("id")};
 
     return {slug, enabled, expires_at, tags, metadata, campaign};
 }
@@ -504,23 +514,22 @@ std::vector<ArgSpec> link_update_specs()
 // so schema/doc drift is caught early.
 BOOST_AUTO_TEST_CASE(catalog_example_bodies)
 {
-    BOOST_TEST(accepts(
-        link_create_specs(),
-        R"({"target_url":"https://example.com/docs","slug":"docs"})"));
+    BOOST_TEST(
+        accepts(link_create_specs(),
+                R"({"target_url":"https://example.com/docs","slug":"docs"})"));
     BOOST_TEST(accepts(
         link_create_specs(),
         R"({"target_url":"https://example.com","redirect_type":"permanent",)"
         R"("enabled":true,"tags":["a","b"],"metadata":{"k":"v"},)"
         R"("campaign":{"name":"launch","source":"news"}})"));
-    BOOST_TEST(accepts(
-        link_create_specs(),
-        R"({"target_url":"https://example.com","campaign":null})"));
+    BOOST_TEST(
+        accepts(link_create_specs(),
+                R"({"target_url":"https://example.com","campaign":null})"));
 
+    BOOST_TEST(
+        accepts(link_update_specs(), R"({"slug":"docs","enabled":false})"));
     BOOST_TEST(accepts(link_update_specs(),
-                       R"({"slug":"docs","enabled":false})"));
-    BOOST_TEST(accepts(
-        link_update_specs(),
-        R"({"slug":"docs","expires_at":null,"campaign":null})"));
+                       R"({"slug":"docs","expires_at":null,"campaign":null})"));
 }
 
 // ---------------------------------------------------------------------------
@@ -539,12 +548,11 @@ BOOST_AUTO_TEST_CASE(per_arg_caps_vs_envelope_caps)
     l.max_items = 4096;
     l.max_length = 8;
 
-    const auto build_list = [](std::size_t count) {
+    const auto build_list = [](std::size_t count)
+    {
         std::string json = R"({"l":[)";
-        for (std::size_t i = 0; i < count; ++i)
-        {
-            if (i != 0)
-            {
+        for (std::size_t i = 0; i < count; ++i) {
+            if (i != 0) {
                 json += ',';
             }
             json += "\"x\"";
@@ -561,10 +569,8 @@ BOOST_AUTO_TEST_CASE(per_arg_caps_vs_envelope_caps)
     // A 257-member top-level envelope object is rejected by parse_request; the
     // scanner's envelope member cap (256) is independent of the per-arg caps.
     std::string envelope = "{";
-    for (std::size_t i = 0; i < 257; ++i)
-    {
-        if (i != 0)
-        {
+    for (std::size_t i = 0; i < 257; ++i) {
+        if (i != 0) {
             envelope += ',';
         }
         envelope += "\"k" + std::to_string(i) + "\":0";
@@ -586,10 +592,8 @@ BOOST_AUTO_TEST_CASE(large_map_distinct_keys)
     m.max_length = 16;
 
     std::string json = R"({"m":{)";
-    for (std::size_t i = 0; i < 4096; ++i)
-    {
-        if (i != 0)
-        {
+    for (std::size_t i = 0; i < 4096; ++i) {
+        if (i != 0) {
             json += ',';
         }
         json += "\"k" + std::to_string(i) + "\":\"v\"";
@@ -660,8 +664,7 @@ BOOST_AUTO_TEST_CASE(argsview_decodes_unicode_escapes)
     m.type = ArgType::string_map;
     const std::vector<ArgSpec> specs = {string_arg("s"), l, m};
 
-    const std::string args =
-        R"({"s":"Aé","l":["😀"],"m":{"k":"B"}})";
+    const std::string args = R"({"s":"Aé","l":["😀"],"m":{"k":"B"}})";
     ArgsView view;
     BOOST_REQUIRE(validate_args(specs, args, &view, nullptr));
 
@@ -686,8 +689,7 @@ BOOST_AUTO_TEST_CASE(oversized_args_rejected_without_envelope)
     l.max_length = 65536;
 
     // Just over 64 KiB: one long string element.
-    const std::string big =
-        R"({"l":[")" + std::string(65536, 'x') + R"("]})";
+    const std::string big = R"({"l":[")" + std::string(65536, 'x') + R"("]})";
     const CommandError error = run({l}, big);
     BOOST_TEST((error.code == CommandErrorCode::invalid_field));
     BOOST_TEST(reason_is(error, "too_large"));

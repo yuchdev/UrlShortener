@@ -19,8 +19,8 @@
 using url_shortener::commands::ArgSpec;
 using url_shortener::commands::ArgsView;
 using url_shortener::commands::ArgType;
-using url_shortener::commands::AuditRecord;
 using url_shortener::commands::audit_fields;
+using url_shortener::commands::AuditRecord;
 using url_shortener::commands::CallerContext;
 using url_shortener::commands::CommandContext;
 using url_shortener::commands::CommandDescriptor;
@@ -98,7 +98,8 @@ struct HandlerRecorder
 
     CommandHandler handler()
     {
-        return [this](CommandContext&, const ArgsView&) -> CommandResult {
+        return [this](CommandContext&, const ArgsView&) -> CommandResult
+        {
             ++calls;
             return canned;
         };
@@ -127,7 +128,8 @@ CallerContext test_caller(ControlSet role)
 }
 
 // A sync descriptor; mutating iff the permission is not read.
-CommandDescriptor sync_descriptor(std::string name, Permission permission,
+CommandDescriptor sync_descriptor(std::string name,
+                                  Permission permission,
                                   CommandHandler handler)
 {
     CommandDescriptor descriptor;
@@ -149,11 +151,9 @@ CommandDescriptor job_descriptor(std::string name)
     descriptor.mutating = true;
     descriptor.kind = ExecutionKind::job;
     descriptor.job_factory =
-        [](const CommandContext&, const ArgsView&)
-        -> std::variant<JobBody, CommandError> {
-        return JobBody {
-            [](IJobContext&) { return JobOutcome {}; }};
-    };
+        [](const CommandContext&,
+           const ArgsView&) -> std::variant<JobBody, CommandError>
+    { return JobBody {[](IJobContext&) { return JobOutcome {}; }}; };
     return descriptor;
 }
 
@@ -169,8 +169,8 @@ CommandRequest request_for(std::string command, std::string args_json = "{}")
 // Concatenates every string field of a record, for leakage assertions.
 std::string flatten(const AuditRecord& record)
 {
-    return record.principal + '\n' + record.transport + '\n' + record.command +
-           '\n' + record.target + '\n' + record.outcome;
+    return record.principal + '\n' + record.transport + '\n' + record.command
+        + '\n' + record.target + '\n' + record.outcome;
 }
 
 }  // namespace
@@ -337,11 +337,11 @@ BOOST_AUTO_TEST_CASE(throwing_handler_emits_internal_outcome)
     CapturingAuditSink sink;
     CommandRegistry registry;
     registry.set_audit_sink(alias(sink));
-    registry.add(sync_descriptor(
-        "link.delete", Permission::write,
-        [](CommandContext&, const ArgsView&) -> CommandResult {
-            throw std::runtime_error("secret-dsn");
-        }));
+    registry.add(
+        sync_descriptor("link.delete",
+                        Permission::write,
+                        [](CommandContext&, const ArgsView&) -> CommandResult
+                        { throw std::runtime_error("secret-dsn"); }));
 
     const CommandResponse response = registry.execute(
         test_caller(ControlSet::Admin), request_for("link.delete"));
@@ -386,15 +386,17 @@ BOOST_AUTO_TEST_CASE(no_argument_value_leaks_into_record)
     CommandRegistry registry;
     registry.set_audit_sink(alias(sink));
 
-    CommandDescriptor descriptor = sync_descriptor(
-        "link.delete", Permission::write,
-        [](CommandContext&, const ArgsView&) -> CommandResult {
-            CommandResult result;
-            result.result_json = R"({"ok":true})";
-            // The handler sets a validated, value-free target.
-            result.audit_target = "safe-slug";
-            return result;
-        });
+    CommandDescriptor descriptor =
+        sync_descriptor("link.delete",
+                        Permission::write,
+                        [](CommandContext&, const ArgsView&) -> CommandResult
+                        {
+                            CommandResult result;
+                            result.result_json = R"({"ok":true})";
+                            // The handler sets a validated, value-free target.
+                            result.audit_target = "safe-slug";
+                            return result;
+                        });
     ArgSpec password;
     password.name = "password";
     password.type = ArgType::string;
@@ -471,11 +473,10 @@ BOOST_AUTO_TEST_CASE(audit_fields_neutralizes_invalid_utf8_and_nul)
     BOOST_TEST(fields[2].value.find('?') != std::string::npos);
 
     // No field carries a raw NUL or a bare 0x80 continuation byte.
-    for (const LogField& field : fields)
-    {
+    for (const LogField& field : fields) {
         BOOST_TEST(field.value.find('\0') == std::string::npos);
-        BOOST_TEST(field.value.find(static_cast<char>(0x80)) ==
-                   std::string::npos);
+        BOOST_TEST(field.value.find(static_cast<char>(0x80))
+                   == std::string::npos);
     }
 }
 

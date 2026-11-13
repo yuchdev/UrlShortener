@@ -1,7 +1,3 @@
-#include "url_shortener/commands/command_registry.hpp"
-
-#include <openssl/sha.h>
-
 #include <algorithm>
 #include <cstdint>
 #include <exception>
@@ -13,6 +9,10 @@
 #include <utility>
 #include <variant>
 #include <vector>
+
+#include "url_shortener/commands/command_registry.hpp"
+
+#include <openssl/sha.h>
 
 #include "url_shortener/commands/arg_spec.hpp"
 #include "url_shortener/commands/audit.hpp"
@@ -50,29 +50,25 @@ namespace
 bool permission_check(const CallerContext& caller, Permission permission)
 {
     const AccessGuard guard(caller.control_set);
-    try
-    {
+    try {
         // Each case grants only after its require* call returns. There is
         // deliberately no `default`: -Wswitch still flags a new enumerator,
         // and any unmapped value falls through to the fail-closed return.
-        switch (permission)
-        {
-        case Permission::read:
-            guard.requireRead();
-            return true;
-        case Permission::write:
-            guard.requireWrite();
-            return true;
-        case Permission::migrate:
-            guard.requireMigration();
-            return true;
-        case Permission::manage_users:
-            guard.requireUserManagement();
-            return true;
+        switch (permission) {
+            case Permission::read:
+                guard.requireRead();
+                return true;
+            case Permission::write:
+                guard.requireWrite();
+                return true;
+            case Permission::migrate:
+                guard.requireMigration();
+                return true;
+            case Permission::manage_users:
+                guard.requireUserManagement();
+                return true;
         }
-    }
-    catch (const AccessDeniedError&)
-    {
+    } catch (const AccessDeniedError&) {
         return false;
     }
     return false;
@@ -130,22 +126,19 @@ dispatch resolve_dispatch(const CommandDescriptor& descriptor,
                           const CommandOptions& options,
                           std::string* unsupported_reason)
 {
-    const auto fail = [&](const char* reason) {
-        if (unsupported_reason != nullptr)
-        {
+    const auto fail = [&](const char* reason)
+    {
+        if (unsupported_reason != nullptr) {
             *unsupported_reason = reason;
         }
         return dispatch::error;
     };
 
-    if (options.dry_run)
-    {
-        if (!descriptor.supports_dry_run)
-        {
+    if (options.dry_run) {
+        if (!descriptor.supports_dry_run) {
             return fail("dry_run not supported");
         }
-        if (options.async)
-        {
+        if (options.async) {
             // dry_run validates-and-authorizes only; a job would mutate.
             return fail("dry_run and async are mutually exclusive");
         }
@@ -155,12 +148,10 @@ dispatch resolve_dispatch(const CommandDescriptor& descriptor,
 
     // Not a dry run. A job command always runs as a job; a sync command runs
     // as a job only when async was requested and the command is async_capable.
-    if (descriptor.kind == ExecutionKind::job)
-    {
+    if (descriptor.kind == ExecutionKind::job) {
         return dispatch::job;
     }
-    if (options.async)
-    {
+    if (options.async) {
         return descriptor.async_capable ? dispatch::job
                                         : fail("async not supported");
     }
@@ -182,7 +173,8 @@ std::string args_digest(std::string_view args_json)
 {
     unsigned char digest[SHA256_DIGEST_LENGTH];
     SHA256(reinterpret_cast<const unsigned char*>(args_json.data()),
-           args_json.size(), digest);
+           args_json.size(),
+           digest);
     std::string hex = url_shortener::hexEncode(digest, SHA256_DIGEST_LENGTH);
     hex.resize(16);
     return hex;
@@ -231,18 +223,15 @@ public:
  */
 CommandResponse dry_run_job_response(std::string id, JobOutcome outcome)
 {
-    if (outcome.cancelled)
-    {
+    if (outcome.cancelled) {
         return make_failure(
             std::move(id),
             make_error(CommandErrorCode::job_cancelled, "cancelled"));
     }
-    if (!outcome.ok)
-    {
+    if (!outcome.ok) {
         return make_failure(std::move(id), std::move(outcome.failure));
     }
-    if (!outcome.result_json || outcome.result_json->empty())
-    {
+    if (!outcome.result_json || outcome.result_json->empty()) {
         return make_failure(
             std::move(id),
             make_error(CommandErrorCode::internal, "internal error"));
@@ -274,13 +263,11 @@ CommandResponse run_dry_run_job(const CommandDescriptor& descriptor,
                                 const CommandRequest& request,
                                 const ArgsView& view)
 {
-    try
-    {
+    try {
         const CommandContext ctx {caller, request, true};
         std::variant<JobBody, CommandError> produced =
             descriptor.job_factory(ctx, view);
-        if (std::holds_alternative<CommandError>(produced))
-        {
+        if (std::holds_alternative<CommandError>(produced)) {
             return make_failure(request.id,
                                 std::get<CommandError>(std::move(produced)));
         }
@@ -288,15 +275,11 @@ CommandResponse run_dry_run_job(const CommandDescriptor& descriptor,
         NoopJobContext job_ctx;
         JobOutcome outcome = body(job_ctx);
         return dry_run_job_response(request.id, std::move(outcome));
-    }
-    catch (const std::exception&)
-    {
+    } catch (const std::exception&) {
         return make_failure(
             request.id,
             make_error(CommandErrorCode::internal, "internal error"));
-    }
-    catch (...)
-    {
+    } catch (...) {
         return make_failure(
             request.id,
             make_error(CommandErrorCode::internal, "internal error"));
@@ -330,24 +313,22 @@ CommandResponse run_dry_run_job(const CommandDescriptor& descriptor,
  */
 CommandResponse submit_job(const CommandDescriptor& descriptor,
                            const CallerContext& caller,
-                           const CommandRequest& request, const ArgsView& view,
+                           const CommandRequest& request,
+                           const ArgsView& view,
                            const std::shared_ptr<IJobSubmitter>& submitter)
 {
     // Fail closed before touching the factory: no runtime, no job (T-12).
-    if (!submitter)
-    {
+    if (!submitter) {
         return make_failure(
             request.id,
             make_error(CommandErrorCode::unsupported, "jobs not supported"));
     }
 
-    try
-    {
+    try {
         const CommandContext ctx {caller, request, false};
         std::variant<JobBody, CommandError> produced =
             descriptor.job_factory(ctx, view);
-        if (std::holds_alternative<CommandError>(produced))
-        {
+        if (std::holds_alternative<CommandError>(produced)) {
             // A factory error queues nothing.
             return make_failure(request.id,
                                 std::get<CommandError>(std::move(produced)));
@@ -355,21 +336,16 @@ CommandResponse submit_job(const CommandDescriptor& descriptor,
         JobBody body = std::get<JobBody>(std::move(produced));
         JobSubmitResult submitted = submitter->submit(
             request.command, args_digest(request.args_json), std::move(body));
-        if (submitted.job.has_value())
-        {
+        if (submitted.job.has_value()) {
             return make_job_accepted(request.id, std::move(*submitted.job));
         }
         // "Either a job or an error, never both": no job means a real error.
         return make_failure(request.id, std::move(submitted.error));
-    }
-    catch (const std::exception&)
-    {
+    } catch (const std::exception&) {
         return make_failure(
             request.id,
             make_error(CommandErrorCode::internal, "internal error"));
-    }
-    catch (...)
-    {
+    } catch (...) {
         return make_failure(
             request.id,
             make_error(CommandErrorCode::internal, "internal error"));
@@ -393,12 +369,10 @@ CommandResponse submit_job(const CommandDescriptor& descriptor,
  */
 std::string derive_audit_outcome(const CommandResponse& response, bool dry_run)
 {
-    if (!response.ok)
-    {
+    if (!response.ok) {
         return std::string(error_info_for(response.error.code).name);
     }
-    if (response.job.has_value())
-    {
+    if (response.job.has_value()) {
         return "job_accepted";
     }
     return dry_run ? "dry_run" : "ok";
@@ -418,19 +392,15 @@ std::string derive_audit_outcome(const CommandResponse& response, bool dry_run)
  */
 bool defaults_are_single_json_values(const std::vector<ArgSpec>& args)
 {
-    for (const ArgSpec& arg : args)
-    {
-        if (arg.default_value.has_value())
-        {
+    for (const ArgSpec& arg : args) {
+        if (arg.default_value.has_value()) {
             const std::string wrapped = "{\"r\":" + *arg.default_value + "}";
             const scan_result scan = scan_object(wrapped);
-            if (!scan.ok || scan.members.size() != 1)
-            {
+            if (!scan.ok || scan.members.size() != 1) {
                 return false;
             }
         }
-        if (!defaults_are_single_json_values(arg.fields))
-        {
+        if (!defaults_are_single_json_values(arg.fields)) {
             return false;
         }
     }
@@ -444,37 +414,32 @@ bool CommandRegistry::is_valid_descriptor(const CommandDescriptor& descriptor,
 {
     // Writes a fixed reason into `why` (when provided) and returns false; the
     // reasons are fixed developer-facing text, never caller-supplied values.
-    const auto fail = [&](const char* reason) {
-        if (why != nullptr)
-        {
+    const auto fail = [&](const char* reason)
+    {
+        if (why != nullptr) {
             *why = reason;
         }
         return false;
     };
 
-    if (!is_valid_command_name(descriptor.name))
-    {
+    if (!is_valid_command_name(descriptor.name)) {
         return fail("invalid command name");
     }
-    if (descriptor.summary.empty())
-    {
+    if (descriptor.summary.empty()) {
         return fail("empty summary");
     }
-    if (descriptor.kind == ExecutionKind::sync && !descriptor.handler)
-    {
+    if (descriptor.kind == ExecutionKind::sync && !descriptor.handler) {
         return fail("null handler for sync command");
     }
-    if ((descriptor.kind == ExecutionKind::job || descriptor.async_capable) &&
-        !descriptor.job_factory)
+    if ((descriptor.kind == ExecutionKind::job || descriptor.async_capable)
+        && !descriptor.job_factory)
     {
         return fail("missing job_factory");
     }
 
     std::set<std::string_view> seen_arg_names;
-    for (const ArgSpec& arg : descriptor.args)
-    {
-        if (!seen_arg_names.insert(arg.name).second)
-        {
+    for (const ArgSpec& arg : descriptor.args) {
+        if (!seen_arg_names.insert(arg.name).second) {
             return fail("duplicate arg name");
         }
     }
@@ -482,13 +447,11 @@ bool CommandRegistry::is_valid_descriptor(const CommandDescriptor& descriptor,
     // command.list embeds each default verbatim; a malformed token would turn
     // the whole catalog response into an internal error at run time, so
     // reject it here at startup instead.
-    if (!defaults_are_single_json_values(descriptor.args))
-    {
+    if (!defaults_are_single_json_values(descriptor.args)) {
         return fail("invalid arg default");
     }
 
-    if (descriptor.supports_dry_run && !descriptor.mutating)
-    {
+    if (descriptor.supports_dry_run && !descriptor.mutating) {
         return fail("supports_dry_run requires mutating");
     }
 
@@ -501,8 +464,7 @@ bool CommandRegistry::is_valid_descriptor(const CommandDescriptor& descriptor,
         return fail("mutating requires write permission");
     }
 
-    if (why != nullptr)
-    {
+    if (why != nullptr) {
         why->clear();
     }
     return true;
@@ -511,8 +473,7 @@ bool CommandRegistry::is_valid_descriptor(const CommandDescriptor& descriptor,
 void CommandRegistry::add(CommandDescriptor descriptor)
 {
     std::string why;
-    if (!is_valid_descriptor(descriptor, &why))
-    {
+    if (!is_valid_descriptor(descriptor, &why)) {
         throw std::invalid_argument(why);
     }
 
@@ -522,8 +483,7 @@ void CommandRegistry::add(CommandDescriptor descriptor)
     std::string key = descriptor.name;
     const bool inserted =
         m_commands.emplace(std::move(key), std::move(descriptor)).second;
-    if (!inserted)
-    {
+    if (!inserted) {
         throw std::invalid_argument("duplicate command name");
     }
 }
@@ -538,8 +498,7 @@ std::vector<const CommandDescriptor*> CommandRegistry::list() const
 {
     std::vector<const CommandDescriptor*> result;
     result.reserve(m_commands.size());
-    for (const auto& entry : m_commands)
-    {
+    for (const auto& entry : m_commands) {
         result.push_back(&entry.second);
     }
     return result;
@@ -562,10 +521,10 @@ void CommandRegistry::set_audit_sink(std::shared_ptr<IAuditSink> sink)
 
 void CommandRegistry::emit_audit(const CommandDescriptor& descriptor,
                                  const CallerContext& caller,
-                                 std::string outcome, std::string target) const
+                                 std::string outcome,
+                                 std::string target) const
 {
-    if (!m_audit)
-    {
+    if (!m_audit) {
         return;
     }
 
@@ -575,8 +534,7 @@ void CommandRegistry::emit_audit(const CommandDescriptor& descriptor,
     record.command = descriptor.name;
     // Cap the target at the AuditRecord bound (64); audit_fields later
     // neutralizes any byte a cap might have split (threat model T-15).
-    if (target.size() > 64)
-    {
+    if (target.size() > 64) {
         target.resize(64);
     }
     record.target = std::move(target);
@@ -584,12 +542,9 @@ void CommandRegistry::emit_audit(const CommandDescriptor& descriptor,
 
     // The sink is noexcept by contract; wrap anyway so a throwing fake can
     // never alter the response (threat model T-14).
-    try
-    {
+    try {
         m_audit->record(record);
-    }
-    catch (...)
-    {
+    } catch (...) {
     }
 }
 
@@ -598,8 +553,7 @@ CommandResponse CommandRegistry::execute(const CallerContext& caller,
 {
     // Step 1: envelope sanity (defense in depth; parse_request normally
     // catches these). No input value is echoed.
-    if (request.v != 1 || request.command.empty())
-    {
+    if (request.v != 1 || request.command.empty()) {
         return make_failure(
             request.id,
             make_error(CommandErrorCode::invalid_envelope, "invalid envelope"));
@@ -607,8 +561,7 @@ CommandResponse CommandRegistry::execute(const CallerContext& caller,
 
     // Step 2: lookup. The unknown name is deliberately not echoed.
     const CommandDescriptor* descriptor = find(request.command);
-    if (descriptor == nullptr)
-    {
+    if (descriptor == nullptr) {
         return make_failure(
             request.id,
             make_error(CommandErrorCode::unknown_command, "unknown command"));
@@ -623,12 +576,12 @@ CommandResponse CommandRegistry::execute(const CallerContext& caller,
     bool audit_dry_run = false;
     std::string audit_target;
 
-    const auto pipeline = [&]() -> CommandResponse {
+    const auto pipeline = [&]() -> CommandResponse
+    {
         // Step 3: base permission, BEFORE argument validation, so an
         // unauthorized caller learns nothing about the arg schema and the
         // handler is never entered on denial (threat model T-08).
-        if (!permission_check(caller, descriptor->permission))
-        {
+        if (!permission_check(caller, descriptor->permission)) {
             return make_failure(request.id,
                                 make_error(CommandErrorCode::not_authorized,
                                            "permission denied"));
@@ -638,8 +591,8 @@ CommandResponse CommandRegistry::execute(const CallerContext& caller,
         // reason, never an argument value (contract C6).
         ArgsView view;
         CommandError arg_error;
-        if (!validate_args(descriptor->args, request.args_json, &view,
-                           &arg_error))
+        if (!validate_args(
+                descriptor->args, request.args_json, &view, &arg_error))
         {
             return make_failure(request.id, std::move(arg_error));
         }
@@ -648,29 +601,22 @@ CommandResponse CommandRegistry::execute(const CallerContext& caller,
         // The hook runs only on the validated view; the effective permission is
         // max(base, hook) over the contractual order, so it can only tighten
         // (threat model T-09). A throwing hook maps to internal.
-        if (descriptor->permission_for)
-        {
+        if (descriptor->permission_for) {
             Permission required = descriptor->permission;
-            try
-            {
+            try {
                 const Permission hinted = descriptor->permission_for(view);
                 required = std::max(descriptor->permission, hinted);
-            }
-            catch (const std::exception&)
-            {
+            } catch (const std::exception&) {
                 return make_failure(
                     request.id,
                     make_error(CommandErrorCode::internal, "internal error"));
-            }
-            catch (...)
-            {
+            } catch (...) {
                 return make_failure(
                     request.id,
                     make_error(CommandErrorCode::internal, "internal error"));
             }
 
-            if (!permission_check(caller, required))
-            {
+            if (!permission_check(caller, required)) {
                 return make_failure(request.id,
                                     make_error(CommandErrorCode::not_authorized,
                                                "permission denied"));
@@ -684,43 +630,38 @@ CommandResponse CommandRegistry::execute(const CallerContext& caller,
         // (T-12).
         bool handler_dry_run = false;
         std::string unsupported_reason;
-        switch (resolve_dispatch(*descriptor, request.options,
-                                 &unsupported_reason))
+        switch (
+            resolve_dispatch(*descriptor, request.options, &unsupported_reason))
         {
-        case dispatch::handler:
-            break;
-        case dispatch::dry_run:
-            handler_dry_run = true;
-            break;
-        case dispatch::dry_run_job:
-            audit_dry_run = true;
-            return run_dry_run_job(*descriptor, caller, request, view);
-        case dispatch::job:
-            return submit_job(*descriptor, caller, request, view,
-                              m_job_submitter_);
-        case dispatch::error:
-            return make_failure(request.id,
-                                make_error(CommandErrorCode::unsupported,
-                                           std::move(unsupported_reason)));
+            case dispatch::handler:
+                break;
+            case dispatch::dry_run:
+                handler_dry_run = true;
+                break;
+            case dispatch::dry_run_job:
+                audit_dry_run = true;
+                return run_dry_run_job(*descriptor, caller, request, view);
+            case dispatch::job:
+                return submit_job(
+                    *descriptor, caller, request, view, m_job_submitter_);
+            case dispatch::error:
+                return make_failure(request.id,
+                                    make_error(CommandErrorCode::unsupported,
+                                               std::move(unsupported_reason)));
         }
 
         // Step 6: dispatch with exception isolation. e.what() is never
         // surfaced: it may carry paths, SQL or a DSN (threat model T-10).
         audit_dry_run = handler_dry_run;
         CommandResult result;
-        try
-        {
+        try {
             CommandContext ctx {caller, request, handler_dry_run};
             result = descriptor->handler(ctx, view);
-        }
-        catch (const std::exception&)
-        {
+        } catch (const std::exception&) {
             return make_failure(
                 request.id,
                 make_error(CommandErrorCode::internal, "internal error"));
-        }
-        catch (...)
-        {
+        } catch (...) {
             return make_failure(
                 request.id,
                 make_error(CommandErrorCode::internal, "internal error"));
@@ -731,12 +672,10 @@ CommandResponse CommandRegistry::execute(const CallerContext& caller,
         audit_target = result.audit_target;
 
         // Step 7: convert the handler outcome into a response.
-        if (!result.ok())
-        {
+        if (!result.ok()) {
             return make_failure(request.id, std::move(result.error));
         }
-        if (result.result_json.empty())
-        {
+        if (result.result_json.empty()) {
             // A successful handler must produce a payload; an empty one is a
             // handler programming error, reported as internal.
             return make_failure(
@@ -751,21 +690,18 @@ CommandResponse CommandRegistry::execute(const CallerContext& caller,
     // Step 8: exactly one audit record per attempt at a mutating command
     // (subtask 09, threat model T-14). Non-mutating commands emit nothing; an
     // accepted job records its job id, every other outcome its derived word.
-    if (descriptor->mutating)
-    {
+    if (descriptor->mutating) {
         // Building the record allocates; under memory exhaustion that must
         // neither escape execute (documented never-throwing) nor change the
         // response the handler already produced.
-        try
-        {
+        try {
             std::string target =
                 response.job.has_value() ? response.job->id : audit_target;
-            emit_audit(*descriptor, caller,
+            emit_audit(*descriptor,
+                       caller,
                        derive_audit_outcome(response, audit_dry_run),
                        std::move(target));
-        }
-        catch (...)
-        {
+        } catch (...) {
             // Audit is best-effort under allocation failure; the response
             // stands.
         }
@@ -775,12 +711,12 @@ CommandResponse CommandRegistry::execute(const CallerContext& caller,
 }
 
 CommandResponse CommandRegistry::execute_json(
-    const CallerContext& caller, std::string_view request_text,
+    const CallerContext& caller,
+    std::string_view request_text,
     const envelope_limits& limits) const
 {
     parse_request_result parsed = parse_request(request_text, limits);
-    if (!parsed.ok())
-    {
+    if (!parsed.ok()) {
         // The parser already resolved a safe echo id (valid client id or a
         // srv-<n> fallback, threat model T-05) and a value-free envelope error.
         return make_failure(std::move(parsed.id), std::move(parsed.error));

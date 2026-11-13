@@ -1,5 +1,3 @@
-#include "url_shortener/commands/arg_spec.hpp"
-
 #include <cstddef>
 #include <limits>
 #include <map>
@@ -7,6 +5,8 @@
 #include <string>
 #include <string_view>
 #include <vector>
+
+#include "url_shortener/commands/arg_spec.hpp"
 
 #include "url_shortener/core/utils.hpp"
 
@@ -49,8 +49,7 @@ constexpr std::size_t k_max_name_in_message = 64;
  */
 CommandError fail(std::string_view name, std::string_view reason)
 {
-    if (name.size() > k_max_name_in_message)
-    {
+    if (name.size() > k_max_name_in_message) {
         name = name.substr(0, k_max_name_in_message);
     }
     std::string message(name);
@@ -70,10 +69,8 @@ CommandError fail(std::string_view name, std::string_view reason)
 const ArgSpec* find_spec(const std::vector<ArgSpec>& specs,
                          std::string_view key)
 {
-    for (const ArgSpec& spec : specs)
-    {
-        if (spec.name == key)
-        {
+    for (const ArgSpec& spec : specs) {
+        if (spec.name == key) {
             return &spec;
         }
     }
@@ -153,50 +150,42 @@ enum class int_parse
  */
 int_parse parse_integer_token(std::string_view token, long long& out)
 {
-    if (token.empty())
-    {
+    if (token.empty()) {
         return int_parse::not_integer;
     }
-    for (const char c : token)
-    {
-        if (c == '.' || c == 'e' || c == 'E')
-        {
+    for (const char c : token) {
+        if (c == '.' || c == 'e' || c == 'E') {
             return int_parse::not_integer;
         }
     }
 
     std::size_t i = 0;
     bool negative = false;
-    if (token[i] == '-')
-    {
+    if (token[i] == '-') {
         negative = true;
         ++i;
     }
-    if (i >= token.size())
-    {
+    if (i >= token.size()) {
         return int_parse::not_integer;
     }
 
     // Accumulate the magnitude as unsigned so LLONG_MIN is representable; the
     // positive limit is LLONG_MAX, the negative limit is LLONG_MAX + 1.
-    const unsigned long long limit =
-        negative ? static_cast<unsigned long long>(
-                       std::numeric_limits<long long>::max()) +
-                       1ULL
-                 : static_cast<unsigned long long>(
-                       std::numeric_limits<long long>::max());
+    const unsigned long long limit = negative
+        ? static_cast<unsigned long long>(std::numeric_limits<long long>::max())
+            + 1ULL
+        : static_cast<unsigned long long>(
+              std::numeric_limits<long long>::max());
     unsigned long long acc = 0;
-    for (; i < token.size(); ++i)
-    {
+    for (; i < token.size(); ++i) {
         const char c = token[i];
-        if (c < '0' || c > '9')
-        {
+        if (c < '0' || c > '9') {
             return int_parse::not_integer;
         }
-        const unsigned long long digit = static_cast<unsigned long long>(c -
-                                                                         '0');
-        if (acc > limit / 10ULL ||
-            (acc == limit / 10ULL && digit > limit % 10ULL))
+        const unsigned long long digit =
+            static_cast<unsigned long long>(c - '0');
+        if (acc > limit / 10ULL
+            || (acc == limit / 10ULL && digit > limit % 10ULL))
         {
             return int_parse::overflow;
         }
@@ -220,8 +209,7 @@ int_parse parse_integer_token(std::string_view token, long long& out)
 bool decode_without_nul(std::string_view raw_token, std::string& out)
 {
     std::optional<std::string> decoded = decode_json_string(raw_token);
-    if (!decoded || decoded->find('\0') != std::string::npos)
-    {
+    if (!decoded || decoded->find('\0') != std::string::npos) {
         return false;
     }
     out = std::move(*decoded);
@@ -231,7 +219,8 @@ bool decode_without_nul(std::string_view raw_token, std::string& out)
 // Forward declaration: object-typed args recurse back into this routine.
 bool check_against_specs(const std::vector<ArgSpec>& specs,
                          const std::vector<json_member>& members,
-                         CommandError* error, std::string_view prefix);
+                         CommandError* error,
+                         std::string_view prefix);
 
 /**
  * @brief Validates one present member's value against its matched spec.
@@ -243,224 +232,185 @@ bool check_against_specs(const std::vector<ArgSpec>& specs,
  * @return `true` when the value satisfies the spec; `false` on the first
  * violation.
  */
-bool validate_member(const ArgSpec& spec, const json_member& member,
-                     std::string_view name, CommandError* error)
+bool validate_member(const ArgSpec& spec,
+                     const json_member& member,
+                     std::string_view name,
+                     CommandError* error)
 {
-    const auto reject = [&](std::string_view reason) {
-        if (error != nullptr)
-        {
+    const auto reject = [&](std::string_view reason)
+    {
+        if (error != nullptr) {
             *error = fail(name, reason);
         }
         return false;
     };
 
-    if (member.kind == json_kind::null)
-    {
+    if (member.kind == json_kind::null) {
         return spec.nullable ? true : reject(k_wrong_type);
     }
 
-    switch (spec.type)
-    {
-    case ArgType::string:
-    {
-        if (member.kind != json_kind::string)
-        {
-            return reject(k_wrong_type);
-        }
-        std::string value;
-        if (!decode_without_nul(member.raw, value))
-        {
-            return reject(k_wrong_type);
-        }
-        if (value.size() > spec.max_length)
-        {
-            return reject(k_too_long);
-        }
-        return true;
-    }
-    case ArgType::enumeration:
-    {
-        if (member.kind != json_kind::string)
-        {
-            return reject(k_wrong_type);
-        }
-        std::string value;
-        if (!decode_without_nul(member.raw, value))
-        {
-            return reject(k_wrong_type);
-        }
-        for (const std::string& allowed : spec.enum_values)
-        {
-            if (allowed == value)
-            {
-                return true;
-            }
-        }
-        return reject(k_not_in_enum);
-    }
-    case ArgType::timestamp:
-    {
-        if (member.kind != json_kind::string)
-        {
-            return reject(k_invalid_timestamp);
-        }
-        std::string value;
-        if (!decode_without_nul(member.raw, value))
-        {
-            return reject(k_invalid_timestamp);
-        }
-        if (!url_shortener::parseRfc3339Zulu(value).has_value())
-        {
-            return reject(k_invalid_timestamp);
-        }
-        return true;
-    }
-    case ArgType::integer:
-    {
-        if (member.kind != json_kind::number)
-        {
-            return reject(k_wrong_type);
-        }
-        long long value = 0;
-        switch (parse_integer_token(member.raw, value))
-        {
-        case int_parse::not_integer:
-            return reject(k_wrong_type);
-        case int_parse::overflow:
-            return reject(k_out_of_range);
-        case int_parse::ok:
-            break;
-        }
-        if (spec.min.has_value() && value < *spec.min)
-        {
-            return reject(k_out_of_range);
-        }
-        if (spec.max.has_value() && value > *spec.max)
-        {
-            return reject(k_out_of_range);
-        }
-        return true;
-    }
-    case ArgType::boolean:
-    {
-        return member.kind == json_kind::boolean ? true
-                                                 : reject(k_wrong_type);
-    }
-    case ArgType::string_list:
-    {
-        if (member.kind != json_kind::array)
-        {
-            return reject(k_wrong_type);
-        }
-        const array_scan_result scan =
-            scan_array(member.raw, nested_limits(spec, member.raw));
-        if (!scan.ok)
-        {
-            return reject(scan.error == "too_many_members" ? k_too_many_items
-                                                           : k_wrong_type);
-        }
-        for (const json_element& element : scan.elements)
-        {
-            if (element.kind != json_kind::string)
-            {
+    switch (spec.type) {
+        case ArgType::string: {
+            if (member.kind != json_kind::string) {
                 return reject(k_wrong_type);
             }
             std::string value;
-            if (!decode_without_nul(element.raw, value))
-            {
+            if (!decode_without_nul(member.raw, value)) {
                 return reject(k_wrong_type);
             }
-            if (value.size() > spec.max_length)
-            {
+            if (value.size() > spec.max_length) {
                 return reject(k_too_long);
             }
+            return true;
         }
-        return true;
-    }
-    case ArgType::string_map:
-    {
-        if (member.kind != json_kind::object)
-        {
-            return reject(k_wrong_type);
-        }
-        const scan_result scan =
-            scan_object(member.raw, nested_limits(spec, member.raw));
-        if (!scan.ok)
-        {
-            return reject(scan.error == "too_many_members" ? k_too_many_items
-                                                           : k_wrong_type);
-        }
-        for (const json_member& entry : scan.members)
-        {
-            if (entry.kind != json_kind::string)
-            {
+        case ArgType::enumeration: {
+            if (member.kind != json_kind::string) {
                 return reject(k_wrong_type);
             }
             std::string value;
-            if (!decode_without_nul(entry.raw, value))
-            {
+            if (!decode_without_nul(member.raw, value)) {
                 return reject(k_wrong_type);
             }
-            if (value.size() > spec.max_length)
-            {
-                return reject(k_too_long);
+            for (const std::string& allowed : spec.enum_values) {
+                if (allowed == value) {
+                    return true;
+                }
             }
+            return reject(k_not_in_enum);
         }
-        return true;
-    }
-    case ArgType::object:
-    {
-        if (member.kind != json_kind::object)
-        {
-            return reject(k_wrong_type);
+        case ArgType::timestamp: {
+            if (member.kind != json_kind::string) {
+                return reject(k_invalid_timestamp);
+            }
+            std::string value;
+            if (!decode_without_nul(member.raw, value)) {
+                return reject(k_invalid_timestamp);
+            }
+            if (!url_shortener::parseRfc3339Zulu(value).has_value()) {
+                return reject(k_invalid_timestamp);
+            }
+            return true;
         }
-        const scan_result scan =
-            scan_object(member.raw, nested_limits(spec, member.raw));
-        if (!scan.ok)
-        {
-            return reject(scan.error == "too_many_members" ? k_too_many_items
-                                                           : k_wrong_type);
+        case ArgType::integer: {
+            if (member.kind != json_kind::number) {
+                return reject(k_wrong_type);
+            }
+            long long value = 0;
+            switch (parse_integer_token(member.raw, value)) {
+                case int_parse::not_integer:
+                    return reject(k_wrong_type);
+                case int_parse::overflow:
+                    return reject(k_out_of_range);
+                case int_parse::ok:
+                    break;
+            }
+            if (spec.min.has_value() && value < *spec.min) {
+                return reject(k_out_of_range);
+            }
+            if (spec.max.has_value() && value > *spec.max) {
+                return reject(k_out_of_range);
+            }
+            return true;
         }
-        std::string prefix(name);
-        prefix += '.';
-        return check_against_specs(spec.fields, scan.members, error, prefix);
-    }
+        case ArgType::boolean: {
+            return member.kind == json_kind::boolean ? true
+                                                     : reject(k_wrong_type);
+        }
+        case ArgType::string_list: {
+            if (member.kind != json_kind::array) {
+                return reject(k_wrong_type);
+            }
+            const array_scan_result scan =
+                scan_array(member.raw, nested_limits(spec, member.raw));
+            if (!scan.ok) {
+                return reject(scan.error == "too_many_members"
+                                  ? k_too_many_items
+                                  : k_wrong_type);
+            }
+            for (const json_element& element : scan.elements) {
+                if (element.kind != json_kind::string) {
+                    return reject(k_wrong_type);
+                }
+                std::string value;
+                if (!decode_without_nul(element.raw, value)) {
+                    return reject(k_wrong_type);
+                }
+                if (value.size() > spec.max_length) {
+                    return reject(k_too_long);
+                }
+            }
+            return true;
+        }
+        case ArgType::string_map: {
+            if (member.kind != json_kind::object) {
+                return reject(k_wrong_type);
+            }
+            const scan_result scan =
+                scan_object(member.raw, nested_limits(spec, member.raw));
+            if (!scan.ok) {
+                return reject(scan.error == "too_many_members"
+                                  ? k_too_many_items
+                                  : k_wrong_type);
+            }
+            for (const json_member& entry : scan.members) {
+                if (entry.kind != json_kind::string) {
+                    return reject(k_wrong_type);
+                }
+                std::string value;
+                if (!decode_without_nul(entry.raw, value)) {
+                    return reject(k_wrong_type);
+                }
+                if (value.size() > spec.max_length) {
+                    return reject(k_too_long);
+                }
+            }
+            return true;
+        }
+        case ArgType::object: {
+            if (member.kind != json_kind::object) {
+                return reject(k_wrong_type);
+            }
+            const scan_result scan =
+                scan_object(member.raw, nested_limits(spec, member.raw));
+            if (!scan.ok) {
+                return reject(scan.error == "too_many_members"
+                                  ? k_too_many_items
+                                  : k_wrong_type);
+            }
+            std::string prefix(name);
+            prefix += '.';
+            return check_against_specs(
+                spec.fields, scan.members, error, prefix);
+        }
     }
     return reject(k_wrong_type);
 }
 
 bool check_against_specs(const std::vector<ArgSpec>& specs,
                          const std::vector<json_member>& members,
-                         CommandError* error, std::string_view prefix)
+                         CommandError* error,
+                         std::string_view prefix)
 {
     // Per-member: reject unknown keys, then validate each matched value.
-    for (const json_member& member : members)
-    {
+    for (const json_member& member : members) {
         const ArgSpec* spec = find_spec(specs, member.key);
         std::string name(prefix);
         name += member.key;
-        if (spec == nullptr)
-        {
-            if (error != nullptr)
-            {
+        if (spec == nullptr) {
+            if (error != nullptr) {
                 *error = fail(name, k_unknown);
             }
             return false;
         }
-        if (!validate_member(*spec, member, name, error))
-        {
+        if (!validate_member(*spec, member, name, error)) {
             return false;
         }
     }
 
     // Required-presence pass.
-    for (const ArgSpec& spec : specs)
-    {
-        if (spec.required &&
-            find_member(members, spec.name) == nullptr)
-        {
-            if (error != nullptr)
-            {
+    for (const ArgSpec& spec : specs) {
+        if (spec.required && find_member(members, spec.name) == nullptr) {
+            if (error != nullptr) {
                 std::string name(prefix);
                 name += spec.name;
                 *error = fail(name, k_missing);
@@ -471,39 +421,31 @@ bool check_against_specs(const std::vector<ArgSpec>& specs,
 
     // one_of_group pass: among specs sharing a non-empty group, exactly one
     // must be present. Each group is evaluated once, at its first spec.
-    for (std::size_t i = 0; i < specs.size(); ++i)
-    {
+    for (std::size_t i = 0; i < specs.size(); ++i) {
         const std::string& group = specs[i].one_of_group;
-        if (group.empty())
-        {
+        if (group.empty()) {
             continue;
         }
         bool first = true;
-        for (std::size_t j = 0; j < i; ++j)
-        {
-            if (specs[j].one_of_group == group)
-            {
+        for (std::size_t j = 0; j < i; ++j) {
+            if (specs[j].one_of_group == group) {
                 first = false;
                 break;
             }
         }
-        if (!first)
-        {
+        if (!first) {
             continue;
         }
         std::size_t present = 0;
-        for (const ArgSpec& spec : specs)
-        {
-            if (spec.one_of_group == group &&
-                find_member(members, spec.name) != nullptr)
+        for (const ArgSpec& spec : specs) {
+            if (spec.one_of_group == group
+                && find_member(members, spec.name) != nullptr)
             {
                 ++present;
             }
         }
-        if (present != 1)
-        {
-            if (error != nullptr)
-            {
+        if (present != 1) {
+            if (error != nullptr) {
                 *error = fail(group, k_one_of_violation);
             }
             return false;
@@ -529,8 +471,7 @@ bool ArgsView::is_null(std::string_view name) const
 std::optional<std::string> ArgsView::get_string(std::string_view name) const
 {
     const json_member* member = find_member(m_members, name);
-    if (member == nullptr || member->kind != json_kind::string)
-    {
+    if (member == nullptr || member->kind != json_kind::string) {
         return std::nullopt;
     }
     return decode_json_string(member->raw);
@@ -539,13 +480,11 @@ std::optional<std::string> ArgsView::get_string(std::string_view name) const
 std::optional<long long> ArgsView::get_int(std::string_view name) const
 {
     const json_member* member = find_member(m_members, name);
-    if (member == nullptr || member->kind != json_kind::number)
-    {
+    if (member == nullptr || member->kind != json_kind::number) {
         return std::nullopt;
     }
     long long value = 0;
-    if (parse_integer_token(member->raw, value) != int_parse::ok)
-    {
+    if (parse_integer_token(member->raw, value) != int_parse::ok) {
         return std::nullopt;
     }
     return value;
@@ -554,8 +493,7 @@ std::optional<long long> ArgsView::get_int(std::string_view name) const
 std::optional<bool> ArgsView::get_bool(std::string_view name) const
 {
     const json_member* member = find_member(m_members, name);
-    if (member == nullptr || member->kind != json_kind::boolean)
-    {
+    if (member == nullptr || member->kind != json_kind::boolean) {
         return std::nullopt;
     }
     return member->raw == "true";
@@ -565,27 +503,22 @@ std::optional<std::vector<std::string>> ArgsView::get_string_list(
     std::string_view name) const
 {
     const json_member* member = find_member(m_members, name);
-    if (member == nullptr || member->kind != json_kind::array)
-    {
+    if (member == nullptr || member->kind != json_kind::array) {
         return std::nullopt;
     }
     const array_scan_result scan =
         scan_array(member->raw, permissive_limits(member->raw));
-    if (!scan.ok)
-    {
+    if (!scan.ok) {
         return std::nullopt;
     }
     std::vector<std::string> values;
     values.reserve(scan.elements.size());
-    for (const json_element& element : scan.elements)
-    {
-        if (element.kind != json_kind::string)
-        {
+    for (const json_element& element : scan.elements) {
+        if (element.kind != json_kind::string) {
             return std::nullopt;
         }
         std::optional<std::string> decoded = decode_json_string(element.raw);
-        if (!decoded)
-        {
+        if (!decoded) {
             return std::nullopt;
         }
         values.push_back(std::move(*decoded));
@@ -597,26 +530,21 @@ std::optional<std::map<std::string, std::string>> ArgsView::get_string_map(
     std::string_view name) const
 {
     const json_member* member = find_member(m_members, name);
-    if (member == nullptr || member->kind != json_kind::object)
-    {
+    if (member == nullptr || member->kind != json_kind::object) {
         return std::nullopt;
     }
     const scan_result scan =
         scan_object(member->raw, permissive_limits(member->raw));
-    if (!scan.ok)
-    {
+    if (!scan.ok) {
         return std::nullopt;
     }
     std::map<std::string, std::string> values;
-    for (const json_member& entry : scan.members)
-    {
-        if (entry.kind != json_kind::string)
-        {
+    for (const json_member& entry : scan.members) {
+        if (entry.kind != json_kind::string) {
             return std::nullopt;
         }
         std::optional<std::string> decoded = decode_json_string(entry.raw);
-        if (!decoded)
-        {
+        if (!decoded) {
             return std::nullopt;
         }
         values.emplace(entry.key, std::move(*decoded));
@@ -627,14 +555,12 @@ std::optional<std::map<std::string, std::string>> ArgsView::get_string_map(
 std::optional<ArgsView> ArgsView::get_object(std::string_view name) const
 {
     const json_member* member = find_member(m_members, name);
-    if (member == nullptr || member->kind != json_kind::object)
-    {
+    if (member == nullptr || member->kind != json_kind::object) {
         return std::nullopt;
     }
     const scan_result scan =
         scan_object(member->raw, permissive_limits(member->raw));
-    if (!scan.ok)
-    {
+    if (!scan.ok) {
         return std::nullopt;
     }
     ArgsView view;
@@ -649,7 +575,8 @@ std::string ArgsView::raw(std::string_view name) const
 }
 
 bool validate_args(const std::vector<ArgSpec>& specs,
-                   std::string_view args_json, ArgsView* out,
+                   std::string_view args_json,
+                   ArgsView* out,
                    CommandError* error)
 {
     // Top-level args scan keeps the request-hardening caps so the envelope DoS
@@ -659,29 +586,25 @@ bool validate_args(const std::vector<ArgSpec>& specs,
     // parse_request. An args object is always part of a request body bounded
     // by the same 64 KiB hardening limit, so nothing legitimate is rejected.
     scan_limits top;
-    top.max_bytes = scan_limits{}.max_bytes;
+    top.max_bytes = scan_limits {}.max_bytes;
     top.max_depth = 8;
     top.max_members = 256;
     top.max_key_len = 128;
 
     scan_result scan = scan_object(args_json, top);
-    if (!scan.ok)
-    {
-        if (error != nullptr)
-        {
+    if (!scan.ok) {
+        if (error != nullptr) {
             // scan.error is a fixed, value-free scanner vocabulary word.
             *error = fail("args", scan.error);
         }
         return false;
     }
 
-    if (!check_against_specs(specs, scan.members, error, ""))
-    {
+    if (!check_against_specs(specs, scan.members, error, "")) {
         return false;
     }
 
-    if (out != nullptr)
-    {
+    if (out != nullptr) {
         out->m_members = std::move(scan.members);
     }
     return true;

@@ -1,7 +1,3 @@
-#include <url_shortener/commands/builtin_commands.hpp>
-#include <url_shortener/commands/catalog.hpp>
-#include <url_shortener/commands/command_registry.hpp>
-
 #include <cstdio>
 #include <fstream>
 #include <iostream>
@@ -9,9 +5,13 @@
 #include <string>
 #include <string_view>
 
+#include <url_shortener/commands/builtin_commands.hpp>
+#include <url_shortener/commands/catalog.hpp>
+#include <url_shortener/commands/command_registry.hpp>
+
 #ifdef _WIN32
-#include <fcntl.h>
-#include <io.h>
+#    include <fcntl.h>
+#    include <io.h>
 #endif
 
 namespace
@@ -73,26 +73,21 @@ bool extract_region(const std::string& content, std::string& region)
 
     const std::size_t begin_pos = content.find(begin);
     const std::size_t end_pos = content.find(end);
-    if (begin_pos == std::string::npos || end_pos == std::string::npos)
-    {
+    if (begin_pos == std::string::npos || end_pos == std::string::npos) {
         return false;
     }
-    if (content.find(begin, begin_pos + begin.size()) != std::string::npos)
-    {
+    if (content.find(begin, begin_pos + begin.size()) != std::string::npos) {
         return false;
     }
-    if (content.find(end, end_pos + end.size()) != std::string::npos)
-    {
+    if (content.find(end, end_pos + end.size()) != std::string::npos) {
         return false;
     }
-    if (end_pos <= begin_pos)
-    {
+    if (end_pos <= begin_pos) {
         return false;
     }
 
     const std::size_t newline = content.find('\n', begin_pos + begin.size());
-    if (newline == std::string::npos || newline >= end_pos)
-    {
+    if (newline == std::string::npos || newline >= end_pos) {
         return false;
     }
     const std::size_t region_start = newline + 1;
@@ -100,8 +95,7 @@ bool extract_region(const std::string& content, std::string& region)
     // The content ends at the single newline that precedes the end marker; drop
     // that separator newline so the region equals render_catalog_markdown.
     std::size_t region_end = end_pos;
-    if (region_end > region_start && content[region_end - 1] == '\n')
-    {
+    if (region_end > region_start && content[region_end - 1] == '\n') {
         --region_end;
     }
 
@@ -119,10 +113,8 @@ std::string normalize_crlf(const std::string& text)
 {
     std::string out;
     out.reserve(text.size());
-    for (std::size_t i = 0; i < text.size(); ++i)
-    {
-        if (text[i] == '\r' && i + 1 < text.size() && text[i + 1] == '\n')
-        {
+    for (std::size_t i = 0; i < text.size(); ++i) {
+        if (text[i] == '\r' && i + 1 < text.size() && text[i + 1] == '\n') {
             continue;
         }
         out += text[i];
@@ -138,9 +130,9 @@ std::string normalize_crlf(const std::string& text)
  * With no arguments the tool writes @ref build_generated_block to stdout in
  * binary mode (no CRLF translation on Windows), ready to be pasted into
  * `docs/commands/README.md`. With `--check <file>` it reads @p file, extracts
- * the region between the markers, CRLF-normalizes the file side, and compares it
- * with @ref commands::render_catalog_markdown; it prints a regeneration hint and
- * exits 1 on any mismatch or missing markers.
+ * the region between the markers, CRLF-normalizes the file side, and compares
+ * it with @ref commands::render_catalog_markdown; it prints a regeneration hint
+ * and exits 1 on any mismatch or missing markers.
  *
  * @param argc Argument count.
  * @param argv Argument vector; `--check <file>` selects verification mode.
@@ -153,23 +145,20 @@ int main(int argc, char** argv)
     _setmode(_fileno(stdout), _O_BINARY);
 #endif
 
-    if (argc == 1)
-    {
+    if (argc == 1) {
         std::cout << build_generated_block();
         return 0;
     }
 
     const std::string_view flag = argv[1];
-    if (flag != "--check" || argc != 3)
-    {
+    if (flag != "--check" || argc != 3) {
         std::cerr << "usage: command_catalog_dump [--check <file>]\n";
         return 2;
     }
 
     const std::string path = argv[2];
     std::ifstream in(path, std::ios::binary);
-    if (!in.good())
-    {
+    if (!in.good()) {
         std::cerr << "command_catalog_dump: cannot read " << path << "\n";
         return 1;
     }
@@ -178,8 +167,7 @@ int main(int argc, char** argv)
     const std::string content = normalize_crlf(buffer.str());
 
     std::string region;
-    if (!extract_region(content, region))
-    {
+    if (!extract_region(content, region)) {
         std::cerr << "command_catalog_dump: markers missing or malformed in "
                   << path << "\n";
         return 1;
@@ -189,14 +177,14 @@ int main(int argc, char** argv)
     commands::register_documented_commands(registry);
     const std::string expected = commands::render_catalog_markdown(registry);
 
-    if (region != expected)
-    {
-        std::cerr << "command_catalog_dump: generated block in " << path
-                  << " is stale. Regenerate with:\n"
-                  << "  cmake --build cmake-build --target "
-                     "command_catalog_dump\n"
-                  << "  ./cmake-build/command_catalog_dump  # paste between the "
-                     "markers\n";
+    if (region != expected) {
+        std::cerr
+            << "command_catalog_dump: generated block in " << path
+            << " is stale. Regenerate with:\n"
+            << "  cmake --build cmake-build --target "
+               "command_catalog_dump\n"
+            << "  ./cmake-build/command_catalog_dump  # paste between the "
+               "markers\n";
         return 1;
     }
 

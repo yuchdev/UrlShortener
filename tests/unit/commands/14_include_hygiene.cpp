@@ -45,38 +45,31 @@ constexpr std::array<std::string_view, 11> k_forbidden = {
 std::string include_target(const std::string& line)
 {
     std::size_t i = line.find_first_not_of(" \t");
-    if (i == std::string::npos || line[i] != '#')
-    {
+    if (i == std::string::npos || line[i] != '#') {
         return {};
     }
     i = line.find_first_not_of(" \t", i + 1);
     const std::string_view keyword = "include";
-    if (i == std::string::npos
-        || line.compare(i, keyword.size(), keyword) != 0)
+    if (i == std::string::npos || line.compare(i, keyword.size(), keyword) != 0)
     {
         return {};
     }
     i = line.find_first_not_of(" \t", i + keyword.size());
-    if (i == std::string::npos)
-    {
+    if (i == std::string::npos) {
         return {};
     }
     char close = '\0';
-    if (line[i] == '<')
-    {
+    if (line[i] == '<') {
         close = '>';
     }
-    else if (line[i] == '"')
-    {
+    else if (line[i] == '"') {
         close = '"';
     }
-    else
-    {
+    else {
         return {};
     }
     const std::size_t end = line.find(close, i + 1);
-    if (end == std::string::npos)
-    {
+    if (end == std::string::npos) {
         return {};
     }
     return line.substr(i + 1, end - (i + 1));
@@ -89,25 +82,19 @@ std::vector<std::pair<std::string, std::string>> collect_includes(
     const fs::path& dir)
 {
     std::vector<std::pair<std::string, std::string>> includes;
-    if (!fs::exists(dir))
-    {
+    if (!fs::exists(dir)) {
         return includes;
     }
-    for (const auto& entry : fs::recursive_directory_iterator(dir))
-    {
-        if (!entry.is_regular_file() || entry.path().extension() != ".hpp")
-        {
+    for (const auto& entry : fs::recursive_directory_iterator(dir)) {
+        if (!entry.is_regular_file() || entry.path().extension() != ".hpp") {
             continue;
         }
         std::ifstream in(entry.path());
         std::string line;
-        while (std::getline(in, line))
-        {
+        while (std::getline(in, line)) {
             const std::string target = include_target(line);
-            if (!target.empty())
-            {
-                includes.emplace_back(entry.path().filename().string(),
-                                      target);
+            if (!target.empty()) {
+                includes.emplace_back(entry.path().filename().string(), target);
             }
         }
     }
@@ -117,10 +104,8 @@ std::vector<std::pair<std::string, std::string>> collect_includes(
 /// Whether an include target hits the forbidden list.
 bool is_forbidden(const std::string& target)
 {
-    for (const std::string_view bad : k_forbidden)
-    {
-        if (target.find(bad) != std::string::npos)
-        {
+    for (const std::string_view bad : k_forbidden) {
+        if (target.find(bad) != std::string::npos) {
             return true;
         }
     }
@@ -130,8 +115,7 @@ bool is_forbidden(const std::string& target)
 /// Whether a `url_shortener/...` include is on the allowed exceptions list.
 bool is_allowed_url_shortener(const std::string& target)
 {
-    if (target.rfind("url_shortener/commands/", 0) == 0)
-    {
+    if (target.rfind("url_shortener/commands/", 0) == 0) {
         return true;
     }
     return target == "url_shortener/app/app_error.hpp"
@@ -159,37 +143,37 @@ fs::path commands_header_dir()
 //   this; the scan is textual and cannot see transitive includes (compensated
 //   by banning core/utils.hpp outright).
 // On failure first check: which header gained a forbidden include? Replace the
-//   dependency with an allowed one (std, url_shortener/commands/, app_error.hpp,
-//   control_set.hpp, logger.hpp) or move the code to a .cpp.
+//   dependency with an allowed one (std, url_shortener/commands/,
+//   app_error.hpp, control_set.hpp, logger.hpp) or move the code to a .cpp.
 
 BOOST_AUTO_TEST_CASE(commands_headers_have_no_forbidden_includes)
 {
     const fs::path dir = commands_header_dir();
-    if (dir.empty())
-    {
+    if (dir.empty()) {
         BOOST_TEST_MESSAGE("SOURCE_DIR not defined; skipping (run via CTest)");
         return;
     }
-    BOOST_REQUIRE_MESSAGE(fs::exists(dir),
-                          "commands header directory not found: "
-                              << dir.string());
+    BOOST_REQUIRE_MESSAGE(
+        fs::exists(dir),
+        "commands header directory not found: " << dir.string());
 
     const auto includes = collect_includes(dir);
     // Sanity: the headers do exist and were actually read.
     BOOST_REQUIRE(!includes.empty());
 
-    for (const auto& [file, target] : includes)
-    {
+    for (const auto& [file, target] : includes) {
         BOOST_TEST(!is_forbidden(target),
                    "forbidden include in " << file << ": " << target);
     }
 }
 
 // Type: unit (allowed-list sanity).
-// Scenario: every `url_shortener/...` include in a commands header is one of the
+// Scenario: every `url_shortener/...` include in a commands header is one of
+// the
 //   explicitly allowed exceptions (commands/, app_error.hpp, control_set.hpp,
 //   logger.hpp).
-// Boundaries: a new cross-module url_shortener include that is neither forbidden
+// Boundaries: a new cross-module url_shortener include that is neither
+// forbidden
 //   by name nor on the allow list still trips this check.
 // On failure first check: is a new allowed dependency genuinely intended? If so
 //   extend is_allowed_url_shortener and the task README; otherwise drop it.
@@ -197,8 +181,7 @@ BOOST_AUTO_TEST_CASE(commands_headers_have_no_forbidden_includes)
 BOOST_AUTO_TEST_CASE(commands_headers_only_allowed_url_shortener_includes)
 {
     const fs::path dir = commands_header_dir();
-    if (dir.empty())
-    {
+    if (dir.empty()) {
         BOOST_TEST_MESSAGE("SOURCE_DIR not defined; skipping (run via CTest)");
         return;
     }
@@ -206,15 +189,13 @@ BOOST_AUTO_TEST_CASE(commands_headers_only_allowed_url_shortener_includes)
     const auto includes = collect_includes(dir);
     BOOST_REQUIRE(!includes.empty());
 
-    for (const auto& [file, target] : includes)
-    {
-        if (target.rfind("url_shortener/", 0) != 0)
-        {
+    for (const auto& [file, target] : includes) {
+        if (target.rfind("url_shortener/", 0) != 0) {
             continue;  // a std/system header; covered by the forbidden check.
         }
-        BOOST_TEST(is_allowed_url_shortener(target),
-                   "unexpected url_shortener include in " << file << ": "
-                                                          << target);
+        BOOST_TEST(
+            is_allowed_url_shortener(target),
+            "unexpected url_shortener include in " << file << ": " << target);
     }
 }
 
@@ -252,16 +233,13 @@ BOOST_AUTO_TEST_CASE(checker_detects_a_forbidden_include)
 
     bool found_forbidden = false;
     bool saw_clean_std = false;
-    for (const auto& [file, target] : includes)
-    {
-        if (is_forbidden(target))
-        {
+    for (const auto& [file, target] : includes) {
+        if (is_forbidden(target)) {
             found_forbidden = true;
             BOOST_TEST(target == "boost/beast/http.hpp");
             BOOST_TEST(file == "tainted.hpp");
         }
-        if (target == "string")
-        {
+        if (target == "string") {
             saw_clean_std = true;
         }
     }

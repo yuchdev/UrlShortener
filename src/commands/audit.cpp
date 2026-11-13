@@ -1,8 +1,8 @@
-#include "url_shortener/commands/audit.hpp"
-
 #include <string>
 #include <utility>
 #include <vector>
+
+#include "url_shortener/commands/audit.hpp"
 
 #include "url_shortener/commands/error_codes.hpp"
 
@@ -39,12 +39,9 @@ void LoggerAuditSink::record(const AuditRecord& record) noexcept
 {
     // noexcept contract (threat model T-14): a logging failure must never
     // propagate and alter the command response, so swallow everything.
-    try
-    {
+    try {
         m_logger.info("command_audit", audit_fields(record));
-    }
-    catch (...)
-    {
+    } catch (...) {
     }
 }
 

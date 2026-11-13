@@ -47,11 +47,11 @@ CommandResult noop_handler(CommandContext&, const ArgsView&)
 // A trivial job factory that returns an empty body; never invoked here.
 JobHandlerFactory noop_job_factory()
 {
-    return [](const CommandContext&, const ArgsView&)
-               -> std::variant<JobBody, CommandError> {
-        return JobBody{[](url_shortener::commands::IJobContext&) {
-            return JobOutcome{};
-        }};
+    return [](const CommandContext&,
+              const ArgsView&) -> std::variant<JobBody, CommandError>
+    {
+        return JobBody {[](url_shortener::commands::IJobContext&)
+                        { return JobOutcome {}; }};
     };
 }
 
@@ -134,8 +134,7 @@ BOOST_AUTO_TEST_CASE(list_is_sorted_and_stable)
     // Stable: a second call yields the same order and the same pointers.
     const std::vector<const CommandDescriptor*> second = registry.list();
     BOOST_REQUIRE_EQUAL(second.size(), first.size());
-    for (std::size_t i = 0; i < first.size(); ++i)
-    {
+    for (std::size_t i = 0; i < first.size(); ++i) {
         BOOST_TEST(first[i] == second[i]);
     }
 }
@@ -150,7 +149,7 @@ BOOST_AUTO_TEST_CASE(reject_duplicate_name)
     registry.add(valid_sync("link.create"));
     BOOST_CHECK_EXCEPTION(registry.add(valid_sync("link.create")),
                           std::invalid_argument,
-                          message_is{"duplicate command name"});
+                          message_is {"duplicate command name"});
 }
 
 BOOST_AUTO_TEST_CASE(reject_invalid_name_uppercase)
@@ -158,7 +157,7 @@ BOOST_AUTO_TEST_CASE(reject_invalid_name_uppercase)
     CommandRegistry registry;
     BOOST_CHECK_EXCEPTION(registry.add(valid_sync("Link.create")),
                           std::invalid_argument,
-                          message_is{"invalid command name"});
+                          message_is {"invalid command name"});
 }
 
 BOOST_AUTO_TEST_CASE(reject_invalid_name_single_segment)
@@ -166,7 +165,7 @@ BOOST_AUTO_TEST_CASE(reject_invalid_name_single_segment)
     CommandRegistry registry;
     BOOST_CHECK_EXCEPTION(registry.add(valid_sync("link")),
                           std::invalid_argument,
-                          message_is{"invalid command name"});
+                          message_is {"invalid command name"});
 }
 
 BOOST_AUTO_TEST_CASE(reject_empty_summary)
@@ -176,7 +175,7 @@ BOOST_AUTO_TEST_CASE(reject_empty_summary)
     descriptor.summary.clear();
     BOOST_CHECK_EXCEPTION(registry.add(std::move(descriptor)),
                           std::invalid_argument,
-                          message_is{"empty summary"});
+                          message_is {"empty summary"});
 }
 
 BOOST_AUTO_TEST_CASE(reject_null_handler_on_sync_command)
@@ -186,7 +185,7 @@ BOOST_AUTO_TEST_CASE(reject_null_handler_on_sync_command)
     descriptor.handler = nullptr;
     BOOST_CHECK_EXCEPTION(registry.add(std::move(descriptor)),
                           std::invalid_argument,
-                          message_is{"null handler for sync command"});
+                          message_is {"null handler for sync command"});
 }
 
 BOOST_AUTO_TEST_CASE(reject_job_without_factory)
@@ -196,7 +195,7 @@ BOOST_AUTO_TEST_CASE(reject_job_without_factory)
     descriptor.job_factory = nullptr;
     BOOST_CHECK_EXCEPTION(registry.add(std::move(descriptor)),
                           std::invalid_argument,
-                          message_is{"missing job_factory"});
+                          message_is {"missing job_factory"});
 }
 
 BOOST_AUTO_TEST_CASE(reject_async_capable_without_factory)
@@ -206,7 +205,7 @@ BOOST_AUTO_TEST_CASE(reject_async_capable_without_factory)
     descriptor.async_capable = true;
     BOOST_CHECK_EXCEPTION(registry.add(std::move(descriptor)),
                           std::invalid_argument,
-                          message_is{"missing job_factory"});
+                          message_is {"missing job_factory"});
 }
 
 BOOST_AUTO_TEST_CASE(reject_duplicate_arg_name)
@@ -220,7 +219,7 @@ BOOST_AUTO_TEST_CASE(reject_duplicate_arg_name)
     descriptor.args = {first, second};
     BOOST_CHECK_EXCEPTION(registry.add(std::move(descriptor)),
                           std::invalid_argument,
-                          message_is{"duplicate arg name"});
+                          message_is {"duplicate arg name"});
 }
 
 BOOST_AUTO_TEST_CASE(reject_dry_run_on_non_mutating_command)
@@ -231,7 +230,7 @@ BOOST_AUTO_TEST_CASE(reject_dry_run_on_non_mutating_command)
     descriptor.mutating = false;
     BOOST_CHECK_EXCEPTION(registry.add(std::move(descriptor)),
                           std::invalid_argument,
-                          message_is{"supports_dry_run requires mutating"});
+                          message_is {"supports_dry_run requires mutating"});
 }
 
 // ---------------------------------------------------------------------------
@@ -269,8 +268,7 @@ BOOST_AUTO_TEST_CASE(accept_dry_run_when_mutating)
 // time (security review LOW on 01.0/10).
 BOOST_AUTO_TEST_CASE(reject_invalid_arg_default)
 {
-    for (const char* bad : {"1},\"x\":{", "nope", "\"open", "1 2", ""})
-    {
+    for (const char* bad : {"1},\"x\":{", "nope", "\"open", "1 2", ""}) {
         CommandRegistry registry;
         CommandDescriptor descriptor = valid_sync("link.get");
         ArgSpec arg;
@@ -280,7 +278,7 @@ BOOST_AUTO_TEST_CASE(reject_invalid_arg_default)
         descriptor.args.push_back(arg);
         BOOST_CHECK_EXCEPTION(registry.add(std::move(descriptor)),
                               std::invalid_argument,
-                              message_is{"invalid arg default"});
+                              message_is {"invalid arg default"});
     }
 
     CommandRegistry nested_registry;
@@ -295,12 +293,11 @@ BOOST_AUTO_TEST_CASE(reject_invalid_arg_default)
     nested.args.push_back(outer);
     BOOST_CHECK_EXCEPTION(nested_registry.add(std::move(nested)),
                           std::invalid_argument,
-                          message_is{"invalid arg default"});
+                          message_is {"invalid arg default"});
 
     CommandRegistry ok_registry;
     CommandDescriptor ok = valid_sync("link.list");
-    for (const char* good : {"20", "\"active\"", "true", "null", "[]"})
-    {
+    for (const char* good : {"20", "\"active\"", "true", "null", "[]"}) {
         ArgSpec arg;
         arg.name = std::string("a") + std::to_string(ok.args.size());
         arg.default_value = std::string(good);
@@ -319,7 +316,7 @@ BOOST_AUTO_TEST_CASE(reject_mutating_command_with_read_permission)
     descriptor.permission = Permission::read;
     BOOST_CHECK_EXCEPTION(registry.add(std::move(descriptor)),
                           std::invalid_argument,
-                          message_is{"mutating requires write permission"});
+                          message_is {"mutating requires write permission"});
 }
 
 // Scenario: a read base is allowed for a mutating command only when a
@@ -330,12 +327,10 @@ BOOST_AUTO_TEST_CASE(accept_mutating_read_base_with_raise_hook)
     CommandDescriptor descriptor = valid_sync("link.export");
     descriptor.mutating = true;
     descriptor.permission = Permission::read;
-    descriptor.permission_for = [](const ArgsView&) {
-        return Permission::write;
-    };
+    descriptor.permission_for = [](const ArgsView&)
+    { return Permission::write; };
     BOOST_CHECK_NO_THROW(registry.add(std::move(descriptor)));
 }
-
 
 // ---------------------------------------------------------------------------
 // Pointers returned by find stay valid across later add calls (node stability).
@@ -348,8 +343,7 @@ BOOST_AUTO_TEST_CASE(find_pointer_stable_across_inserts)
     const CommandDescriptor* anchor = registry.find("ns.anchor");
     BOOST_REQUIRE(anchor != nullptr);
 
-    for (int i = 0; i < 100; ++i)
-    {
+    for (int i = 0; i < 100; ++i) {
         registry.add(valid_sync("ns.cmd" + std::to_string(i)));
     }
 

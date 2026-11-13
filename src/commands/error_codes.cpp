@@ -1,10 +1,10 @@
-#include <url_shortener/commands/error_codes.hpp>
-
 #include <algorithm>
 #include <cstddef>
 #include <string>
 #include <string_view>
 #include <utility>
+
+#include <url_shortener/commands/error_codes.hpp>
 
 namespace url_shortener::commands
 {
@@ -32,63 +32,50 @@ std::size_t valid_utf8_sequence_length(std::string_view text, std::size_t pos)
     { return b >= lo && b <= hi; };
 
     const unsigned char b0 = byte(0);
-    if (b0 < 0x80)
-    {
+    if (b0 < 0x80) {
         return 1;
     }
 
     std::size_t len = 0;
     unsigned char lo = 0x80;
     unsigned char hi = 0xBF;
-    if (in(b0, 0xC2, 0xDF))
-    {
+    if (in(b0, 0xC2, 0xDF)) {
         len = 2;
     }
-    else if (b0 == 0xE0)
-    {
+    else if (b0 == 0xE0) {
         len = 3;
         lo = 0xA0;  // no overlongs
     }
-    else if (in(b0, 0xE1, 0xEC) || in(b0, 0xEE, 0xEF))
-    {
+    else if (in(b0, 0xE1, 0xEC) || in(b0, 0xEE, 0xEF)) {
         len = 3;
     }
-    else if (b0 == 0xED)
-    {
+    else if (b0 == 0xED) {
         len = 3;
         hi = 0x9F;  // no surrogates
     }
-    else if (b0 == 0xF0)
-    {
+    else if (b0 == 0xF0) {
         len = 4;
         lo = 0x90;  // no overlongs
     }
-    else if (in(b0, 0xF1, 0xF3))
-    {
+    else if (in(b0, 0xF1, 0xF3)) {
         len = 4;
     }
-    else if (b0 == 0xF4)
-    {
+    else if (b0 == 0xF4) {
         len = 4;
         hi = 0x8F;  // nothing above U+10FFFF
     }
-    else
-    {
+    else {
         return 0;  // 0x80..0xC1 or 0xF5..0xFF can never lead
     }
 
-    if (pos + len > text.size())
-    {
+    if (pos + len > text.size()) {
         return 0;
     }
-    if (!in(byte(1), lo, hi))
-    {
+    if (!in(byte(1), lo, hi)) {
         return 0;
     }
-    for (std::size_t k = 2; k < len; ++k)
-    {
-        if (!in(byte(k), 0x80, 0xBF))
-        {
+    for (std::size_t k = 2; k < len; ++k) {
+        if (!in(byte(k), 0x80, 0xBF)) {
             return 0;
         }
     }
@@ -105,12 +92,12 @@ std::size_t valid_utf8_sequence_length(std::string_view text, std::size_t pos)
  * @return `true` for C0 controls (including NUL), DEL (U+007F) and C1
  * controls (U+0080..U+009F); `false` otherwise.
  */
-bool is_control_code_point(std::string_view text, std::size_t pos,
+bool is_control_code_point(std::string_view text,
+                           std::size_t pos,
                            std::size_t len)
 {
     const auto b0 = static_cast<unsigned char>(text[pos]);
-    if (len == 1)
-    {
+    if (len == 1) {
         return b0 < 0x20 || b0 == 0x7F;
     }
     // U+0080..U+009F encode as C2 80..C2 9F.
@@ -131,32 +118,75 @@ const std::vector<error_info>& all_error_infos()
     // the generic status/name there.
     static const std::vector<error_info> table = {
         {CommandErrorCode::none, "none", 200, 0, 200, "none"},
-        {CommandErrorCode::invalid_envelope, "invalid_envelope", 400, 2, 400,
+        {CommandErrorCode::invalid_envelope,
+         "invalid_envelope",
+         400,
+         2,
+         400,
          "invalid_envelope"},
-        {CommandErrorCode::unknown_command, "unknown_command", 404, 2, 404,
+        {CommandErrorCode::unknown_command,
+         "unknown_command",
+         404,
+         2,
+         404,
          "unknown_command"},
-        {CommandErrorCode::invalid_field, "invalid_field", 400, 2, 400,
+        {CommandErrorCode::invalid_field,
+         "invalid_field",
+         400,
+         2,
+         400,
          "invalid_request"},
-        {CommandErrorCode::invalid_url, "invalid_url", 400, 2, 400,
+        {CommandErrorCode::invalid_url,
+         "invalid_url",
+         400,
+         2,
+         400,
          "invalid_url"},
-        {CommandErrorCode::invalid_slug, "invalid_slug", 400, 2, 400,
+        {CommandErrorCode::invalid_slug,
+         "invalid_slug",
+         400,
+         2,
+         400,
          "invalid_slug"},
-        {CommandErrorCode::reserved_slug, "reserved_slug", 409, 2, 409,
+        {CommandErrorCode::reserved_slug,
+         "reserved_slug",
+         409,
+         2,
+         409,
          "reserved_slug"},
-        {CommandErrorCode::slug_conflict, "slug_conflict", 409, 3, 409,
+        {CommandErrorCode::slug_conflict,
+         "slug_conflict",
+         409,
+         3,
+         409,
          "slug_conflict"},
         {CommandErrorCode::not_found, "not_found", 404, 1, 404, "not_found"},
-        {CommandErrorCode::not_authorized, "not_authorized", 403, 5, 403,
+        {CommandErrorCode::not_authorized,
+         "not_authorized",
+         403,
+         5,
+         403,
          "not_authorized"},
-        {CommandErrorCode::unsupported, "unsupported", 501, 2, 501,
+        {CommandErrorCode::unsupported,
+         "unsupported",
+         501,
+         2,
+         501,
          "unsupported"},
         {CommandErrorCode::busy, "busy", 503, 4, 503, "busy"},
-        {CommandErrorCode::job_cancelled, "job_cancelled", 200, 4, 200,
+        {CommandErrorCode::job_cancelled,
+         "job_cancelled",
+         200,
+         4,
+         200,
          "job_cancelled"},
-        {CommandErrorCode::storage_failure, "storage_failure", 500, 4, 500,
+        {CommandErrorCode::storage_failure,
+         "storage_failure",
+         500,
+         4,
+         500,
          "repository"},
-        {CommandErrorCode::internal, "internal", 500, 4, 500,
-         "internal_error"},
+        {CommandErrorCode::internal, "internal", 500, 4, 500, "internal_error"},
     };
     return table;
 }
@@ -176,10 +206,8 @@ const error_info& error_info_for(CommandErrorCode code)
 std::optional<CommandErrorCode> error_code_from_name(std::string_view name)
 {
     // Linear scan: the table is tiny and bounded by the enum size.
-    for (const error_info& info : all_error_infos())
-    {
-        if (info.name == name)
-        {
+    for (const error_info& info : all_error_infos()) {
+        if (info.name == name) {
             return info.code;
         }
     }
@@ -191,8 +219,7 @@ CommandErrorCode from_app_error(app::AppErrorCode code)
     // Exhaustive switch with no default: adding an app::AppErrorCode
     // enumerator is a compile-time prompt to classify it here (mirrors
     // cli::ExitCodeForAppError). Every same-named code maps to itself.
-    switch (code)
-    {
+    switch (code) {
         case app::AppErrorCode::none:
             return CommandErrorCode::none;
         case app::AppErrorCode::invalid_url:
@@ -235,24 +262,20 @@ std::string sanitize_error_message(std::string_view message)
     out.reserve(std::min(message.size(), max_len));
 
     std::size_t i = 0;
-    while (i < message.size() && out.size() < max_len)
-    {
+    while (i < message.size() && out.size() < max_len) {
         const std::size_t len = valid_utf8_sequence_length(message, i);
-        if (len == 0)
-        {
+        if (len == 0) {
             // Invalid or truncated UTF-8: neutralize one byte and resync.
             out.push_back('?');
             ++i;
             continue;
         }
-        if (is_control_code_point(message, i, len))
-        {
+        if (is_control_code_point(message, i, len)) {
             out.push_back('?');
             i += len;
             continue;
         }
-        if (out.size() + len > max_len)
-        {
+        if (out.size() + len > max_len) {
             // Never split a multi-byte character at the length cap.
             break;
         }

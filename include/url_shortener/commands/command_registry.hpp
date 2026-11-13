@@ -83,8 +83,8 @@ public:
      * @param name The exact command name to find.
      * @return A pointer to the registered descriptor, or `nullptr` when no
      * command has that name (including the empty name). The pointer stays valid
-     * for the lifetime of the registry even across later @ref add calls, because
-     * the backing `std::map` has node-stable iterators/references.
+     * for the lifetime of the registry even across later @ref add calls,
+     * because the backing `std::map` has node-stable iterators/references.
      */
     const CommandDescriptor* find(std::string_view name) const;
 
@@ -139,17 +139,17 @@ public:
      *      (step 6) with `ctx.dry_run == true` and must not mutate.
      *    - `dry_run` on a `supports_dry_run` `job` descriptor: `job_factory`
      *      runs with `ctx.dry_run == true` and the returned body runs
-     *      **synchronously** on the caller thread with a no-op @ref IJobContext;
-     *      its @ref JobOutcome becomes the result. No job is created.
+     *      **synchronously** on the caller thread with a no-op @ref
+     * IJobContext; its @ref JobOutcome becomes the result. No job is created.
      *    - `async` on an `async_capable` descriptor, or any `kind == job`
      *      descriptor (not under `dry_run`): with no submitter installed ->
      *      `unsupported` (fail closed, `job_factory` not called); otherwise
-     *      `job_factory` runs, a `CommandError` -> failure envelope with nothing
-     *      queued, and a @ref JobBody is handed to the installed
+     *      `job_factory` runs, a `CommandError` -> failure envelope with
+     * nothing queued, and a @ref JobBody is handed to the installed
      *      @ref IJobSubmitter whose @ref JobSubmitResult yields either
      *      @ref make_job_accepted or a failure (`busy`/`internal`/...).
-     *    `job_factory`, @ref IJobSubmitter::submit and a `dry_run` job body each
-     *    run inside `catch (const std::exception&)` and `catch (...)`; an
+     *    `job_factory`, @ref IJobSubmitter::submit and a `dry_run` job body
+     * each run inside `catch (const std::exception&)` and `catch (...)`; an
      *    escaping exception -> `internal` (same isolation as the handler; its
      *    `what()` is never surfaced, threat model T-10). Only an `args_digest`
      *    (never raw args) travels with a submitted job (threat model T-13).
@@ -261,12 +261,12 @@ private:
      * checked by @ref add against the current contents, not here.
      *
      * @param descriptor The candidate descriptor.
-     * @param[out] why When non-null, set to a fixed reason string on failure and
-     * cleared on success; left as the fixed reason on the `false` return so
+     * @param[out] why When non-null, set to a fixed reason string on failure
+     * and cleared on success; left as the fixed reason on the `false` return so
      * @ref add can throw it.
      * @return `true` when the descriptor passes every intrinsic rule; `false`
-     * on the first rule violated (invalid name, empty summary, null handler on a
-     * sync command, missing job_factory on a job/async_capable command,
+     * on the first rule violated (invalid name, empty summary, null handler on
+     * a sync command, missing job_factory on a job/async_capable command,
      * duplicate argument name, `supports_dry_run` without `mutating`, a
      * or a mutating command with read permission and no raise hook).
      */
@@ -296,7 +296,8 @@ private:
      * in and capped to 64 bytes. Empty when there is no meaningful target.
      */
     void emit_audit(const CommandDescriptor& descriptor,
-                    const CallerContext& caller, std::string outcome,
+                    const CallerContext& caller,
+                    std::string outcome,
                     std::string target) const;
 
     ///< The registered descriptors keyed by name. `std::less<>` enables

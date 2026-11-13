@@ -59,17 +59,18 @@ CommandResult noop_handler(CommandContext&, const ArgsView&)
 // A trivial job factory; registered but never invoked by command.list.
 JobHandlerFactory noop_job_factory()
 {
-    return [](const CommandContext&, const ArgsView&)
-               -> std::variant<JobBody, CommandError> {
-        return JobBody{[](url_shortener::commands::IJobContext&) {
-            return JobOutcome{};
-        }};
+    return [](const CommandContext&,
+              const ArgsView&) -> std::variant<JobBody, CommandError>
+    {
+        return JobBody {[](url_shortener::commands::IJobContext&)
+                        { return JobOutcome {}; }};
     };
 }
 
 // Executes command.list for the given role and args, requiring success, and
 // returns the embedded `result_json`.
-std::string list_result(const CommandRegistry& registry, ControlSet role,
+std::string list_result(const CommandRegistry& registry,
+                        ControlSet role,
                         std::string args_json)
 {
     CallerContext caller;
@@ -102,8 +103,7 @@ std::vector<std::string> command_objects(const std::string& result_json)
     BOOST_REQUIRE(arr.ok);
 
     std::vector<std::string> objects;
-    for (const json_element& element : arr.elements)
-    {
+    for (const json_element& element : arr.elements) {
         BOOST_REQUIRE(element.kind == json_kind::object);
         objects.push_back(element.raw);
     }
@@ -240,8 +240,8 @@ BOOST_AUTO_TEST_CASE(builtin_only_lists_command_list)
     const url_shortener::commands::scan_result obj = scan_object(objects[0]);
     BOOST_REQUIRE(obj.ok);
     BOOST_TEST(string_field(obj.members, "name") == "command.list");
-    BOOST_TEST(string_field(obj.members, "summary") ==
-               "List all commands and their argument schemas");
+    BOOST_TEST(string_field(obj.members, "summary")
+               == "List all commands and their argument schemas");
     BOOST_TEST(string_field(obj.members, "perm") == "read");
     BOOST_TEST(string_field(obj.members, "kind") == "sync");
     BOOST_TEST(bool_field(obj.members, "mutating") == "false");
@@ -250,7 +250,8 @@ BOOST_AUTO_TEST_CASE(builtin_only_lists_command_list)
     const json_member* args = find_member(obj.members, "args");
     BOOST_REQUIRE(args != nullptr);
     BOOST_REQUIRE(args->kind == json_kind::array);
-    const url_shortener::commands::array_scan_result arr = scan_array(args->raw);
+    const url_shortener::commands::array_scan_result arr =
+        scan_array(args->raw);
     BOOST_REQUIRE(arr.ok);
     BOOST_TEST(arr.elements.empty());
 }
@@ -275,8 +276,7 @@ BOOST_AUTO_TEST_CASE(result_equals_descriptor_set)
     // Name-sorted order, interleaving the fakes around the built-in.
     std::vector<std::string> names;
     std::vector<url_shortener::commands::scan_result> parsed;
-    for (const std::string& text : objects)
-    {
+    for (const std::string& text : objects) {
         const url_shortener::commands::scan_result obj = scan_object(text);
         BOOST_REQUIRE(obj.ok);
         names.push_back(string_field(obj.members, "name"));
@@ -317,10 +317,10 @@ BOOST_AUTO_TEST_CASE(result_equals_descriptor_set)
         scan_array(enum_member->raw);
     BOOST_REQUIRE(enum_arr.ok);
     BOOST_REQUIRE_EQUAL(enum_arr.elements.size(), 2u);
-    BOOST_TEST(decode_json_string(enum_arr.elements[0].raw).value() ==
-               "temporary");
-    BOOST_TEST(decode_json_string(enum_arr.elements[1].raw).value() ==
-               "permanent");
+    BOOST_TEST(decode_json_string(enum_arr.elements[0].raw).value()
+               == "temporary");
+    BOOST_TEST(decode_json_string(enum_arr.elements[1].raw).value()
+               == "permanent");
 
     // The default is the verbatim raw token, a JSON string here.
     const json_member* default_member = find_member(a_arg0.members, "default");
@@ -352,11 +352,13 @@ BOOST_AUTO_TEST_CASE(result_equals_descriptor_set)
     BOOST_REQUIRE(b_arr.ok);
     BOOST_REQUIRE_EQUAL(b_arr.elements.size(), 6u);
 
-    const std::vector<std::string> expected_types = {
-        "int", "list<string>", "map<string,string>",
-        "timestamp", "object", "bool"};
-    for (std::size_t i = 0; i < b_arr.elements.size(); ++i)
-    {
+    const std::vector<std::string> expected_types = {"int",
+                                                     "list<string>",
+                                                     "map<string,string>",
+                                                     "timestamp",
+                                                     "object",
+                                                     "bool"};
+    for (std::size_t i = 0; i < b_arr.elements.size(); ++i) {
         const url_shortener::commands::scan_result arg =
             scan_object(b_arr.elements[i].raw);
         BOOST_REQUIRE(arg.ok);
@@ -388,7 +390,8 @@ BOOST_AUTO_TEST_CASE(descriptor_to_json_is_wellformed)
 
     const json_member* args = find_member(obj.members, "args");
     BOOST_REQUIRE(args != nullptr);
-    const url_shortener::commands::array_scan_result arr = scan_array(args->raw);
+    const url_shortener::commands::array_scan_result arr =
+        scan_array(args->raw);
     BOOST_REQUIRE(arr.ok);
     BOOST_REQUIRE_EQUAL(arr.elements.size(), 2u);
 
@@ -463,14 +466,11 @@ BOOST_AUTO_TEST_CASE(name_helpers_are_distinct_and_nonempty)
         permission_name(Permission::write),
         permission_name(Permission::migrate),
         permission_name(Permission::manage_users)};
-    for (const std::string_view name : perms)
-    {
+    for (const std::string_view name : perms) {
         BOOST_TEST(!name.empty());
     }
-    for (std::size_t i = 0; i < perms.size(); ++i)
-    {
-        for (std::size_t j = i + 1; j < perms.size(); ++j)
-        {
+    for (std::size_t i = 0; i < perms.size(); ++i) {
+        for (std::size_t j = i + 1; j < perms.size(); ++j) {
             BOOST_TEST(perms[i] != perms[j]);
         }
     }
@@ -490,14 +490,11 @@ BOOST_AUTO_TEST_CASE(name_helpers_are_distinct_and_nonempty)
         arg_type_name(ArgType::string_list),
         arg_type_name(ArgType::string_map),
         arg_type_name(ArgType::object)};
-    for (const std::string_view name : types)
-    {
+    for (const std::string_view name : types) {
         BOOST_TEST(!name.empty());
     }
-    for (std::size_t i = 0; i < types.size(); ++i)
-    {
-        for (std::size_t j = i + 1; j < types.size(); ++j)
-        {
+    for (std::size_t i = 0; i < types.size(); ++i) {
+        for (std::size_t j = i + 1; j < types.size(); ++j) {
             BOOST_TEST(types[i] != types[j]);
         }
     }

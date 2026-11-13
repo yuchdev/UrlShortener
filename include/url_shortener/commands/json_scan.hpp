@@ -234,4 +234,4 @@ struct array_scan_result
 array_scan_result scan_array(std::string_view text,
                              const scan_limits& limits = {});
 
-} // namespace url_shortener::commands
+}  // namespace url_shortener::commands

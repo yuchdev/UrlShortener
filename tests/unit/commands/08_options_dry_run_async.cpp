@@ -72,7 +72,8 @@ struct FakeJobSubmitter : public IJobSubmitter
         canned.job = info;
     }
 
-    JobSubmitResult submit(std::string command, std::string args_digest,
+    JobSubmitResult submit(std::string command,
+                           std::string args_digest,
                            JobBody body) override
     {
         calls.fetch_add(1);
@@ -113,28 +114,29 @@ struct FakeFactoryRecorder
 
     JobHandlerFactory factory()
     {
-        return [this](const CommandContext& ctx, const ArgsView& view)
-                   -> std::variant<JobBody, CommandError> {
+        return
+            [this](const CommandContext& ctx,
+                   const ArgsView& view) -> std::variant<JobBody, CommandError>
+        {
             calls.fetch_add(1);
             last_dry_run.store(ctx.dry_run);
-            if (throw_in_factory)
-            {
+            if (throw_in_factory) {
                 throw std::runtime_error("secret-factory");
             }
-            if (return_error)
-            {
+            if (return_error) {
                 return make_error(error_code, "factory failed");
             }
             // Deep-copy the arg into the body so it is self-contained and holds
             // no reference to request-owned memory (threat model T-12).
-            const std::string copied =
-                view.get_string("path").value_or("none");
-            return JobBody {[copied](IJobContext&) {
-                JobOutcome out;
-                out.ok = true;
-                out.result_json = std::string(R"({"copied":")") + copied + "\"}";
-                return out;
-            }};
+            const std::string copied = view.get_string("path").value_or("none");
+            return JobBody {[copied](IJobContext&)
+                            {
+                                JobOutcome out;
+                                out.ok = true;
+                                out.result_json = std::string(R"({"copied":")")
+                                    + copied + "\"}";
+                                return out;
+                            }};
         };
     }
 };
@@ -155,11 +157,11 @@ struct DryRunHandlerRecorder
 
     CommandHandler handler()
     {
-        return [this](CommandContext& ctx, const ArgsView&) -> CommandResult {
+        return [this](CommandContext& ctx, const ArgsView&) -> CommandResult
+        {
             calls.fetch_add(1);
             last_dry_run.store(ctx.dry_run);
-            if (!ctx.dry_run)
-            {
+            if (!ctx.dry_run) {
                 mutations.fetch_add(1);
             }
             CommandResult r;
@@ -259,7 +261,8 @@ BOOST_AUTO_TEST_CASE(dry_run_and_async_are_mutually_exclusive)
 
     BOOST_TEST(resp.ok == false);
     BOOST_TEST((resp.error.code == CommandErrorCode::unsupported));
-    BOOST_TEST(resp.error.message == "dry_run and async are mutually exclusive");
+    BOOST_TEST(resp.error.message
+               == "dry_run and async are mutually exclusive");
     BOOST_TEST(recorder.calls.load() == 0);
 }
 
@@ -507,8 +510,8 @@ BOOST_AUTO_TEST_CASE(body_is_self_contained_after_request_destroyed)
     const JobOutcome outcome = submitter->last_body(ctx);
     BOOST_TEST(outcome.ok == true);
     BOOST_TEST(outcome.result_json.has_value() == true);
-    BOOST_TEST(outcome.result_json->find("/tmp/secret-path") !=
-               std::string::npos);
+    BOOST_TEST(outcome.result_json->find("/tmp/secret-path")
+               != std::string::npos);
 }
 
 // ---------------------------------------------------------------------------
@@ -537,8 +540,8 @@ BOOST_AUTO_TEST_CASE(args_digest_is_16_hex_and_stable)
 
     // 16 lower-case hex characters.
     BOOST_TEST(digest_a.size() == 16u);
-    const bool all_hex = digest_a.find_first_not_of("0123456789abcdef") ==
-                         std::string::npos;
+    const bool all_hex =
+        digest_a.find_first_not_of("0123456789abcdef") == std::string::npos;
     BOOST_TEST(all_hex == true);
     // Equal args -> equal digest.
     BOOST_TEST(digest_a == digest_b);
@@ -713,8 +716,8 @@ BOOST_AUTO_TEST_CASE(factory_exception_is_internal_and_leaks_nothing)
     BOOST_TEST(resp.ok == false);
     BOOST_TEST((resp.error.code == CommandErrorCode::internal));
     BOOST_TEST(resp.error.message == "internal error");
-    BOOST_TEST(serialize_response(resp).find("secret-factory") ==
-               std::string::npos);
+    BOOST_TEST(serialize_response(resp).find("secret-factory")
+               == std::string::npos);
     BOOST_TEST(submitter->calls.load() == 0);
 }
 
@@ -739,8 +742,8 @@ BOOST_AUTO_TEST_CASE(submitter_exception_is_internal_and_leaks_nothing)
     BOOST_TEST(resp.ok == false);
     BOOST_TEST((resp.error.code == CommandErrorCode::internal));
     BOOST_TEST(resp.error.message == "internal error");
-    BOOST_TEST(serialize_response(resp).find("secret-submitter") ==
-               std::string::npos);
+    BOOST_TEST(serialize_response(resp).find("secret-submitter")
+               == std::string::npos);
     // The factory did build a body before submit threw.
     BOOST_TEST(factory.calls.load() == 1);
 }

@@ -1,11 +1,11 @@
 #define BOOST_TEST_MODULE CommandsCatalogDriftTest
-#include <boost/test/unit_test.hpp>
-
 #include <cstddef>
 #include <fstream>
 #include <sstream>
 #include <string>
 #include <string_view>
+
+#include <boost/test/unit_test.hpp>
 
 #include "url_shortener/commands/arg_spec.hpp"
 #include "url_shortener/commands/builtin_commands.hpp"
@@ -34,10 +34,8 @@ std::string normalize_crlf(const std::string& text)
 {
     std::string out;
     out.reserve(text.size());
-    for (std::size_t i = 0; i < text.size(); ++i)
-    {
-        if (text[i] == '\r' && i + 1 < text.size() && text[i + 1] == '\n')
-        {
+    for (std::size_t i = 0; i < text.size(); ++i) {
+        if (text[i] == '\r' && i + 1 < text.size() && text[i + 1] == '\n') {
             continue;
         }
         out += text[i];
@@ -56,33 +54,27 @@ bool extract_region(const std::string& content, std::string& region)
 
     const std::size_t begin_pos = content.find(begin);
     const std::size_t end_pos = content.find(end);
-    if (begin_pos == std::string::npos || end_pos == std::string::npos)
-    {
+    if (begin_pos == std::string::npos || end_pos == std::string::npos) {
         return false;
     }
-    if (content.find(begin, begin_pos + begin.size()) != std::string::npos)
-    {
+    if (content.find(begin, begin_pos + begin.size()) != std::string::npos) {
         return false;
     }
-    if (content.find(end, end_pos + end.size()) != std::string::npos)
-    {
+    if (content.find(end, end_pos + end.size()) != std::string::npos) {
         return false;
     }
-    if (end_pos <= begin_pos)
-    {
+    if (end_pos <= begin_pos) {
         return false;
     }
 
     const std::size_t newline = content.find('\n', begin_pos + begin.size());
-    if (newline == std::string::npos || newline >= end_pos)
-    {
+    if (newline == std::string::npos || newline >= end_pos) {
         return false;
     }
     const std::size_t region_start = newline + 1;
 
     std::size_t region_end = end_pos;
-    if (region_end > region_start && content[region_end - 1] == '\n')
-    {
+    if (region_end > region_start && content[region_end - 1] == '\n') {
         --region_end;
     }
 
@@ -208,10 +200,8 @@ BOOST_AUTO_TEST_CASE(crlf_checkout_still_matches)
     lf_document += std::string(catalog_end_marker) + "\n\nTrailing prose.\n";
 
     std::string crlf_document;
-    for (const char ch : lf_document)
-    {
-        if (ch == '\n')
-        {
+    for (const char ch : lf_document) {
+        if (ch == '\n') {
             crlf_document += '\r';
         }
         crlf_document += ch;

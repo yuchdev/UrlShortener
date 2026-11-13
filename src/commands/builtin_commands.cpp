@@ -37,14 +37,11 @@ std::string arg_to_json(const ArgSpec& arg)
     out += jsonString(std::string(arg_type_name(arg.type)));
     out += ",\"required\":";
     out += arg.required ? "true" : "false";
-    if (arg.type == ArgType::enumeration)
-    {
+    if (arg.type == ArgType::enumeration) {
         out += ",\"enum\":[";
         bool first = true;
-        for (const std::string& value : arg.enum_values)
-        {
-            if (!first)
-            {
+        for (const std::string& value : arg.enum_values) {
+            if (!first) {
                 out += ",";
             }
             first = false;
@@ -52,8 +49,7 @@ std::string arg_to_json(const ArgSpec& arg)
         }
         out += "]";
     }
-    if (arg.default_value.has_value())
-    {
+    if (arg.default_value.has_value()) {
         out += ",\"default\":";
         out += *arg.default_value;
     }
@@ -67,52 +63,49 @@ std::string arg_to_json(const ArgSpec& arg)
 
 std::string_view permission_name(Permission p)
 {
-    switch (p)
-    {
-    case Permission::read:
-        return "read";
-    case Permission::write:
-        return "write";
-    case Permission::migrate:
-        return "migrate";
-    case Permission::manage_users:
-        return "manage_users";
+    switch (p) {
+        case Permission::read:
+            return "read";
+        case Permission::write:
+            return "write";
+        case Permission::migrate:
+            return "migrate";
+        case Permission::manage_users:
+            return "manage_users";
     }
     return "read";  // Unreachable for a valid enumerator.
 }
 
 std::string_view kind_name(ExecutionKind k)
 {
-    switch (k)
-    {
-    case ExecutionKind::sync:
-        return "sync";
-    case ExecutionKind::job:
-        return "job";
+    switch (k) {
+        case ExecutionKind::sync:
+            return "sync";
+        case ExecutionKind::job:
+            return "job";
     }
     return "sync";  // Unreachable for a valid enumerator.
 }
 
 std::string_view arg_type_name(ArgType t)
 {
-    switch (t)
-    {
-    case ArgType::string:
-        return "string";
-    case ArgType::integer:
-        return "int";
-    case ArgType::boolean:
-        return "bool";
-    case ArgType::enumeration:
-        return "enum";
-    case ArgType::timestamp:
-        return "timestamp";
-    case ArgType::string_list:
-        return "list<string>";
-    case ArgType::string_map:
-        return "map<string,string>";
-    case ArgType::object:
-        return "object";
+    switch (t) {
+        case ArgType::string:
+            return "string";
+        case ArgType::integer:
+            return "int";
+        case ArgType::boolean:
+            return "bool";
+        case ArgType::enumeration:
+            return "enum";
+        case ArgType::timestamp:
+            return "timestamp";
+        case ArgType::string_list:
+            return "list<string>";
+        case ArgType::string_map:
+            return "map<string,string>";
+        case ArgType::object:
+            return "object";
     }
     return "string";  // Unreachable for a valid enumerator.
 }
@@ -133,10 +126,8 @@ std::string descriptor_to_json(const CommandDescriptor& descriptor)
     out += descriptor.supports_dry_run ? "true" : "false";
     out += ",\"args\":[";
     bool first = true;
-    for (const ArgSpec& arg : descriptor.args)
-    {
-        if (!first)
-        {
+    for (const ArgSpec& arg : descriptor.args) {
+        if (!first) {
             out += ",";
         }
         first = false;
@@ -154,15 +145,13 @@ void register_builtin_commands(CommandRegistry& registry)
     descriptor.permission = Permission::read;
     descriptor.kind = ExecutionKind::sync;
     descriptor.mutating = false;
-    descriptor.handler =
-        [&registry](CommandContext&, const ArgsView&) -> CommandResult
+    descriptor.handler = [&registry](CommandContext&,
+                                     const ArgsView&) -> CommandResult
     {
         std::string result = "{\"commands\":[";
         bool first = true;
-        for (const CommandDescriptor* entry : registry.list())
-        {
-            if (!first)
-            {
+        for (const CommandDescriptor* entry : registry.list()) {
+            if (!first) {
                 result += ",";
             }
             first = false;

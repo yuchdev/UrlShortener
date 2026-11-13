@@ -1,8 +1,8 @@
 #define BOOST_TEST_MODULE CommandsJsonScanTest
-#include <boost/test/unit_test.hpp>
-
 #include <string>
 #include <string_view>
+
+#include <boost/test/unit_test.hpp>
 
 #include "url_shortener/commands/json_scan.hpp"
 
@@ -96,8 +96,7 @@ BOOST_AUTO_TEST_CASE(scan_object_key_text_inside_string_value_is_not_a_key)
 
 BOOST_AUTO_TEST_CASE(scan_object_valid_numbers_accepted)
 {
-    for (const char* n : {"0", "-1", "1.5", "1e3", "-0.5", "2E-2"})
-    {
+    for (const char* n : {"0", "-1", "1.5", "1e3", "-0.5", "2E-2"}) {
         const std::string text = std::string(R"({"n":)") + n + "}";
         scan_result r = scan_object(text);
         BOOST_TEST(r.ok, "expected ok for number " << n);
@@ -109,8 +108,7 @@ BOOST_AUTO_TEST_CASE(scan_object_valid_numbers_accepted)
 
 BOOST_AUTO_TEST_CASE(scan_object_malformed_numbers_rejected)
 {
-    for (const char* n : {"01", "+1", "1.", ".5", "1e", "-"})
-    {
+    for (const char* n : {"01", "+1", "1.", ".5", "1e", "-"}) {
         const std::string text = std::string(R"({"n":)") + n + "}";
         scan_result r = scan_object(text);
         BOOST_TEST(!r.ok, "expected failure for number " << n);
@@ -124,8 +122,7 @@ BOOST_AUTO_TEST_CASE(scan_object_malformed_numbers_rejected)
 
 BOOST_AUTO_TEST_CASE(scan_object_bad_literal_spelling_is_malformed)
 {
-    for (const char* lit : {"True", "nul", "TRUE", "nullx", "fals"})
-    {
+    for (const char* lit : {"True", "nul", "TRUE", "nullx", "fals"}) {
         const std::string text = std::string(R"({"x":)") + lit + "}";
         scan_result r = scan_object(text);
         BOOST_TEST(!r.ok, "expected failure for literal " << lit);
@@ -139,9 +136,8 @@ BOOST_AUTO_TEST_CASE(scan_object_bad_literal_spelling_is_malformed)
 
 BOOST_AUTO_TEST_CASE(decode_json_string_handles_escapes_and_surrogates)
 {
-    BOOST_TEST(*decode_json_string(R"("é")") == "\xC3\xA9"); // é
-    BOOST_TEST(*decode_json_string(R"("😀")") ==
-               "\xF0\x9F\x98\x80"); // 😀
+    BOOST_TEST(*decode_json_string(R"("é")") == "\xC3\xA9");  // é
+    BOOST_TEST(*decode_json_string(R"("😀")") == "\xF0\x9F\x98\x80");  // 😀
     // \uXXXX escapes: BMP code point and a surrogate pair combined into one
     // 4-byte UTF-8 sequence.
     BOOST_TEST(*decode_json_string(R"("é")") == "\xC3\xA9");
@@ -155,8 +151,8 @@ BOOST_AUTO_TEST_CASE(decode_json_string_handles_escapes_and_surrogates)
 BOOST_AUTO_TEST_CASE(decode_json_string_rejects_bad_escapes_and_surrogates)
 {
     BOOST_TEST(!decode_json_string(R"("\x")").has_value());
-    BOOST_TEST(!decode_json_string(R"("\uD83D")").has_value()); // lone high
-    BOOST_TEST(!decode_json_string(R"("\uDE00")").has_value()); // lone low
+    BOOST_TEST(!decode_json_string(R"("\uD83D")").has_value());  // lone high
+    BOOST_TEST(!decode_json_string(R"("\uDE00")").has_value());  // lone low
     BOOST_TEST(!decode_json_string(R"("\uZZZZ")").has_value());
     BOOST_TEST(!decode_json_string("not-a-string").has_value());
     BOOST_TEST(!decode_json_string("\"").has_value());
@@ -227,10 +223,8 @@ BOOST_AUTO_TEST_CASE(scan_object_depth_eight_is_accepted)
 BOOST_AUTO_TEST_CASE(scan_object_too_many_members_rejected)
 {
     std::string text = "{";
-    for (int k = 0; k < 257; ++k)
-    {
-        if (k != 0)
-        {
+    for (int k = 0; k < 257; ++k) {
+        if (k != 0) {
             text += ",";
         }
         text += "\"k" + std::to_string(k) + "\":" + std::to_string(k);
@@ -270,8 +264,7 @@ BOOST_AUTO_TEST_CASE(scan_object_custom_limits_override_defaults)
 
 BOOST_AUTO_TEST_CASE(scan_object_non_object_inputs_rejected)
 {
-    for (const char* t : {"[1,2]", "5", "\"x\"", "", "   ", "true"})
-    {
+    for (const char* t : {"[1,2]", "5", "\"x\"", "", "   ", "true"}) {
         scan_result r = scan_object(t);
         BOOST_TEST(!r.ok, "expected failure for input [" << t << "]");
         BOOST_TEST(r.error == "not_an_object", "input [" << t << "]");
@@ -280,8 +273,7 @@ BOOST_AUTO_TEST_CASE(scan_object_non_object_inputs_rejected)
 
 BOOST_AUTO_TEST_CASE(scan_object_trailing_data_rejected)
 {
-    for (const char* t : {"{}}", "{}x", R"({"a":1} junk)"})
-    {
+    for (const char* t : {"{}}", "{}x", R"({"a":1} junk)"}) {
         scan_result r = scan_object(t);
         BOOST_TEST(!r.ok, "expected failure for input [" << t << "]");
         BOOST_TEST(r.error == "trailing_data", "input [" << t << "]");
@@ -397,8 +389,7 @@ BOOST_AUTO_TEST_CASE(scan_object_truncated_prefixes_never_ok_never_crash)
 {
     const std::string sample =
         R"({"v":1,"id":"c-1","a":{"k":[1,2]},"s":"x\ty"})";
-    for (std::size_t len = 0; len < sample.size(); ++len)
-    {
+    for (std::size_t len = 0; len < sample.size(); ++len) {
         scan_result r;
         BOOST_CHECK_NO_THROW(
             r = scan_object(std::string_view(sample).substr(0, len)));

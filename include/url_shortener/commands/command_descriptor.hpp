@@ -170,8 +170,8 @@ struct CommandResult
  * failures through the returned @ref CommandResult and must not throw for them;
  * an escaping exception is mapped to `internal` by `execute` (subtask 07).
  */
-using CommandHandler = std::function<CommandResult(CommandContext&,
-                                                   const ArgsView&)>;
+using CommandHandler =
+    std::function<CommandResult(CommandContext&, const ArgsView&)>;
 
 /**
  * @brief The capabilities a running job body may use, implemented by the job

@@ -241,7 +241,8 @@ private:
      * @brief Grants @ref validate_args write access to populate @ref m_members.
      */
     friend bool validate_args(const std::vector<ArgSpec>& specs,
-                              std::string_view args_json, ArgsView* out,
+                              std::string_view args_json,
+                              ArgsView* out,
                               CommandError* error);
 };
 
@@ -286,7 +287,8 @@ private:
  * value, or a `one_of_group` with not exactly one member present).
  */
 bool validate_args(const std::vector<ArgSpec>& specs,
-                   std::string_view args_json, ArgsView* out,
+                   std::string_view args_json,
+                   ArgsView* out,
                    CommandError* error);
 
 }  // namespace url_shortener::commands

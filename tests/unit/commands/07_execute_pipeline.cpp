@@ -50,15 +50,13 @@ struct FakeHandlerRecorder
     // The result the handler returns on every call.
     CommandResult canned;
 
-    FakeHandlerRecorder()
-    {
-        canned.result_json = R"({"ok":true})";
-    }
+    FakeHandlerRecorder() { canned.result_json = R"({"ok":true})"; }
 
     // Returns a handler that records the call and returns `canned`.
     CommandHandler handler()
     {
-        return [this](CommandContext&, const ArgsView&) -> CommandResult {
+        return [this](CommandContext&, const ArgsView&) -> CommandResult
+        {
             calls.fetch_add(1);
             return canned;
         };
@@ -68,16 +66,17 @@ struct FakeHandlerRecorder
 // A job factory that is never meaningfully invoked in these tests.
 JobHandlerFactory noop_job_factory()
 {
-    return [](const CommandContext&, const ArgsView&)
-               -> std::variant<JobBody, CommandError> {
-        return JobBody {[](url_shortener::commands::IJobContext&) {
-            return JobOutcome {};
-        }};
+    return [](const CommandContext&,
+              const ArgsView&) -> std::variant<JobBody, CommandError>
+    {
+        return JobBody {[](url_shortener::commands::IJobContext&)
+                        { return JobOutcome {}; }};
     };
 }
 
 // Builds a sync descriptor with the given name, permission and handler.
-CommandDescriptor sync_descriptor(std::string name, Permission permission,
+CommandDescriptor sync_descriptor(std::string name,
+                                  Permission permission,
                                   CommandHandler handler)
 {
     CommandDescriptor descriptor;
@@ -113,8 +112,7 @@ BOOST_AUTO_TEST_CASE(happy_path_read_admin_and_user)
     registry.add(
         sync_descriptor("link.get", Permission::read, recorder.handler()));
 
-    for (const ControlSet role : {ControlSet::Admin, ControlSet::User})
-    {
+    for (const ControlSet role : {ControlSet::Admin, ControlSet::User}) {
         CallerContext caller;
         caller.control_set = role;
         const CommandResponse response =
@@ -152,18 +150,17 @@ BOOST_AUTO_TEST_CASE(unknown_command_does_not_echo_name)
 
 BOOST_AUTO_TEST_CASE(authorization_matrix_handler_not_entered_on_denial)
 {
-    const Permission permissions[] = {Permission::read, Permission::write,
+    const Permission permissions[] = {Permission::read,
+                                      Permission::write,
                                       Permission::migrate,
                                       Permission::manage_users};
 
-    for (const Permission permission : permissions)
-    {
-        for (const ControlSet role : {ControlSet::Admin, ControlSet::User})
-        {
+    for (const Permission permission : permissions) {
+        for (const ControlSet role : {ControlSet::Admin, ControlSet::User}) {
             FakeHandlerRecorder recorder;
             CommandRegistry registry;
-            registry.add(sync_descriptor("ns.cmd", permission,
-                                         recorder.handler()));
+            registry.add(
+                sync_descriptor("ns.cmd", permission, recorder.handler()));
 
             CallerContext caller;
             caller.control_set = role;
@@ -172,13 +169,11 @@ BOOST_AUTO_TEST_CASE(authorization_matrix_handler_not_entered_on_denial)
 
             const bool should_pass =
                 permission == Permission::read || role == ControlSet::Admin;
-            if (should_pass)
-            {
+            if (should_pass) {
                 BOOST_TEST(response.ok == true);
                 BOOST_TEST(recorder.calls.load() == 1);
             }
-            else
-            {
+            else {
                 BOOST_TEST(response.ok == false);
                 BOOST_TEST(
                     (response.error.code == CommandErrorCode::not_authorized));
@@ -258,8 +253,8 @@ BOOST_AUTO_TEST_CASE(validation_errors_name_arg_not_value)
     BOOST_TEST((missing.error.code == CommandErrorCode::invalid_field));
 
     // Wrong type (integer where a string is required).
-    const CommandResponse wrong_type = registry.execute(
-        caller, request_for("link.get", R"({"slug":123})"));
+    const CommandResponse wrong_type =
+        registry.execute(caller, request_for("link.get", R"({"slug":123})"));
     BOOST_TEST(wrong_type.ok == false);
     BOOST_TEST((wrong_type.error.code == CommandErrorCode::invalid_field));
 
@@ -285,9 +280,8 @@ BOOST_AUTO_TEST_CASE(permission_for_raises_on_path)
     path.name = "path";
     path.type = ArgType::string;
     descriptor.args = {path};
-    descriptor.permission_for = [](const ArgsView& view) {
-        return view.has("path") ? Permission::write : Permission::read;
-    };
+    descriptor.permission_for = [](const ArgsView& view)
+    { return view.has("path") ? Permission::write : Permission::read; };
     registry.add(std::move(descriptor));
 
     // User, no path -> read suffices.
@@ -337,7 +331,8 @@ BOOST_AUTO_TEST_CASE(permission_for_not_run_on_invalid_args)
     path.name = "path";
     path.type = ArgType::string;
     descriptor.args = {path};
-    descriptor.permission_for = [&hook_calls](const ArgsView&) {
+    descriptor.permission_for = [&hook_calls](const ArgsView&)
+    {
         hook_calls.fetch_add(1);
         return Permission::write;
     };
@@ -365,9 +360,8 @@ BOOST_AUTO_TEST_CASE(permission_for_throwing_hook_is_internal)
     CommandDescriptor descriptor =
         sync_descriptor("link.export", Permission::read, recorder.handler());
     descriptor.mutating = true;
-    descriptor.permission_for = [](const ArgsView&) -> Permission {
-        throw std::runtime_error("secret-dsn");
-    };
+    descriptor.permission_for = [](const ArgsView&) -> Permission
+    { throw std::runtime_error("secret-dsn"); };
     registry.add(std::move(descriptor));
 
     CallerContext caller;
@@ -377,8 +371,8 @@ BOOST_AUTO_TEST_CASE(permission_for_throwing_hook_is_internal)
     BOOST_TEST(response.ok == false);
     BOOST_TEST((response.error.code == CommandErrorCode::internal));
     BOOST_TEST(response.error.message == "internal error");
-    BOOST_TEST(serialize_response(response).find("secret-dsn") ==
-               std::string::npos);
+    BOOST_TEST(serialize_response(response).find("secret-dsn")
+               == std::string::npos);
     BOOST_TEST(recorder.calls.load() == 0);
 }
 
@@ -393,9 +387,8 @@ BOOST_AUTO_TEST_CASE(unmapped_permission_fails_closed)
 
     CommandDescriptor descriptor =
         sync_descriptor("link.purge", Permission::write, recorder.handler());
-    descriptor.permission_for = [](const ArgsView&) {
-        return static_cast<Permission>(99);
-    };
+    descriptor.permission_for = [](const ArgsView&)
+    { return static_cast<Permission>(99); };
     registry.add(std::move(descriptor));
 
     CallerContext caller;
@@ -420,9 +413,8 @@ BOOST_AUTO_TEST_CASE(permission_for_cannot_lower_base)
 
     CommandDescriptor descriptor =
         sync_descriptor("link.delete", Permission::write, recorder.handler());
-    descriptor.permission_for = [](const ArgsView&) {
-        return Permission::read;
-    };
+    descriptor.permission_for = [](const ArgsView&)
+    { return Permission::read; };
     registry.add(std::move(descriptor));
 
     // User: base write already denies, regardless of the hook's read result.
@@ -481,27 +473,25 @@ BOOST_AUTO_TEST_CASE(throwing_handler_is_internal_and_leaks_nothing)
 {
     CommandRegistry registry;
 
+    registry.add(
+        sync_descriptor("ns.throws_std",
+                        Permission::read,
+                        [](CommandContext&, const ArgsView&) -> CommandResult
+                        { throw std::runtime_error("secret-dsn"); }));
     registry.add(sync_descriptor(
-        "ns.throws_std", Permission::read,
-        [](CommandContext&, const ArgsView&) -> CommandResult {
-            throw std::runtime_error("secret-dsn");
-        }));
-    registry.add(sync_descriptor(
-        "ns.throws_int", Permission::read,
-        [](CommandContext&, const ArgsView&) -> CommandResult {
-            throw 42;
-        }));
+        "ns.throws_int",
+        Permission::read,
+        [](CommandContext&, const ArgsView&) -> CommandResult { throw 42; }));
 
     CallerContext caller;
-    for (const char* name : {"ns.throws_std", "ns.throws_int"})
-    {
+    for (const char* name : {"ns.throws_std", "ns.throws_int"}) {
         const CommandResponse response =
             registry.execute(caller, request_for(name));
         BOOST_TEST(response.ok == false);
         BOOST_TEST((response.error.code == CommandErrorCode::internal));
         BOOST_TEST(response.error.message == "internal error");
-        BOOST_TEST(serialize_response(response).find("secret-dsn") ==
-                   std::string::npos);
+        BOOST_TEST(serialize_response(response).find("secret-dsn")
+                   == std::string::npos);
     }
 }
 
@@ -585,13 +575,14 @@ BOOST_AUTO_TEST_CASE(options_and_job_are_unsupported)
 BOOST_AUTO_TEST_CASE(execute_rejects_bad_envelope)
 {
     CommandRegistry registry;
-    registry.add(
-        sync_descriptor("link.get", Permission::read,
-                        [](CommandContext&, const ArgsView&) {
-                            CommandResult r;
-                            r.result_json = "{}";
-                            return r;
-                        }));
+    registry.add(sync_descriptor("link.get",
+                                 Permission::read,
+                                 [](CommandContext&, const ArgsView&)
+                                 {
+                                     CommandResult r;
+                                     r.result_json = "{}";
+                                     return r;
+                                 }));
 
     CallerContext caller;
 
@@ -653,24 +644,23 @@ BOOST_AUTO_TEST_CASE(concurrent_execute_is_consistent)
 
     std::vector<std::thread> threads;
     threads.reserve(thread_count);
-    for (int t = 0; t < thread_count; ++t)
-    {
-        threads.emplace_back([&registry, &ok_count]() {
-            CallerContext caller;
-            for (int i = 0; i < per_thread; ++i)
+    for (int t = 0; t < thread_count; ++t) {
+        threads.emplace_back(
+            [&registry, &ok_count]()
             {
-                const CommandResponse response =
-                    registry.execute(caller, request_for("link.get"));
-                if (response.ok && response.id == "client-1" &&
-                    response.result_json == R"({"ok":true})")
-                {
-                    ok_count.fetch_add(1);
+                CallerContext caller;
+                for (int i = 0; i < per_thread; ++i) {
+                    const CommandResponse response =
+                        registry.execute(caller, request_for("link.get"));
+                    if (response.ok && response.id == "client-1"
+                        && response.result_json == R"({"ok":true})")
+                    {
+                        ok_count.fetch_add(1);
+                    }
                 }
-            }
-        });
+            });
     }
-    for (std::thread& thread : threads)
-    {
+    for (std::thread& thread : threads) {
         thread.join();
     }
 

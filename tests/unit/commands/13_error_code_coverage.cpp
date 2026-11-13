@@ -18,8 +18,8 @@
 #include "url_shortener/commands/job_submitter.hpp"
 
 using url_shortener::commands::all_error_infos;
-using url_shortener::commands::ArgsView;
 using url_shortener::commands::ArgSpec;
+using url_shortener::commands::ArgsView;
 using url_shortener::commands::ArgType;
 using url_shortener::commands::CallerContext;
 using url_shortener::commands::CommandContext;
@@ -115,8 +115,8 @@ CommandDescriptor error_descriptor(std::string name, CommandErrorCode code)
 
 /// A read descriptor whose handler maps @p app_code through `from_app_error`,
 /// exercising the application-to-command error mapping end to end.
-CommandDescriptor app_error_descriptor(std::string name,
-                                       url_shortener::app::AppErrorCode app_code)
+CommandDescriptor app_error_descriptor(
+    std::string name, url_shortener::app::AppErrorCode app_code)
 {
     CommandDescriptor descriptor;
     descriptor.name = std::move(name);
@@ -278,12 +278,9 @@ const std::vector<code_scenario>& all_scenarios()
              descriptor.permission = Permission::read;
              descriptor.kind = ExecutionKind::job;
              descriptor.job_factory =
-                 [](const CommandContext&, const ArgsView&)
-                 -> std::variant<JobBody, CommandError>
-             {
-                 return JobBody {
-                     [](IJobContext&) { return JobOutcome {}; }};
-             };
+                 [](const CommandContext&,
+                    const ArgsView&) -> std::variant<JobBody, CommandError>
+             { return JobBody {[](IJobContext&) { return JobOutcome {}; }}; };
              registry.add(std::move(descriptor));
              registry.set_job_submitter(std::make_shared<BusySubmitter>());
              return registry.execute(make_caller(ControlSet::Admin),
@@ -294,8 +291,8 @@ const std::vector<code_scenario>& all_scenarios()
         {CommandErrorCode::job_cancelled,
          [](CommandRegistry& registry)
          {
-             registry.add(error_descriptor("job.get",
-                                           CommandErrorCode::job_cancelled));
+             registry.add(
+                 error_descriptor("job.get", CommandErrorCode::job_cancelled));
              return registry.execute(make_caller(ControlSet::Admin),
                                      make_request("job.get"));
          }},
@@ -317,8 +314,8 @@ const std::vector<code_scenario>& all_scenarios()
              descriptor.name = "will.throw";
              descriptor.summary = "throws on dispatch";
              descriptor.permission = Permission::read;
-             descriptor.handler =
-                 [](CommandContext&, const ArgsView&) -> CommandResult
+             descriptor.handler = [](CommandContext&,
+                                     const ArgsView&) -> CommandResult
              { throw std::runtime_error("secret-dsn-value"); };
              registry.add(std::move(descriptor));
              return registry.execute(make_caller(ControlSet::Admin),
@@ -341,8 +338,7 @@ const std::vector<code_scenario>& all_scenarios()
 BOOST_AUTO_TEST_CASE(every_enumerator_has_a_scenario)
 {
     std::set<CommandErrorCode> covered;
-    for (const code_scenario& scenario : all_scenarios())
-    {
+    for (const code_scenario& scenario : all_scenarios()) {
         covered.insert(scenario.code);
     }
 
@@ -350,10 +346,8 @@ BOOST_AUTO_TEST_CASE(every_enumerator_has_a_scenario)
     BOOST_TEST(covered.size() == all_scenarios().size());
 
     std::size_t expected = 0;
-    for (const error_info& info : all_error_infos())
-    {
-        if (info.code == CommandErrorCode::none)
-        {
+    for (const error_info& info : all_error_infos()) {
+        if (info.code == CommandErrorCode::none) {
             continue;
         }
         ++expected;
@@ -375,8 +369,7 @@ BOOST_AUTO_TEST_CASE(every_enumerator_has_a_scenario)
 
 BOOST_AUTO_TEST_CASE(each_code_round_trips_through_the_pipeline)
 {
-    for (const code_scenario& scenario : all_scenarios())
-    {
+    for (const code_scenario& scenario : all_scenarios()) {
         const error_info& row = error_info_for(scenario.code);
         BOOST_TEST_CONTEXT("code=" << row.name)
         {
@@ -414,10 +407,8 @@ BOOST_AUTO_TEST_CASE(internal_never_leaks_exception_text)
 {
     CommandRegistry registry;
     CommandResponse response;
-    for (const code_scenario& scenario : all_scenarios())
-    {
-        if (scenario.code == CommandErrorCode::internal)
-        {
+    for (const code_scenario& scenario : all_scenarios()) {
+        if (scenario.code == CommandErrorCode::internal) {
             response = scenario.run(registry);
             break;
         }
