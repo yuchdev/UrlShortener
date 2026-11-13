@@ -6,6 +6,7 @@
 #include <string_view>
 
 #include <url_shortener/commands/error_codes.hpp>
+#include <url_shortener/commands/json_scan.hpp>
 
 namespace url_shortener::commands
 {
@@ -288,9 +289,9 @@ struct CommandResponse
  *
  * @param id Correlation id to echo; moved into the response.
  * @param result_json Exact JSON text of the result, produced by the handler;
- * moved in and embedded verbatim by @ref serialize_response. Must be non-empty
- * and begin with a JSON-value character, else serialization fails the invariant
- * and emits an `internal` envelope.
+ * moved in and embedded verbatim by @ref serialize_response. Must be exactly
+ * one well-formed JSON value (validated under @ref k_result_scan_limits), else
+ * serialization fails the invariant and emits an `internal` envelope.
  * @return A @ref CommandResponse with `ok == true` and `result_json` set.
  */
 CommandResponse make_success(std::string id, std::string result_json);
@@ -316,24 +317,55 @@ CommandResponse make_job_accepted(std::string id, JobInfo job);
 CommandResponse make_failure(std::string id, CommandError error);
 
 /**
+ * @brief Scan limits applied when @ref serialize_response validates a `result`
+ * payload before embedding it verbatim.
+ *
+ * Deliberately looser than the request-envelope limits: a legitimate result
+ * (a paged `link.list`, the rows of a `db` query) can be far larger and wider
+ * than any request envelope, so a shared cap would reject valid results. The
+ * values are a defense-in-depth bound on a trusted-but-possibly-buggy handler's
+ * output, not a parse of untrusted client input.
+ *
+ * - `max_bytes` 1 MiB: upper bound on the size of the scanned payload.
+ * - `max_depth` 16: nesting allowed inside the value.
+ * - `max_members` 4096: top-level members/elements of the value.
+ * - `max_key_len` 128: the scanner default (unchanged).
+ *
+ * The aggregate initializer order matches @ref scan_limits:
+ * `{max_bytes, max_depth, max_members, max_key_len}`.
+ */
+inline constexpr scan_limits k_result_scan_limits {
+    1024u * 1024u, 16, 4096u, 128u};
+
+/**
  * @brief Serializes a @ref CommandResponse to the v1 response envelope JSON.
  *
  * Field order is fixed: `v`, `id`, `ok`, then exactly one of `result`, `job`
  * or `error`. `id` and `error.message` are escaped with
  * `url_shortener::jsonString` (the message is first run through
- * @ref sanitize_error_message); `result_json` is embedded verbatim after a
- * cheap first-character sanity check and is never re-escaped. `error` renders
- * as `{"code":"<name>","message":"<text>"}` and `job` as
- * `{"id":"..","state":".."}`.
+ * @ref sanitize_error_message); `result_json` is embedded verbatim and is never
+ * re-escaped. `error` renders as `{"code":"<name>","message":"<text>"}` and
+ * `job` as `{"id":"..","state":".."}`.
+ *
+ * Before a `result` payload is embedded it must be exactly one well-formed JSON
+ * value with no trailing data, validated with the sanctioned scanner under
+ * @ref k_result_scan_limits (surrounding JSON whitespace is tolerated and
+ * embedded as-is). This intentionally goes beyond the "cheap sanity, not full
+ * validation" wording of the subtask-04 spec: a first-character-only check
+ * admits result-envelope smuggling (threat-model T-17, CWE-116) such as
+ * `{"a":1},"injected":true` adding a top-level key, or `"a","injected":"true"`
+ * doing the same through a string that merely starts and ends with a quote.
+ * Full single-value validation closes both.
  *
  * The invariants are: exactly one of result/job/error is present; `ok == true`
  * iff the payload is a result or a job (so `error` implies `!ok`); and a result
- * payload is non-empty and begins with `{`, `[`, `"`, a digit, `t`, `f` or `n`.
+ * payload is exactly one well-formed JSON value.
  *
  * @param response The response to serialize.
- * @return The envelope JSON text. On any invariant violation the function
- * returns a well-formed `internal` failure envelope echoing `response.id`
- * instead of malformed JSON (threat-model T-17).
+ * @return The envelope JSON text. On any invariant violation (including a
+ * `result` that is not a single well-formed JSON value) the function returns a
+ * well-formed `internal` failure envelope echoing `response.id` instead of
+ * malformed or injected JSON (threat-model T-17).
  */
 std::string serialize_response(const CommandResponse& response);
 
@@ -394,4 +426,4 @@ unsigned http_status_for(const CommandResponse& response);
  */
 int exit_code_for(const CommandResponse& response);
 
-} // namespace url_shortener::commands
+}  // namespace url_shortener::commands

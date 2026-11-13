@@ -1,9 +1,9 @@
 #define BOOST_TEST_MODULE CommandsResponseSerializeTest
-#include <boost/test/unit_test.hpp>
-
 #include <string>
 #include <string_view>
 #include <vector>
+
+#include <boost/test/unit_test.hpp>
 
 #include "url_shortener/commands/envelope.hpp"
 #include "url_shortener/commands/error_codes.hpp"
@@ -40,12 +40,12 @@ void expect_valid_json_object(const std::string& text)
 // The canonical `internal` fallback envelope for a given echoed id.
 std::string internal_envelope(const std::string& id)
 {
-    return R"({"v":1,"id":")" + id +
-           R"(","ok":false,"error":{"code":"internal",)" +
-           R"("message":"internal error"}})";
+    return R"({"v":1,"id":")" + id
+        + R"(","ok":false,"error":{"code":"internal",)"
+        + R"("message":"internal error"}})";
 }
 
-} // namespace
+}  // namespace
 
 // ---------------------------------------------------------------------------
 // Byte-exact catalog examples (success criteria 2)
@@ -56,21 +56,21 @@ std::string internal_envelope(const std::string& id)
 // Boundaries: empty result object; a queued job; a failure with a message.
 BOOST_AUTO_TEST_CASE(catalog_examples_are_byte_exact)
 {
-    BOOST_TEST(serialize_response(make_success("c-42", "{}")) ==
-               R"({"v":1,"id":"c-42","ok":true,"result":{}})");
+    BOOST_TEST(serialize_response(make_success("c-42", "{}"))
+               == R"({"v":1,"id":"c-42","ok":true,"result":{}})");
 
     JobInfo job;
     job.id = "j-9";
     job.state = JobState::queued;
-    BOOST_TEST(serialize_response(make_job_accepted("c-43", job)) ==
-               R"({"v":1,"id":"c-43","ok":true,"job":{"id":"j-9","state":"queued"}})");
+    BOOST_TEST(
+        serialize_response(make_job_accepted("c-43", job))
+        == R"({"v":1,"id":"c-43","ok":true,"job":{"id":"j-9","state":"queued"}})");
 
     BOOST_TEST(
         serialize_response(make_failure(
             "c-42",
-            make_error(CommandErrorCode::slug_conflict,
-                       "slug already exists"))) ==
-        R"({"v":1,"id":"c-42","ok":false,"error":{"code":"slug_conflict","message":"slug already exists"}})");
+            make_error(CommandErrorCode::slug_conflict, "slug already exists")))
+        == R"({"v":1,"id":"c-42","ok":false,"error":{"code":"slug_conflict","message":"slug already exists"}})");
 }
 
 // ---------------------------------------------------------------------------
@@ -85,8 +85,8 @@ BOOST_AUTO_TEST_CASE(result_json_is_embedded_verbatim)
     const std::string result =
         R"({"a":"he said \"hi\"","u":"café","n":{"x":1}})";
     const std::string out = serialize_response(make_success("c-1", result));
-    BOOST_TEST(out == R"({"v":1,"id":"c-1","ok":true,"result":)" + result +
-                          "}");
+    BOOST_TEST(out
+               == R"({"v":1,"id":"c-1","ok":true,"result":)" + result + "}");
     // The verbatim payload still leaves the whole envelope valid JSON.
     expect_valid_json_object(out);
 }
@@ -117,10 +117,10 @@ BOOST_AUTO_TEST_CASE(error_message_is_escaped_to_valid_json)
 // ---------------------------------------------------------------------------
 
 // Scenario: neither/both payloads, an ok-with-error response, and a result that
-// fails the first-char sanity check all yield a well-formed `internal`
+// is not a single well-formed JSON value all yield a well-formed `internal`
 // envelope, never malformed JSON.
-// Boundaries: 0 payloads, 2 payloads, ok/error mismatch, result starting with
-// a non-value character.
+// Boundaries: 0 payloads, 2 payloads, ok/error mismatch, result that is not a
+// JSON value.
 BOOST_AUTO_TEST_CASE(invariant_violations_emit_internal_envelope)
 {
     // Zero payloads: default response (ok == false, no error set).
@@ -146,13 +146,79 @@ BOOST_AUTO_TEST_CASE(invariant_violations_emit_internal_envelope)
     ok_with_error.error = make_error(CommandErrorCode::not_found, "x");
     BOOST_TEST(serialize_response(ok_with_error) == internal_envelope("c-1"));
 
-    // Result failing the cheap first-char sanity check.
+    // Result that is not a JSON value at all.
     CommandResponse bad_result;
     bad_result.id = "c-1";
     bad_result.ok = true;
     bad_result.result_json = "oops";
     BOOST_TEST(serialize_response(bad_result) == internal_envelope("c-1"));
     expect_valid_json_object(serialize_response(bad_result));
+}
+
+// ---------------------------------------------------------------------------
+// result_json single-value validation (threat model T-17 / CWE-116)
+// ---------------------------------------------------------------------------
+
+// Scenario: a result payload that is not exactly one well-formed JSON value is
+// rejected with the well-formed `internal` envelope, closing result-envelope
+// smuggling. Validation goes beyond a first-character check: a payload that
+// merely begins with a JSON-value character but carries a sibling key or
+// trailing data must never be embedded verbatim.
+// Boundaries: object + injected sibling key; malformed trailing after an
+// object; a string that smuggles a sibling key; trailing garbage after a valid
+// string, number and literal.
+// On failure first check: result_json_is_single_value / the synthetic
+// `{"r":<payload>}` scan in serialize_response.
+BOOST_AUTO_TEST_CASE(result_json_smuggling_and_trailing_data_rejected)
+{
+    const auto rejected = [](const std::string& result)
+    {
+        CommandResponse r;
+        r.id = "c-1";
+        r.ok = true;
+        r.result_json = result;
+        const std::string out = serialize_response(r);
+        expect_valid_json_object(out);
+        return out == internal_envelope("c-1");
+    };
+
+    // The two canonical smuggling payloads from the threat model.
+    BOOST_TEST(rejected(R"({"a":1},"injected":true)"));
+    BOOST_TEST(rejected(R"({"a":1}, "ok": false, "x": {)"));
+
+    // A string that starts and ends with a quote but smuggles a sibling key.
+    BOOST_TEST(rejected(R"("a","injected":"true")"));
+
+    // Trailing garbage after an otherwise valid string / number / literal.
+    BOOST_TEST(rejected(R"("hello" garbage)"));
+    BOOST_TEST(rejected("42 garbage"));
+    BOOST_TEST(rejected("true garbage"));
+    BOOST_TEST(rejected("null null"));
+}
+
+// Scenario: a large but well-formed result (a 2000-element array) is accepted
+// and embedded verbatim, then round-trips. The result-specific scan limits
+// (k_result_scan_limits) deliberately admit payloads far larger and wider than
+// a request envelope (paged listings, db rows).
+// On failure first check: k_result_scan_limits in envelope.hpp.
+BOOST_AUTO_TEST_CASE(large_valid_result_accepted)
+{
+    std::string array = "[";
+    for (int i = 0; i < 2000; ++i) {
+        if (i != 0) {
+            array.push_back(',');
+        }
+        array += std::to_string(i);
+    }
+    array.push_back(']');
+
+    const std::string out = serialize_response(make_success("c-1", array));
+    BOOST_TEST(out == R"({"v":1,"id":"c-1","ok":true,"result":)" + array + "}");
+    expect_valid_json_object(out);
+
+    const parse_response_result parsed = parse_response(out);
+    BOOST_REQUIRE(parsed.response.has_value());
+    BOOST_TEST(parsed.response->result_json == array);
 }
 
 // ---------------------------------------------------------------------------
@@ -176,11 +242,12 @@ BOOST_AUTO_TEST_CASE(round_trip_success)
 // Scenario: round trip holds for every JobState, preserving id and state.
 BOOST_AUTO_TEST_CASE(round_trip_job_all_states)
 {
-    const std::vector<JobState> states{JobState::queued, JobState::running,
-                                       JobState::succeeded, JobState::failed,
-                                       JobState::cancelled};
-    for (const JobState state : states)
-    {
+    const std::vector<JobState> states {JobState::queued,
+                                        JobState::running,
+                                        JobState::succeeded,
+                                        JobState::failed,
+                                        JobState::cancelled};
+    for (const JobState state : states) {
         JobInfo job;
         job.id = "j-3";
         job.state = state;
@@ -198,10 +265,8 @@ BOOST_AUTO_TEST_CASE(round_trip_job_all_states)
 // none, preserving code and message.
 BOOST_AUTO_TEST_CASE(round_trip_failure_every_code)
 {
-    for (const error_info& row : all_error_infos())
-    {
-        if (row.code == CommandErrorCode::none)
-        {
+    for (const error_info& row : all_error_infos()) {
+        if (row.code == CommandErrorCode::none) {
             continue;
         }
         const CommandResponse original =
@@ -225,7 +290,8 @@ BOOST_AUTO_TEST_CASE(round_trip_failure_every_code)
 // error code, unknown job state.
 BOOST_AUTO_TEST_CASE(parse_response_rejects_bad_shapes)
 {
-    const auto rejected = [](std::string_view text) {
+    const auto rejected = [](std::string_view text)
+    {
         const parse_response_result r = parse_response(text);
         return !r.response.has_value() && !r.error.empty();
     };
@@ -238,6 +304,23 @@ BOOST_AUTO_TEST_CASE(parse_response_rejects_bad_shapes)
         R"({"v":1,"id":"a","ok":false,"error":{"code":"nope","message":"x"}})"));
     BOOST_TEST(rejected(
         R"({"v":1,"id":"a","ok":true,"job":{"id":"j","state":"flying"}})"));
+}
+
+// Scenario: parse_response neutralizes control bytes smuggled into
+// error.message through a `\uXXXX` escape (LOW) so a decoded ESC sequence can
+// never drive a TUI terminal; the decoded message is routed through
+// sanitize_error_message before it is stored.
+// Boundaries: a `\u001b` (ESC, a C0 control) in the middle of the message.
+// On failure first check: the sanitize_error_message call on the error branch
+// of parse_response.
+BOOST_AUTO_TEST_CASE(parse_response_sanitizes_error_message)
+{
+    const parse_response_result parsed =
+        parse_response(R"({"v":1,"id":"c-1","ok":false,)"
+                       R"("error":{"code":"internal","message":"a\u001bb"}})");
+    BOOST_REQUIRE(parsed.response.has_value());
+    BOOST_TEST(!parsed.response->ok);
+    BOOST_TEST(parsed.response->error.message == "a?b");
 }
 
 // ---------------------------------------------------------------------------

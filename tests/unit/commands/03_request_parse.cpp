@@ -1,12 +1,12 @@
 #define BOOST_TEST_MODULE CommandsRequestParseTest
-#include <boost/test/unit_test.hpp>
-
 #include <atomic>
 #include <set>
 #include <string>
 #include <string_view>
 #include <thread>
 #include <vector>
+
+#include <boost/test/unit_test.hpp>
 
 #include "url_shortener/commands/envelope.hpp"
 #include "url_shortener/commands/error_codes.hpp"
@@ -31,13 +31,12 @@ void expect_invalid(const parse_request_result& result,
     BOOST_TEST(!result.request.has_value());
     BOOST_TEST((result.error.code == CommandErrorCode::invalid_envelope));
     BOOST_TEST(!result.error.message.empty());
-    if (!forbidden.empty())
-    {
+    if (!forbidden.empty()) {
         BOOST_TEST(result.error.message.find(forbidden) == std::string::npos);
     }
 }
 
-} // namespace
+}  // namespace
 
 // ---------------------------------------------------------------------------
 // Catalog round-trips (success criteria 2)
@@ -47,9 +46,9 @@ void expect_invalid(const parse_request_result& result,
 // Boundaries: explicit id, empty args object, both option flags present.
 BOOST_AUTO_TEST_CASE(catalog_section1_example_round_trips)
 {
-    const parse_request_result r = parse_request(
-        R"({"v":1,"id":"c-42","command":"link.create","args":{},)"
-        R"("options":{"dry_run":false,"async":false}})");
+    const parse_request_result r =
+        parse_request(R"({"v":1,"id":"c-42","command":"link.create","args":{},)"
+                      R"("options":{"dry_run":false,"async":false}})");
     BOOST_REQUIRE(r.ok());
     BOOST_TEST(r.request->v == 1);
     BOOST_TEST(r.request->id == "c-42");
@@ -66,8 +65,8 @@ BOOST_AUTO_TEST_CASE(catalog_section2_worked_example_round_trips)
 {
     const std::string args =
         R"({"target_url":"https://example.com/docs","slug":"docs"})";
-    const parse_request_result r = parse_request(
-        R"({"v":1,"command":"link.create","args":)" + args + "}");
+    const parse_request_result r =
+        parse_request(R"({"v":1,"command":"link.create","args":)" + args + "}");
     BOOST_REQUIRE(r.ok());
     BOOST_TEST(r.request->command == "link.create");
     BOOST_TEST(r.request->args_json == args);
@@ -96,8 +95,8 @@ BOOST_AUTO_TEST_CASE(minimal_envelope_generates_server_id_and_defaults)
 BOOST_AUTO_TEST_CASE(id_echoed_and_64_chars_accepted)
 {
     const std::string id(64, 'a');
-    const parse_request_result r = parse_request(
-        R"({"v":1,"id":")" + id + R"(","command":"link.get"})");
+    const parse_request_result r =
+        parse_request(R"({"v":1,"id":")" + id + R"(","command":"link.get"})");
     BOOST_REQUIRE(r.ok());
     BOOST_TEST(r.request->id == id);
     BOOST_TEST(r.id == id);
@@ -108,8 +107,8 @@ BOOST_AUTO_TEST_CASE(id_echoed_and_64_chars_accepted)
 BOOST_AUTO_TEST_CASE(id_65_chars_rejected_and_not_echoed)
 {
     const std::string id(65, 'a');
-    const parse_request_result r = parse_request(
-        R"({"v":1,"id":")" + id + R"(","command":"link.get"})");
+    const parse_request_result r =
+        parse_request(R"({"v":1,"id":")" + id + R"(","command":"link.get"})");
     expect_invalid(r, id);
     BOOST_TEST(r.id.rfind("srv-", 0) == 0u);
 }
@@ -144,6 +143,47 @@ BOOST_AUTO_TEST_CASE(id_wrong_type_rejected)
     BOOST_TEST(r.id.rfind("srv-", 0) == 0u);
 }
 
+// Scenario: an id that is short and control-char-free but is not valid UTF-8 or
+// carries a C1 control is rejected, and the echoed id falls back to srv-<n>
+// rather than placing the invalid bytes into the response raw (threat model
+// T-03). The id is echoed via jsonString, so length alone is not enough.
+// Boundaries: a bare 0x80 continuation byte, a C2 85 (NEL, a C1 control), and
+// an overlong 0xC0 0xAF sequence.
+// On failure first check: is_valid_id's sanitize_error_message equality check.
+BOOST_AUTO_TEST_CASE(id_invalid_utf8_or_c1_rejected_and_not_echoed)
+{
+    const auto parse_with_id = [](const std::string& id_bytes)
+    {
+        std::string text = "{\"v\":1,\"id\":\"";
+        text += id_bytes;
+        text += "\",\"command\":\"link.get\"}";
+        return parse_request(text);
+    };
+
+    for (const std::string& id_bytes : {std::string("a\x80"
+                                                    "b"),
+                                        std::string("a\xC2\x85"
+                                                    "b"),
+                                        std::string("\xC0\xAF")})
+    {
+        const parse_request_result r = parse_with_id(id_bytes);
+        expect_invalid(r, id_bytes);
+        BOOST_TEST(r.id.rfind("srv-", 0) == 0u);
+    }
+}
+
+// Scenario: a valid non-ASCII UTF-8 id is accepted and echoed unchanged.
+// Boundaries: a 2-byte character (U+00E9, "é") in the id.
+BOOST_AUTO_TEST_CASE(id_valid_non_ascii_accepted)
+{
+    const std::string id = "caf\xC3\xA9";
+    const parse_request_result r = parse_request(
+        "{\"v\":1,\"id\":\"" + id + "\",\"command\":\"link.get\"}");
+    BOOST_REQUIRE(r.ok());
+    BOOST_TEST(r.request->id == id);
+    BOOST_TEST(r.id == id);
+}
+
 // ---------------------------------------------------------------------------
 // id re-validation on the error path (threat model T-05)
 // ---------------------------------------------------------------------------
@@ -161,8 +201,8 @@ BOOST_AUTO_TEST_CASE(valid_id_with_bad_field_echoes_client_id)
 // server id, never the hostile value, with no input echoed in the message.
 BOOST_AUTO_TEST_CASE(hostile_id_with_bad_field_falls_back_to_server_id)
 {
-    const parse_request_result r = parse_request(
-        "{\"v\":2,\"id\":\"ev\\nil\",\"command\":\"link.get\"}");
+    const parse_request_result r =
+        parse_request("{\"v\":2,\"id\":\"ev\\nil\",\"command\":\"link.get\"}");
     expect_invalid(r);
     BOOST_TEST(r.id.rfind("srv-", 0) == 0u);
     BOOST_TEST(r.id.find('\n') == std::string::npos);
@@ -189,16 +229,17 @@ BOOST_AUTO_TEST_CASE(command_not_a_string_rejected)
 // Boundaries: upper-case, single segment, doubled/leading dot, 65-char name.
 BOOST_AUTO_TEST_CASE(command_bad_names_rejected)
 {
-    const std::string long_name = "a." + std::string(63, 'b'); // 65 bytes
-    for (const std::string& name :
-         {std::string("Link.Create"), std::string("link"),
-          std::string("link..x"), std::string(".x"), long_name})
+    const std::string long_name = "a." + std::string(63, 'b');  // 65 bytes
+    for (const std::string& name : {std::string("Link.Create"),
+                                    std::string("link"),
+                                    std::string("link..x"),
+                                    std::string(".x"),
+                                    long_name})
     {
         const parse_request_result r =
             parse_request(R"({"v":1,"command":")" + name + R"("})");
         BOOST_TEST(!r.ok(), "expected rejection of command name: " << name);
-        if (!r.ok())
-        {
+        if (!r.ok()) {
             BOOST_TEST((r.error.code == CommandErrorCode::invalid_envelope));
         }
     }
@@ -330,8 +371,8 @@ BOOST_AUTO_TEST_CASE(duplicate_options_key_rejected)
 // unparseable body gets a server-generated echo id.
 BOOST_AUTO_TEST_CASE(non_json_empty_and_array_rejected)
 {
-    for (const std::string& text : {std::string("not json"), std::string(),
-                                    std::string("[1,2,3]")})
+    for (const std::string& text :
+         {std::string("not json"), std::string(), std::string("[1,2,3]")})
     {
         const parse_request_result r = parse_request(text);
         expect_invalid(r);
@@ -375,8 +416,8 @@ BOOST_AUTO_TEST_CASE(sanitize_error_message_neutralizes_and_bounds)
     BOOST_TEST(out == "a??b?c?");
     const std::string long_in(300, 'x');
     BOOST_TEST(sanitize_error_message(long_in).size() == 128u);
-    BOOST_TEST(sanitize_error_message("plain text").find('?') ==
-               std::string::npos);
+    BOOST_TEST(sanitize_error_message("plain text").find('?')
+               == std::string::npos);
 }
 
 // Scenario: invalid UTF-8 and C1 controls are neutralized byte-for-byte and the
@@ -385,11 +426,14 @@ BOOST_AUTO_TEST_CASE(sanitize_error_message_neutralizes_and_bounds)
 BOOST_AUTO_TEST_CASE(sanitize_error_message_is_utf8_safe)
 {
     // Valid multi-byte characters pass through unchanged.
-    BOOST_TEST(sanitize_error_message("caf\xC3\xA9 \xE2\x82\xAC \xF0\x9F\x98\x80")
-               == "caf\xC3\xA9 \xE2\x82\xAC \xF0\x9F\x98\x80");
+    BOOST_TEST(
+        sanitize_error_message("caf\xC3\xA9 \xE2\x82\xAC \xF0\x9F\x98\x80")
+        == "caf\xC3\xA9 \xE2\x82\xAC \xF0\x9F\x98\x80");
 
     // Stray continuation byte, invalid lead bytes.
-    BOOST_TEST(sanitize_error_message("a\x80" "b") == "a?b");
+    BOOST_TEST(sanitize_error_message("a\x80"
+                                      "b")
+               == "a?b");
     BOOST_TEST(sanitize_error_message("\xC0\xAF") == "??");  // overlong '/'
     BOOST_TEST(sanitize_error_message("\xFF") == "?");
 
@@ -399,7 +443,9 @@ BOOST_AUTO_TEST_CASE(sanitize_error_message_is_utf8_safe)
     BOOST_TEST(sanitize_error_message("x\xE2\x82") == "x??");
 
     // C1 control U+0085 (NEL) is a line break in some log viewers.
-    BOOST_TEST(sanitize_error_message("a\xC2\x85" "b") == "a?b");
+    BOOST_TEST(sanitize_error_message("a\xC2\x85"
+                                      "b")
+               == "a?b");
 
     // 127 ASCII bytes + a 3-byte character: the character does not fit and
     // is dropped whole rather than split.
@@ -420,8 +466,7 @@ BOOST_AUTO_TEST_CASE(sanitize_error_message_is_utf8_safe)
 BOOST_AUTO_TEST_CASE(next_server_id_monotonic)
 {
     std::uint64_t previous = 0;
-    for (int i = 0; i < 1000; ++i)
-    {
+    for (int i = 0; i < 1000; ++i) {
         const std::string id = next_server_id();
         BOOST_REQUIRE(id.rfind("srv-", 0) == 0u);
         const std::uint64_t n = std::stoull(id.substr(4));
@@ -437,25 +482,22 @@ BOOST_AUTO_TEST_CASE(next_server_id_unique_across_threads)
     constexpr int per_thread = 500;
     std::vector<std::vector<std::string>> buckets(threads);
     std::vector<std::thread> workers;
-    for (int t = 0; t < threads; ++t)
-    {
-        workers.emplace_back([&buckets, t]() {
-            buckets[t].reserve(per_thread);
-            for (int i = 0; i < per_thread; ++i)
+    for (int t = 0; t < threads; ++t) {
+        workers.emplace_back(
+            [&buckets, t]()
             {
-                buckets[t].push_back(next_server_id());
-            }
-        });
+                buckets[t].reserve(per_thread);
+                for (int i = 0; i < per_thread; ++i) {
+                    buckets[t].push_back(next_server_id());
+                }
+            });
     }
-    for (std::thread& worker : workers)
-    {
+    for (std::thread& worker : workers) {
         worker.join();
     }
     std::set<std::string> all;
-    for (const std::vector<std::string>& bucket : buckets)
-    {
-        for (const std::string& id : bucket)
-        {
+    for (const std::vector<std::string>& bucket : buckets) {
+        for (const std::string& id : bucket) {
             all.insert(id);
         }
     }
