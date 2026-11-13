@@ -126,6 +126,13 @@ include(CTest)
   target_include_directories(route_registry_dump PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
   target_link_libraries(route_registry_dump PRIVATE url_shortener_common)
 
+  add_executable(command_catalog_dump
+      ${CMAKE_CURRENT_SOURCE_DIR}/tools/command_catalog_dump.cpp
+  )
+  target_compile_features(command_catalog_dump PRIVATE cxx_std_17)
+  target_include_directories(command_catalog_dump PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+  target_link_libraries(command_catalog_dump PRIVATE url_shortener_common)
+
   if(BUILD_TESTING)
 
   foreach(unit_src IN LISTS ALL_UNIT_SOURCES)
@@ -172,6 +179,8 @@ include(CTest)
 
   register_labeled_cpp_tests(SECURITY_UNIT_SOURCES           "unit")
   register_labeled_cpp_tests(COMMANDS_UNIT_SOURCES       "unit")
+  target_compile_definitions(commands__12_catalog_drift
+      PRIVATE SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
   register_labeled_cpp_tests(CLI_UNIT_SOURCES            "unit")
   register_labeled_cpp_tests(CORE_UNIT_SOURCES           "unit")
   register_labeled_cpp_tests(INMEMORY_UNIT_SOURCES       "unit")

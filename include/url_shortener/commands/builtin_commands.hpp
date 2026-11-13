@@ -99,4 +99,24 @@ std::string descriptor_to_json(const CommandDescriptor& descriptor);
  */
 void register_builtin_commands(CommandRegistry& registry);
 
+/**
+ * @brief Registers every descriptor that exists for documentation on @p
+ * registry, so the catalog dump tool (subtask 12) and its drift test render the
+ * exact same command set through one shared entry point.
+ *
+ * This is the single source the generator uses to build block `### 3.7
+ * Generated command reference` of `docs/commands/README.md`; tool and test call
+ * it so they cannot diverge. In this subtask it delegates to @ref
+ * register_builtin_commands only (`command.list`). Task 03.0 will add
+ * `register_link_commands(...)` and Task 05.0 the job/pair commands here, each
+ * binding handlers to null services: those handlers exist only so their
+ * descriptor metadata can be rendered and MUST never be invoked, because the
+ * generator renders metadata via @ref render_catalog_markdown and never calls
+ * @ref CommandRegistry::execute (threat model T-19).
+ *
+ * @param registry The registry to populate; see @ref register_builtin_commands
+ * for the lifetime contract of each registered handler.
+ */
+void register_documented_commands(CommandRegistry& registry);
+
 }  // namespace url_shortener::commands

@@ -380,6 +380,7 @@ set(URL_SHORTENER_SOURCES
       tests/unit/commands/09_audit.cpp
       tests/unit/commands/10_command_list.cpp
       tests/unit/commands/11_catalog_render.cpp
+      tests/unit/commands/12_catalog_drift.cpp
   )
 
   set(COMMON_CPP_SOURCES

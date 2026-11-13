@@ -7,7 +7,9 @@
 > is generated from `RouteRegistry`. Sections 1-6 stay hand-written prose and
 > are guarded against drift by Task 07.0 subtask 16 (headings, argument tables
 > and the error table are compared with the registry and the error table of
-> Task 01.0 subtask 02).
+> Task 01.0 subtask 02). Regenerate block `### 3.7` with
+> `cmake --build cmake-build --target command_catalog_dump` and run the
+> executable; the unit test `commands__12_catalog_drift` fails on any drift.
 
 Every operation available through REST, CLI, TUI, stdio and any future IPC
 transport is one of the commands below. A command is **one definition and one
@@ -352,6 +354,31 @@ observability (`/healthz`, `/readyz`, `/metrics`), compatibility aliases
 placeholders (`501`). Authentication and user-management commands
 (`manage_users`) are **reserved** for Milestone 0002 Task 07.0, which will add
 `auth.*` / `user.*` descriptors to this registry; they are not designed here.
+
+### 3.7 Generated command reference
+
+The block below is the only generated part of this file. It is rendered from
+the command registry by `tools/command_catalog_dump` and byte-for-byte guarded
+by the unit test `commands__12_catalog_drift`. Do not hand-edit between the
+markers. To regenerate after a descriptor changes, run:
+
+```bash
+cmake --build cmake-build --target command_catalog_dump
+./cmake-build/command_catalog_dump   # paste the output between the markers
+```
+
+Until Task 03.0 registers the link/browse commands, this block lists only
+`command.list`.
+
+<!-- BEGIN GENERATED: commands (tools/command_catalog_dump) -->
+| Command | Perm | Kind | Mut | dry_run | Summary |
+|---|---|---|---|---|---|
+| `command.list` | `read` | sync | no | no | List all commands and their argument schemas |
+
+#### `command.list` - Perm `read`, sync
+List all commands and their argument schemas
+
+<!-- END GENERATED: commands -->
 
 ## 4. Job model
 

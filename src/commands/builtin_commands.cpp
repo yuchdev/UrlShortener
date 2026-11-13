@@ -178,4 +178,9 @@ void register_builtin_commands(CommandRegistry& registry)
     registry.add(std::move(descriptor));
 }
 
+void register_documented_commands(CommandRegistry& registry)
+{
+    register_builtin_commands(registry);
+}
+
 }  // namespace url_shortener::commands
