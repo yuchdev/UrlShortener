@@ -111,6 +111,23 @@ Behavior details:
   `slug` vs `id`).
 - Strings are checked for embedded NUL after decoding (rejected as
   `wrong_type`).
+- Embedded NUL in a **decoded key** is rejected (`unknown`, since a NUL-bearing
+  key can never match a declared `ArgSpec` name), the same way an embedded NUL
+  in a decoded **string value** is rejected (`wrong_type`). Neither the raw nor
+  the decoded key/value byte sequence is echoed in the message (the message
+  names the sanitized arg name only). *(amended 2026-11-14, threat model T-03)*
+- **Nested `scan_limits` for list/object-typed args.** When `validate_args`
+  re-scans the raw token of a `string_list`/`string_map`/`object` arg with the
+  scanner's `scan_array`/`scan_object`, it derives a per-arg `scan_limits` from
+  that arg's own `ArgSpec` rather than using the scanner defaults: `max_items`
+  maps to the nested `max_members`, and `max_length` maps to the nested string /
+  byte cap (`max_key_len` and the per-value length bound). The **top-level**
+  envelope scan (subtask 03) keeps the request-hardening defaults
+  (`max_bytes` 65536, `max_members` 256) unchanged. Because D10 raises the nine
+  link commands' caps to 65536 bytes / 4096 items, a list arg declaring
+  `max_items == 4096` is scanned with `max_members == 4096` and therefore
+  accepts what REST accepts today (contract C3 preserved), while the top-level
+  envelope DoS caps are not relaxed. *(amended 2026-11-14, threat model T-06)*
 
 Validation does **not** apply domain rules (URL validity, slug syntax, SSRF);
 those stay in `LinkCommandService`, exactly once (milestone C1).
@@ -155,6 +172,15 @@ ctest --test-dir cmake-build -R "^commands__05_arg_spec_validation$" --output-on
   `std::nullopt` for absent/null.
 - A spec set mirroring the `link.create` / `link.update` tables from the
   catalog validates their example bodies (catches schema/doc drift early).
+- *(amended 2026-11-14, threat model T-06)* A `string_list` arg declaring
+  `max_items == 4096` accepts a 4096-item list and rejects a 4097-item list with
+  `too_many_items` whose message names the arg, not the element values; a
+  top-level envelope object with 257 members is still rejected by the
+  request-envelope scan (`too_many_members`), confirming the per-arg nested caps
+  do not relax the top-level envelope DoS caps.
+- *(amended 2026-11-14, threat model T-03)* A `\u0000` in a decoded key is
+  rejected (`unknown`) and a `\u0000` in a decoded string value is rejected
+  (`wrong_type`); neither message contains the raw NUL or any other input byte.
 
 ## Constraints
 

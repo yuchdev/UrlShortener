@@ -92,3 +92,26 @@ findings and dispositions:
     07.0/27 and 07.0/29 - noted, no action.
   - No numeric coverage floor exists; 07.0/34 uses `/test-gap` P0/P1
     disposition - noted, no action.
+
+**2026-11-14 (threat-model amendments, pre-implementation 01.0 Task 01.0).**
+Applied the three pre-implementation follow-ups from
+[the 01.0 threat model](/docs/security/0006-01.0-command-model-core-threat-model.md)
+(PASS_WITH_FOLLOWUP) as additive spec amendments; no decision D1-D16 or contract
+C1-C11 changed:
+
+- 01.0/05 (T-06, HIGH gap): pinned that `validate_args` derives nested
+  `scan_array`/`scan_object` `scan_limits` from each list/object arg's `ArgSpec`
+  (`max_items`->`max_members`, `max_length`->string/byte caps) while the
+  top-level envelope scan keeps the hardening defaults (65536 bytes / 256
+  members), so D10's raised per-arg caps satisfy C3 without relaxing top-level
+  DoS caps; added accept-4096 / reject-4097 / reject-257-member tests. Also
+  T-03: embedded NUL rejected in decoded keys (`unknown`) as well as values,
+  with a test.
+- 01.0/03 (T-05, MEDIUM): pinned that the best-effort echoed `id` is
+  re-validated (length + no control chars) or replaced by the `srv-<n>`
+  fallback, restated the closed/unique-key envelope rule (unknown and duplicate
+  top-level/`options` keys rejected) and the no-input-echo guarantee; added
+  control-char-id and duplicate-key tests.
+- 01.0/09 (T-03, MEDIUM): pinned that `audit_fields` neutralizes invalid UTF-8
+  and NUL bytes (replace with `?`) before the sink, alongside the existing
+  truncation and control-char rules; added a bare-0x80 / embedded-NUL test.

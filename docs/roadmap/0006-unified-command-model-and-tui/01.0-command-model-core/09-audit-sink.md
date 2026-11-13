@@ -95,6 +95,14 @@ Principal and transport come from `CallerContext`; `audit_fields` truncates
 every field to 128 characters and replaces control characters with `?` (log
 injection).
 
+*(amended 2026-11-14, threat model T-03)* In addition to truncation and
+control-character replacement, `audit_fields` neutralizes invalid UTF-8 before
+the record reaches any sink: every byte that is not part of a well-formed UTF-8
+sequence (for example a bare `0x80` continuation byte or an embedded NUL) is
+replaced with `?` (the same replacement used for control characters), so no raw
+invalid or NUL byte can reach the logger or any JSON log consumer. Neutralization
+runs before the 128-character truncation count is applied.
+
 ## Implementation steps
 
 1. Add `audit.hpp/.cpp`.
@@ -135,6 +143,10 @@ Uses a `CapturingAuditSink` fake.
   string appears nowhere.
 - `audit_fields`: expected keys; 300-char principal truncated to 128; newline
   and ESC characters sanitized.
+- *(amended 2026-11-14, threat model T-03)* a field containing a bare `0x80`
+  byte and a field containing an embedded NUL are neutralized (replaced with
+  `?`): the serialized `audit_fields` output contains no raw invalid UTF-8 or
+  NUL byte.
 - No sink set: mutating commands run normally; null sink after non-null
   disables emission.
 - `LoggerAuditSink::record` does not throw for empty and oversized records

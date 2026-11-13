@@ -99,6 +99,21 @@ never echoing values):
 - unknown top-level keys -> `invalid_envelope` (envelope is closed in v1;
   additive changes do not bump `v`, so a newer client sending a new top-level
   key to an older server is rejected explicitly, not ignored).
+- *(amended 2026-11-14, threat model T-05)* the best-effort id placed in
+  `parse_request_result::id` for an error response is only adopted from the
+  client when it passes the same id rules applied on the success path
+  (1..`max_id_len` characters, no control characters); an `id` that is present
+  but overlong or carries a control character does not reach the error response
+  but is replaced by `next_server_id()` (`srv-<n>`). The echoed id in any
+  response - success or failure - is therefore always a validated client id or a
+  server-generated fallback, never raw input. This closes the gap where
+  extracting `id` first (step 4 below) could otherwise echo an unvalidated id
+  into the response and audit.
+- *(amended 2026-11-14, threat model T-05)* the envelope is closed and keys are
+  unique: duplicate top-level keys and duplicate `options` keys are rejected
+  (`invalid_envelope`, via the scanner's `duplicate_key`), unknown top-level keys
+  and unknown `options` keys are rejected (as above), and no error message echoes
+  any substring of the input (fixed vocabulary naming the field only).
 
 Open question carried to the decision log (not decided here): rejecting
 unknown top-level keys follows the strictness of "unknown keys are rejected
@@ -148,6 +163,13 @@ ctest --test-dir cmake-build -R "^commands__03_request_parse$" --output-on-failu
 - Non-JSON, empty text, array, 70 KB text (with default limits) rejected; error
   `id` is the client id when one could be read, else `srv-...`.
 - `next_server_id` is monotonic across 1000 calls and unique across 4 threads.
+- *(amended 2026-11-14, threat model T-05)* an envelope whose `id` is valid but
+  another field is bad echoes the client `id` unchanged in the error response;
+  an envelope whose `id` carries a control character (or exceeds `max_id_len`)
+  plus a bad field produces an error whose echoed id is a `srv-<n>`, not the
+  hostile id, and the message contains no substring of that id.
+- *(amended 2026-11-14, threat model T-05)* a duplicate top-level key and a
+  duplicate key inside `options` are both rejected (`invalid_envelope`).
 
 ## Constraints
 
