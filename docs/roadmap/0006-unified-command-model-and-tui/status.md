@@ -6,7 +6,7 @@ Tracks progress against [plan.md](/docs/roadmap/0006-unified-command-model-and-t
 
 | Task | Name | Status | Tests |
 |------|------|--------|-------|
-| 01.0 | Command model core | 🔶 In progress (5/13 subtasks) | 5 (`commands__01`-`05`) |
+| 01.0 | Command model core | 🔶 In progress (6/13 subtasks) | 6 (`commands__01`-`06`) |
 | 02.0 | Storage path unification | ⬜ Not started | 0 |
 | 03.0 | Link and browse commands | ⬜ Not started | 0 |
 | 04.0 | REST and CLI adapters | ⬜ Not started | 0 |
@@ -130,3 +130,7 @@ C1-C11 changed:
   pre-existing REST portability question, noted for 0007. (2) NUL in a
   decoded key surfaces as `args: malformed` (scanner rejects first).
   (3) `validate_args` enforces the 64 KiB byte cap itself.
+- *2026-11-14, 01.0/06:* two registration rules added beyond spec 06 after
+  the security review: a `mutating` command needs write-or-higher base
+  permission unless a `permission_for` hook can raise it (D16), and a
+  dry_run-capable job command needs a `handler`.
