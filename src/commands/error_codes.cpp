@@ -9,6 +9,117 @@
 namespace url_shortener::commands
 {
 
+namespace
+{
+
+/**
+ * @brief Length of the well-formed UTF-8 sequence starting at `text[pos]`.
+ *
+ * Follows RFC 3629 / Unicode Table 3-7: rejects stray continuation bytes,
+ * overlong encodings, UTF-16 surrogates (U+D800..U+DFFF), code points above
+ * U+10FFFF and sequences truncated by the end of `text`.
+ *
+ * @param text Bytes being scanned.
+ * @param pos Index of the candidate lead byte; must be `< text.size()`.
+ * @return 1-4 for a well-formed sequence, 0 if the bytes at `pos` do not
+ * start one.
+ */
+std::size_t valid_utf8_sequence_length(std::string_view text, std::size_t pos)
+{
+    const auto byte = [&](std::size_t k)
+    { return static_cast<unsigned char>(text[pos + k]); };
+    const auto in = [](unsigned char b, unsigned char lo, unsigned char hi)
+    { return b >= lo && b <= hi; };
+
+    const unsigned char b0 = byte(0);
+    if (b0 < 0x80)
+    {
+        return 1;
+    }
+
+    std::size_t len = 0;
+    unsigned char lo = 0x80;
+    unsigned char hi = 0xBF;
+    if (in(b0, 0xC2, 0xDF))
+    {
+        len = 2;
+    }
+    else if (b0 == 0xE0)
+    {
+        len = 3;
+        lo = 0xA0;  // no overlongs
+    }
+    else if (in(b0, 0xE1, 0xEC) || in(b0, 0xEE, 0xEF))
+    {
+        len = 3;
+    }
+    else if (b0 == 0xED)
+    {
+        len = 3;
+        hi = 0x9F;  // no surrogates
+    }
+    else if (b0 == 0xF0)
+    {
+        len = 4;
+        lo = 0x90;  // no overlongs
+    }
+    else if (in(b0, 0xF1, 0xF3))
+    {
+        len = 4;
+    }
+    else if (b0 == 0xF4)
+    {
+        len = 4;
+        hi = 0x8F;  // nothing above U+10FFFF
+    }
+    else
+    {
+        return 0;  // 0x80..0xC1 or 0xF5..0xFF can never lead
+    }
+
+    if (pos + len > text.size())
+    {
+        return 0;
+    }
+    if (!in(byte(1), lo, hi))
+    {
+        return 0;
+    }
+    for (std::size_t k = 2; k < len; ++k)
+    {
+        if (!in(byte(k), 0x80, 0xBF))
+        {
+            return 0;
+        }
+    }
+    return len;
+}
+
+/**
+ * @brief Whether a well-formed sequence encodes a control character.
+ *
+ * @param text Bytes being scanned.
+ * @param pos Start of a sequence already validated by
+ * `valid_utf8_sequence_length`.
+ * @param len Its length (1-4).
+ * @return `true` for C0 controls (including NUL), DEL (U+007F) and C1
+ * controls (U+0080..U+009F); `false` otherwise.
+ */
+bool is_control_code_point(std::string_view text, std::size_t pos,
+                           std::size_t len)
+{
+    const auto b0 = static_cast<unsigned char>(text[pos]);
+    if (len == 1)
+    {
+        return b0 < 0x20 || b0 == 0x7F;
+    }
+    // U+0080..U+009F encode as C2 80..C2 9F.
+    return len == 2 && b0 == 0xC2
+        && static_cast<unsigned char>(text[pos + 1]) <= 0x9F;
+}
+
+}  // namespace
+
 const std::vector<error_info>& all_error_infos()
 {
     // Rows MUST appear in CommandErrorCode enumerator order so error_info_for
@@ -120,20 +231,33 @@ std::string sanitize_error_message(std::string_view message)
     // never inject a log line, and bound the length so no caller can smuggle
     // unbounded text into a response or audit field.
     static constexpr std::size_t max_len = 128;
-    const std::size_t count = std::min(message.size(), max_len);
     std::string out;
-    out.reserve(count);
-    for (std::size_t i = 0; i < count; ++i)
+    out.reserve(std::min(message.size(), max_len));
+
+    std::size_t i = 0;
+    while (i < message.size() && out.size() < max_len)
     {
-        const auto ch = static_cast<unsigned char>(message[i]);
-        if (ch < 0x20 || ch == 0x7f)
+        const std::size_t len = valid_utf8_sequence_length(message, i);
+        if (len == 0)
+        {
+            // Invalid or truncated UTF-8: neutralize one byte and resync.
+            out.push_back('?');
+            ++i;
+            continue;
+        }
+        if (is_control_code_point(message, i, len))
         {
             out.push_back('?');
+            i += len;
+            continue;
         }
-        else
+        if (out.size() + len > max_len)
         {
-            out.push_back(static_cast<char>(ch));
+            // Never split a multi-byte character at the length cap.
+            break;
         }
+        out.append(message.data() + i, len);
+        i += len;
     }
     return out;
 }

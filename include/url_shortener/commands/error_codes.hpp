@@ -208,15 +208,22 @@ CommandError make_error(CommandErrorCode code, std::string message);
  * command-layer callers are required to pass only fixed, value-free text, but
  * `make_error` and the audit sink accept whatever they are given, so this
  * helper guarantees the output can never inject a log line or smuggle unbounded
- * text. It (1) truncates to at most 128 bytes and (2) replaces every control
- * character (any byte below `0x20`, including NUL, and `0x7f`) with `'?'`.
- * Printable bytes (including non-ASCII UTF-8) pass through unchanged. The
- * parser, the arg validator (subtask 05) and the audit sink (subtask 09) route
- * their messages through this one helper so the invariant holds everywhere.
+ * text. It (1) replaces every invalid UTF-8 byte (stray continuation bytes,
+ * overlong encodings, surrogates, code points above U+10FFFF, truncated
+ * sequences) with `'?'`, one per offending byte; (2) replaces every control
+ * character - C0 (including NUL), DEL and C1 (U+0080..U+009F) - with `'?'`;
+ * and (3) truncates to at most 128 bytes without ever splitting a multi-byte
+ * character, so the output is always valid UTF-8. Other printable characters,
+ * including non-ASCII ones, pass through unchanged. The parser, the arg
+ * validator (subtask 05) and the audit sink (subtask 09) route their messages
+ * through this one helper so the invariant holds everywhere.
+ *
+ * This is a sanitizer, not a redactor: printable input passes through
+ * verbatim, so callers must still pass only fixed vocabulary or a validated
+ * field *name*, never an argument *value* (contract C6).
  *
  * @param message Candidate message text; may be any bytes, trusted or not.
- * @return A copy truncated to 128 bytes with all control characters replaced by
- * `'?'`.
+ * @return Valid UTF-8 of at most 128 bytes with no control characters.
  */
 std::string sanitize_error_message(std::string_view message);
 

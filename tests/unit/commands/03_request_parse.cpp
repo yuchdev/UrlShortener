@@ -379,6 +379,39 @@ BOOST_AUTO_TEST_CASE(sanitize_error_message_neutralizes_and_bounds)
                std::string::npos);
 }
 
+// Scenario: invalid UTF-8 and C1 controls are neutralized byte-for-byte and the
+// 128-byte cap never splits a multi-byte character (security review LOW x2 on
+// 01.0/03; threat-model T-03).
+BOOST_AUTO_TEST_CASE(sanitize_error_message_is_utf8_safe)
+{
+    // Valid multi-byte characters pass through unchanged.
+    BOOST_TEST(sanitize_error_message("caf\xC3\xA9 \xE2\x82\xAC \xF0\x9F\x98\x80")
+               == "caf\xC3\xA9 \xE2\x82\xAC \xF0\x9F\x98\x80");
+
+    // Stray continuation byte, invalid lead bytes.
+    BOOST_TEST(sanitize_error_message("a\x80" "b") == "a?b");
+    BOOST_TEST(sanitize_error_message("\xC0\xAF") == "??");  // overlong '/'
+    BOOST_TEST(sanitize_error_message("\xFF") == "?");
+
+    // Surrogate, above U+10FFFF, truncated sequence at end of input.
+    BOOST_TEST(sanitize_error_message("\xED\xA0\x80") == "???");
+    BOOST_TEST(sanitize_error_message("\xF4\x90\x80\x80") == "????");
+    BOOST_TEST(sanitize_error_message("x\xE2\x82") == "x??");
+
+    // C1 control U+0085 (NEL) is a line break in some log viewers.
+    BOOST_TEST(sanitize_error_message("a\xC2\x85" "b") == "a?b");
+
+    // 127 ASCII bytes + a 3-byte character: the character does not fit and
+    // is dropped whole rather than split.
+    const std::string near_cap = std::string(127, 'x') + "\xE2\x82\xAC";
+    const std::string cut = sanitize_error_message(near_cap);
+    BOOST_TEST(cut == std::string(127, 'x'));
+
+    // 126 ASCII bytes + a 2-byte character fits exactly at 128.
+    const std::string exact = std::string(126, 'x') + "\xC3\xA9";
+    BOOST_TEST(sanitize_error_message(exact) == exact);
+}
+
 // ---------------------------------------------------------------------------
 // next_server_id uniqueness / monotonicity
 // ---------------------------------------------------------------------------
