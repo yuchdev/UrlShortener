@@ -381,6 +381,8 @@ set(URL_SHORTENER_SOURCES
       tests/unit/commands/10_command_list.cpp
       tests/unit/commands/11_catalog_render.cpp
       tests/unit/commands/12_catalog_drift.cpp
+      tests/unit/commands/13_error_code_coverage.cpp
+      tests/unit/commands/14_include_hygiene.cpp
   )
 
   set(COMMON_CPP_SOURCES

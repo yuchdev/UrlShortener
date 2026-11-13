@@ -181,6 +181,8 @@ include(CTest)
   register_labeled_cpp_tests(COMMANDS_UNIT_SOURCES       "unit")
   target_compile_definitions(commands__12_catalog_drift
       PRIVATE SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
+  target_compile_definitions(commands__14_include_hygiene
+      PRIVATE SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
   register_labeled_cpp_tests(CLI_UNIT_SOURCES            "unit")
   register_labeled_cpp_tests(CORE_UNIT_SOURCES           "unit")
   register_labeled_cpp_tests(INMEMORY_UNIT_SOURCES       "unit")
