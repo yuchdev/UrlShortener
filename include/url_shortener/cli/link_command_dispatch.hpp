@@ -53,7 +53,11 @@ int ExitCodeForAppError(app::AppErrorCode code);
  *
  * @param command Parsed link command selecting the verb and its argument DTO.
  * @param config  Server configuration providing storage/service wiring inputs.
- * @return Process exit code (0 on success, non-zero on failure).
+ * @return 0 on success; on failure, the exit code produced by
+ * `ExitCodeForAppError` from the failed service result's error code:
+ * 1 for `not_found`; 2 for `invalid_url`, `invalid_slug`,
+ * `invalid_field`, or `reserved_slug`; 3 for `slug_conflict`; 4 for
+ * `storage_failure` or `internal`.
  */
 int DispatchLinkCommand(const LinkCliCommand& command,
                         const ServerConfig& config);
