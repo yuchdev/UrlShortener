@@ -339,23 +339,7 @@ static_assert(!std::is_copy_constructible_v<CommandRegistry>,
 static_assert(!std::is_copy_assignable_v<CommandRegistry>,
               "CommandRegistry must not be copy-assignable");
 
-// ---------------------------------------------------------------------------
-// execute is the only unimplemented function; it returns `internal` (removed in
-// subtask 07).
-// ---------------------------------------------------------------------------
-
-BOOST_AUTO_TEST_CASE(execute_stub_returns_internal)
-{
-    CommandRegistry registry;
-    registry.add(valid_sync("link.create"));
-
-    CallerContext caller;
-    CommandRequest request;
-    request.id = "client-7";
-    request.command = "link.create";
-
-    const CommandResponse response = registry.execute(caller, request);
-    BOOST_TEST(response.ok == false);
-    BOOST_TEST((response.error.code == CommandErrorCode::internal));
-    BOOST_TEST(response.id == "client-7");
-}
+// Note: `execute`/`execute_json` behavior is covered by
+// tests/unit/commands/07_execute_pipeline.cpp; the former stub case that
+// expected an `internal` response here was removed when subtask 07 implemented
+// the real pipeline.

@@ -95,23 +95,90 @@ public:
     std::vector<const CommandDescriptor*> list() const;
 
     /**
-     * @brief Executes a command on behalf of a caller (subtask 07).
+     * @brief Executes one parsed command on behalf of a caller: the single
+     * entry point every transport uses (milestone contracts C1/C7, ADR 0002
+     * section 2).
      *
-     * This subtask ships a stub only: it performs no lookup, authorization,
-     * validation or dispatch and always reports an `internal` failure. The full
-     * pipeline (authorize via `AccessGuard`, validate args, raise-only
-     * `permission_for`, sync/dry_run/job dispatch, audit) is implemented in
-     * subtask 07 and replaces this body.
+     * The pipeline runs in this fixed order; each step either produces a
+     * failure response and stops, or falls through to the next:
      *
-     * @param caller The authenticated caller; trusted as the sole authorization
-     * root once the stub is replaced (threat model T-11).
+     * 1. Envelope sanity (defense in depth; @ref parse_request normally catches
+     *    it): `request.v != 1` or an empty `command` -> `invalid_envelope`.
+     * 2. Lookup: @ref find on `request.command`; a miss -> `unknown_command`
+     *    with the fixed message `unknown command` (the submitted name is never
+     *    echoed).
+     * 3. Base permission: an `AccessGuard` built from `caller.control_set`
+     *    enforces `descriptor.permission` (`read`->`requireRead`, `write`->
+     *    `requireWrite`, `migrate`->`requireMigration`, `manage_users`->
+     *    `requireUserManagement`); denial -> `not_authorized` with the fixed
+     *    message `permission denied`. This precedes argument validation so an
+     *    unauthorized caller learns nothing about the arg schema, and the
+     *    handler is never entered on denial (threat model T-08).
+     * 4. Argument validation: @ref validate_args against `descriptor.args`; a
+     *    violation -> `invalid_field` with the `"<arg>: <reason>"` message from
+     *    subtask 05 (never an argument value).
+     * 4a. Argument-dependent permission (decision log D16, threat model T-09):
+     *    when `descriptor.permission_for` is set it is evaluated on the
+     *    validated view and the effective permission is
+     *    `max(descriptor.permission, permission_for(view))` on the contractual
+     *    order `read < write < migrate < manage_users`; a failing re-check ->
+     *    `not_authorized` (same fixed message). The `max` makes the hook
+     *    raise-only. A hook that throws -> `internal`.
+     * 5. Options/job handling: `request.options.dry_run`,
+     *    `request.options.async`, or `descriptor.kind == ExecutionKind::job` ->
+     *    `unsupported` with the fixed message `option not supported yet`
+     *    (replaced by subtask 08).
+     * 6. Dispatch: `descriptor.handler(ctx, view)` runs inside
+     *    `catch (const std::exception&)` and `catch (...)`; any escaping
+     *    exception -> `internal` with the fixed message `internal error`. The
+     *    exception's `what()` is never surfaced: it may carry paths, SQL or a
+     *    DSN (threat model T-10).
+     * 7. Conversion: a handler error -> @ref make_failure with that error; a
+     *    success with empty `result_json` -> `internal` (a handler programming
+     *    error); otherwise @ref make_success with the handler's `result_json`
+     *    verbatim.
+     *
+     * Authorization is performed here and only here (contract C7); adapters
+     * must not re-implement it. `caller.control_set` is trusted as the sole
+     * authorization root (threat model T-11). `const` and never throws; because
+     * the registry is read-only after startup, concurrent calls are safe.
+     * Thread-safety of a handler's own work is the handler's concern.
+     *
+     * @param caller The authenticated caller; `control_set` is the sole
+     * authorization input, the string fields are diagnostic only.
      * @param request The parsed, envelope-validated request to execute; its
-     * `id` is echoed in the response.
-     * @return Until subtask 07 lands, always a failure response echoing
-     * `request.id` with `error.code == internal`.
+     * `id` is echoed in every response.
+     * @return A success response (handler `result_json` embedded verbatim) or a
+     * failure response echoing `request.id`, with one of `invalid_envelope`,
+     * `unknown_command`, `not_authorized`, `invalid_field`, `unsupported`,
+     * `internal`, or the handler's own error code.
      */
     CommandResponse execute(const CallerContext& caller,
                             const CommandRequest& request) const;
+
+    /**
+     * @brief Parses a request-envelope JSON text and executes it: the
+     * convenience entry point for the REST generic endpoint, stdio and the CLI
+     * `cmd` adapter.
+     *
+     * Runs @ref parse_request on @p request_text and, on success, forwards the
+     * parsed request to @ref execute. A parse failure becomes a failure
+     * response carrying the parser's `invalid_envelope` error and the
+     * best-effort echo id from @ref parse_request (a valid client `id` or a
+     * `srv-<n>` fallback, never raw hostile input; threat model T-05). The
+     * caller serializes the returned response with @ref serialize_response.
+     *
+     * @param caller The authenticated caller; see @ref execute.
+     * @param request_text Untrusted request-envelope JSON; never logged here.
+     * @param limits Byte/id-length/command-length/depth caps for the parse;
+     * defaults mirror the server's request-hardening limits.
+     * @return The execution response on a successful parse, or a failure
+     * response with `error.code == invalid_envelope` and the best-effort echo
+     * id on a parse failure. `const` and never throws.
+     */
+    CommandResponse execute_json(const CallerContext& caller,
+                                 std::string_view request_text,
+                                 const envelope_limits& limits = {}) const;
 
 private:
     /**
