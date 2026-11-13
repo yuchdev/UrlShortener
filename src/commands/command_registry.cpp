@@ -19,6 +19,7 @@
 #include "url_shortener/commands/envelope.hpp"
 #include "url_shortener/commands/error_codes.hpp"
 #include "url_shortener/commands/job_submitter.hpp"
+#include "url_shortener/commands/json_scan.hpp"
 #include "url_shortener/core/utils.hpp"
 #include "url_shortener/security/access_guard.hpp"
 
@@ -403,6 +404,39 @@ std::string derive_audit_outcome(const CommandResponse& response, bool dry_run)
     return dry_run ? "dry_run" : "ok";
 }
 
+/**
+ * @brief Checks that every `default_value` in an argument list (including
+ * nested `object` fields) is exactly one well-formed JSON value.
+ *
+ * Uses the same technique as the response serializer: the token is scanned as
+ * the sole member of a synthetic `{"r":<token>}` object, which rejects
+ * malformed tokens and trailing data such as `1},"x":{`.
+ *
+ * @param args The argument specs to check; recursion depth is bounded by the
+ * descriptor author's static `fields` nesting, not by input.
+ * @return `true` when every present default is a single JSON value.
+ */
+bool defaults_are_single_json_values(const std::vector<ArgSpec>& args)
+{
+    for (const ArgSpec& arg : args)
+    {
+        if (arg.default_value.has_value())
+        {
+            const std::string wrapped = "{\"r\":" + *arg.default_value + "}";
+            const scan_result scan = scan_object(wrapped);
+            if (!scan.ok || scan.members.size() != 1)
+            {
+                return false;
+            }
+        }
+        if (!defaults_are_single_json_values(arg.fields))
+        {
+            return false;
+        }
+    }
+    return true;
+}
+
 }  // namespace
 
 bool CommandRegistry::is_valid_descriptor(const CommandDescriptor& descriptor,
@@ -443,6 +477,14 @@ bool CommandRegistry::is_valid_descriptor(const CommandDescriptor& descriptor,
         {
             return fail("duplicate arg name");
         }
+    }
+
+    // command.list embeds each default verbatim; a malformed token would turn
+    // the whole catalog response into an internal error at run time, so
+    // reject it here at startup instead.
+    if (!defaults_are_single_json_values(descriptor.args))
+    {
+        return fail("invalid arg default");
     }
 
     if (descriptor.supports_dry_run && !descriptor.mutating)

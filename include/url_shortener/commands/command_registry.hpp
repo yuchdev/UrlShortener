@@ -70,7 +70,8 @@ public:
      * `job_factory` on a `job` or `async_capable` command; a duplicate argument
      * name within `args`; `supports_dry_run` set without `mutating`; a
      * `mutating` command with `read` base permission and no `permission_for`
-     * hook; or a `name` already present in this registry.
+     * hook; an argument `default_value` that is not exactly one JSON value; or
+     * a `name` already present in this registry.
      */
     void add(CommandDescriptor descriptor);
 

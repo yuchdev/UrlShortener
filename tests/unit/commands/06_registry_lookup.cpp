@@ -264,6 +264,51 @@ BOOST_AUTO_TEST_CASE(accept_dry_run_when_mutating)
     BOOST_TEST(registry.find("link.delete") != nullptr);
 }
 
+// Scenario: an arg default that is not exactly one JSON value is rejected at
+// registration, top-level and nested, so command.list cannot be broken at run
+// time (security review LOW on 01.0/10).
+BOOST_AUTO_TEST_CASE(reject_invalid_arg_default)
+{
+    for (const char* bad : {"1},\"x\":{", "nope", "\"open", "1 2", ""})
+    {
+        CommandRegistry registry;
+        CommandDescriptor descriptor = valid_sync("link.get");
+        ArgSpec arg;
+        arg.name = "limit";
+        arg.type = ArgType::integer;
+        arg.default_value = std::string(bad);
+        descriptor.args.push_back(arg);
+        BOOST_CHECK_EXCEPTION(registry.add(std::move(descriptor)),
+                              std::invalid_argument,
+                              message_is{"invalid arg default"});
+    }
+
+    CommandRegistry nested_registry;
+    CommandDescriptor nested = valid_sync("link.create");
+    ArgSpec inner;
+    inner.name = "name";
+    inner.default_value = std::string("{");
+    ArgSpec outer;
+    outer.name = "campaign";
+    outer.type = ArgType::object;
+    outer.fields = {inner};
+    nested.args.push_back(outer);
+    BOOST_CHECK_EXCEPTION(nested_registry.add(std::move(nested)),
+                          std::invalid_argument,
+                          message_is{"invalid arg default"});
+
+    CommandRegistry ok_registry;
+    CommandDescriptor ok = valid_sync("link.list");
+    for (const char* good : {"20", "\"active\"", "true", "null", "[]"})
+    {
+        ArgSpec arg;
+        arg.name = std::string("a") + std::to_string(ok.args.size());
+        arg.default_value = std::string(good);
+        ok.args.push_back(arg);
+    }
+    BOOST_CHECK_NO_THROW(ok_registry.add(std::move(ok)));
+}
+
 // Scenario: a mutating command with read base permission and no raise hook
 // would let a read-only User change state (security review MEDIUM on 01.0/06).
 BOOST_AUTO_TEST_CASE(reject_mutating_command_with_read_permission)
