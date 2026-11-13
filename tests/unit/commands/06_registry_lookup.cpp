@@ -30,6 +30,7 @@ using url_shortener::commands::ExecutionKind;
 using url_shortener::commands::JobBody;
 using url_shortener::commands::JobHandlerFactory;
 using url_shortener::commands::JobOutcome;
+using url_shortener::commands::Permission;
 
 namespace
 {
@@ -257,9 +258,55 @@ BOOST_AUTO_TEST_CASE(accept_dry_run_when_mutating)
     CommandRegistry registry;
     CommandDescriptor descriptor = valid_sync("link.delete");
     descriptor.mutating = true;
+    descriptor.permission = Permission::write;
     descriptor.supports_dry_run = true;
     BOOST_CHECK_NO_THROW(registry.add(std::move(descriptor)));
     BOOST_TEST(registry.find("link.delete") != nullptr);
+}
+
+// Scenario: a mutating command with read base permission and no raise hook
+// would let a read-only User change state (security review MEDIUM on 01.0/06).
+BOOST_AUTO_TEST_CASE(reject_mutating_command_with_read_permission)
+{
+    CommandRegistry registry;
+    CommandDescriptor descriptor = valid_sync("link.delete");
+    descriptor.mutating = true;
+    descriptor.permission = Permission::read;
+    BOOST_CHECK_EXCEPTION(registry.add(std::move(descriptor)),
+                          std::invalid_argument,
+                          message_is{"mutating requires write permission"});
+}
+
+// Scenario: a read base is allowed for a mutating command only when a
+// permission_for hook can raise it per call (decision D16).
+BOOST_AUTO_TEST_CASE(accept_mutating_read_base_with_raise_hook)
+{
+    CommandRegistry registry;
+    CommandDescriptor descriptor = valid_sync("link.export");
+    descriptor.mutating = true;
+    descriptor.permission = Permission::read;
+    descriptor.permission_for = [](const ArgsView&) {
+        return Permission::write;
+    };
+    BOOST_CHECK_NO_THROW(registry.add(std::move(descriptor)));
+}
+
+// Scenario: a dry_run-capable job command must carry the sync handler that
+// serves dry_run (security review LOW on 01.0/06).
+BOOST_AUTO_TEST_CASE(reject_dry_run_job_without_handler)
+{
+    CommandRegistry registry;
+    CommandDescriptor descriptor = valid_sync("link.import");
+    descriptor.kind = ExecutionKind::job;
+    descriptor.mutating = true;
+    descriptor.permission = Permission::write;
+    descriptor.supports_dry_run = true;
+    descriptor.handler = nullptr;
+    descriptor.job_factory = [](const CommandContext&, const ArgsView&)
+        -> std::variant<JobBody, CommandError> { return CommandError{}; };
+    BOOST_CHECK_EXCEPTION(registry.add(std::move(descriptor)),
+                          std::invalid_argument,
+                          message_is{"dry_run job requires handler"});
 }
 
 // ---------------------------------------------------------------------------

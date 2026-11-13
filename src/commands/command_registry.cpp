@@ -58,6 +58,23 @@ bool CommandRegistry::is_valid_descriptor(const CommandDescriptor& descriptor,
         return fail("supports_dry_run requires mutating");
     }
 
+    // A state-changing command must not be runnable with read permission
+    // alone; the descriptor is the only authorization source (C7). A
+    // permission_for hook may still raise a read base per call (D16).
+    if (descriptor.mutating && descriptor.permission == Permission::read
+        && !descriptor.permission_for)
+    {
+        return fail("mutating requires write permission");
+    }
+
+    // For job commands the sync handler is the dry_run path; without it a
+    // dry_run request would have nothing to dispatch to.
+    if (descriptor.supports_dry_run && descriptor.kind == ExecutionKind::job
+        && !descriptor.handler)
+    {
+        return fail("dry_run job requires handler");
+    }
+
     if (why != nullptr)
     {
         why->clear();
