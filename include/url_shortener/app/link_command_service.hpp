@@ -96,16 +96,22 @@ struct GetLinkQuery
  */
 struct UpdateLinkCommand
 {
-    std::string slug;  ///< Slug of the link to update (required).
+    ///< Slug of the link to update (required).
+    std::string slug;
+
     /// Present => set enabled flag; absent => leave untouched.
     std::optional<bool> enabled;
+
     /// Outer optional = field present; inner optional = value (nullopt =>
     /// explicit null, i.e. clear the expiry).
     std::optional<std::optional<std::string>> expires_at;
+
     /// Present => replace the full tag list; absent => leave untouched.
     std::optional<std::vector<std::string>> tags;
+
     /// Present => replace the full metadata map; absent => leave untouched.
     std::optional<std::unordered_map<std::string, std::string>> metadata;
+
     /// Outer optional = field present; inner optional = value (nullopt =>
     /// explicit null, i.e. clear the campaign).
     std::optional<std::optional<Link::Campaign>> campaign;
@@ -119,7 +125,8 @@ struct UpdateLinkCommand
  */
 struct DeleteLinkCommand
 {
-    std::string slug;  ///< Slug of the link to soft-delete (required).
+    ///< Slug of the link to soft-delete (required).
+    std::string slug;
 };
 
 /**
@@ -130,8 +137,11 @@ struct DeleteLinkCommand
  */
 struct SetLinkEnabledCommand
 {
-    std::string slug;  ///< Slug of the link to toggle (required).
-    bool enabled = true;  ///< Target enabled state.
+    ///< Slug of the link to toggle (required).
+    std::string slug;
+
+    ///< Target enabled state.
+    bool enabled = true;
 };
 
 /**
@@ -142,7 +152,8 @@ struct SetLinkEnabledCommand
  */
 struct RestoreLinkCommand
 {
-    std::string slug;  ///< Slug of the link to restore (required).
+    ///< Slug of the link to restore (required).
+    std::string slug;
 };
 
 /**

@@ -18,15 +18,32 @@
 /// token (which is a C++ keyword) to keep the enumerator spellable.
 enum class LinkCliVerb
 {
-    create,  ///< `link create`  -> LinkCommandService::CreateLink.
-    get,  ///< `link get`     -> LinkCommandService::GetLink.
-    update,  ///< `link update`  -> LinkCommandService::UpdateLink.
-    del,  ///< `link delete`  -> LinkCommandService::DeleteLink.
-    enable,  ///< `link enable`  -> LinkCommandService::SetLinkEnabled(true).
-    disable,  ///< `link disable` -> LinkCommandService::SetLinkEnabled(false).
-    restore,  ///< `link restore` -> LinkCommandService::RestoreLink.
-    preview,  ///< `link preview` -> LinkCommandService::PreviewLink.
-    stats  ///< `link stats`   -> LinkCommandService::GetLinkStats.
+    ///< `link create` -> LinkCommandService::CreateLink.
+    create,
+
+    ///< `link get` -> LinkCommandService::GetLink.
+    get,
+
+    ///< `link update` -> LinkCommandService::UpdateLink.
+    update,
+
+    ///< `link delete` -> LinkCommandService::DeleteLink.
+    del,
+
+    ///< `link enable` -> LinkCommandService::SetLinkEnabled(true).
+    enable,
+
+    ///< `link disable` -> LinkCommandService::SetLinkEnabled(false).
+    disable,
+
+    ///< `link restore` -> LinkCommandService::RestoreLink.
+    restore,
+
+    ///< `link preview` -> LinkCommandService::PreviewLink.
+    preview,
+
+    ///< `link stats` -> LinkCommandService::GetLinkStats.
+    stats
 };
 
 /// A recognized `link <verb>` invocation and its parsed argument DTO.
@@ -38,7 +55,10 @@ enum class LinkCliVerb
 /// only carries the discriminated holder.
 struct LinkCliCommand
 {
-    LinkCliVerb verb = LinkCliVerb::get;  ///< Which link verb was recognized.
+    ///< Which link verb was recognized.
+    LinkCliVerb verb = LinkCliVerb::get;
+
+    ///< Parsed DTO for @ref verb (default-constructed for now).
     std::variant<url_shortener::app::CreateLinkCommand,
                  url_shortener::app::GetLinkQuery,
                  url_shortener::app::UpdateLinkCommand,
@@ -46,7 +66,7 @@ struct LinkCliCommand
                  url_shortener::app::SetLinkEnabledCommand,
                  url_shortener::app::RestoreLinkCommand,
                  url_shortener::app::GetLinkStatsQuery>
-        payload;  ///< Parsed DTO for @ref verb (default-constructed for now).
+        payload;
 };
 
 /// Result returned by CliParser::parse().
@@ -55,9 +75,15 @@ struct LinkCliCommand
 /// message and the caller should print it and exit successfully.
 struct ParseResult
 {
-    ServerConfig config;  ///< Parsed server configuration.
-    bool help_requested = false;  ///< Indicates `--help` short-circuit.
-    std::string help_text;  ///< Rendered help output.
+    ///< Parsed server configuration.
+    ServerConfig config;
+
+    ///< Indicates `--help` short-circuit.
+    bool help_requested = false;
+
+    ///< Rendered help output.
+    std::string help_text;
+
     /// Set only for `link <verb>` invocations; std::nullopt for server mode.
     std::optional<LinkCliCommand> command;
 };
