@@ -65,7 +65,7 @@ recorded as a risk below and as open decision D3 in the decision log.
 | 08 | [dry_run, async and job-submitter seam](08-dry-run-async-and-job-seam.md) | ✅ Complete | 04, 07 | 13, 05.0/02, 05.0/04 |
 | 09 | [Audit sink](09-audit-sink.md) | ✅ Complete | 07 | 13, 03.0/18 |
 | 10 | [command.list built-in](10-command-list-builtin.md) | ✅ Complete | 07 | 11, 03.0/18, 04.0/10 |
-| 11 | [Catalog and help renderers](11-catalog-and-help-renderers.md) | ⬜ Not started | 10 | 12, 04.0/13 |
+| 11 | [Catalog and help renderers](11-catalog-and-help-renderers.md) | ✅ Complete | 10 | 12, 04.0/13 |
 | 12 | [Catalog dump tool and drift test](12-catalog-dump-tool-and-drift-test.md) | ⬜ Not started | 11 | 13 |
 | 13 | [Error-code coverage and include hygiene](13-error-code-coverage-and-include-hygiene.md) | ⬜ Not started | 08, 09, 12 | none |
 
