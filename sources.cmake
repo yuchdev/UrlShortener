@@ -374,6 +374,7 @@ set(URL_SHORTENER_SOURCES
       tests/unit/commands/03_request_parse.cpp
       tests/unit/commands/04_response_serialize.cpp
       tests/unit/commands/05_arg_spec_validation.cpp
+      tests/unit/commands/06_registry_lookup.cpp
   )
 
   set(COMMON_CPP_SOURCES
@@ -382,6 +383,7 @@ set(URL_SHORTENER_SOURCES
       ${CMAKE_CURRENT_SOURCE_DIR}/src/commands/error_codes.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/commands/envelope.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/commands/arg_spec.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/commands/command_registry.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/cli_parser.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/cli/link_command_args.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/cli/link_command_dispatch.cpp
