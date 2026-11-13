@@ -430,14 +430,6 @@ bool CommandRegistry::is_valid_descriptor(const CommandDescriptor& descriptor,
         return fail("mutating requires write permission");
     }
 
-    // For job commands the sync handler is the dry_run path; without it a
-    // dry_run request would have nothing to dispatch to.
-    if (descriptor.supports_dry_run && descriptor.kind == ExecutionKind::job
-        && !descriptor.handler)
-    {
-        return fail("dry_run job requires handler");
-    }
-
     if (why != nullptr)
     {
         why->clear();

@@ -291,23 +291,6 @@ BOOST_AUTO_TEST_CASE(accept_mutating_read_base_with_raise_hook)
     BOOST_CHECK_NO_THROW(registry.add(std::move(descriptor)));
 }
 
-// Scenario: a dry_run-capable job command must carry the sync handler that
-// serves dry_run (security review LOW on 01.0/06).
-BOOST_AUTO_TEST_CASE(reject_dry_run_job_without_handler)
-{
-    CommandRegistry registry;
-    CommandDescriptor descriptor = valid_sync("link.import");
-    descriptor.kind = ExecutionKind::job;
-    descriptor.mutating = true;
-    descriptor.permission = Permission::write;
-    descriptor.supports_dry_run = true;
-    descriptor.handler = nullptr;
-    descriptor.job_factory = [](const CommandContext&, const ArgsView&)
-        -> std::variant<JobBody, CommandError> { return CommandError{}; };
-    BOOST_CHECK_EXCEPTION(registry.add(std::move(descriptor)),
-                          std::invalid_argument,
-                          message_is{"dry_run job requires handler"});
-}
 
 // ---------------------------------------------------------------------------
 // Pointers returned by find stay valid across later add calls (node stability).

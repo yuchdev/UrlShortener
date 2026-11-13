@@ -68,8 +68,7 @@ public:
      * `job_factory` on a `job` or `async_capable` command; a duplicate argument
      * name within `args`; `supports_dry_run` set without `mutating`; a
      * `mutating` command with `read` base permission and no `permission_for`
-     * hook; a `supports_dry_run` job command without a `handler`; or a `name`
-     * already present in this registry.
+     * hook; or a `name` already present in this registry.
      */
     void add(CommandDescriptor descriptor);
 
@@ -229,9 +228,8 @@ private:
      * Enforces every intrinsic registration rule (name shape, non-empty
      * summary, handler/factory presence by kind, unique argument names,
      * `supports_dry_run` implies `mutating`, `mutating` implies write-or-higher
-     * permission unless a raise hook is present, a dry_run job has a handler);
-     * the duplicate-name rule is checked by @ref add against the current
-     * contents, not here.
+     * permission unless a raise hook is present); the duplicate-name rule is
+     * checked by @ref add against the current contents, not here.
      *
      * @param descriptor The candidate descriptor.
      * @param[out] why When non-null, set to a fixed reason string on failure and
@@ -241,8 +239,7 @@ private:
      * on the first rule violated (invalid name, empty summary, null handler on a
      * sync command, missing job_factory on a job/async_capable command,
      * duplicate argument name, `supports_dry_run` without `mutating`, a
-     * mutating command with read permission and no raise hook, or a dry_run
-     * job command without a handler).
+     * or a mutating command with read permission and no raise hook).
      */
     static bool is_valid_descriptor(const CommandDescriptor& descriptor,
                                     std::string* why);
