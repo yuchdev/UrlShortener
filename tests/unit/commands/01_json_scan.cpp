@@ -142,6 +142,11 @@ BOOST_AUTO_TEST_CASE(decode_json_string_handles_escapes_and_surrogates)
     BOOST_TEST(*decode_json_string(R"("é")") == "\xC3\xA9"); // é
     BOOST_TEST(*decode_json_string(R"("😀")") ==
                "\xF0\x9F\x98\x80"); // 😀
+    // \uXXXX escapes: BMP code point and a surrogate pair combined into one
+    // 4-byte UTF-8 sequence.
+    BOOST_TEST(*decode_json_string(R"("é")") == "\xC3\xA9");
+    BOOST_TEST(*decode_json_string(R"("😀")") == "\xF0\x9F\x98\x80");
+    BOOST_TEST(*decode_json_string(R"("Aé")") == "A\xC3\xA9");
     BOOST_TEST(*decode_json_string(R"("a\nb")") == "a\nb");
     BOOST_TEST(*decode_json_string(R"("\\\"\/")") == "\\\"/");
     BOOST_TEST(decode_json_string(R"("")").value().empty());
