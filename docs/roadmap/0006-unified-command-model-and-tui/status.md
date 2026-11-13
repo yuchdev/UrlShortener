@@ -6,7 +6,7 @@ Tracks progress against [plan.md](/docs/roadmap/0006-unified-command-model-and-t
 
 | Task | Name | Status | Tests |
 |------|------|--------|-------|
-| 01.0 | Command model core | 🔶 In progress (3/13 subtasks) | 3 (`commands__01_json_scan`, `commands__02_error_table`, `commands__03_request_parse`) |
+| 01.0 | Command model core | 🔶 In progress (4/13 subtasks) | 4 (`commands__01_json_scan`, `commands__02_error_table`, `commands__03_request_parse`, `commands__04_response_serialize`) |
 | 02.0 | Storage path unification | ⬜ Not started | 0 |
 | 03.0 | Link and browse commands | ⬜ Not started | 0 |
 | 04.0 | REST and CLI adapters | ⬜ Not started | 0 |
@@ -115,3 +115,11 @@ C1-C11 changed:
 - 01.0/09 (T-03, MEDIUM): pinned that `audit_fields` neutralizes invalid UTF-8
   and NUL bytes (replace with `?`) before the sink, alongside the existing
   truncation and control-char rules; added a bare-0x80 / embedded-NUL test.
+- *2026-11-14, 01.0/04 deviation (security):* spec 04 asked for a "cheap
+  sanity, not full validation" first-character check on `result_json`.
+  The security review showed that lets a handler result such as
+  `{"a":1},"injected":true` add a top-level key to the response envelope
+  (or produce malformed JSON), contradicting threat-model T-17. Replaced
+  with full single-value validation through the bounded scanner, using
+  result-specific limits larger than the request limits. Management path
+  only; no interface change.
