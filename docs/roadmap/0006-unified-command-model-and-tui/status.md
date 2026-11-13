@@ -6,7 +6,7 @@ Tracks progress against [plan.md](/docs/roadmap/0006-unified-command-model-and-t
 
 | Task | Name | Status | Tests |
 |------|------|--------|-------|
-| 01.0 | Command model core | 🔶 In progress (12/13 subtasks) | 12 (`commands__01`-`12`) |
+| 01.0 | Command model core | ✅ Complete (13/13 subtasks) | 14 (`commands__01`-`14`) |
 | 02.0 | Storage path unification | ⬜ Not started | 0 |
 | 03.0 | Link and browse commands | ⬜ Not started | 0 |
 | 04.0 | REST and CLI adapters | ⬜ Not started | 0 |
@@ -40,6 +40,64 @@ flipping them to `Accepted` is Task 08.0 subtask 01's job, which requires Task
 version, `tui --help` output, as-built deltas) that do not exist before any
 code is written. Confirming the decisions removes the planning-level
 blocker; it is not a substitute for that gate.
+
+## Per-task detail
+
+### Task 01.0 - Command model core (✅)
+
+Completed 2026-11-14 on branch `milestone/0006-unified-command-model-and-tui`.
+
+**Delivered** (`include/url_shortener/commands/`, `src/commands/`):
+
+- `json_scan` - bounded, iterative JSON object/array scanner (the one
+  sanctioned tokenizer, D3); hashed duplicate-key detection.
+- `error_codes` - single error-code / HTTP status / CLI exit-code table with
+  REST and CLI parity (C3/C4); UTF-8-safe `sanitize_error_message`.
+- `envelope` - closed request envelope parser (echoed `id` re-validated or
+  replaced by `srv-<n>`), response serializer that fully validates
+  `result_json` as one JSON value, job stub.
+- `arg_spec` - `ArgSpec`, `ArgsView`, `validate_args` with per-arg nested
+  limits (T-06) and its own 64 KiB byte cap.
+- `command_descriptor`, `command_registry` - descriptor + registry; execute
+  pipeline: envelope -> lookup -> base permission -> validation ->
+  `permission_for` (max) -> dry_run/async/job dispatch -> handler ->
+  single-exit audit; every step exception-isolated; fail-closed permission
+  mapping.
+- `job_submitter` - `IJobSubmitter` seam (runner itself is Task 05.0).
+- `audit` - `IAuditSink`, `LoggerAuditSink`, one record per mutating attempt.
+- `builtin_commands` - `command.list`; `catalog` - catalog/help renderers;
+  `tools/command_catalog_dump` + generated block 3.7 in
+  `docs/commands/README.md`.
+
+**Tests / gate:**
+
+- 14 unit executables `commands__01`-`14` (scanner, error table, request
+  parse, response serialize, ArgSpec, registry, execute pipeline, options,
+  audit, command.list, catalog render, catalog drift, error-code coverage,
+  include hygiene).
+- Every subtask: `/verify-subtask` PASS (PARTIALs resolved) and a
+  `security-auditor` review; Task-close `/pr-review`: feature LGTM, security
+  PASS_WITH_FOLLOWUP (T-22 fixed in `a27dbb7`). Threat model:
+  [docs/security/0006-01.0-command-model-core-threat-model.md](/docs/security/0006-01.0-command-model-core-threat-model.md)
+  ("Task 01.0 close" section).
+- Full suite `-L "unit|contract|integration|e2e"`: 284/289. The 5 failures
+  are `e2e_14`-`18` CLI scripts that call GNU `timeout`, absent on macOS
+  (`gtimeout` exists); untouched by this branch - environment issue, noted
+  for Milestone 0007.
+- `clang-format` applied module-wide (`e9c139f`, whitespace/sort only).
+
+**Carried forward** (tracked in the run cursor):
+
+- 03.0/05.0: every dry_run-capable job factory must return a non-mutating,
+  bounded body (T-21); handlers' `audit_target` must be a validated id;
+  `register_documented_commands` registers placeholder services only.
+- 04.0: adapters must put only non-identifying labels in
+  `CallerContext.principal`/`transport`.
+- 06.0/07.0: `parse_response` is lenient (unknown keys, ok/payload).
+- 0002: permission-filtered `command.list`; audit of denied sensitive reads.
+- 0007: `jsonEscape` control-character passthrough; SQLite unit tests use
+  fixed DB files (collide under concurrent ctest); e2e GNU `timeout`;
+  `parseRfc3339Zulu` missing-`Z` leniency may be platform-dependent.
 
 ## Open risks
 

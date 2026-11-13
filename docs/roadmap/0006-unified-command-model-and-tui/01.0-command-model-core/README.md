@@ -67,7 +67,7 @@ recorded as a risk below and as open decision D3 in the decision log.
 | 10 | [command.list built-in](10-command-list-builtin.md) | ✅ Complete | 07 | 11, 03.0/18, 04.0/10 |
 | 11 | [Catalog and help renderers](11-catalog-and-help-renderers.md) | ✅ Complete | 10 | 12, 04.0/13 |
 | 12 | [Catalog dump tool and drift test](12-catalog-dump-tool-and-drift-test.md) | ✅ Complete | 11 | 13 |
-| 13 | [Error-code coverage and include hygiene](13-error-code-coverage-and-include-hygiene.md) | ⬜ Not started | 08, 09, 12 | none |
+| 13 | [Error-code coverage and include hygiene](13-error-code-coverage-and-include-hygiene.md) | ✅ Complete | 08, 09, 12 | none |
 
 The catalog generator is subtasks 11 (renderers) and 12 (dump tool and drift
 test); subtask 03 is the request envelope parser. All cross-task references
