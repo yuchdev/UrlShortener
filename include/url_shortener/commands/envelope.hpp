@@ -185,4 +185,213 @@ std::string next_server_id();
  */
 bool is_valid_command_name(std::string_view name);
 
+/**
+ * @brief Lifecycle state of a job, matching command-catalog section 4.
+ *
+ * Only the two wire-shape fields of an accepted job are modeled in this
+ * subtask (@ref JobInfo); the runtime that transitions a job through these
+ * states (`JobRunner`, `job.get/list/cancel`) lands in Task 05.0. The
+ * enumerator order is the source order of the static table backing
+ * @ref job_state_name and @ref job_state_from_name.
+ */
+enum class JobState
+{
+    ///< Accepted and waiting to run; the only state an envelope reports today.
+    queued,
+
+    ///< Currently executing on a worker (set by the runner, Task 05.0).
+    running,
+
+    ///< Finished successfully; a terminal state.
+    succeeded,
+
+    ///< Finished with an error; a terminal state.
+    failed,
+
+    ///< Terminated by `job.cancel`; a terminal state.
+    cancelled
+};
+
+/**
+ * @brief Maps a @ref JobState to its stable lower-case wire name.
+ *
+ * @param state Any @ref JobState enumerator.
+ * @return The wire name (`"queued"`, `"running"`, `"succeeded"`, `"failed"`,
+ * `"cancelled"`); a view into static storage valid for the program lifetime.
+ * An out-of-range value (only producible by casting) maps to `"queued"`.
+ */
+std::string_view job_state_name(JobState state);
+
+/**
+ * @brief Maps a wire job-state name back to its @ref JobState enumerator.
+ *
+ * @param name Candidate wire name; compared exactly against each state's name.
+ * @return The matching @ref JobState, or `std::nullopt` when @p name matches no
+ * state (including the empty string).
+ */
+std::optional<JobState> job_state_from_name(std::string_view name);
+
+/**
+ * @brief The wire shape of an accepted asynchronous job (`{"id","state"}`).
+ *
+ * Carried by @ref CommandResponse when a command was accepted to run as a job
+ * instead of producing an immediate result. This subtask models only the two
+ * serialized fields; the job runtime is Task 05.0.
+ */
+struct JobInfo
+{
+    ///< Job id of the form `"j-<n>"`, assigned by the runner (Task 05.0).
+    ///< Echoed verbatim and escaped on serialization; empty until assigned.
+    std::string id;
+
+    ///< Current lifecycle state; `queued` on a freshly accepted job.
+    JobState state = JobState::queued;
+};
+
+/**
+ * @brief One command response (wire shape v1): the inverse of a
+ * @ref CommandRequest.
+ *
+ * Exactly one of three payloads is present, mirroring the catalog envelope:
+ * an immediate `result` (pre-serialized JSON text produced once by the
+ * handler), an accepted `job`, or an `error`. @ref serialize_response enforces
+ * this invariant and the `ok`/payload consistency; a violation yields a
+ * well-formed `internal` failure envelope rather than malformed JSON.
+ */
+struct CommandResponse
+{
+    ///< Envelope version; always `1` (the only version defined).
+    int v = 1;
+
+    ///< Correlation id echoed from the request; escaped on serialization.
+    std::string id;
+
+    ///< `true` for a result or an accepted job; `false` for an error.
+    bool ok = false;
+
+    ///< Pre-serialized JSON text of the result, embedded verbatim (never
+    ///< re-encoded). Set iff `ok` and no `job`; empty otherwise. Milestone
+    ///< contract C1: the handler produces this once.
+    std::string result_json;
+
+    ///< The accepted job's wire shape. Set iff `ok` and the command was run as
+    ///< a job; `std::nullopt` otherwise.
+    std::optional<JobInfo> job;
+
+    ///< Failure detail. Set (`code != none`) iff `!ok`; default-constructed
+    ///< (`none`) otherwise.
+    CommandError error;
+};
+
+/**
+ * @brief Builds a success response carrying a pre-serialized result payload.
+ *
+ * @param id Correlation id to echo; moved into the response.
+ * @param result_json Exact JSON text of the result, produced by the handler;
+ * moved in and embedded verbatim by @ref serialize_response. Must be non-empty
+ * and begin with a JSON-value character, else serialization fails the invariant
+ * and emits an `internal` envelope.
+ * @return A @ref CommandResponse with `ok == true` and `result_json` set.
+ */
+CommandResponse make_success(std::string id, std::string result_json);
+
+/**
+ * @brief Builds a success response reporting that the command was accepted as a
+ * job.
+ *
+ * @param id Correlation id to echo; moved into the response.
+ * @param job The accepted job's wire shape; moved in.
+ * @return A @ref CommandResponse with `ok == true` and `job` set.
+ */
+CommandResponse make_job_accepted(std::string id, JobInfo job);
+
+/**
+ * @brief Builds a failure response carrying an error payload.
+ *
+ * @param id Correlation id to echo; moved into the response.
+ * @param error The failure detail; moved in. Its `code` should not be `none`,
+ * else serialization fails the invariant and emits an `internal` envelope.
+ * @return A @ref CommandResponse with `ok == false` and `error` set.
+ */
+CommandResponse make_failure(std::string id, CommandError error);
+
+/**
+ * @brief Serializes a @ref CommandResponse to the v1 response envelope JSON.
+ *
+ * Field order is fixed: `v`, `id`, `ok`, then exactly one of `result`, `job`
+ * or `error`. `id` and `error.message` are escaped with
+ * `url_shortener::jsonString` (the message is first run through
+ * @ref sanitize_error_message); `result_json` is embedded verbatim after a
+ * cheap first-character sanity check and is never re-escaped. `error` renders
+ * as `{"code":"<name>","message":"<text>"}` and `job` as
+ * `{"id":"..","state":".."}`.
+ *
+ * The invariants are: exactly one of result/job/error is present; `ok == true`
+ * iff the payload is a result or a job (so `error` implies `!ok`); and a result
+ * payload is non-empty and begins with `{`, `[`, `"`, a digit, `t`, `f` or `n`.
+ *
+ * @param response The response to serialize.
+ * @return The envelope JSON text. On any invariant violation the function
+ * returns a well-formed `internal` failure envelope echoing `response.id`
+ * instead of malformed JSON (threat-model T-17).
+ */
+std::string serialize_response(const CommandResponse& response);
+
+/**
+ * @brief Outcome of @ref parse_response: either a parsed response or a
+ * diagnostic error string.
+ *
+ * Exactly one side is populated: on success `response` has a value and `error`
+ * is empty; on failure `response` is empty and `error` names the first rule
+ * violated. The error string is a fixed, value-free diagnostic for the
+ * conformance harness, not a wire `error.code`.
+ */
+struct parse_response_result
+{
+    ///< The parsed response on success; empty on failure.
+    std::optional<CommandResponse> response;
+
+    ///< Fixed diagnostic describing the first failure; empty on success.
+    std::string error;
+};
+
+/**
+ * @brief Parses a v1 response-envelope JSON text, the inverse of
+ * @ref serialize_response.
+ *
+ * Exists for clients, stdio consumers and the conformance corpus (Task 07.0).
+ * Uses `scan_object` for the top-level envelope and one nested `scan_object`
+ * for `job`/`error`. Requires `v == 1`, a string `id`, a boolean `ok`, and
+ * exactly one of `result`/`job`/`error`; `result` is captured as verbatim JSON
+ * text, so an embedded quote/brace/unicode value round-trips unchanged.
+ *
+ * @param text The candidate response envelope JSON. Treated as untrusted.
+ * @return A @ref parse_response_result. On success `response` holds the parsed
+ * value and `error` is empty. On failure `response` is empty and `error`
+ * describes the first problem: malformed/over-limit input, a missing or
+ * ill-typed `v`/`id`/`ok`, zero or more than one payload field, an unknown
+ * `error.code` name, or an unknown `job.state`.
+ */
+parse_response_result parse_response(std::string_view text);
+
+/**
+ * @brief HTTP status for the generic `POST /api/v1/commands` endpoint.
+ *
+ * @param response The response whose status to compute.
+ * @return `200` when `response.ok` (including an accepted job); otherwise
+ * `error_info_for(response.error.code).http_status` (the single subtask-02
+ * table, e.g. `job_cancelled` is `200`).
+ */
+unsigned http_status_for(const CommandResponse& response);
+
+/**
+ * @brief Process exit code for the CLI `cmd` adapter.
+ *
+ * @param response The response whose exit code to compute.
+ * @return `0` when `response.ok` (including an accepted job); otherwise
+ * `error_info_for(response.error.code).exit_code` (e.g. `job_cancelled` is
+ * `4`).
+ */
+int exit_code_for(const CommandResponse& response);
+
 } // namespace url_shortener::commands

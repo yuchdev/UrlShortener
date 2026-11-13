@@ -372,6 +372,7 @@ set(URL_SHORTENER_SOURCES
       tests/unit/commands/01_json_scan.cpp
       tests/unit/commands/02_error_table.cpp
       tests/unit/commands/03_request_parse.cpp
+      tests/unit/commands/04_response_serialize.cpp
   )
 
   set(COMMON_CPP_SOURCES
