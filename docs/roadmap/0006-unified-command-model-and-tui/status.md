@@ -6,7 +6,7 @@ Tracks progress against [plan.md](/docs/roadmap/0006-unified-command-model-and-t
 
 | Task | Name | Status | Tests |
 |------|------|--------|-------|
-| 01.0 | Command model core | 🔶 In progress (6/13 subtasks) | 6 (`commands__01`-`06`) |
+| 01.0 | Command model core | 🔶 In progress (7/13 subtasks) | 7 (`commands__01`-`07`) |
 | 02.0 | Storage path unification | ⬜ Not started | 0 |
 | 03.0 | Link and browse commands | ⬜ Not started | 0 |
 | 04.0 | REST and CLI adapters | ⬜ Not started | 0 |
