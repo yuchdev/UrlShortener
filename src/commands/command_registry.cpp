@@ -509,7 +509,7 @@ void CommandRegistry::set_job_submitter(
 {
     // Startup-only, not synchronized; replaces any previous submitter. A null
     // argument clears the seam, restoring the fail-closed `unsupported` path.
-    m_job_submitter_ = std::move(submitter);
+    m_job_submitter = std::move(submitter);
 }
 
 void CommandRegistry::set_audit_sink(std::shared_ptr<IAuditSink> sink)
@@ -643,7 +643,7 @@ CommandResponse CommandRegistry::execute(const CallerContext& caller,
                 return run_dry_run_job(*descriptor, caller, request, view);
             case dispatch::job:
                 return submit_job(
-                    *descriptor, caller, request, view, m_job_submitter_);
+                    *descriptor, caller, request, view, m_job_submitter);
             case dispatch::error:
                 return make_failure(request.id,
                                     make_error(CommandErrorCode::unsupported,
@@ -685,7 +685,18 @@ CommandResponse CommandRegistry::execute(const CallerContext& caller,
         return make_success(request.id, std::move(result.result_json));
     };
 
-    CommandResponse response = pipeline();
+    // Steps 3-7 isolate handler, factory, submitter and hook exceptions
+    // individually; this outer guard covers the rest (permission_check and
+    // validate_args can only fail with bad_alloc on bounded input) so execute
+    // never throws (threat model T-22).
+    CommandResponse response;
+    try {
+        response = pipeline();
+    } catch (...) {
+        response = make_failure(
+            request.id,
+            make_error(CommandErrorCode::internal, "internal error"));
+    }
 
     // Step 8: exactly one audit record per attempt at a mutating command
     // (subtask 09, threat model T-14). Non-mutating commands emit nothing; an

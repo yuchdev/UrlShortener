@@ -47,6 +47,8 @@ std::string normalize_crlf(const std::string& text)
 /// bytes the generator owns (equal to `render_catalog_markdown`). Returns
 /// `false` when either marker is missing, duplicated, or out of order; mirrors
 /// the extraction in `tools/command_catalog_dump.cpp`.
+// Kept in sync with extract_region in tools/command_catalog_dump.cpp; change
+// both together.
 bool extract_region(const std::string& content, std::string& region)
 {
     const std::string_view begin = catalog_begin_marker;

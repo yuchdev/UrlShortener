@@ -66,6 +66,8 @@ std::string build_generated_block()
  * @return `true` when both markers are present exactly once and ordered;
  * `false` when a marker is missing, duplicated, or out of order.
  */
+// Kept in sync with extract_region in tests/unit/commands/12_catalog_drift.cpp;
+// the drift test guards the shared behaviour.
 bool extract_region(const std::string& content, std::string& region)
 {
     const std::string_view begin = commands::catalog_begin_marker;

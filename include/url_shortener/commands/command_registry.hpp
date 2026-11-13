@@ -267,8 +267,9 @@ private:
      * @return `true` when the descriptor passes every intrinsic rule; `false`
      * on the first rule violated (invalid name, empty summary, null handler on
      * a sync command, missing job_factory on a job/async_capable command,
-     * duplicate argument name, `supports_dry_run` without `mutating`, a
-     * or a mutating command with read permission and no raise hook).
+     * duplicate argument name, `supports_dry_run` without `mutating`, an
+     * argument default that is not one JSON value, or a mutating command with
+     * read permission and no raise hook).
      */
     static bool is_valid_descriptor(const CommandDescriptor& descriptor,
                                     std::string* why);
@@ -309,7 +310,7 @@ private:
     ///< fail-closed default). Shared, not owned exclusively, so a per-request
     ///< registry can point at the one process-wide runner. Set by
     ///< @ref set_job_submitter before serving; read by @ref execute.
-    std::shared_ptr<IJobSubmitter> m_job_submitter_;
+    std::shared_ptr<IJobSubmitter> m_job_submitter;
 
     ///< The installed audit sink, or `nullptr` when none is set (auditing
     ///< disabled, the unit-test default). Shared, not owned exclusively, so a
