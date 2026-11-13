@@ -55,7 +55,7 @@ recorded as a risk below and as open decision D3 in the decision log.
 
 | # | Document | Status | Depends on | Blocks |
 |---|----------|--------|------------|--------|
-| 01 | [JSON object scanner](01-json-object-scanner.md) | ⬜ Not started | none | 03, 05, 04.0/01, 05.0/14, 06.0/02 |
+| 01 | [JSON object scanner](01-json-object-scanner.md) | ✅ Complete | none | 03, 05, 04.0/01, 05.0/14, 06.0/02 |
 | 02 | [Error-code / status / exit-code table](02-error-code-status-table.md) | ⬜ Not started | none | 03, 04, 05, 03.0/05, 04.0/02, 04.0/15 |
 | 03 | [Request envelope parser](03-request-envelope-parser.md) | ⬜ Not started | 01, 02 | 06, 04.0/09, 04.0/12, 05.0/14, 06.0/02 |
 | 04 | [Response envelope and Job stub](04-response-envelope-and-job-stub.md) | ⬜ Not started | 02 | 06, 08, 04.0/09, 04.0/13, 04.0/15, 05.0/14, 06.0/02 |
