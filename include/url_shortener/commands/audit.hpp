@@ -23,12 +23,19 @@ namespace url_shortener::commands
  */
 struct AuditRecord
 {
-    ///< Caller identity label copied from @ref CallerContext::principal, e.g.
-    ///< `"local-operator"`; a diagnostic label, never an argument value.
+    ///< Caller identity label copied verbatim from
+    ///< @ref CallerContext::principal, e.g. `"local-operator"`; a diagnostic
+    ///< label, never an argument value. Only control characters and length
+    ///< are neutralized here - the content is not redacted, and the logger
+    ///< does not treat this key as PII. Transport adapters (Task 04.0 and
+    ///< later) MUST therefore pass a non-identifying label: never a client IP
+    ///< address, token, session id or other raw client identifier (C6).
     std::string principal;
 
-    ///< Originating transport copied from @ref CallerContext::transport, e.g.
-    ///< `"rest"`, `"cli"`, `"tui"`, `"stdio"`.
+    ///< Originating transport copied verbatim from
+    ///< @ref CallerContext::transport, e.g. `"rest"`, `"cli"`, `"tui"`,
+    ///< `"stdio"`. Same adapter obligation as `principal`: a fixed transport
+    ///< name, never a peer address or other client identifier.
     std::string transport;
 
     ///< The resolved command name, e.g. `"link.delete"`; the descriptor's

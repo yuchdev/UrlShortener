@@ -711,11 +711,22 @@ CommandResponse CommandRegistry::execute(const CallerContext& caller,
     // accepted job records its job id, every other outcome its derived word.
     if (descriptor->mutating)
     {
-        std::string target =
-            response.job.has_value() ? response.job->id : audit_target;
-        emit_audit(*descriptor, caller,
-                   derive_audit_outcome(response, audit_dry_run),
-                   std::move(target));
+        // Building the record allocates; under memory exhaustion that must
+        // neither escape execute (documented never-throwing) nor change the
+        // response the handler already produced.
+        try
+        {
+            std::string target =
+                response.job.has_value() ? response.job->id : audit_target;
+            emit_audit(*descriptor, caller,
+                       derive_audit_outcome(response, audit_dry_run),
+                       std::move(target));
+        }
+        catch (...)
+        {
+            // Audit is best-effort under allocation failure; the response
+            // stands.
+        }
     }
 
     return response;
