@@ -47,20 +47,32 @@ def normalize(text):
     return compact.replace('""', "")
 
 
+_SORTABLE_RE = re.compile(
+    r"^\s*(#\s*include\b|using\s+[\w:]+\s*;)"
+)
+
+
 def _split_includes(text):
-    """Return (sorted #include lines, text without #include lines)."""
+    """Return (sorted sortable lines, text without them).
+
+    Sortable lines are the ones clang-format may reorder without changing
+    meaning: `#include` (SortIncludes, also `# include` inside an indented
+    `#if` block) and `using a::b;` declarations (SortUsingDeclarations).
+    Whitespace inside each line is removed before comparison.
+    """
     lines = text.splitlines()
-    includes = sorted(
-        l.strip() for l in lines if l.lstrip().startswith("#include")
+    sortable = sorted(
+        re.sub(r"\s+", "", l) for l in lines if _SORTABLE_RE.match(l)
     )
-    rest = "\n".join(l for l in lines if not l.lstrip().startswith("#include"))
-    return includes, rest
+    rest = "\n".join(l for l in lines if not _SORTABLE_RE.match(l))
+    return sortable, rest
 
 
 def include_order_only(old, new):
-    """True when the files differ only in the order of their #include lines
-    (what the post-edit hook's `clang-format -i` with `SortIncludes: true`
-    produces). Same set of includes, everything else token-identical."""
+    """True when the files differ only in the order of `#include` lines and
+    `using` declarations (what `clang-format -i` with `SortIncludes` /
+    `SortUsingDeclarations` produces). Same set of lines, everything else
+    token-identical."""
     old_inc, old_rest = _split_includes(old)
     new_inc, new_rest = _split_includes(new)
     return old_inc == new_inc and normalize(old_rest) == normalize(new_rest)
@@ -101,7 +113,7 @@ def main():
 
     print(f"{len(paths)} file(s) checked against {args.rev}")
     for path in reordered:
-        print(f"INCLUDE ORDER {path}  (clang-format SortIncludes; acceptable)")
+        print(f"INCLUDE ORDER {path}  (clang-format include/using sorting; acceptable)")
     for path in failed:
         print(f"CODE CHANGED {path}")
     if not failed:
