@@ -191,3 +191,34 @@ BOOST_AUTO_TEST_CASE(extra_descriptor_breaks_comparison)
 
     BOOST_TEST(render_catalog_markdown(augmented) != expected);
 }
+
+// Scenario: a README checked out with CRLF line endings (e.g. git autocrlf on
+// Windows) still matches the LF-only generator output after normalization.
+// Builds the document in memory so the CRLF path runs on every platform
+// (verify-subtask PARTIAL on 01.0/12).
+BOOST_AUTO_TEST_CASE(crlf_checkout_still_matches)
+{
+    CommandRegistry registry;
+    register_documented_commands(registry);
+    const std::string expected = render_catalog_markdown(registry);
+
+    std::string lf_document = "# Catalog\n\nIntro prose.\n\n";
+    lf_document += std::string(catalog_begin_marker) + "\n";
+    lf_document += expected + "\n";
+    lf_document += std::string(catalog_end_marker) + "\n\nTrailing prose.\n";
+
+    std::string crlf_document;
+    for (const char ch : lf_document)
+    {
+        if (ch == '\n')
+        {
+            crlf_document += '\r';
+        }
+        crlf_document += ch;
+    }
+    BOOST_REQUIRE(crlf_document.find("\r\n") != std::string::npos);
+
+    std::string region;
+    BOOST_REQUIRE(extract_region(normalize_crlf(crlf_document), region));
+    BOOST_TEST(region == expected);
+}
