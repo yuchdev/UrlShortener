@@ -131,11 +131,14 @@ struct ArgSpec
  * @brief Read-only, validated accessor over one `args` object's members.
  *
  * Populated by @ref validate_args on success, an `ArgsView` offers typed,
- * decoded reads of the arguments that already passed their @ref ArgSpec. It is
- * a **non-owning** view in spirit: it holds the scanned top-level members and
- * decodes leaf values on demand; a handler that outlives the request buffer
- * must copy every value it keeps. Accessors return `std::nullopt` for an absent
- * or JSON-null argument and never throw.
+ * decoded reads of the arguments that already passed their @ref ArgSpec. It
+ * owns copies of the scanned top-level member keys and raw value text, so it
+ * stays valid after the request buffer that held `args_json` is destroyed;
+ * leaf values are decoded on demand and returned by value. An `ArgsView` is
+ * itself a transient object, so a job factory or any code that runs after the
+ * handler returns must copy the values it needs (or the view) rather than keep
+ * a reference to it. Accessors return `std::nullopt` for an absent or
+ * JSON-null argument and never throw.
  */
 class ArgsView
 {

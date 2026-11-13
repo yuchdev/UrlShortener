@@ -611,6 +611,7 @@ BOOST_AUTO_TEST_CASE(embedded_nul_rejected)
     // validate_args surfaces invalid_field with a fixed, value-free message.
     const CommandError key_error = run({string_arg("s")}, R"({"\u0000k":"v"})");
     BOOST_TEST((key_error.code == CommandErrorCode::invalid_field));
+    BOOST_TEST(reason_is(key_error, "malformed"));
     BOOST_TEST(key_error.message.find('\0') == std::string::npos);
 
     // NUL in a string value: rejected as wrong_type, message carries no NUL.
@@ -641,4 +642,58 @@ BOOST_AUTO_TEST_CASE(malformed_args_object)
         run({string_arg("s")}, R"(["not","an","object"])");
     BOOST_TEST((error.code == CommandErrorCode::invalid_field));
     BOOST_TEST(error.message.find("args") != std::string::npos);
+}
+
+// ---------------------------------------------------------------------------
+// Review follow-ups (verify-subtask PARTIAL, security-auditor MEDIUM).
+// ---------------------------------------------------------------------------
+
+// Scenario: \u escapes in string values, list elements and map values are
+// decoded by the ArgsView accessors (BMP code point and a surrogate pair).
+BOOST_AUTO_TEST_CASE(argsview_decodes_unicode_escapes)
+{
+    ArgSpec l;
+    l.name = "l";
+    l.type = ArgType::string_list;
+    ArgSpec m;
+    m.name = "m";
+    m.type = ArgType::string_map;
+    const std::vector<ArgSpec> specs = {string_arg("s"), l, m};
+
+    const std::string args =
+        R"({"s":"Aé","l":["😀"],"m":{"k":"B"}})";
+    ArgsView view;
+    BOOST_REQUIRE(validate_args(specs, args, &view, nullptr));
+
+    BOOST_TEST(view.get_string("s").value() == "A\xC3\xA9");
+    const auto list = view.get_string_list("l");
+    BOOST_REQUIRE(list.has_value());
+    BOOST_TEST(list->at(0) == "\xF0\x9F\x98\x80");
+    const auto map = view.get_string_map("m");
+    BOOST_REQUIRE(map.has_value());
+    BOOST_TEST(map->at("k") == "B");
+}
+
+// Scenario: validate_args enforces the 64 KiB byte cap itself, so callers that
+// build args_json directly (CLI --arg, REST resource routes) without going
+// through parse_request still cannot submit an unbounded body.
+BOOST_AUTO_TEST_CASE(oversized_args_rejected_without_envelope)
+{
+    ArgSpec l;
+    l.name = "l";
+    l.type = ArgType::string_list;
+    l.max_items = 4096;
+    l.max_length = 65536;
+
+    // Just over 64 KiB: one long string element.
+    const std::string big =
+        R"({"l":[")" + std::string(65536, 'x') + R"("]})";
+    const CommandError error = run({l}, big);
+    BOOST_TEST((error.code == CommandErrorCode::invalid_field));
+    BOOST_TEST(reason_is(error, "too_large"));
+    BOOST_TEST(error.message.find("xxxx") == std::string::npos);
+
+    // A body comfortably under the cap still validates.
+    const std::string ok = R"({"l":[")" + std::string(1000, 'x') + R"("]})";
+    BOOST_TEST((run({l}, ok).code == CommandErrorCode::none));
 }

@@ -652,13 +652,14 @@ bool validate_args(const std::vector<ArgSpec>& specs,
                    std::string_view args_json, ArgsView* out,
                    CommandError* error)
 {
-    // Top-level args scan keeps the request-hardening member/key/depth caps so
-    // the envelope DoS caps are not relaxed (threat model T-06). The byte cap
-    // is the args text's own size: byte-level DoS is enforced upstream by the
-    // envelope scan (subtask 03), not re-imposed here where a legitimately
-    // large (but already-bounded) args object must still validate.
+    // Top-level args scan keeps the request-hardening caps so the envelope DoS
+    // caps are not relaxed (threat model T-06). The byte cap is enforced here
+    // too, not only by the envelope scan upstream: callers that build
+    // args_json directly (CLI --arg, REST resource routes) never pass through
+    // parse_request. An args object is always part of a request body bounded
+    // by the same 64 KiB hardening limit, so nothing legitimate is rejected.
     scan_limits top;
-    top.max_bytes = args_json.size();
+    top.max_bytes = scan_limits{}.max_bytes;
     top.max_depth = 8;
     top.max_members = 256;
     top.max_key_len = 128;
