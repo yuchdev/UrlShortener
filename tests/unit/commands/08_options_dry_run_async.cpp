@@ -299,14 +299,17 @@ BOOST_AUTO_TEST_CASE(dry_run_sync_handler_sees_flag_and_does_not_mutate)
 BOOST_AUTO_TEST_CASE(dry_run_job_runs_factory_body_synchronously_no_job)
 {
     FakeFactoryRecorder factory;
-    DryRunHandlerRecorder handler;  // required by registration, not the path
+    // Optional for a job command; present only to prove it is not the dry_run
+    // path.
+    DryRunHandlerRecorder handler;
     auto submitter = std::make_shared<FakeJobSubmitter>();
 
     CommandRegistry registry;
     registry.set_job_submitter(submitter);
 
-    // A supports_dry_run job command: requires a handler (registration) and a
-    // factory (kind == job). The dry_run path uses the factory (spec row 4).
+    // A supports_dry_run job command needs a factory (kind == job); its
+    // dry_run path runs the factory body, never the handler (spec row 4,
+    // T-21).
     CommandDescriptor d = job_descriptor("link.export", factory.factory());
     d.permission = Permission::write;
     d.mutating = true;
