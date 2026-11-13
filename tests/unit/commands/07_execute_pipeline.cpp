@@ -528,8 +528,11 @@ BOOST_AUTO_TEST_CASE(empty_result_json_is_internal)
 }
 
 // ---------------------------------------------------------------------------
-// dry_run, async and job descriptors each fail closed with unsupported (until
-// subtask 08), and the sync handler is never entered for dry_run/async.
+// With no submitter installed, dry_run on a non-supporting command, async on a
+// non-async-capable sync command, and a job descriptor all fail closed with
+// `unsupported`, and the sync handler is never entered. The full options/job
+// table (dispatch, dry_run success, job acceptance, args_digest, exception
+// isolation) is covered in 08_options_dry_run_async.
 // ---------------------------------------------------------------------------
 
 BOOST_AUTO_TEST_CASE(options_and_job_are_unsupported)
@@ -550,17 +553,22 @@ BOOST_AUTO_TEST_CASE(options_and_job_are_unsupported)
 
     CallerContext caller;
 
+    // dry_run on a command that does not support it -> unsupported.
     CommandRequest dry = request_for("link.get");
     dry.options.dry_run = true;
     const CommandResponse dry_resp = registry.execute(caller, dry);
     BOOST_TEST((dry_resp.error.code == CommandErrorCode::unsupported));
-    BOOST_TEST(dry_resp.error.message == "option not supported yet");
+    BOOST_TEST(dry_resp.error.message == "dry_run not supported");
 
+    // async on a non-async-capable sync command -> unsupported.
     CommandRequest async = request_for("link.get");
     async.options.async = true;
     const CommandResponse async_resp = registry.execute(caller, async);
     BOOST_TEST((async_resp.error.code == CommandErrorCode::unsupported));
+    BOOST_TEST(async_resp.error.message == "async not supported");
 
+    // A job descriptor with no submitter installed -> unsupported (fail
+    // closed); the factory is never reached.
     const CommandResponse job_resp =
         registry.execute(caller, request_for("link.export"));
     BOOST_TEST((job_resp.error.code == CommandErrorCode::unsupported));

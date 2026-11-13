@@ -376,6 +376,7 @@ set(URL_SHORTENER_SOURCES
       tests/unit/commands/05_arg_spec_validation.cpp
       tests/unit/commands/06_registry_lookup.cpp
       tests/unit/commands/07_execute_pipeline.cpp
+      tests/unit/commands/08_options_dry_run_async.cpp
   )
 
   set(COMMON_CPP_SOURCES

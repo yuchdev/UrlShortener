@@ -2,6 +2,7 @@
 
 #include <functional>
 #include <map>
+#include <memory>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -11,6 +12,8 @@
 
 namespace url_shortener::commands
 {
+
+class IJobSubmitter;
 
 /**
  * @brief The in-process catalog of command descriptors and the one entry point
@@ -124,10 +127,30 @@ public:
      *    order `read < write < migrate < manage_users`; a failing re-check ->
      *    `not_authorized` (same fixed message). The `max` makes the hook
      *    raise-only. A hook that throws -> `internal`.
-     * 5. Options/job handling: `request.options.dry_run`,
-     *    `request.options.async`, or `descriptor.kind == ExecutionKind::job` ->
-     *    `unsupported` with the fixed message `option not supported yet`
-     *    (replaced by subtask 08).
+     * 5. Options/job handling (subtask 08), resolved from `request.options` and
+     *    the descriptor:
+     *    - `dry_run` on a `!supports_dry_run` descriptor, or `dry_run` together
+     *      with `async` (mutually exclusive), -> `unsupported`.
+     *    - `async` on a `sync` descriptor that is not `async_capable` ->
+     *      `unsupported`.
+     *    - `dry_run` on a `supports_dry_run` sync descriptor: the handler runs
+     *      (step 6) with `ctx.dry_run == true` and must not mutate.
+     *    - `dry_run` on a `supports_dry_run` `job` descriptor: `job_factory`
+     *      runs with `ctx.dry_run == true` and the returned body runs
+     *      **synchronously** on the caller thread with a no-op @ref IJobContext;
+     *      its @ref JobOutcome becomes the result. No job is created.
+     *    - `async` on an `async_capable` descriptor, or any `kind == job`
+     *      descriptor (not under `dry_run`): with no submitter installed ->
+     *      `unsupported` (fail closed, `job_factory` not called); otherwise
+     *      `job_factory` runs, a `CommandError` -> failure envelope with nothing
+     *      queued, and a @ref JobBody is handed to the installed
+     *      @ref IJobSubmitter whose @ref JobSubmitResult yields either
+     *      @ref make_job_accepted or a failure (`busy`/`internal`/...).
+     *    `job_factory`, @ref IJobSubmitter::submit and a `dry_run` job body each
+     *    run inside `catch (const std::exception&)` and `catch (...)`; an
+     *    escaping exception -> `internal` (same isolation as the handler; its
+     *    `what()` is never surfaced, threat model T-10). Only an `args_digest`
+     *    (never raw args) travels with a submitted job (threat model T-13).
      * 6. Dispatch: `descriptor.handler(ctx, view)` runs inside
      *    `catch (const std::exception&)` and `catch (...)`; any escaping
      *    exception -> `internal` with the fixed message `internal error`. The
@@ -180,6 +203,24 @@ public:
                                  std::string_view request_text,
                                  const envelope_limits& limits = {}) const;
 
+    /**
+     * @brief Installs the one process-wide job submitter the registry hands
+     * accepted job bodies to (decision log D13).
+     *
+     * Startup-only configuration, mirroring @ref add: it replaces any previous
+     * submitter, is **not** thread-safe, and must be called before serving
+     * starts. The registry keeps a `std::shared_ptr`, so a per-request registry
+     * (REST, Task 04.0) can share the process-wide runner without owning its
+     * lifetime. There is no second mechanism (no `set_job_runner`): without a
+     * submitter, every job or `async` request fails closed with `unsupported`
+     * and no @ref JobHandlerFactory is invoked (threat model T-12).
+     *
+     * @param submitter The submitter to install, typically Task 05.0's
+     * `JobRunner`; shared ownership is taken. A null pointer clears the seam,
+     * restoring the fail-closed `unsupported` behavior.
+     */
+    void set_job_submitter(std::shared_ptr<IJobSubmitter> submitter);
+
 private:
     /**
      * @brief Checks that a descriptor is internally consistent, independent of
@@ -210,6 +251,12 @@ private:
     ///< heterogeneous `std::string_view` lookup; the node-based container keeps
     ///< element pointers stable across inserts, which @ref find relies on.
     std::map<std::string, CommandDescriptor, std::less<>> m_commands;
+
+    ///< The installed job submitter, or `nullptr` when none is set (the
+    ///< fail-closed default). Shared, not owned exclusively, so a per-request
+    ///< registry can point at the one process-wide runner. Set by
+    ///< @ref set_job_submitter before serving; read by @ref execute.
+    std::shared_ptr<IJobSubmitter> m_job_submitter_;
 };
 
 }  // namespace url_shortener::commands
