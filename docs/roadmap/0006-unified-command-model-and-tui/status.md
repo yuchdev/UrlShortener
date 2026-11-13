@@ -67,3 +67,28 @@ blocker; it is not a substitute for that gate.
 
 See [decision-log.md](/docs/roadmap/0006-unified-command-model-and-tui/decision-log.md)
 for every choice made without asking the user, with alternatives.
+
+**Implementation run started 2026-11-14 (`implement-milestone`).** Research-phase
+findings and dispositions:
+
+- *As-built reconnaissance:* 01.0, 05.0, 06.0, 07.0 have nothing built.
+  Existing precursors - `LegacyLinkStore`, `BuildLegacyLinkCommandService`,
+  the unused `BuildStorageAdapters`, REST/CLI handlers calling
+  `LinkCommandService` directly, the narrow `ListLinksQuery`, the ADR index
+  rows and the design-stage command catalog - are what 02.0/03.0/04.0/08.0
+  replace by design. Not treated as contract-level divergence.
+- *Decomposition audit:* every Task folder, `## Subtasks` row and spec file
+  is present. Gaps, to be fixed by `app-architect` spec amendments before the
+  affected Task starts:
+  - 06.0 README rows 02-05 and 03.0 README row 17 `Blocks` cells omit
+    06.0/21 (the spec headers are correct) - fix before 06.0.
+  - D13 Settings is missing from 07.0's exit criterion 4 ("goldens D1-D10")
+    and from 08.0/01's delta check - amend before 07.0.
+  - 07.0/29 attributes D13 goldens to 07.0/24-25; they are owned by
+    06.0/21 - amend before 07.0.
+  - 07.0/24 test files `20_*`/`21_*` collide with 06.0's prefixes; renumber
+    into 07.0's reserved 22-69 range before 07.0.
+  - D11/D12 have no closing-gate golden check; covered indirectly by
+    07.0/27 and 07.0/29 - noted, no action.
+  - No numeric coverage floor exists; 07.0/34 uses `/test-gap` P0/P1
+    disposition - noted, no action.
