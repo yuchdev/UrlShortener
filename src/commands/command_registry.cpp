@@ -43,27 +43,30 @@ bool permission_check(const CallerContext& caller, Permission permission)
     const AccessGuard guard(caller.control_set);
     try
     {
+        // Each case grants only after its require* call returns. There is
+        // deliberately no `default`: -Wswitch still flags a new enumerator,
+        // and any unmapped value falls through to the fail-closed return.
         switch (permission)
         {
         case Permission::read:
             guard.requireRead();
-            break;
+            return true;
         case Permission::write:
             guard.requireWrite();
-            break;
+            return true;
         case Permission::migrate:
             guard.requireMigration();
-            break;
+            return true;
         case Permission::manage_users:
             guard.requireUserManagement();
-            break;
+            return true;
         }
     }
     catch (const AccessDeniedError&)
     {
         return false;
     }
-    return true;
+    return false;
 }
 
 }  // namespace

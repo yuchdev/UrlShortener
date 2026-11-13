@@ -382,6 +382,31 @@ BOOST_AUTO_TEST_CASE(permission_for_throwing_hook_is_internal)
     BOOST_TEST(recorder.calls.load() == 0);
 }
 
+// Scenario: an unmapped Permission value (only producible by a cast, e.g. a
+// hook returning a value outside the enum) must fail closed, even for Admin
+// (security review LOW on 01.0/07: the mapping switch must never grant by
+// falling through).
+BOOST_AUTO_TEST_CASE(unmapped_permission_fails_closed)
+{
+    FakeHandlerRecorder recorder;
+    CommandRegistry registry;
+
+    CommandDescriptor descriptor =
+        sync_descriptor("link.purge", Permission::write, recorder.handler());
+    descriptor.permission_for = [](const ArgsView&) {
+        return static_cast<Permission>(99);
+    };
+    registry.add(std::move(descriptor));
+
+    CallerContext caller;
+    caller.control_set = ControlSet::Admin;
+    const CommandResponse response =
+        registry.execute(caller, request_for("link.purge"));
+    BOOST_TEST(response.ok == false);
+    BOOST_TEST((response.error.code == CommandErrorCode::not_authorized));
+    BOOST_TEST(recorder.calls.load() == 0);
+}
+
 // ---------------------------------------------------------------------------
 // permission_for carry-forward (T-09): a write descriptor whose hook returns a
 // LOWER permission (read) still requires write (tighten-only). A User is
