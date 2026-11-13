@@ -6,7 +6,7 @@ Tracks progress against [plan.md](/docs/roadmap/0006-unified-command-model-and-t
 
 | Task | Name | Status | Tests |
 |------|------|--------|-------|
-| 01.0 | Command model core | 🔶 In progress (4/13 subtasks) | 4 (`commands__01_json_scan`, `commands__02_error_table`, `commands__03_request_parse`, `commands__04_response_serialize`) |
+| 01.0 | Command model core | 🔶 In progress (5/13 subtasks) | 5 (`commands__01`-`05`) |
 | 02.0 | Storage path unification | ⬜ Not started | 0 |
 | 03.0 | Link and browse commands | ⬜ Not started | 0 |
 | 04.0 | REST and CLI adapters | ⬜ Not started | 0 |
@@ -123,3 +123,10 @@ C1-C11 changed:
   with full single-value validation through the bounded scanner, using
   result-specific limits larger than the request limits. Management path
   only; no interface change.
+- *2026-11-14, 01.0/05 spec amendments after implementation:* (1) a
+  timestamp without the trailing `Z` follows the shared `parseRfc3339Zulu`
+  (accepted on macOS) - the command layer must not be stricter than REST
+  (C3). The leniency comes from `std::get_time` and may differ on Linux; a
+  pre-existing REST portability question, noted for 0007. (2) NUL in a
+  decoded key surfaces as `args: malformed` (scanner rejects first).
+  (3) `validate_args` enforces the 64 KiB byte cap itself.
