@@ -49,7 +49,14 @@ const std::vector<error_info>& all_error_infos()
 
 const error_info& error_info_for(CommandErrorCode code)
 {
-    return all_error_infos()[static_cast<std::size_t>(code)];
+    const std::vector<error_info>& table = all_error_infos();
+    const auto index = static_cast<std::size_t>(code);
+    // Defensive: a value cast from an out-of-range integer must not index past
+    // the table; report it as the least revealing failure instead.
+    if (index >= table.size()) {
+        return table[static_cast<std::size_t>(CommandErrorCode::internal)];
+    }
+    return table[index];
 }
 
 std::optional<CommandErrorCode> error_code_from_name(std::string_view name)

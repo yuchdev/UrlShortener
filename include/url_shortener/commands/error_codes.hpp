@@ -160,9 +160,12 @@ const std::vector<error_info>& all_error_infos();
 /**
  * @brief Looks up the table row for a given code.
  *
- * @param code Any valid @ref CommandErrorCode enumerator.
- * @return Reference to the matching row in @ref all_error_infos; valid for the
- * lifetime of the program.
+ * @param code Any @ref CommandErrorCode value. A value outside the enumerator
+ * range (only producible by casting an arbitrary integer) is mapped to the
+ * `internal` row rather than indexing out of bounds.
+ * @return Reference to the matching row in @ref all_error_infos (or the
+ * `internal` row for an out-of-range value); valid for the lifetime of the
+ * program.
  */
 const error_info& error_info_for(CommandErrorCode code);
 

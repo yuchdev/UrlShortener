@@ -126,6 +126,16 @@ BOOST_AUTO_TEST_CASE(error_info_for_indexes_the_table_directly)
     }
 }
 
+BOOST_AUTO_TEST_CASE(error_info_for_out_of_range_value_maps_to_internal)
+{
+    const auto past_end =
+        static_cast<CommandErrorCode>(all_error_infos().size());
+    const auto far_out = static_cast<CommandErrorCode>(1000);
+
+    BOOST_TEST((error_info_for(past_end).code == CommandErrorCode::internal));
+    BOOST_TEST((error_info_for(far_out).code == CommandErrorCode::internal));
+}
+
 // ---------------------------------------------------------------------------
 // Name round-trip.
 // ---------------------------------------------------------------------------
