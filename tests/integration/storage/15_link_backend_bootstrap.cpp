@@ -21,6 +21,7 @@
 #include <chrono>
 #include <filesystem>
 #include <fstream>
+#include <stdexcept>
 #include <string>
 
 #include <boost/test/unit_test.hpp>
@@ -108,6 +109,37 @@ struct BackendResetGuard
 {
     ~BackendResetGuard() { LinkBackend::reset(); }
 };
+
+#ifndef _WIN32
+/**
+ * @brief Asserts @p path is mode 0600: owner read+write and no group or
+ * other permission bits.
+ * @param path File to check.
+ */
+void check_owner_only(const std::filesystem::path& path)
+{
+    const auto perms = std::filesystem::status(path).permissions();
+    BOOST_CHECK((perms & std::filesystem::perms::owner_read)
+                != std::filesystem::perms::none);
+    BOOST_CHECK((perms & std::filesystem::perms::owner_write)
+                != std::filesystem::perms::none);
+    BOOST_CHECK((perms & std::filesystem::perms::group_all)
+                == std::filesystem::perms::none);
+    BOOST_CHECK((perms & std::filesystem::perms::others_all)
+                == std::filesystem::perms::none);
+}
+
+/**
+ * @brief Reads the current process umask without permanently changing it.
+ * @return The umask value in effect on entry.
+ */
+mode_t read_umask()
+{
+    const mode_t current = ::umask(0);
+    ::umask(current);
+    return current;
+}
+#endif
 
 }  // namespace
 
@@ -585,7 +617,135 @@ BOOST_AUTO_TEST_CASE(new_sqlite_file_is_0600)
     std::filesystem::remove(db2);
     std::filesystem::remove(yaml);
 }
+
+/**
+ * [Integration][App] The new DB and any journal companion are owner-only,
+ * and the process umask is restored after InitLinkBackend returns (T-30).
+ *
+ * Scenario: with a known permissive process umask (0022), bootstrap a fresh
+ * SQLite backend and perform one write (forcing schema + a rollback
+ * journal), then inspect the main file and any `-journal`/`-wal`/`-shm`
+ * companion still on disk.
+ * Boundaries: the umask guard makes every file SQLite creates on first open
+ * born 0600 (not just the chmod-ed main file), and the guard restores the
+ * prior umask on return; companions are short-lived, so present ones are
+ * checked and absent ones skipped.
+ * On failure first check: the ScopedRestrictiveUmask around the probe in
+ * InitLinkBackend and that it restores the previous umask.
+ */
+BOOST_AUTO_TEST_CASE(new_sqlite_file_companions_owner_only_umask_restored)
+{
+    BackendResetGuard guard;
+    const mode_t prior = ::umask(022);  // deterministic permissive umask
+    const auto db = temp_path(".db");
+    const auto yaml = temp_path(".yaml");
+    std::filesystem::remove(db);
+    write_file(
+        yaml,
+        "metadata:\n  backend: sqlite\n  sqlite_path: " + db.string() + "\n");
+
+    ServerConfig config;
+    config.storage_config_path = yaml.string();
+    static const char* const k_companions[] = {"-journal", "-wal", "-shm"};
+    {
+        LinkBackendHandle handle = InitLinkBackend(config);
+        // Process umask restored to the pre-call value once the guard
+        // around the probe has gone out of scope.
+        BOOST_CHECK_EQUAL(read_umask(), static_cast<mode_t>(022));
+
+        // A write forces the schema + a rollback journal to be created.
+        auto& store = LinkBackend::store();
+        BOOST_REQUIRE(store.create(make_link("perm1")));
+
+        check_owner_only(db);
+        for (const char* suffix : k_companions) {
+            const std::filesystem::path companion = db.string() + suffix;
+            std::error_code ec;
+            if (std::filesystem::exists(companion, ec) && !ec) {
+                check_owner_only(companion);
+            }
+        }
+    }
+    LinkBackend::reset();
+
+    std::filesystem::remove(db);
+    for (const char* suffix : k_companions) {
+        std::error_code ec;
+        std::filesystem::remove(db.string() + suffix, ec);
+    }
+    std::filesystem::remove(yaml);
+    ::umask(prior);
+}
+
+/**
+ * [Integration][App] The process umask is restored even when the probe
+ * fails and InitLinkBackend throws (T-30, RAII guard on the unwind path).
+ *
+ * Scenario: with a known umask (0022), point a SQLite backend at a path
+ * under a nonexistent directory so the probe fails closed.
+ * Boundaries: InitLinkBackend throws, yet the ScopedRestrictiveUmask's
+ * destructor restores the prior umask during stack unwinding.
+ * On failure first check: ScopedRestrictiveUmask restoring the umask on
+ * exception, not only on normal return.
+ */
+BOOST_AUTO_TEST_CASE(umask_restored_after_probe_failure)
+{
+    BackendResetGuard guard;
+    const mode_t prior = ::umask(022);
+    const auto bad = temp_path("_nodir") / "inner" / "x.db";
+    const auto yaml = temp_path(".yaml");
+    write_file(
+        yaml,
+        "metadata:\n  backend: sqlite\n  sqlite_path: " + bad.string() + "\n");
+
+    ServerConfig config;
+    config.storage_config_path = yaml.string();
+    BOOST_CHECK_THROW(InitLinkBackend(config), std::runtime_error);
+    BOOST_CHECK_EQUAL(read_umask(), static_cast<mode_t>(022));
+    BOOST_CHECK(!LinkBackend::installed());
+
+    std::filesystem::remove(yaml);
+    ::umask(prior);
+}
 #endif
+
+/**
+ * [Integration][App] A throwing flusher start leaves nothing installed
+ * (fail-closed rollback, LOW follow-up fix 2).
+ *
+ * Scenario: inject a throwing post-install start step via the bootstrap
+ * test hook, then run InitLinkBackend over an in-memory backend.
+ * Boundaries: install() has published the store when the start step throws;
+ * the catch must run LinkBackend::shutdown() so nothing stays installed.
+ * On failure first check: the try/catch around install + flusher start in
+ * InitLinkBackend calling LinkBackend::shutdown() before rethrowing.
+ */
+BOOST_AUTO_TEST_CASE(flusher_start_failure_rolls_back_install)
+{
+    BackendResetGuard guard;
+    const auto yaml = temp_path(".yaml");
+    write_file(yaml, "metadata:\n  backend: inmemory\n");
+
+    ServerConfig config;
+    config.storage_config_path = yaml.string();
+
+    // Clear the hook no matter how the case exits so it never leaks.
+    struct HookReset
+    {
+        ~HookReset()
+        {
+            url_shortener::app::detail::set_start_flusher_hook_for_testing(
+                nullptr);
+        }
+    } hook_reset;
+    url_shortener::app::detail::set_start_flusher_hook_for_testing(
+        [] { throw std::runtime_error("injected flusher start failure"); });
+
+    BOOST_CHECK_THROW(InitLinkBackend(config), std::runtime_error);
+    BOOST_CHECK(!LinkBackend::installed());
+
+    std::filesystem::remove(yaml);
+}
 
 /**
  * [Unit][App] The serving latch and LinkBackend::shutdown stop and release the

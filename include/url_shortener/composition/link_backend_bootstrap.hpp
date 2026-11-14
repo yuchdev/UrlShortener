@@ -1,6 +1,7 @@
 #pragma once
 
 #include <chrono>
+#include <functional>
 #include <memory>
 #include <string>
 
@@ -232,12 +233,20 @@ std::string summarize_storage_config(const StorageConfig& config);
  * database fails at startup) -> construct the L1 cache and store ->
  * `LinkBackend::install` -> start the background flusher (persistent
  * backends only) -> return the handle. On a persistent SQLite backend,
- * a database file created by the probe is restricted to owner
- * read/write (mode 0600 on POSIX) and the permissions of a pre-existing
- * file are never widened (carried requirement 1, threat model T-30).
+ * the probe runs under a restrictive process umask (0077 on POSIX) so the
+ * database file *and* its `-journal`/`-wal`/`-shm` companions are created
+ * owner-only (mode 0600) with no world/group-readable TOCTOU window; the
+ * file is also chmod-ed to 0600 as defense in depth, and the permissions
+ * of a pre-existing file are never widened (carried requirement 1, threat
+ * model T-30). The umask change is process-wide and restored by an RAII
+ * guard (also on exceptions); it is safe because this runs single-threaded
+ * at startup, before any request/flusher thread exists.
  *
- * Fail-closed: any parse/validation failure or a failed probe throws
- * and nothing is installed. The thrown message never contains a DSN, a
+ * Fail-closed: any parse/validation failure, a failed probe, or a failure
+ * starting the background flusher throws and leaves nothing installed —
+ * on a flusher-start failure `InitLinkBackend` runs `LinkBackend::shutdown`
+ * before rethrowing so the store is never stranded globally installed
+ * with no handle to stop it. The thrown message never contains a DSN, a
  * password, a path, or file contents (carried requirement 2, threat
  * model T-31):
  * - `"storage config: cannot read file"` when the YAML file cannot be
@@ -257,10 +266,40 @@ std::string summarize_storage_config(const StorageConfig& config);
  * @return An active handle (installed store) when a path is configured
  * and the backend is reachable; an inactive handle otherwise.
  * @throws std::runtime_error with one of the fixed, value-free messages
- * above on any parse/validation/probe failure; `LinkBackend` is left
- * untouched (`installed() == false`) after a throw.
+ * above on any parse/validation/probe failure. A failure starting the
+ * background flusher propagates the originating exception (e.g. the
+ * `std::system_error` from `std::thread`) instead. In every case
+ * `LinkBackend` is left uninstalled (`installed() == false`) after the
+ * throw.
  */
 LinkBackendHandle InitLinkBackend(const ServerConfig& config);
+
+namespace detail
+{
+
+/**
+ * @brief Test-only seam replacing the post-`install()` flusher-start step
+ * inside `InitLinkBackend`, so a test can force that step to throw and
+ * verify the fail-closed rollback (nothing stays installed after a throw).
+ *
+ * When a non-null hook is set, `InitLinkBackend` calls it *instead of*
+ * `RepositoryLinkStore::start_stats_flusher()` immediately after
+ * `LinkBackend::install()`. If the hook throws, `InitLinkBackend` runs
+ * `LinkBackend::shutdown()` and rethrows, exactly as it would for a real
+ * `start_stats_flusher()` failure (e.g. `std::thread` creation failure).
+ * The hook is null in production (the real flusher start runs for
+ * persistent backends). The seam lives here rather than in
+ * `RepositoryLinkStore` so no test-only branch enters the store hot path.
+ *
+ * Not thread-safe and process-wide: set and clear it only from a
+ * single-threaded test around one `InitLinkBackend` call, and always clear
+ * it afterwards (pass `nullptr`) so it never leaks into another test.
+ * @param hook Replacement start step, or `nullptr` to restore the default
+ * (real flusher start).
+ */
+void set_start_flusher_hook_for_testing(std::function<void()> hook);
+
+}  // namespace detail
 
 }  // namespace app
 }  // namespace url_shortener

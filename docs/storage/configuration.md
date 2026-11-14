@@ -53,9 +53,14 @@ The storage config YAML holds backend credentials (`postgres_dsn`,
 tags/metadata. On a shared host both must be protected (threat model T-30):
 
 - Create both the YAML and the SQLite database file as mode **0600**, owned by
-  the service account. When the bootstrap creates a *new* SQLite file it
-  restricts it to owner read/write (0600) on POSIX; it never widens the
-  permissions of a pre-existing file, so an operator-chosen mode is preserved.
+  the service account. When the bootstrap creates a *new* SQLite file it runs
+  the first open under a restrictive umask (0077) on POSIX, so the database file
+  and its `-journal`/`-wal`/`-shm` companions are born owner-only (0600) with no
+  world/group-readable window, and additionally chmods the main file to 0600 as
+  defense in depth. It never widens the permissions of a pre-existing file, so
+  an operator-chosen mode is preserved. (The umask change is process-wide but
+  applied only at single-threaded startup and restored immediately, so it does
+  not affect files created while serving.)
 - The `--storage-config` path is visible in process listings. For
   secrets-laden configs prefer the `URL_SHORTENER_STORAGE_CONFIG` environment
   variable (flag takes precedence over env, env over the in-memory default).

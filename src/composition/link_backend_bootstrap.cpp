@@ -1,4 +1,6 @@
+#include <cassert>
 #include <filesystem>
+#include <functional>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -6,6 +8,10 @@
 #include "url_shortener/composition/link_backend_bootstrap.hpp"
 
 #include <yaml-cpp/yaml.h>
+
+#ifndef _WIN32
+#    include <sys/stat.h>  // umask
+#endif
 
 #include "url_shortener/app/expiring_link_cache.hpp"
 #include "url_shortener/app/link_backend.hpp"
@@ -36,13 +42,85 @@ constexpr std::chrono::seconds k_persistent_stats_flush_interval {30};
 constexpr const char* k_probe_slug = "health-probe-slug";
 
 /**
+ * @brief RAII guard that tightens the process umask to `0077` for its
+ * lifetime and restores the previous value on destruction, including
+ * during stack unwinding on an exception.
+ *
+ * Used around the startup probe so that every file SQLite creates on
+ * first open — the main `.db` **and** its `-journal`/`-wal`/`-shm`
+ * companions, which a post-creation `chmod` of the main file alone would
+ * leave world/group-readable between creation and the `chmod` (TOCTOU,
+ * threat model T-30) — is born owner-only (mode `0600`). The companions
+ * carry page data; under a default `0022` umask SQLite would otherwise
+ * create them at `0644`.
+ *
+ * `umask(2)` is **process-wide** and not thread-safe: this guard is only
+ * ever constructed at single-threaded startup, before any request or
+ * stats-flusher thread exists (`LinkBackend::serving()` is `false`); the
+ * caller asserts that precondition. A no-op on Windows, which has no
+ * POSIX umask (the file inherits the account ACL instead).
+ */
+class ScopedRestrictiveUmask
+{
+public:
+    /// Sets the process umask to `0077`, remembering the prior value.
+    ScopedRestrictiveUmask()
+#ifndef _WIN32
+        : m_previous_umask_(::umask(0077))
+#endif
+    {
+    }
+
+    /// Restores the umask captured at construction.
+    ~ScopedRestrictiveUmask()
+    {
+#ifndef _WIN32
+        ::umask(m_previous_umask_);
+#endif
+    }
+
+    ScopedRestrictiveUmask(const ScopedRestrictiveUmask&) = delete;
+    ScopedRestrictiveUmask& operator=(const ScopedRestrictiveUmask&) = delete;
+    ScopedRestrictiveUmask(ScopedRestrictiveUmask&&) = delete;
+    ScopedRestrictiveUmask& operator=(ScopedRestrictiveUmask&&) = delete;
+
+#ifndef _WIN32
+private:
+    ///< Umask value in effect before this guard replaced it with `0077`.
+    ::mode_t m_previous_umask_;
+#endif
+};
+
+/**
+ * @brief Process-wide test seam that, when set, replaces the
+ * post-`install()` flusher-start step inside `InitLinkBackend`.
+ *
+ * Null in production so the real `RepositoryLinkStore::start_stats_flusher`
+ * runs. A test installs a throwing hook to exercise the fail-closed
+ * rollback path deterministically (see
+ * `detail::set_start_flusher_hook_for_testing`). Not thread-safe; only
+ * ever set/cleared from a single-threaded test around one `InitLinkBackend`
+ * call.
+ * @return Reference to the single storage slot for the hook.
+ */
+std::function<void()>& start_flusher_hook()
+{
+    static std::function<void()> hook;
+    return hook;
+}
+
+/**
  * @brief Restricts a freshly created SQLite database file to owner
  * read/write (mode 0600) without ever widening an existing file.
  *
- * Called only for the `sqlite` backend and only when @p pre_existed is
- * `false` (the probe created the file this run), so operator-chosen
- * permissions on a pre-existing database are never relaxed (carried
- * requirement 1, threat model T-30). A no-op for `":memory:"` and on
+ * Defense in depth behind the startup `ScopedRestrictiveUmask`, which
+ * already forces the main file and its journal companions to be born
+ * `0600`. Called only for the `sqlite` backend and only when
+ * @p pre_existed is `false` (the probe created the file this run), so
+ * operator-chosen permissions on a pre-existing database are never relaxed
+ * (carried requirement 1, threat model T-30). A no-op for `":memory:"`,
+ * when @p path is a symlink (the symlink target is operator-owned and the
+ * `pre_existed` check already protects symlink->existing-file), and on
  * non-POSIX platforms (Windows has no equivalent POSIX mode; the file
  * inherits the account ACL).
  * @param path SQLite database path from the validated config.
@@ -56,6 +134,12 @@ void restrict_new_sqlite_file(const std::string& path, bool pre_existed)
     }
     std::error_code ec;
     if (!std::filesystem::exists(path, ec) || ec) {
+        return;
+    }
+    // std::filesystem::permissions follows symlinks; skip the chmod when
+    // the configured path is itself a symlink so this never rewrites the
+    // mode of an operator-owned file the symlink points at.
+    if (std::filesystem::is_symlink(path, ec) && !ec) {
         return;
     }
     // owner_read | owner_write, replacing any group/world bits the
@@ -209,8 +293,10 @@ LinkBackendHandle InitLinkBackend(const ServerConfig& config)
 
     // For the 0600 requirement: record whether a SQLite file already
     // exists *before* the probe creates it (T-30).
+    const bool sqlite_file_backend = cfg.metadata.backend == "sqlite"
+        && cfg.metadata.sqlite_path && *cfg.metadata.sqlite_path != ":memory:";
     bool sqlite_pre_existed = true;
-    if (cfg.metadata.backend == "sqlite" && cfg.metadata.sqlite_path) {
+    if (sqlite_file_backend) {
         std::error_code ec;
         sqlite_pre_existed =
             std::filesystem::exists(*cfg.metadata.sqlite_path, ec) && !ec;
@@ -218,16 +304,33 @@ LinkBackendHandle InitLinkBackend(const ServerConfig& config)
 
     // 4. Probe: forces create/open + schema bootstrap and surfaces a
     //    bad path or unreachable backend as a fail-closed startup error.
+    //    For a file-backed SQLite backend the probe (and the schema
+    //    bootstrap write it triggers) is the moment the DB file and its
+    //    -journal/-wal/-shm companions are first created, so run it under
+    //    a restrictive umask (0077) so every one of those files is born
+    //    owner-only (0600) instead of inheriting a 0644 default — closing
+    //    the TOCTOU/companions gap a post-creation chmod of the main file
+    //    alone would leave (T-30). umask is process-wide; this runs at
+    //    single-threaded startup, before any request/flusher thread.
+    assert(!LinkBackend::serving());
     ::RepoError probe_error = ::RepoError::none;
-    adapters.metadata->Exists(k_probe_slug, &probe_error);
+    if (sqlite_file_backend) {
+        const ScopedRestrictiveUmask umask_guard;
+        (void)umask_guard;
+        adapters.metadata->Exists(k_probe_slug, &probe_error);
+    }
+    else {
+        adapters.metadata->Exists(k_probe_slug, &probe_error);
+    }
     if (probe_error != ::RepoError::none
-        && probe_error != ::RepoError::not_found) {
+        && probe_error != ::RepoError::not_found)
+    {
         throw std::runtime_error("storage backend unavailable");
     }
 
     // 1 (T-30): tighten a freshly created SQLite file to 0600; never
-    // widen an existing one.
-    if (cfg.metadata.backend == "sqlite" && cfg.metadata.sqlite_path) {
+    // widen an existing one. Defense in depth behind the umask guard above.
+    if (sqlite_file_backend) {
         restrict_new_sqlite_file(*cfg.metadata.sqlite_path, sqlite_pre_existed);
     }
 
@@ -250,12 +353,28 @@ LinkBackendHandle InitLinkBackend(const ServerConfig& config)
     auto store = std::make_shared<RepositoryLinkStore>(
         adapters.metadata, adapters.cache, l1, *clock, options);
 
-    LinkBackend::install(store);
-
-    // Requirement 4: start the background flusher after install, for
-    // persistent backends only (write-through in-memory starts nothing).
-    if (settings.stats_flush_interval > std::chrono::seconds(0)) {
-        store->start_stats_flusher();
+    // Fail closed: install() publishes the store process-wide, but the
+    // flusher start that follows can throw (e.g. std::thread creation
+    // failure). If it does, a bare install() would strand the store
+    // globally installed with no handle to stop it, to be destroyed during
+    // static destruction (when the logger it flushes through may be gone,
+    // carried requirement 5). Wrapping both steps so a throw triggers
+    // LinkBackend::shutdown() guarantees nothing stays installed after a
+    // throw. The start_flusher_hook() seam lets a test force the throw
+    // (detail::set_start_flusher_hook_for_testing); it is null in
+    // production, where the real flusher starts for persistent backends
+    // only (requirement 4; write-through in-memory starts nothing).
+    try {
+        LinkBackend::install(store);
+        if (start_flusher_hook()) {
+            start_flusher_hook()();
+        }
+        else if (settings.stats_flush_interval > std::chrono::seconds(0)) {
+            store->start_stats_flusher();
+        }
+    } catch (...) {
+        LinkBackend::shutdown();
+        throw;
     }
 
     return LinkBackendHandle {std::move(adapters),
@@ -264,6 +383,16 @@ LinkBackendHandle InitLinkBackend(const ServerConfig& config)
                               std::move(settings),
                               summarize_storage_config(cfg)};
 }
+
+namespace detail
+{
+
+void set_start_flusher_hook_for_testing(std::function<void()> hook)
+{
+    start_flusher_hook() = std::move(hook);
+}
+
+}  // namespace detail
 
 }  // namespace app
 }  // namespace url_shortener
