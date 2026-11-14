@@ -160,6 +160,9 @@ set(URL_SHORTENER_SOURCES
       tests/contract/metadata/07_expiry_semantics.cpp
       tests/contract/metadata/08_concurrent_create_one_wins.cpp
       tests/contract/metadata/09_get_by_id.cpp
+      tests/contract/metadata/10_list_page_text_and_sort.cpp
+      tests/contract/metadata/11_list_page_window_and_total.cpp
+      tests/contract/metadata/12_list_page_flags_and_predicate.cpp
   )
 
   set(STORAGE_INTEGRATION_SOURCES
