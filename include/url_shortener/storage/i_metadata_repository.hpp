@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "url_shortener/storage/errors/repo_error.hpp"
+#include "url_shortener/storage/list_links_eval.hpp"
 #include "url_shortener/storage/models/create_link_request.hpp"
 #include "url_shortener/storage/models/link_record.hpp"
 #include "url_shortener/storage/models/list_links_query.hpp"
@@ -139,4 +140,40 @@ public:
      */
     virtual bool Exists(const std::string& short_code,
                         RepoError* error = nullptr) const = 0;
+
+    /**
+     * @brief Returns a filtered, sorted and counted page of records for
+     * the extended `query`, including a total independent of the
+     * `offset`/`limit` window.
+     *
+     * Non-pure: the default implementation (in `list_links_eval.cpp`)
+     * scans the backend through `ListLinks` and evaluates the extended
+     * query in C++ via `ApplyListQuery`, so every backend behaves
+     * identically and a backend that ignores a legacy flag (e.g. the SQL
+     * backends ignore `include_deleted`) is made consistent here. A
+     * backend may override this to push filtering down to its query
+     * layer, but must preserve the semantics below.
+     *
+     * The default implementation pages `ListLinks` with `offset = 0` and
+     * `limit = kListScanLimit`, keeping `query`'s own filter flags, then
+     * re-applies every filter in `ApplyListQuery`. It never returns a
+     * partial window disguised as success: if the underlying `ListLinks`
+     * result size reaches `kListScanLimit` it reports overflow rather
+     * than truncating.
+     *
+     * @param query Filter, sort and pagination options; see
+     * `ListLinksQuery`. `query.extra_filter`, when set, must not throw.
+     * @param[out] page Receives the counted window on success; must be
+     * non-null.
+     * @param[out] error If non-null, receives the failure reason on a
+     * `false` return and is left untouched on success.
+     * @return `true` with `*page` populated on success. `false` with
+     * `RepoError::invalid_argument` when `page` is null;
+     * `RepoError::permanent_failure` when the scan reaches
+     * `kListScanLimit` (overflow, no silent truncation); or the error
+     * reported by the underlying `ListLinks` when that call fails.
+     */
+    virtual bool ListLinksPage(const ListLinksQuery& query,
+                               LinkPage* page,
+                               RepoError* error = nullptr) const;
 };

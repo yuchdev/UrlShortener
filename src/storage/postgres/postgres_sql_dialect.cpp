@@ -76,7 +76,7 @@ std::string PostgresSqlDialect::ListSql() const
            "CASE WHEN expires_at IS NULL THEN NULL ELSE CAST(EXTRACT(EPOCH FROM expires_at) AS BIGINT) END AS expires_at, "
            "CASE WHEN is_active THEN 1 ELSE 0 END AS is_active, "
            "owner_id, CASE WHEN attributes_json IS NULL THEN NULL ELSE attributes_json::text END AS attributes_json "
-           "FROM links WHERE (:owner_id IS NULL OR owner_id = :owner_id) "
+           "FROM links WHERE (:has_owner = 0 OR owner_id = :owner_id) "
            "AND (:include_inactive = 1 OR is_active = TRUE) "
            "ORDER BY created_at LIMIT :limit OFFSET :offset;";
 }

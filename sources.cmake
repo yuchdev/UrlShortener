@@ -126,6 +126,11 @@ set(URL_SHORTENER_SOURCES
       tests/unit/core/05_interface_smoke_compile.cpp
   )
 
+  set(LISTING_UNIT_SOURCES
+      tests/unit/storage/listing/01_list_query_eval.cpp
+      tests/unit/storage/listing/02_list_links_page_default_impl.cpp
+  )
+
   set(INMEMORY_UNIT_SOURCES
       tests/unit/storage/inmemory/01_create_and_get_roundtrip.cpp
       tests/unit/storage/inmemory/02_duplicate_short_code.cpp
@@ -427,6 +432,7 @@ set(URL_SHORTENER_SOURCES
       ${CMAKE_CURRENT_SOURCE_DIR}/src/http/handlers/redirect_handlers.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/http/handlers/fallback_handlers.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/core/link_service.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/storage/list_links_eval.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/storage/inmemory/in_memory_metadata_repository.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/storage/inmemory/in_memory_cache_store.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/storage/inmemory/in_memory_analytics_sink.cpp
