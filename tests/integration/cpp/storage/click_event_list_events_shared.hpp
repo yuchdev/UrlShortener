@@ -1,7 +1,9 @@
 #pragma once
 
 #include <chrono>
+#include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <string>
 #include <vector>
 
@@ -400,6 +402,23 @@ inline void case_text_cap(Repo& repo)
     }
 }
 
+/// An `offset` of `SIZE_MAX` (above `LLONG_MAX`) succeeds with an empty window
+/// and the correct `total`: the adapter clamps the offset before narrowing it
+/// to the bound SQL integer, so it never wraps negative (which would make
+/// PostgreSQL error and SQLite silently treat it as 0).
+inline void case_offset_overflow(Repo& repo)
+{
+    clear(repo);
+    seed12(repo);
+    ClickEventQuery q;
+    q.offset = std::numeric_limits<std::size_t>::max();
+    q.limit = 100;
+    ClickEventPage p;
+    BOOST_TEST(repo.ListEvents(q, &p, nullptr));
+    BOOST_TEST(p.items.empty());
+    BOOST_TEST(p.total == 12u);
+}
+
 /// Inverted range and null page are validation errors; null `error` is safe.
 inline void case_validation(Repo& repo)
 {
@@ -437,6 +456,7 @@ inline void run_all(Repo& repo)
     case_empty_text_fields_roundtrip(repo);
     case_injection_inert(repo);
     case_text_cap(repo);
+    case_offset_overflow(repo);
     case_validation(repo);
 }
 

@@ -109,6 +109,15 @@ bool InMemoryClickEventRepository::ListEvents(
         }
         return false;
     }
+    if (query.text
+        && query.text->size() > analytics::kMaxClickEventTextFilterLength)
+    {
+        if (error != nullptr) {
+            error->code = analytics::AnalyticsErrorCode::validation;
+            error->message = "ListEvents text filter exceeds maximum length";
+        }
+        return false;
+    }
 
     const auto to_lower = [](std::string s)
     {

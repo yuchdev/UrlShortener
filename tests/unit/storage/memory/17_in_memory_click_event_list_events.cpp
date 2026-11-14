@@ -1,6 +1,8 @@
 #define BOOST_TEST_MODULE InMemoryClickEventListEvents
 #include <chrono>
+#include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <string>
 
 #include <boost/test/unit_test.hpp>
@@ -342,4 +344,54 @@ BOOST_AUTO_TEST_CASE(listed_event_exposes_only_client_id_hash)
     BOOST_TEST(repo.ListEvents(q, &page, nullptr));
     BOOST_REQUIRE_EQUAL(page.items.size(), 1u);
     BOOST_TEST(page.items[0].client_id_hash == "hash-e1");
+}
+
+/**
+ * Scenario: a `text` filter exactly at `kMaxClickEventTextFilterLength` (256)
+ * is accepted; one byte over (257) is a validation error. Mirrors the SQL
+ * adapter so both backends enforce the cap identically (same check order:
+ * after the null-page and inverted-range checks).
+ * Boundaries: 256 accepted, 257 rejected.
+ * On failure first check: that `kMaxClickEventTextFilterLength` is shared from
+ * `click_event_query.hpp` and both adapters compare against it.
+ */
+BOOST_AUTO_TEST_CASE(text_filter_at_cap_accepted_over_cap_rejected)
+{
+    storage::memory::InMemoryClickEventRepository repo;
+    fill(repo);
+    {
+        ClickEventQuery q;
+        q.text = std::string(analytics::kMaxClickEventTextFilterLength, 'a');
+        ClickEventPage page;
+        BOOST_TEST(repo.ListEvents(q, &page, nullptr));
+    }
+    {
+        ClickEventQuery q;
+        q.text =
+            std::string(analytics::kMaxClickEventTextFilterLength + 1, 'a');
+        ClickEventPage page;
+        analytics::AnalyticsError err;
+        BOOST_TEST(!repo.ListEvents(q, &page, &err));
+        BOOST_TEST((err.code == analytics::AnalyticsErrorCode::validation));
+    }
+}
+
+/**
+ * Scenario: an `offset` of `SIZE_MAX` (far past the end) succeeds and yields an
+ * empty window while `total` still reports every match. Guards the SQL adapter
+ * against a size_t -> long long offset overflow; the in-memory adapter must
+ * agree on the empty-page semantics.
+ * Boundaries: offset = std::numeric_limits<std::size_t>::max().
+ */
+BOOST_AUTO_TEST_CASE(offset_at_size_max_yields_empty_page_with_total)
+{
+    storage::memory::InMemoryClickEventRepository repo;
+    fill(repo);
+    ClickEventQuery q;
+    q.offset = std::numeric_limits<std::size_t>::max();
+    q.limit = 100;
+    ClickEventPage page;
+    BOOST_TEST(repo.ListEvents(q, &page, nullptr));
+    BOOST_TEST(page.items.empty());
+    BOOST_TEST(page.total == 3u);
 }

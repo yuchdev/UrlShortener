@@ -84,25 +84,29 @@ public:
      * test fakes and backends that have not implemented listing (e.g. the
      * SQL adapter before subtask 04) keep compiling and fail cleanly rather
      * than returning misleading data. Implementations that support listing
-     * must clamp `query.limit` to `kMaxClickEventPageSize`, apply the filters
-     * (slug, text, status, half-open `[from, to)` range), order by
+     * must clamp `query.limit` to `kMaxClickEventPageSize`, reject a
+     * `query.text` longer than `kMaxClickEventTextFilterLength`, apply the
+     * filters (slug, text, status, half-open `[from, to)` range), order by
      * `query.sort_by`/`query.descending` with `event_id` ascending as the
      * final tie-break, and set `page->total` to the match count before
      * `offset`/`limit`.
      *
      * @param query Filter, ordering, and paging parameters. `query.from >
-     * query.to` (both set) is an invalid range.
+     * query.to` (both set) is an invalid range, and a `query.text` longer than
+     * `kMaxClickEventTextFilterLength` is invalid.
      * @param[out] page Receives the window and total on success; must be
      * non-null. Left unmodified on failure.
      * @param[out] error If non-null and the call fails, receives the failure
      * reason; left untouched on success. The default body writes
      * `AnalyticsErrorCode::repository` ("not supported"); supporting
      * implementations write `AnalyticsErrorCode::validation` when `page` is
-     * null or the range is inverted, and `AnalyticsErrorCode::repository` on
+     * null, the range is inverted, or `query.text` exceeds
+     * `kMaxClickEventTextFilterLength`, and `AnalyticsErrorCode::repository` on
      * a backend failure.
      * @return `true` if the query executed and `page` was populated; `false`
      * when this repository does not support listing (default body), when
-     * `page` is null, when `query.from > query.to`, or on a backend failure.
+     * `page` is null, when `query.from > query.to`, when `query.text` exceeds
+     * `kMaxClickEventTextFilterLength`, or on a backend failure.
      * @note No raw client identifier is ever returned - a listed `ClickEvent`
      * exposes only the HMAC `client_id_hash` (C6).
      */

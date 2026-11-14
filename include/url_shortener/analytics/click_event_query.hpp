@@ -21,6 +21,17 @@ namespace url_shortener::analytics
 constexpr std::size_t kMaxClickEventPageSize = 500;
 
 /**
+ * @brief Maximum byte length every `IClickEventRepository::ListEvents`
+ * implementation accepts for `ClickEventQuery::text`; a longer value is a
+ * validation failure. Defense in depth: the argument layer already bounds the
+ * operator-supplied text to this size, so a `text` reaching a repository above
+ * this length indicates a bypassed caller and is rejected rather than used to
+ * build an oversized `LIKE` pattern. Applies only to the free-text filter; it
+ * does not constrain `slug` or any other field.
+ */
+constexpr std::size_t kMaxClickEventTextFilterLength = 256;
+
+/**
  * @brief Field a `ClickEventQuery` is ordered by before paging. The sort is
  * always stable, with `ClickEvent::event_id` ascending as the final tie-break
  * (see `IClickEventRepository::ListEvents`).
