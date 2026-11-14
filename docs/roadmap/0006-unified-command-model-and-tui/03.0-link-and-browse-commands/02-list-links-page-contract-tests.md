@@ -155,3 +155,10 @@ harness list contains `postgres` (print `h.name` once with `BOOST_TEST_MESSAGE`)
 
 - If a later change persists `deleted_at` in SQL (real column), remove the in-memory-only guard in `11_...` in that change, not here.
 - Large-scan behavior (100000 rows) is covered by the fake in subtask 01, not here (too slow for SQLite CI).
+
+*(amended 2026-11-15 after implementation)* The new files are numbered
+`10`-`12` (`09_get_by_id.cpp` from 02.0/16 took `09`), so the commands and
+success criterion 1 read `ctest -R "^metadata__(10|11|12)_"`. Fixed owner
+strings are used instead of per-run-unique ones; per-case isolation comes
+from `ResetSharedHarnesses` (`DELETE FROM links` before every case), which
+is what the per-run-unique owner was meant to guarantee.
