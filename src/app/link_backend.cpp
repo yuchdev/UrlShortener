@@ -1,9 +1,11 @@
 #include <atomic>
+#include <cassert>
 #include <mutex>
 #include <utility>
 
 #include <url_shortener/app/legacy_adapters.hpp>
 #include <url_shortener/app/link_backend.hpp>
+#include <url_shortener/app/repository_link_store.hpp>
 
 namespace url_shortener
 {
@@ -36,6 +38,13 @@ std::shared_ptr<ILinkStore> s_owner;
  */
 std::mutex s_install_mutex;
 
+/**
+ * @brief One-way "serving" latch set by `mark_serving()` and cleared by
+ * `shutdown()`. Read by `serving()` and asserted `false` by
+ * `install()`/`reset()` (install-once-at-startup contract, T-39).
+ */
+std::atomic<bool> s_serving {false};
+
 }  // namespace
 
 ILinkStore& LinkBackend::store()
@@ -56,6 +65,10 @@ ILinkStore& LinkBackend::store()
 
 void LinkBackend::install(std::shared_ptr<ILinkStore> store)
 {
+    // Install-once-at-startup contract (T-39): never swap the store while
+    // request threads may hold store()'s reference.
+    assert(!s_serving.load(std::memory_order_acquire)
+           && "LinkBackend::install() called after mark_serving()");
     std::lock_guard<std::mutex> lock(s_install_mutex);
     // Store the owner first, then publish the raw pointer with release
     // ordering so a concurrent acquiring store() never sees a dangling or
@@ -66,6 +79,10 @@ void LinkBackend::install(std::shared_ptr<ILinkStore> store)
 
 void LinkBackend::reset()
 {
+    // Install-once-at-startup contract (T-39): teardown only, never while
+    // serving. `shutdown()` clears the latch first, then retires inline.
+    assert(!s_serving.load(std::memory_order_acquire)
+           && "LinkBackend::reset() called while serving");
     std::lock_guard<std::mutex> lock(s_install_mutex);
     // Retire the published pointer before dropping ownership so later
     // readers fall back to the default; in-flight readers that already
@@ -78,6 +95,33 @@ void LinkBackend::reset()
 bool LinkBackend::installed()
 {
     return s_current.load(std::memory_order_acquire) != nullptr;
+}
+
+void LinkBackend::mark_serving()
+{
+    s_serving.store(true, std::memory_order_release);
+}
+
+bool LinkBackend::serving()
+{
+    return s_serving.load(std::memory_order_acquire);
+}
+
+void LinkBackend::shutdown()
+{
+    std::lock_guard<std::mutex> lock(s_install_mutex);
+    // Stop the background stats flusher (joins + final flush) now, on the
+    // caller's thread while the logger is alive, so a RepositoryLinkStore
+    // is never flushed or destroyed during static destruction (carried
+    // requirement 5). dynamic_cast is null for any other ILinkStore.
+    if (auto* repo_store = dynamic_cast<RepositoryLinkStore*>(s_owner.get())) {
+        repo_store->stop_stats_flusher();
+    }
+    // Clear the serving latch and retire the store inline (reset() would
+    // re-lock the non-recursive mutex and assert on the latch).
+    s_serving.store(false, std::memory_order_release);
+    s_current.store(nullptr, std::memory_order_release);
+    s_owner.reset();
 }
 
 }  // namespace app

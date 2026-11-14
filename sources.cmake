@@ -166,6 +166,7 @@ set(URL_SHORTENER_SOURCES
       tests/integration/storage/06_inmemory_analytics_best_effort.cpp
       tests/integration/storage/07_sqlite_service_full_flow.cpp
       tests/integration/storage/15_repository_link_store_sqlite.cpp
+      tests/integration/storage/15_link_backend_bootstrap.cpp
   )
 
   set(SQL_FOUNDATION_UNIT_SOURCES
@@ -468,6 +469,7 @@ set(URL_SHORTENER_SOURCES
       ${CMAKE_CURRENT_SOURCE_DIR}/src/composition/link_command_service_factory.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/config/storage_config.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/composition/storage_factory.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/composition/link_backend_bootstrap.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/observability/storage_observability.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/observability/log_level.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/observability/logging_config.cpp

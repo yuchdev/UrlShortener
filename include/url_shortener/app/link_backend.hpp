@@ -91,6 +91,47 @@ public:
      * is active.
      */
     static bool installed();
+
+    /**
+     * @brief Marks the process as *serving*: request-handling threads
+     * are about to start (or have started).
+     *
+     * A cheap one-way latch (a single relaxed atomic store). After it is
+     * set, `install()` and `reset()` must not be called — doing so would
+     * risk tearing the store down under a thread holding `store()`'s
+     * reference (use-after-free, threat model T-39). They assert
+     * `!serving()` in debug builds. `shutdown()` clears the latch as part
+     * of an orderly teardown, so it may reset after serving.
+     *
+     * Intended call site: `main` (subtask 12), once, after
+     * `InitLinkBackend` and before the first request-serving thread.
+     */
+    static void mark_serving();
+
+    /**
+     * @brief Reports whether `mark_serving()` has been called and not yet
+     * cleared by `shutdown()`.
+     * @return `true` once serving has started; `false` before serving or
+     * after `shutdown()`.
+     */
+    static bool serving();
+
+    /**
+     * @brief Orderly teardown: stops the installed store's background
+     * stats flusher (when it has one), clears the serving latch, then
+     * `reset()`s the holder.
+     *
+     * Call once from `main` (subtask 12) before process exit, after all
+     * request-serving threads have stopped. Running the flusher stop and
+     * the store's release here — on the main thread, while the logger
+     * singleton is still alive — guarantees the `RepositoryLinkStore` is
+     * never flushed or destroyed during static destruction, when the
+     * logger it may log through could already be gone (carried
+     * requirement 5). A no-op when nothing is installed. The matching
+     * call site in `main` is wired by subtask 12; this API is provided
+     * here so that subtask's `main` can call it.
+     */
+    static void shutdown();
 };
 
 }  // namespace app
