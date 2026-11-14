@@ -80,6 +80,15 @@ entries; if still full remove one arbitrary entry (map iteration order). No LRU:
 the cache is a latency optimization, not a correctness mechanism, and the
 bound only protects memory.
 
+*(amended 2026-11-14 after the implementation security review)* A full
+expired sweep is O(n) under the global lock on the redirect path once the map
+is full, so eviction instead examines a small fixed number of entries, evicts
+the first expired one found, and otherwise evicts one arbitrary entry -
+bounded constant work per insert (C10). Expiry is also clock-safe: an entry
+whose `stored_at` lies in the future relative to `now` (a backward wall-clock
+step) counts as expired, so a clock anomaly can only shorten a lifetime and
+cannot reopen T-32.
+
 `patch(slug, mutator)` (amended 2026-11-14, threat model T-32): under `m_mutex`,
 look the slug up; if it is absent or already expired (the same lazy-expiry rule
 as `get`) do nothing and return `false` - `patch` never inserts and never

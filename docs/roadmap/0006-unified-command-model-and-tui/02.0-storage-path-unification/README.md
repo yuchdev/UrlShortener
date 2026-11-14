@@ -100,7 +100,7 @@ deliberately filters in the app layer instead, 03.0/01 and 03.0/12).
 
 | # | Document | Status | Depends on | Blocks |
 |---|----------|--------|------------|--------|
-| 01 | [Expiring link cache](01-expiring-link-cache.md) | ⬜ Not started | none | 03 |
+| 01 | [Expiring link cache](01-expiring-link-cache.md) | ✅ Complete | none | 03 |
 | 02 | [Link <-> record codec](02-link-record-codec.md) | ⬜ Not started | none | 03, 03.0/12 |
 | 03 | [RepositoryLinkStore: reads and cache](03-repository-link-store-reads.md) | ⬜ Not started | 01, 02 | 04 |
 | 04 | [RepositoryLinkStore: writes](04-repository-link-store-writes.md) | ⬜ Not started | 03 | 05, 06, 11 |
