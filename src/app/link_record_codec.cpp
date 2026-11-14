@@ -18,6 +18,41 @@ namespace app
 namespace
 {
 
+// ---------------------------------------------------------------------------
+// Read-path caps.
+//
+// A `::LinkRecord` can originate from a SQLite file written by another,
+// possibly hostile, process (see
+// docs/security/0006-02.0-storage-path-unification-threat-model.md). Decoding
+// therefore enforces the same entry/length limits the write path validates
+// upstream, so a crafted record cannot force the codec to materialize an
+// unbounded number of tags/metadata entries or oversized values on the
+// redirect read path. The write-path source of truth for each value is the
+// matching validator in `src/core/utils.cpp` (or the fixed field set below);
+// the values are duplicated here because the validators hard-code them rather
+// than exposing named constants.
+// ---------------------------------------------------------------------------
+
+///< Maximum number of tags (`validateTags`, `src/core/utils.cpp`).
+constexpr std::size_t k_max_tags = 20;
+///< Maximum decoded length of a single tag (`validateTags`).
+constexpr std::size_t k_max_tag_length = 32;
+///< Maximum number of metadata entries (`validateMetadata`).
+constexpr std::size_t k_max_metadata_entries = 50;
+///< Maximum decoded metadata key length (`validateMetadata`).
+constexpr std::size_t k_max_metadata_key_length = 64;
+///< Maximum decoded metadata value length (`validateMetadata`).
+constexpr std::size_t k_max_metadata_value_length = 512;
+///< Maximum decoded length of a single campaign field (`validateCampaign`).
+constexpr std::size_t k_max_campaign_field_length = 128;
+///< Maximum number of `&`-separated campaign fields the write path can emit:
+///< the six recognized fields of `pack_attributes` (`name`, `source`,
+///< `medium`, `term`, `content`, `id`).
+constexpr std::size_t k_max_campaign_fields = 6;
+///< Maximum number of `&`-separated stats fields the write path can emit:
+///< `total`, `r24`, `r7`, and the optional `last` of `encode_stats`.
+constexpr std::size_t k_max_stats_fields = 4;
+
 /**
  * @brief Tests whether `c` is an RFC 3986 unreserved byte that
  * `percent_encode` emits verbatim.
@@ -51,30 +86,43 @@ int hex_value(const unsigned char c)
 }
 
 /**
- * @brief Splits `in` into fields on `sep`.
+ * @brief Splits `in` into at most `max_fields` fields on `sep`, bailing out
+ * early if the input would produce more.
  *
- * Produces exactly `count(sep) + 1` fields, so `""` yields one empty field
- * and a trailing separator yields a trailing empty field. This preserves the
- * distinction between an N-element and an (N+1)-element list that the
- * attribute encodings rely on.
+ * Up to the cap this preserves the `count(sep) + 1` field semantics the
+ * attribute encodings rely on, so `""` yields one empty field and a trailing
+ * separator yields a trailing empty field (keeping an N-element list distinct
+ * from an (N+1)-element one). The cap guards the redirect read path against a
+ * foreign record with an unbounded entry count: the function returns `false`
+ * as soon as a `(max_fields + 1)`-th field is seen, without first
+ * materializing every segment.
  * @param in Input to split.
  * @param sep Separator byte.
- * @return The fields in order.
+ * @param max_fields Maximum number of fields to accept; must be at least 1.
+ * @param out Receives the fields in order on success; cleared first, and left
+ * holding only the fields parsed before the cap was hit on failure.
+ * @return `true` if `in` splits into at most `max_fields` fields; `false` as
+ * soon as a `(max_fields + 1)`-th field is detected.
  */
-std::vector<std::string_view> split(const std::string_view in, const char sep)
+bool split_bounded(const std::string_view in,
+                   const char sep,
+                   const std::size_t max_fields,
+                   std::vector<std::string_view>* out)
 {
-    std::vector<std::string_view> out;
+    out->clear();
     std::size_t start = 0;
     while (true) {
+        if (out->size() == max_fields) {
+            return false;
+        }
         const std::size_t pos = in.find(sep, start);
         if (pos == std::string_view::npos) {
-            out.push_back(in.substr(start));
-            break;
+            out->push_back(in.substr(start));
+            return true;
         }
-        out.push_back(in.substr(start, pos - start));
+        out->push_back(in.substr(start, pos - start));
         start = pos + 1;
     }
-    return out;
 }
 
 /**
@@ -128,13 +176,19 @@ std::string encode_stats(const Link::Stats& stats)
  * `last` leaves `last_accessed_at` unset.
  * @param value Encoded stats string.
  * @param out Receives the decoded counters.
- * @return `true` on success; `false` if a counter is non-numeric or a
- * percent-escape in `last` is malformed.
+ * @return `true` on success; `false` if the value carries more than
+ * `k_max_stats_fields` fields, a counter is non-numeric, a percent-escape in
+ * `last` is malformed, or `last` does not decode to a strict RFC 3339 Zulu
+ * timestamp.
  */
 bool decode_stats(const std::string_view value, Link::Stats* out)
 {
     Link::Stats parsed;
-    for (const std::string_view field : split(value, '&')) {
+    std::vector<std::string_view> fields;
+    if (!split_bounded(value, '&', k_max_stats_fields, &fields)) {
+        return false;
+    }
+    for (const std::string_view field : fields) {
         if (field.empty()) {
             continue;
         }
@@ -162,6 +216,12 @@ bool decode_stats(const std::string_view value, Link::Stats* out)
         else if (key == "last") {
             auto decoded = percent_decode(raw);
             if (!decoded.has_value()) {
+                return false;
+            }
+            // A last-access time from a foreign record must still be a strict
+            // RFC 3339 Zulu value; reject anything else rather than surface an
+            // unparseable timestamp downstream.
+            if (!parseRfc3339Zulu(*decoded).has_value()) {
                 return false;
             }
             parsed.last_accessed_at = std::move(*decoded);
@@ -255,15 +315,24 @@ void pack_attributes(const Link& link,
  * @brief Decodes the `attr_tags` value into a tag list.
  * @param value Encoded tags string.
  * @param out Receives the decoded tags.
- * @return `true` on success; `false` if any element has a malformed
- * percent-escape.
+ * @return `true` on success; `false` if the value carries more than
+ * `k_max_tags` entries, any element has a malformed percent-escape, or any
+ * decoded tag exceeds `k_max_tag_length` bytes.
  */
 bool decode_tags(const std::string_view value, std::vector<std::string>* out)
 {
     out->clear();
-    for (const std::string_view field : split(value, ',')) {
+    std::vector<std::string_view> fields;
+    if (!split_bounded(value, ',', k_max_tags, &fields)) {
+        return false;
+    }
+    out->reserve(fields.size());
+    for (const std::string_view field : fields) {
         auto decoded = percent_decode(field);
         if (!decoded.has_value()) {
+            return false;
+        }
+        if (decoded->size() > k_max_tag_length) {
             return false;
         }
         out->push_back(std::move(*decoded));
@@ -278,14 +347,20 @@ bool decode_tags(const std::string_view value, std::vector<std::string>* out)
  * are skipped.
  * @param value Encoded metadata string.
  * @param out Receives the decoded map.
- * @return `true` on success; `false` if any key or value has a malformed
- * percent-escape.
+ * @return `true` on success; `false` if the value carries more than
+ * `k_max_metadata_entries` fields, any key or value has a malformed
+ * percent-escape, any decoded key exceeds `k_max_metadata_key_length` bytes,
+ * or any decoded value exceeds `k_max_metadata_value_length` bytes.
  */
 bool decode_metadata(const std::string_view value,
                      std::unordered_map<std::string, std::string>* out)
 {
     out->clear();
-    for (const std::string_view field : split(value, '&')) {
+    std::vector<std::string_view> fields;
+    if (!split_bounded(value, '&', k_max_metadata_entries, &fields)) {
+        return false;
+    }
+    for (const std::string_view field : fields) {
         if (field.empty()) {
             continue;
         }
@@ -298,6 +373,11 @@ bool decode_metadata(const std::string_view value,
         auto key = percent_decode(raw_key);
         auto val = percent_decode(raw_val);
         if (!key.has_value() || !val.has_value()) {
+            return false;
+        }
+        if (key->size() > k_max_metadata_key_length
+            || val->size() > k_max_metadata_value_length)
+        {
             return false;
         }
         (*out)[std::move(*key)] = std::move(*val);
@@ -313,12 +393,17 @@ bool decode_metadata(const std::string_view value,
  * campaign, so an empty value yields an all-unset campaign.
  * @param value Encoded campaign string.
  * @param out Receives the decoded campaign.
- * @return `true` on success; `false` if any value has a malformed
- * percent-escape.
+ * @return `true` on success; `false` if the value carries more than
+ * `k_max_campaign_fields` fields, any value has a malformed percent-escape, or
+ * any decoded value exceeds `k_max_campaign_field_length` bytes.
  */
 bool decode_campaign(const std::string_view value, Link::Campaign* out)
 {
-    for (const std::string_view field : split(value, '&')) {
+    std::vector<std::string_view> fields;
+    if (!split_bounded(value, '&', k_max_campaign_fields, &fields)) {
+        return false;
+    }
+    for (const std::string_view field : fields) {
         if (field.empty()) {
             continue;
         }
@@ -329,6 +414,9 @@ bool decode_campaign(const std::string_view value, Link::Campaign* out)
         const std::string_view key = field.substr(0, eq);
         auto decoded = percent_decode(field.substr(eq + 1));
         if (!decoded.has_value()) {
+            return false;
+        }
+        if (decoded->size() > k_max_campaign_field_length) {
             return false;
         }
         if (key == "name") {
@@ -591,9 +679,16 @@ bool record_to_link(const ::LinkRecord& record, Link* out, std::string* error)
     }
 
     // deleted_at: prefer the packed attribute over the (SQL-dropped) column.
+    // The attribute is stored verbatim, so a foreign record could carry a
+    // non-timestamp here; validate it as strict RFC 3339 Zulu before trusting
+    // it, mirroring the write-path timestamp checks.
     if (const std::string* deleted = find_attr(record.attributes, attr_deleted);
         deleted != nullptr)
     {
+        if (!parseRfc3339Zulu(*deleted).has_value()) {
+            set_error(error, error_bad_attribute);
+            return false;
+        }
         link.deleted_at = *deleted;
     }
     else if (record.deleted_at.has_value()) {

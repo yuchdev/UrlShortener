@@ -211,13 +211,20 @@ BOOST_AUTO_TEST_CASE(minimal_round_trip)
  *
  * Scenario:
  *   Given values containing '.', '&', '=', ',', '%', '"', '\\', newline,
- *   non-ASCII UTF-8, the empty string, a 2 KB value, and a metadata key with
- *   a '.'.
+ *   non-ASCII UTF-8, the empty string, an at-cap-length value, and a metadata
+ *   key with a '.'.
  *   When mapped to a record and back.
  *   Then every value is preserved exactly.
  *
+ * Boundaries:
+ *   - The longest tag/metadata-value/campaign-field values are sized exactly
+ *     at the read-path caps (32/512/128 bytes) that record_to_link enforces,
+ *     mirroring the upstream write-path validators; values past those caps are
+ *     rejected by record_to_link (see over_cap tests below) and the write path
+ *     never produces them, so they are not exercised here.
+ *
  * If this breaks, first check:
- *   - percent_encode coverage of separators and the split() semantics.
+ *   - percent_encode coverage of separators and the split_bounded() semantics.
  */
 BOOST_AUTO_TEST_CASE(hostile_values_round_trip)
 {
@@ -232,15 +239,15 @@ BOOST_AUTO_TEST_CASE(hostile_values_round_trip)
                      "line1\nline2",
                      "caf\xC3\xA9",
                      "",
-                     std::string(2048, 'Z')};
+                     std::string(32, 'Z')};
     original.metadata = {{"dotted.key", "v1"},
                          {"k&=,", "val with %25 and \"q\""},
                          {"", "empty-key-value"},
-                         {"big", std::string(2048, 'Q')}};
+                         {"big", std::string(512, 'Q')}};
     Link::Campaign campaign;
     campaign.name = "a.b&c=d,e%f\"g\\h";
     campaign.source = "caf\xC3\xA9";
-    campaign.content = std::string(2048, 'C');
+    campaign.content = std::string(128, 'C');
     original.campaign = campaign;
 
     ::LinkRecord record;
@@ -721,4 +728,171 @@ BOOST_AUTO_TEST_CASE(deleted_attribute_preferred_over_column)
     BOOST_REQUIRE(record_to_link(record, &restored, &error));
     BOOST_CHECK(restored.deleted_at
                 == std::optional<std::string>("2026-07-08T09:10:11Z"));
+}
+
+/**
+ * @brief Builds an `attr_tags` value with `count` comma-separated `t<i>` tags.
+ * @param count Number of tags to emit.
+ * @return The joined tag attribute value.
+ */
+std::string makeTagsAttr(const std::size_t count)
+{
+    std::string value;
+    for (std::size_t i = 0; i < count; ++i) {
+        if (i != 0) {
+            value += ',';
+        }
+        value += "t" + std::to_string(i);
+    }
+    return value;
+}
+
+/**
+ * @brief Builds an `attr_metadata` value with `count` `k<i>=v<i>` entries.
+ * @param count Number of entries to emit.
+ * @return The joined metadata attribute value.
+ */
+std::string makeMetadataAttr(const std::size_t count)
+{
+    std::string value;
+    for (std::size_t i = 0; i < count; ++i) {
+        if (i != 0) {
+            value += '&';
+        }
+        value += "k" + std::to_string(i) + "=v" + std::to_string(i);
+    }
+    return value;
+}
+
+/**
+ * [Unit][App] record_to_link rejects a tag list past the write-path cap and
+ * accepts one exactly at it.
+ *
+ * Scenario:
+ *   Given a record (from a possibly foreign writer) whose lnk_tags carries 21
+ *   tags, and a second whose lnk_tags carries exactly 20.
+ *   When each is decoded.
+ *   Then the 21-tag record fails with error_bad_attribute while the 20-tag
+ *   record decodes to 20 tags.
+ *
+ * Boundaries:
+ *   - 20 is the validateTags entry cap mirrored by k_max_tags; 21 is the
+ *     first value over it.
+ *
+ * If this breaks, first check:
+ *   - split_bounded's early-bail count and decode_tags' cap wiring.
+ */
+BOOST_AUTO_TEST_CASE(fail_on_too_many_tags)
+{
+    ::LinkRecord over;
+    over.short_code = "abc";
+    over.target_url = "https://example.com/";
+    over.attributes[std::string(attr_tags)] = makeTagsAttr(21);
+
+    Link restored;
+    std::string error;
+    BOOST_CHECK(!record_to_link(over, &restored, &error));
+    BOOST_CHECK_EQUAL(error, std::string(error_bad_attribute));
+
+    ::LinkRecord at_limit;
+    at_limit.short_code = "abc";
+    at_limit.target_url = "https://example.com/";
+    at_limit.attributes[std::string(attr_tags)] = makeTagsAttr(20);
+
+    Link ok;
+    error.clear();
+    BOOST_REQUIRE(record_to_link(at_limit, &ok, &error));
+    BOOST_CHECK_EQUAL(ok.tags.size(), 20u);
+}
+
+/**
+ * [Unit][App] record_to_link rejects a metadata map past the write-path cap
+ * and accepts one exactly at it.
+ *
+ * Scenario:
+ *   Given a record whose lnk_meta carries 51 entries, and a second whose
+ *   lnk_meta carries exactly 50.
+ *   When each is decoded.
+ *   Then the 51-entry record fails with error_bad_attribute while the
+ *   50-entry record decodes to 50 metadata pairs.
+ *
+ * Boundaries:
+ *   - 50 is the validateMetadata entry cap mirrored by k_max_metadata_entries;
+ *     51 is the first value over it.
+ *
+ * If this breaks, first check:
+ *   - split_bounded's early-bail count and decode_metadata's cap wiring.
+ */
+BOOST_AUTO_TEST_CASE(fail_on_too_many_metadata_entries)
+{
+    ::LinkRecord over;
+    over.short_code = "abc";
+    over.target_url = "https://example.com/";
+    over.attributes[std::string(attr_metadata)] = makeMetadataAttr(51);
+
+    Link restored;
+    std::string error;
+    BOOST_CHECK(!record_to_link(over, &restored, &error));
+    BOOST_CHECK_EQUAL(error, std::string(error_bad_attribute));
+
+    ::LinkRecord at_limit;
+    at_limit.short_code = "abc";
+    at_limit.target_url = "https://example.com/";
+    at_limit.attributes[std::string(attr_metadata)] = makeMetadataAttr(50);
+
+    Link ok;
+    error.clear();
+    BOOST_REQUIRE(record_to_link(at_limit, &ok, &error));
+    BOOST_CHECK_EQUAL(ok.metadata.size(), 50u);
+}
+
+/**
+ * [Unit][App] record_to_link rejects a non-RFC-3339 lnk_deleted attribute.
+ *
+ * Scenario:
+ *   Given a record whose lnk_deleted is "not-a-timestamp".
+ *   When decoded.
+ *   Then it returns false with error_bad_attribute (the attribute is stored
+ *   verbatim, so a foreign writer could place arbitrary bytes there).
+ *
+ * If this breaks, first check:
+ *   - the parseRfc3339Zulu guard on the attr_deleted branch of record_to_link.
+ */
+BOOST_AUTO_TEST_CASE(fail_on_malformed_deleted_attribute)
+{
+    ::LinkRecord record;
+    record.short_code = "abc";
+    record.target_url = "https://example.com/";
+    record.is_active = false;
+    record.attributes[std::string(attr_deleted)] = "not-a-timestamp";
+
+    Link restored;
+    std::string error;
+    BOOST_CHECK(!record_to_link(record, &restored, &error));
+    BOOST_CHECK_EQUAL(error, std::string(error_bad_attribute));
+}
+
+/**
+ * [Unit][App] record_to_link rejects a non-RFC-3339 stats `last` timestamp.
+ *
+ * Scenario:
+ *   Given a record whose lnk_stats `last` field decodes to "not-a-timestamp".
+ *   When decoded.
+ *   Then it returns false with error_bad_attribute.
+ *
+ * If this breaks, first check:
+ *   - the parseRfc3339Zulu guard on the `last` branch of decode_stats.
+ */
+BOOST_AUTO_TEST_CASE(fail_on_malformed_stats_last_timestamp)
+{
+    ::LinkRecord record;
+    record.short_code = "abc";
+    record.target_url = "https://example.com/";
+    record.attributes[std::string(attr_stats)] =
+        "total=1&r24=0&r7=0&last=not-a-timestamp";
+
+    Link restored;
+    std::string error;
+    BOOST_CHECK(!record_to_link(record, &restored, &error));
+    BOOST_CHECK_EQUAL(error, std::string(error_bad_attribute));
 }

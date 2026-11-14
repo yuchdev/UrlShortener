@@ -109,6 +109,12 @@ std::string percent_encode(std::string_view in);
  * Non-escaped bytes pass through unchanged; each `%XX` is decoded from two
  * hexadecimal digits. A `%` that is not followed by exactly two hex digits
  * is malformed and rejected.
+ *
+ * @warning The decode is byte-transparent by design (it must round-trip
+ * anything the write path accepts), so when `in` comes from a `::LinkRecord`
+ * the returned bytes are untrusted: they may contain embedded NUL bytes or
+ * invalid UTF-8 placed there by a foreign writer. Callers must sanitize the
+ * result before logging it or rendering it into any downstream sink.
  * @param in Percent-encoded input.
  * @return The decoded bytes, or `std::nullopt` if `in` contains a `%` not
  * followed by two hex digits.
@@ -167,15 +173,32 @@ bool link_to_record(const Link& link, ::LinkRecord* out, std::string* error);
  * `deleted_at` prefers `attr_deleted` over `::LinkRecord::deleted_at` (so a
  * soft-delete survives even though the SQL mapper drops the column). Unknown
  * non-`lnk_*` attributes are ignored. Fails closed on data it cannot trust.
+ *
+ * Because a `::LinkRecord` may be read back from storage a foreign process
+ * wrote (see the storage-path-unification threat model), the packed values
+ * are treated as untrusted and bounded on read: the tag/metadata/campaign
+ * entry counts and the key/value lengths are capped to the same limits the
+ * write path validates (`validateTags`/`validateMetadata`/`validateCampaign`
+ * in `core/utils`), and the `attr_deleted` and stats `last` timestamps must
+ * parse as strict RFC 3339 Zulu. Exceeding any cap or failing any parse
+ * yields `error_bad_attribute`.
+ *
+ * @warning Decode is byte-transparent, so the decoded tag/metadata/campaign
+ * values (and `target_url`) may still contain embedded NUL bytes or invalid
+ * UTF-8 originating from a foreign record even when this call succeeds.
+ * Consumers must sanitize these fields before logging or rendering them.
  * @param record Record to map (from any backend).
  * @param out Receives the link on success; left in an indeterminate state on
  * failure. Must not be null.
  * @param error If non-null, receives `error_bad_attribute` when a present
  * `lnk_*` value is malformed (bad percent-escape, non-numeric stats counter,
- * or an `attr_schema` value other than `"1"`), or `error_invalid_request`
- * when `out` is null; untouched on success.
+ * an `attr_schema` value other than `"1"`, an entry count or key/value length
+ * past the write-path caps, or an unparseable `attr_deleted`/stats-`last`
+ * timestamp), or `error_invalid_request` when `out` is null; untouched on
+ * success.
  * @return `true` on success; `false` if `out` is null or a present `lnk_*`
- * attribute is malformed or carries an unsupported schema version.
+ * attribute is malformed, over a cap, or carries an unsupported schema
+ * version.
  */
 bool record_to_link(const ::LinkRecord& record, Link* out, std::string* error);
 
