@@ -37,6 +37,32 @@ rate_limit:
   redis_address: 127.0.0.1:6379
 ```
 
+## Selecting the configuration file
+
+The storage configuration file is selected in one of three ways, in
+descending priority:
+
+1. **`--storage-config <FILE>`** flag — applies to both the server and
+   `link` CLI mode. In `link` mode the flag is stripped before per-verb
+   argument parsing, so it cannot collide with any verb flag.
+2. **`URL_SHORTENER_STORAGE_CONFIG`** environment variable — read at
+   startup before any flag parsing; the flag overrides it when both are
+   set. An inherited environment variable silently switches the backend for
+   every invocation in that shell session, including one-off commands that
+   do not expect persistence (threat model T-41). Set it deliberately and
+   unset it when done.
+3. **In-memory default** — when neither the flag nor the environment
+   variable is set, the built-in in-memory `LegacyLinkStore` is used and no
+   YAML file is read.
+
+**Relative paths:** a relative `sqlite_path` is resolved against the process
+working directory at startup. When running `link` commands from different
+directories, use absolute paths to ensure consistent resolution.
+
+**Bootstrap failure** exits with code **4** in both server and CLI mode. A
+fixed, value-free message is printed to stderr — never the DSN, file path, or
+raw YAML content. The server binds no port; the CLI writes nothing to stdout.
+
 Required fields:
 
 - `metadata.sqlite_path` when metadata backend is `sqlite`

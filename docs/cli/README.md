@@ -6,16 +6,94 @@ verb maps one-to-one to a REST operation; see [`docs/api/README.md`](../api/READ
 for the full REST inventory and field-by-field response documentation (this reference
 does not duplicate those descriptions).
 
-## Storage limitation
+## Storage and backend selection
 
-The CLI uses the in-memory link store (`linkRepository()`) which is a per-process,
-non-persistent singleton. **Two separate CLI invocations do not share state.** A link
-created by `link create` in one process invocation is invisible to `link get` in a
-separate invocation; only calls within the same process observe each other. Practical
-consequence: the CLI cannot be used for create-then-read scripting across separate
-process invocations with the current in-memory backend. See
-[Milestone 0003 status, Task 03.0](../roadmap/0003-cli_rest_interfaces/status.md)
-for full background on this design decision.
+By default the CLI uses the in-memory link store (`linkRepository()`), a
+per-process singleton. **Two separate CLI invocations with the default backend
+do not share state.** A link created by `link create` in one process invocation
+is invisible to `link get` in a separate invocation; only calls within the *same*
+process invocation observe each other. The default cases in the `cli_03` test
+suite assert this isolation and remain valid.
+
+### Global options
+
+The following option applies to all nine `link <verb>` commands and may appear
+anywhere among the verb's flags:
+
+| Option | Description |
+|--------|-------------|
+| `--storage-config <FILE>` | Path to a storage configuration YAML file. Selects the backend for this invocation. Overrides `URL_SHORTENER_STORAGE_CONFIG`. Default: in-memory. |
+
+**Selection precedence** (highest to lowest):
+
+1. `--storage-config <FILE>` flag on the command line.
+2. `URL_SHORTENER_STORAGE_CONFIG` environment variable.
+3. Built-in in-memory default (no config path set).
+
+An inherited `URL_SHORTENER_STORAGE_CONFIG` silently switches the backend for
+every CLI invocation in that shell session, including one-off commands that do
+not expect persistence (threat model T-41). Set it deliberately and unset it
+when done.
+
+`--storage-config` is a *reserved* global token: it is stripped from the
+argument list before the per-verb parser runs, so it cannot accidentally be
+parsed as another verb's flag value.
+
+### Sharing a backend with the server
+
+Pass `--storage-config <same-yaml>` to both the server and the CLI to share
+one persistent backend. Useful for one-off admin operations (`link disable`,
+`link delete`) against a running server without needing the REST API.
+
+**Example — SQLite backend, two separate invocations:**
+
+Assuming `storage.yaml` contains:
+
+```yaml
+metadata:
+  backend: sqlite
+  sqlite_path: /var/lib/shortener/links.db
+```
+
+```bash
+url_shortener link create \
+  --storage-config storage.yaml \
+  --url https://example.com/docs \
+  --slug docs
+
+url_shortener link get \
+  --storage-config storage.yaml \
+  --slug docs
+```
+
+The second command finds the link created by the first because both use the
+same SQLite database. Use an **absolute path** for `sqlite_path` when running
+CLI commands from different working directories; a relative path is resolved
+against the process working directory at startup.
+
+**Cross-process visibility:** a change made by the CLI (e.g. `link disable`)
+becomes visible to a running server within one L1 cache TTL — at most **5 s**
+for persistent backends, independent of redirect traffic rate.
+
+**Redirect counters (write-behind):** redirect counts are flushed to the
+database approximately every **30 s** and at server shutdown. `link stats`
+reads in-process click events accumulated since the last flush; it will show
+empty stats immediately after a server restart until the first redirect is
+recorded and flushed. Stats returned across separate processes reflect the
+last persisted snapshot only (limitation R-3).
+
+**Race note:** a concurrent server stats flush can overwrite a `disable` or
+soft-delete committed by a CLI command in its read→write window (cross-process
+race R-1, accepted limitation). Within a single process, flush-vs-update races
+are serialized. See [decision-log D12](
+../roadmap/0006-unified-command-model-and-tui/decision-log.md) for the full
+analysis.
+
+**Security:** the YAML file may hold database credentials (a Postgres DSN).
+Keep its permissions tight (`0600`, owned by the service account) and **never
+commit it to source control**. See
+[`docs/storage/configuration.md`](../storage/configuration.md) for the full
+permissions guidance.
 
 ## Invocation
 
@@ -93,12 +171,13 @@ in [`docs/api/README.md`](../api/README.md).
 | Stats | `curl http://localhost:8000/api/v1/links/docs/stats?from=0&to=9999999999&bucket=day` | `url_shortener link stats --slug docs --from 0 --to 9999999999 --bucket day` |
 
 **One real difference:** REST commands act on whatever link state the running
-server process holds; the CLI's in-memory store is per-invocation and does
-not persist across separate process runs (see [Storage limitation](#storage-limitation)
-above) - so, unlike the REST pairs above, running the CLI `create` example
-and then the CLI `get`/`update`/etc. example in *separate* invocations will
-not find the link. Within a single running server, the REST pairs above do
-work exactly as shown.
+server holds in its configured backend. The CLI's default in-memory store is
+per-invocation and does not persist across separate process runs (see
+[Storage and backend selection](#storage-and-backend-selection) above). To
+share the same persistent backend as the server, supply `--storage-config
+<yaml>` (or set `URL_SHORTENER_STORAGE_CONFIG`) pointing at the same config
+file. Within a single running server, the REST pairs above work exactly as
+shown regardless of storage backend.
 
 ---
 

@@ -9,8 +9,11 @@ PREREQUISITES (implementation must satisfy before these tests pass):
      link stats) in addition to ServerConfig.
   2. main.cpp must dispatch to CLI mode when the first positional argument is
      "link"; CLI mode must NOT start the HTTP listener.
-  3. CLI mode is one-shot and uses per-process in-memory state (no cross-process
-     persistence contract).
+  3. CLI mode is one-shot. The default backend is per-process in-memory (no
+     cross-process persistence without --storage-config). With
+     --storage-config <YAML> (or URL_SHORTENER_STORAGE_CONFIG) the CLI shares
+     the configured persistent backend with the server and with other
+     invocations using the same config file.
   4. Command argument shapes:
        link create --url <URL> [--slug <SLUG>] [--base-domain <DOMAIN>]
        link get --slug <SLUG> | --id <ID>
