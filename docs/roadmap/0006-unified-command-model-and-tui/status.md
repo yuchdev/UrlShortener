@@ -7,7 +7,7 @@ Tracks progress against [plan.md](/docs/roadmap/0006-unified-command-model-and-t
 | Task | Name | Status | Tests |
 |------|------|--------|-------|
 | 01.0 | Command model core | ✅ Complete (13/13 subtasks) | 14 (`commands__01`-`14`) |
-| 02.0 | Storage path unification | 🔶 In progress (5/16 subtasks) | 5 (`app__19`-`22`, `metadata__09`) |
+| 02.0 | Storage path unification | 🔶 In progress (6/16 subtasks) | 6 (`app__19`-`23`, `metadata__09`) |
 | 03.0 | Link and browse commands | ⬜ Not started | 0 |
 | 04.0 | REST and CLI adapters | ⬜ Not started | 0 |
 | 05.0 | Jobs, pair import/export, stdio | ⬜ Not started | 0 |
@@ -232,3 +232,8 @@ or thread, collapsing the former get+set into one locked lookup-and-mutate):
   fresh database (`ListLinks` owner filter returns 0 rows; likely the
   untyped `:owner_id IS NULL` parameter). Both routed to 03.0/01-02, which
   rework `ListLinks` and its contract tests.
+- *2026-11-14, 02.0/05 (user decision):* the stats flush's read-modify-write
+  can overwrite a disable or soft-delete committed in its window, not only
+  lose a counter as D12 described. Decided with the user: a store-level write
+  mutex shared by the flush and `update()` closes the same-process race; the
+  cross-process window stays accepted. D12 and threat T-33 amended to say so.

@@ -112,7 +112,7 @@ called out below where confirmation changed (or should change) something.
 | D9 | **Confirmed.** The catalog generator owns only the generated-reference block. |
 | D10 | **Confirmed.** The nine link commands' `ArgSpec` caps are raised to match REST's existing limits (C3). |
 | D11 | **Confirmed.** `link <verb>` flag parsing stays hand-written; only `cmd --arg` is ArgSpec-compiled. |
-| D12 | **Confirmed.** Write-behind, timer-flushed, approximate redirect counters; the two named races (R-1/R-2) are accepted as documented, not fixed. |
+| D12 | **Confirmed.** Write-behind, timer-flushed, approximate redirect counters; the two named races (R-1/R-2) are accepted as documented, not fixed. **Amended 2026-11-14 (user decision, 02.0/05 security review):** R-1 is wider than a lost counter: the flush rewrites the whole freshly read record, so a disable or soft-delete committed inside the read-to-write window is overwritten and the link is briefly re-activated. The same-process case (timer thread vs a REST/CLI `update()` in one server) is closed by a store-level write mutex shared by the flush and `update()`; the cross-process case (two processes on one SQLite file) remains accepted. The atomic `UPDATE ... SET stats = stats + ?` alternative stays rejected for now. |
 | D13 | **Confirmed.** `job_factory` + `CommandRegistry::set_job_submitter`, one process-wide `JobRunner`. |
 | D14 | **Confirmed.** Per-mode logging destinations exactly as listed (file for `tui`, never the console). |
 | D15 | **Confirmed.** `serve-stdio` does not default to `--no-file-paths` on a non-TTY stdin. |
