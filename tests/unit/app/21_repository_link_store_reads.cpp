@@ -400,6 +400,15 @@ BOOST_AUTO_TEST_CASE(invalidate_cache_erases_l1_and_deletes_once)
     // A null configured cache does not crash.
     RepositoryLinkStore no_cache(repo, nullptr, l1, clock);
     BOOST_CHECK_NO_THROW(no_cache.invalidateCache("a"));
+
+    // A throwing cache adapter is contained too, and L1 is still erased
+    // (Task 02.0 close feature review: invalidateCache now shares the
+    // create/update best-effort helper).
+    BOOST_REQUIRE(store.findBySlug("a").has_value());
+    cache->delete_fails = false;
+    cache->delete_throws = true;
+    BOOST_CHECK_NO_THROW(store.invalidateCache("a"));
+    BOOST_CHECK(!l1->get("a").has_value());
 }
 
 /**

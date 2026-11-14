@@ -306,12 +306,10 @@ bool RepositoryLinkStore::slugExists(const std::string& slug) const
 void RepositoryLinkStore::invalidateCache(const std::string& slug)
 {
     m_l1_->erase(slug);
-    if (m_cache_ != nullptr) {
-        // Best-effort invalidation of the configured cache-aside store:
-        // its failure never fails a request (cache-aside contract).
-        ::CacheError cache_error = ::CacheError::none;
-        (void)m_cache_->Delete(slug, &cache_error);
-    }
+    // Best-effort invalidation of the configured cache-aside store through
+    // the same helper as create/update: neither a failure nor a throwing
+    // adapter ever fails a request (cache-aside contract).
+    best_effort_cache_delete(m_cache_.get(), slug);
 }
 
 bool RepositoryLinkStore::update(const Link& link, AppError* error)

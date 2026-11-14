@@ -637,6 +637,10 @@ boost::beast::http::status redirectStatusFor(const Link& link)
 }
 
 // Validation and Guard hooks
+// The tag, metadata and campaign limits enforced below (20 tags x 32 chars,
+// 50 metadata entries, 64/512-char keys/values, 128-char campaign fields)
+// are duplicated as read-path caps in src/app/link_record_codec.cpp - keep
+// both in sync when changing them.
 bool validateTags(std::vector<std::string>& tags)
 {
     if (tags.size() > 20) {

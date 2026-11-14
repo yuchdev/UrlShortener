@@ -87,9 +87,10 @@ struct LinkBackendSettings
  *
  * Lifetime: owns `m_clock_` via `shared_ptr`; `m_store_` holds a
  * non-owning `const IClock&` into it. Member declaration order places
- * `m_store_` before `m_clock_` so the store is destroyed first and the
- * clock outlives every store operation, including the destructor's
- * final flush.
+ * `m_clock_` before `m_store_`; members are destroyed in reverse order,
+ * so the store (declared last) is destroyed first and the clock outlives
+ * every store operation, including the destructor's final flush. Do not
+ * reorder these members.
  */
 class LinkBackendHandle
 {
@@ -195,11 +196,13 @@ private:
     StorageAdapters m_adapters_;
 
     ///< System clock shared (by reference) with `m_store_`; declared
-    ///< after `m_store_` so it outlives every store operation.
+    ///< before `m_store_` so it is destroyed after it and outlives every
+    ///< store operation. Must stay above `m_store_`.
     std::shared_ptr<IClock> m_clock_;
 
     ///< Installed store; null on an inactive or moved-from handle.
-    ///< Destroyed before `m_clock_` (declaration order).
+    ///< Declared after `m_clock_`, so destroyed before it (reverse
+    ///< declaration order).
     std::shared_ptr<RepositoryLinkStore> m_store_;
 
     ///< Resolved per-backend settings.
