@@ -3,8 +3,11 @@
 
 #include <url_shortener/app/link_record_codec.hpp>
 #include <url_shortener/app/repository_link_store.hpp>
+#include <url_shortener/core/utils.hpp>
 #include <url_shortener/observability/logger_factory.hpp>
+#include <url_shortener/storage/errors/cache_error.hpp>
 #include <url_shortener/storage/errors/repo_error.hpp>
+#include <url_shortener/storage/models/create_link_request.hpp>
 #include <url_shortener/storage/models/link_record.hpp>
 
 namespace url_shortener
@@ -77,6 +80,73 @@ std::optional<Link> decode(const ::LinkRecord& record, const std::string& slug)
     return std::nullopt;
 }
 
+/**
+ * @brief Translates a repository `::RepoError` into an `AppError`,
+ * reusing the exact messages `LegacyLinkStore` emits.
+ *
+ * Shared by `create` and `update` so a backend swap leaves REST/CLI
+ * error output byte-for-byte unchanged (contracts C3/C4). The two
+ * callers never observe each other's codes in practice (`create`
+ * cannot see `not_found`, `update` cannot see `already_exists`), so a
+ * single mapping covers both without widening either contract.
+ * @param e Non-`none` repository error to translate.
+ * @param[out] error Destination; ignored when null. On return holds:
+ * `slug_conflict` / "slug already in use" for `already_exists`;
+ * `invalid_field` / "invalid link" for `invalid_argument`; `not_found`
+ * / "Link not found" for `not_found`; `storage_failure` / "repository
+ * failure" for every other value (including `transient_failure` and
+ * `permanent_failure`).
+ */
+void map_repo_error(::RepoError e, AppError* error)
+{
+    if (error == nullptr) {
+        return;
+    }
+    switch (e) {
+        case ::RepoError::already_exists:
+            *error =
+                AppError {AppErrorCode::slug_conflict, "slug already in use"};
+            return;
+        case ::RepoError::invalid_argument:
+            *error = AppError {AppErrorCode::invalid_field, "invalid link"};
+            return;
+        case ::RepoError::not_found:
+            *error = AppError {AppErrorCode::not_found, "Link not found"};
+            return;
+        case ::RepoError::none:
+        case ::RepoError::transient_failure:
+        case ::RepoError::permanent_failure:
+            break;
+    }
+    *error = AppError {AppErrorCode::storage_failure, "repository failure"};
+}
+
+/**
+ * @brief Best-effort `Delete` on the configured cache-aside store.
+ *
+ * A no-op when `cache` is null. The `::ICacheStore::Delete` contract is
+ * non-throwing, but a misbehaving adapter is still contained here: any
+ * exception is swallowed so a cache failure can never fail the write
+ * request (cache-aside contract, CLAUDE.md). The backend result is
+ * intentionally ignored.
+ * @param cache Configured cache-aside store, or null when none is
+ * configured; not owned.
+ * @param slug Short-code slug whose cached copy to evict.
+ */
+void best_effort_cache_delete(::ICacheStore* cache, const std::string& slug)
+{
+    if (cache == nullptr) {
+        return;
+    }
+    try {
+        ::CacheError cache_error = ::CacheError::none;
+        (void)cache->Delete(slug, &cache_error);
+    } catch (...) {
+        // Cache failures never fail a request; nothing is logged because
+        // the slug is already known to the caller and no value is exposed.
+    }
+}
+
 }  // namespace
 
 RepositoryLinkStore::RepositoryLinkStore(
@@ -101,12 +171,42 @@ RepositoryLinkStore::RepositoryLinkStore(
     (void)m_clock_;
 }
 
-bool RepositoryLinkStore::create(const Link& /*link*/, AppError* error)
+bool RepositoryLinkStore::create(const Link& link, AppError* error)
 {
-    if (error != nullptr) {
-        *error = AppError {AppErrorCode::internal, "not implemented"};
+    // 1. Map to a create request through the codec (no re-validation of
+    //    URL/slug happens here; that stays upstream, threat model T-40).
+    ::CreateLinkRequest request;
+    std::string codec_error;
+    if (!link_to_create_request(link, &request, &codec_error)) {
+        if (error != nullptr) {
+            *error = AppError {AppErrorCode::internal, "invalid link record"};
+        }
+        return false;
     }
-    return false;
+
+    // 2. The repositories store `now` as both created_at and updated_at;
+    //    an unparseable created_at is a malformed record, not a backend
+    //    failure, so fail before any repository call.
+    const auto now = parseRfc3339Zulu(link.created_at);
+    if (!now.has_value()) {
+        if (error != nullptr) {
+            *error = AppError {AppErrorCode::internal, "invalid link record"};
+        }
+        return false;
+    }
+
+    // 3. Persist. Uniqueness is enforced atomically by the repository.
+    ::RepoError repo_error = ::RepoError::none;
+    if (!m_repo_->CreateLink(request, link.id, *now, &repo_error)) {
+        map_repo_error(repo_error, error);
+        return false;
+    }
+
+    // 4. Populate L1 with a fresh copy so the creator's next read is a
+    //    hit, and invalidate the configured cache best-effort.
+    m_l1_->set(link.slug, link);
+    best_effort_cache_delete(m_cache_.get(), link.slug);
+    return true;
 }
 
 std::optional<Link> RepositoryLinkStore::findBySlug(
@@ -200,12 +300,35 @@ void RepositoryLinkStore::invalidateCache(const std::string& slug)
     }
 }
 
-bool RepositoryLinkStore::update(const Link& /*link*/, AppError* error)
+bool RepositoryLinkStore::update(const Link& link, AppError* error)
 {
-    if (error != nullptr) {
-        *error = AppError {AppErrorCode::internal, "not implemented"};
+    // 1. Map to a full record through the codec (soft delete arrives
+    //    here as a normal update with deleted_at set).
+    ::LinkRecord record;
+    std::string codec_error;
+    if (!link_to_record(link, &record, &codec_error)) {
+        if (error != nullptr) {
+            *error = AppError {AppErrorCode::internal, "invalid link record"};
+        }
+        return false;
     }
-    return false;
+
+    // 2. Persist the update.
+    ::RepoError repo_error = ::RepoError::none;
+    const bool ok = m_repo_->UpdateLink(record, &repo_error);
+
+    // 3. Invalidate L1 whether the write succeeded or failed: a failed
+    //    write leaves an uncertain state, so the next read must reload
+    //    and never serve a value older than this write.
+    m_l1_->erase(link.slug);
+    if (!ok) {
+        map_repo_error(repo_error, error);
+        return false;
+    }
+
+    // 4. On success, also invalidate the configured cache best-effort.
+    best_effort_cache_delete(m_cache_.get(), link.slug);
+    return true;
 }
 
 bool RepositoryLinkStore::recordRedirect(const Link& /*link*/, AppError* error)

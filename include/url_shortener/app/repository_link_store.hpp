@@ -62,9 +62,17 @@ struct RepositoryLinkStoreOptions
  *   surface as `std::nullopt`; an outage therefore looks like
  *   "not found" (accepted limitation R-5 / threat model T-35).
  *
- * Write model (`create`/`update`/`recordRedirect`) is stubbed to fail
- * with `AppErrorCode::internal` until subtasks 04/05 fill it in, so
- * this subtask is independently reviewable.
+ * Write model (subtask 04): `create` maps the link to a
+ * `::CreateLinkRequest` through the codec and calls
+ * `::IMetadataRepository::CreateLink`; `update` maps to a full
+ * `::LinkRecord` and calls `UpdateLink`. Both translate `::RepoError`
+ * to `AppErrorCode` with the exact messages the legacy store uses
+ * (so REST/CLI output is unchanged, contracts C3/C4) and invalidate
+ * both cache tiers best-effort (L1 always, the configured
+ * `::ICacheStore` on success), never failing a request on a cache
+ * error. Validation (SSRF/URL/slug) stays upstream in
+ * `LinkCommandService`; these methods are persistence only (threat
+ * model T-40). `recordRedirect` remains stubbed until subtask 05.
  *
  * Privacy: logs only the slug and backend error names. Decoded
  * `target_url`/tag/metadata/campaign bytes are untrusted (a foreign
@@ -108,12 +116,33 @@ public:
                         RepositoryLinkStoreOptions options = {});
 
     /**
-     * @brief Persists a new link. Not implemented in subtask 03.
-     * @param link Link to store (ignored by the stub).
-     * @param[out] error If non-null, receives
-     * `AppErrorCode::internal` with detail `"not implemented"`.
-     * @return Always `false` until subtask 04 implements the write
-     * path.
+     * @brief Persists a new link, then invalidates both cache tiers.
+     *
+     * Write path, in order: (1) map the link to a `::CreateLinkRequest`
+     * through `link_to_create_request` — a codec failure yields
+     * `AppErrorCode::internal` ("invalid link record") and the
+     * repository is not called; (2) parse `link.created_at` as the
+     * creation timestamp — an unparseable value yields the same
+     * `internal` failure with the repository not called; (3)
+     * `::IMetadataRepository::CreateLink(request, link.id, now)`; (4)
+     * on success, populate L1 with a fresh copy (`m_l1_->set`) and
+     * `Delete(link.slug)` on the configured `::ICacheStore`
+     * best-effort. No lock is taken; slug uniqueness is enforced
+     * atomically by the repository.
+     * @param link Fully-formed, already-validated link to store;
+     * `link.id`, `link.slug`, and `link.created_at` must be set.
+     * URL/SSRF/slug validation is the caller's responsibility
+     * (`LinkCommandService`, threat model T-40); this method performs
+     * none.
+     * @param[out] error If non-null and the call fails, receives:
+     * `internal` ("invalid link record") when the codec rejects the
+     * link or `created_at` does not parse; `slug_conflict` ("slug
+     * already in use") when the slug is already taken
+     * (`RepoError::already_exists`); `invalid_field` ("invalid link")
+     * on `RepoError::invalid_argument`; `storage_failure` ("repository
+     * failure") on any other backend error. Untouched on success.
+     * @return `true` if the link was persisted; `false` on any failure
+     * above.
      */
     bool create(const Link& link, AppError* error = nullptr) override;
 
@@ -178,13 +207,30 @@ public:
     void invalidateCache(const std::string& slug) override;
 
     /**
-     * @brief Persists a full-record update. Not implemented in
-     * subtask 03.
-     * @param link Updated link (ignored by the stub).
-     * @param[out] error If non-null, receives
-     * `AppErrorCode::internal` with detail `"not implemented"`.
-     * @return Always `false` until subtask 04 implements the write
-     * path.
+     * @brief Persists a full-record update, then invalidates both
+     * cache tiers.
+     *
+     * Write path, in order: (1) map the link to a `::LinkRecord`
+     * through `link_to_record` — a codec failure yields
+     * `AppErrorCode::internal` ("invalid link record") and the
+     * repository is not called; (2) `::IMetadataRepository::UpdateLink`;
+     * (3) *always* erase the L1 entry (`m_l1_->erase`) whether the
+     * repository call succeeded or failed — a failed write leaves an
+     * uncertain state, so the next read must reload rather than serve a
+     * value older than this write; (4) on success only, `Delete` the
+     * configured `::ICacheStore` entry best-effort. No lock is taken;
+     * concurrent updates are last-writer-wins (version is not
+     * persisted by the SQL backend).
+     * @param link Fully-formed, already-validated updated link; must
+     * already exist in the repository (matched by `link.slug`).
+     * Validation stays upstream (threat model T-40).
+     * @param[out] error If non-null and the call fails, receives:
+     * `internal` ("invalid link record") when the codec rejects the
+     * link; `not_found` ("Link not found") when the record no longer
+     * exists (`RepoError::not_found`); `storage_failure` ("repository
+     * failure") on any other backend error. Untouched on success.
+     * @return `true` if the update was persisted; `false` on any
+     * failure above.
      */
     bool update(const Link& link, AppError* error = nullptr) override;
 
