@@ -110,6 +110,7 @@ set(URL_SHORTENER_SOURCES
       tests/unit/http/12_prefixed_redirect_handler.cpp
       tests/unit/http/13_root_redirect_handler.cpp
       tests/unit/http/14_fallback_handler.cpp
+      tests/unit/http/30_redirect_through_backend.cpp
   )
 
   set(DOCS_UNIT_SOURCES
