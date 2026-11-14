@@ -295,6 +295,8 @@ set(URL_SHORTENER_SOURCES
       tests/unit/http/analytics/01_stats_handler_validation.cpp
       tests/unit/http/analytics/02_stats_handler_response_mapping.cpp
       tests/unit/storage/memory/16_in_memory_click_event_repository.cpp
+      tests/unit/storage/memory/17_in_memory_click_event_list_events.cpp
+      tests/unit/analytics/16_click_event_list_events_default.cpp
   )
 
   set(APP_UNIT_SOURCES

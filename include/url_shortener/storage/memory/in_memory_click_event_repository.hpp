@@ -67,6 +67,37 @@ public:
     bool DeleteOlderThan(analytics::Timestamp cutoff,
                          analytics::AnalyticsError* error = nullptr) override;
 
+    /**
+     * @brief Returns a bounded, ordered page of stored events matching
+     * `query`. Scans all events under `mu_`, counts matches into
+     * `page->total`, stably sorts the matches by `query.sort_by`/
+     * `query.descending` with `event_id` ascending as the final tie-break,
+     * then copies only the `[offset, offset + limit)` window into
+     * `page->items` after clamping `query.limit` to
+     * `analytics::kMaxClickEventPageSize`.
+     *
+     * Filters applied (logical AND, unset field ignored): exact `slug`,
+     * case-insensitive `text` substring over slug OR domain, exact
+     * `status_code`, and the half-open time range
+     * `[query.from, query.to)`.
+     *
+     * @param query Filter/ordering/paging parameters.
+     * @param[out] page Receives the window and total on success; must be
+     * non-null. Left unmodified on failure.
+     * @param[out] error If non-null, receives
+     * `AnalyticsErrorCode::validation` when `page` is null or when both
+     * `query.from` and `query.to` are set with `from > to`; left untouched on
+     * success. This implementation never reports a backend failure.
+     * @return `true` on success; `false` when `page` is null or when
+     * `query.from > query.to`.
+     * @note Only `client_id_hash` is exposed by each returned event; no raw
+     * client identifier is stored or returned (C6).
+     * @see analytics::IClickEventRepository::ListEvents
+     */
+    bool ListEvents(const analytics::ClickEventQuery& query,
+                    analytics::ClickEventPage* page,
+                    analytics::AnalyticsError* error = nullptr) override;
+
 private:
     ///< All stored click events, in insertion order. Guarded by
     ///< `mu_`.
