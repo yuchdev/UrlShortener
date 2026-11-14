@@ -285,6 +285,16 @@ include(CTest)
     )
   endforeach()
 
+  # The shared-SQLite scenario (subtask 02.0/14) spawns a long-lived server
+  # process and polls its redirect path; run it serially so parallel ctest load
+  # cannot starve its readiness/convergence deadlines. It already uses a dynamic
+  # ephemeral port, but RUN_SERIAL removes contention from the other heavy tests.
+  if(TEST cli_18_server_and_cli_share_sqlite)
+    set_tests_properties(cli_18_server_and_cli_share_sqlite PROPERTIES
+      RUN_SERIAL TRUE
+    )
+  endif()
+
   if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/test/http_client_test/http_client_test.py)
     add_test(
       NAME http_client_test
