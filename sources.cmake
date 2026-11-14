@@ -558,6 +558,7 @@ set(URL_SHORTENER_SOURCES
       tests/integration/cli/14_link_disable_not_found_and_invalid_input.py
       tests/integration/cli/15_link_restore_not_found_and_invalid_input.py
       tests/integration/cli/16_link_preview_not_found_and_invalid_input.py
+      tests/integration/cli/17_storage_config_errors.py
   )
 
   set(ALL_INTEGRATION_SOURCES
