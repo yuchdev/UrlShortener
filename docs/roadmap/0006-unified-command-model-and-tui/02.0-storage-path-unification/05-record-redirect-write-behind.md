@@ -82,10 +82,25 @@ void stop_stats_flusher();   // joins; also run by the destructor
 
 1. Under `m_stats_mutex`: `m_pending[slug].redirects += 1`;
    `last_accessed_at = max(old, clock.now())`.
-2. L1: if `m_l1->get(slug)` is present, apply the same +1 / timestamp to that
-   copy and `m_l1->set(slug, copy)`. The L1 entry is **not** erased, so the next
-   redirect is a cache hit. If absent, do nothing more.
+2. L1 (amended 2026-11-14, threat model T-32): call
+   `m_l1->patch(slug, [&](Link& l){ apply the same +1 / timestamp to l; })`.
+   `patch` mutates the cached `Link` in place **without** resetting the entry's
+   `stored_at`, so the next redirect is still a cache hit but the L1 TTL stays
+   anchored to the load time. It is a no-op (returns `false`) if the entry is
+   absent or already expired - it never re-inserts or resurrects. `recordRedirect`
+   MUST NOT call `m_l1->set` here: `set` refreshes `stored_at` on every redirect,
+   so a continuously hit link would never expire and a cross-process
+   disable/delete could keep redirecting indefinitely (T-32; acceptance test 14
+   step 6 would never converge). If `patch` returns `false`, do nothing more.
 3. Return `true`. Never throws, never touches `ICacheStore` or `m_repo`.
+
+**Staleness bound (amended 2026-11-14, threat model T-32):** because
+`recordRedirect` patches the L1 entry in place and never refreshes `stored_at`,
+the entry still expires exactly one L1 TTL after it was loaded, no matter how
+often it is hit. A change another process makes to the shared backend (a CLI
+`link disable`/`delete`, or a second server) therefore becomes visible to this
+server's redirect path within one L1 TTL (5 s default, subtask 11) regardless of
+redirect rate.
 
 Merge-on-load (every path that loads a `Link` from `m_repo`: `findBySlug` miss,
 `findById`, list helpers): after decoding the record, under `m_stats_mutex`,
@@ -180,6 +195,13 @@ unit tests are registered through `ALL_UNIT_SOURCES`, whose loop in
   carries the new counters. Same for soft delete (`lnk_deleted` survives).
 - L1 not invalidated: after `recordRedirect`, `findBySlug` causes 0 repository
   reads and returns the incremented counters.
+- **Hot-link TTL not refreshed (amended 2026-11-14, threat model T-32):** with
+  `ExpiringLinkCache(ttl = 5 s)` and `ManualClock`, `findBySlug` loads a slug at
+  t0, then `recordRedirect` is called every second (t1..t4); the repository is
+  then changed out-of-band to `enabled=false` (as a cross-process disable would);
+  at t6 (> ttl after the t0 load) `findBySlug` re-reads the repository and
+  returns the disabled record - the continuous `recordRedirect` calls did not
+  keep the stale active copy alive. Asserts the override uses `patch`, not `set`.
 - Repository failure on flush: the delta is re-queued, a later `flush_stats()`
   after the repo recovers persists it exactly once.
 - Deleted-from-repo link: delta dropped without error.
@@ -195,6 +217,10 @@ unit tests are registered through `ALL_UNIT_SOURCES`, whose loop in
 - Redirect fast path (C10): per redirect the store does one mutex-protected map
   update and one L1 lookup/replace; **no repository I/O in the request thread**
   on persistent backends.
+- The L1 counter bump uses `ExpiringLinkCache::patch` (in place, `stored_at`
+  preserved), never `set`, so a hot link's TTL is not refreshed. C10 is
+  unchanged: still O(1) under one lock, no I/O (one locked lookup-and-mutate in
+  place of the former get+set). (amended 2026-11-14, threat model T-32)
 - Failure of stats persistence never affects the redirect response or its
   latency (analytics/stat best-effort rule in CLAUDE.md).
 - Do not modify the whole record from the redirect path; only `lnk_stats`, and

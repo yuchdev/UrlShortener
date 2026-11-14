@@ -66,6 +66,8 @@ stops it; DB and YAML live in a `TemporaryDirectory`):
 Step 6's tolerance is the deliberate cross-process consistency contract (README
 decision 2); the test documents it instead of hiding it with fixed sleeps.
 
+Convergence in steps 6-7 depends on the hot-link TTL fix: each poll is itself a redirect, so `recordRedirect` must patch L1 in place rather than `set` it (subtasks 01 and 05, amended 2026-11-14, threat model T-32) - otherwise polling would refresh `stored_at` and the link would never expire.
+
 ## Implementation steps
 
 1. Reuse `ServerHarness` and `request` by adding the sibling `core` directory to

@@ -194,3 +194,25 @@ C1-C11 changed:
   rule, "dry_run-capable job command needs a `handler`", was removed after
   01.0/08: per spec 08 / T-21 a job command's dry_run runs the
   `job_factory` body, not the handler.)
+
+**2026-11-14 (threat-model amendment, pre-implementation 02.0 T-32, HIGH).**
+Applied the one HIGH follow-up from
+[the 02.0 threat model](/docs/security/0006-02.0-storage-path-unification-threat-model.md)
+as additive spec amendments; no decision D1-D16 or contract C1-C11 changed (C10
+is preserved - the patch op is O(1) under the existing single lock, no new I/O
+or thread, collapsing the former get+set into one locked lookup-and-mutate):
+
+- *2026-11-14, 02.0/01 (T-32):* added a `patch(slug, mutator)` op to
+  `ExpiringLinkCache` that mutates a present, live entry's `Link` in place under
+  the lock without resetting `stored_at`, and is a no-op on a miss or expired
+  entry (never inserts or resurrects); added tests for stored_at preservation,
+  repeated patching of a hot entry still expiring at the original TTL, and
+  patch-on-miss/expired not inserting.
+- *2026-11-14, 02.0/05 (T-32):* `recordRedirect`'s L1 counter bump now uses
+  `patch` (never `set`), stated the staleness bound (a cross-process change is
+  visible within one L1 TTL regardless of redirect rate), and added a
+  continuously-hit-link test whose out-of-band disable becomes visible after the
+  TTL.
+- *2026-11-14, 02.0/14 (T-32):* added a one-line cross-reference noting that
+  steps 6-7's convergence depends on the 01/05 patch fix (each poll is itself a
+  redirect).
