@@ -112,7 +112,7 @@ deliberately filters in the app layer instead, 03.0/01 and 03.0/12).
 | 10 | [--storage-config flag and env](10-storage-config-flag-and-env.md) | ✅ Complete | none | 11, 03.0/17, 04.0/12, 06.0/19 |
 | 11 | [Backend bootstrap](11-backend-bootstrap.md) | ✅ Complete | 04, 05, 07, 10, 16 | 12 |
 | 12 | [main.cpp wiring order](12-main-wiring-order.md) | ✅ Complete | 08, 09, 11 | 13, 14, 03.0/18, 05.0/20, 06.0/19 |
-| 13 | [CLI persistence tests](13-cli-persistence-tests.md) | ⬜ Not started | 12 | 15 |
+| 13 | [CLI persistence tests](13-cli-persistence-tests.md) | ✅ Complete | 12 | 15 |
 | 14 | [Server and CLI on one SQLite file](14-server-and-cli-shared-sqlite-test.md) | ⬜ Not started | 12 | 15 |
 | 15 | [Docs sync](15-docs-sync.md) | ⬜ Not started | 13, 14 | none |
 | 16 | [IMetadataRepository::GetById (indexed lookup by id)](16-metadata-repository-get-by-id.md) | ✅ Complete | 03 | 08, 11 |
