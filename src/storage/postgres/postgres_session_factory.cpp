@@ -107,6 +107,29 @@ public:
         return out;
     }
 
+    std::optional<SqlRow> SelectById(const std::string& sql,
+                                     const std::string& id,
+                                     RepoError* error) override
+    {
+        std::optional<SqlRow> out;
+        bool ok = RunWithRetry([&]() {
+            soci::rowset<soci::row> rs = (session_.prepare << sql, soci::use(id, "id"));
+            auto it = rs.begin();
+            if (it == rs.end()) {
+                out = std::nullopt;
+                return;
+            }
+            out = RowFromSoci(*it);
+        }, true, error);
+        if (!ok) {
+            return std::nullopt;
+        }
+        if (!out && error) {
+            *error = RepoError::not_found;
+        }
+        return out;
+    }
+
     bool UpdateLink(const std::string& sql, const SqlRow& row, RepoError* error) override
     {
         std::string target_url = row.target_url.value_or("");

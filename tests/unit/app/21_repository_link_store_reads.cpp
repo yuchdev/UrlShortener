@@ -3,9 +3,10 @@
  * @brief Unit tests for app::RepositoryLinkStore read side (subtask 03):
  * findBySlug L1-then-repository with populate-once, negative results not
  * cached, the L1 TTL staleness bound, repository-error-as-not-found
- * (R-5/T-35), fail-closed decode, the bounded findById scan (T-36),
- * slugExists, invalidateCache (L1 + best-effort ICacheStore, never read
- * for links per T-38), and constructor null-port rejection.
+ * (R-5/T-35), fail-closed decode, the single indexed findById GetById
+ * lookup (T-36 scan removed), slugExists, invalidateCache (L1 +
+ * best-effort ICacheStore, never read for links per T-38), and
+ * constructor null-port rejection.
  */
 #define BOOST_TEST_MODULE RepositoryLinkStoreReads
 #include <chrono>
@@ -75,10 +76,12 @@ Link makeLink(const std::string& slug)
  *
  * Records are stored in insertion order (so `ListLinks` paginates
  * deterministically) and keyed by `short_code`. `GetByShortCode`,
- * `ListLinks` and `Exists` increment per-method call counters; each has
- * an injectable `::RepoError` that, when non-`none`, is returned
- * instead of a result. Write methods are unused by the read-side tests
- * and are no-ops.
+ * `GetById`, `ListLinks` and `Exists` increment per-method call
+ * counters; each has an injectable `::RepoError` that, when non-`none`,
+ * is returned instead of a result. `GetById` searches records by
+ * `LinkRecord::id` and returns inactive/soft-deleted records too (no
+ * status filter), mirroring the port contract. Write methods are unused
+ * by the read-side tests and are no-ops.
  */
 class FakeMetadataRepository final : public ::IMetadataRepository
 {
@@ -89,6 +92,9 @@ public:
     ///< Number of `GetByShortCode` calls observed.
     mutable int get_calls = 0;
 
+    ///< Number of `GetById` calls observed.
+    mutable int get_by_id_calls = 0;
+
     ///< Number of `ListLinks` (page) calls observed.
     mutable int list_calls = 0;
 
@@ -97,6 +103,9 @@ public:
 
     ///< Error returned by `GetByShortCode` when not `none`.
     ::RepoError get_error = ::RepoError::none;
+
+    ///< Error returned by `GetById` when not `none`.
+    ::RepoError get_by_id_error = ::RepoError::none;
 
     ///< Error returned by `ListLinks` when not `none`.
     ::RepoError list_error = ::RepoError::none;
@@ -144,6 +153,24 @@ public:
         for (const auto& record : records) {
             if (record.short_code == short_code) {
                 return record;
+            }
+        }
+        return std::nullopt;
+    }
+
+    std::optional<::LinkRecord> GetById(
+        const std::string& id, ::RepoError* error = nullptr) const override
+    {
+        ++get_by_id_calls;
+        if (get_by_id_error != ::RepoError::none) {
+            if (error != nullptr) {
+                *error = get_by_id_error;
+            }
+            return std::nullopt;
+        }
+        for (const auto& record : records) {
+            if (record.id == id) {
+                return record;  // inactive/soft-deleted returned too
             }
         }
         return std::nullopt;
@@ -441,88 +468,121 @@ BOOST_AUTO_TEST_CASE(find_by_slug_never_reads_icachestore)
 }
 
 /**
- * [Unit][App] findById matches on the 1st page, on the 3rd page with a
- * 2-record page, returns nullopt when absent, and finds a soft-deleted
- * record (listing includes deleted).
+ * [Unit][App] findById issues exactly one GetById call, returns the
+ * matching link, and populates L1 (a later findBySlug of its slug is an
+ * L1 hit).
+ *
+ * Scenario:
+ *   Given a repository holding one record and an empty L1.
+ *   When findById is called for its id, then findBySlug for its slug.
+ *   Then GetById is called exactly once and the slug lookup is served
+ *   from L1 without a GetByShortCode call.
  *
  * If this breaks, first check:
- *   - the ListLinks pagination loop (offset += page) and id match.
- *   - include_inactive/include_deleted both true in the query.
+ *   - findById calling m_repo_->GetById once (no ListLinks).
+ *   - findById writing the decoded match to L1 under its slug.
  */
-BOOST_AUTO_TEST_CASE(find_by_id_paged_scan)
+BOOST_AUTO_TEST_CASE(find_by_id_found)
 {
     ManualClock clock(kT0);
     auto repo = std::make_shared<FakeMetadataRepository>();
-    for (int i = 0; i < 5; ++i) {
-        repo->put(makeRecord(makeLink("s" + std::to_string(i))));
-    }
-    // Mark the last record soft-deleted (is_active=false, deleted_at set).
-    Link deleted = makeLink("s4");
+    repo->put(makeRecord(makeLink("a")));
+    auto l1 =
+        std::make_shared<ExpiringLinkCache>(clock, std::chrono::seconds(0));
+    RepositoryLinkStore store(repo, nullptr, l1, clock);
+
+    const auto found = store.findById("id-a");
+    BOOST_REQUIRE(found.has_value());
+    BOOST_CHECK_EQUAL(found->slug, "a");
+    BOOST_CHECK_EQUAL(found->target_url, "https://example.com/a");
+    BOOST_CHECK_EQUAL(repo->get_by_id_calls, 1);
+    BOOST_CHECK_EQUAL(repo->list_calls, 0);
+
+    // The match was written to L1: a slug lookup is served without a
+    // GetByShortCode call.
+    const auto by_slug = store.findBySlug("a");
+    BOOST_REQUIRE(by_slug.has_value());
+    BOOST_CHECK_EQUAL(repo->get_calls, 0);
+}
+
+/**
+ * [Unit][App] findById for an absent id returns nullopt (one GetById
+ * call, nothing cached).
+ *
+ * If this breaks, first check:
+ *   - findById returning nullopt when GetById finds no record.
+ */
+BOOST_AUTO_TEST_CASE(find_by_id_absent)
+{
+    ManualClock clock(kT0);
+    auto repo = std::make_shared<FakeMetadataRepository>();
+    repo->put(makeRecord(makeLink("a")));
+    auto l1 =
+        std::make_shared<ExpiringLinkCache>(clock, std::chrono::seconds(0));
+    RepositoryLinkStore store(repo, nullptr, l1, clock);
+
+    BOOST_CHECK(!store.findById("id-missing").has_value());
+    BOOST_CHECK_EQUAL(repo->get_by_id_calls, 1);
+}
+
+/**
+ * [Unit][App] findById returns an inactive/soft-deleted record (status
+ * is not filtered), matching the port contract.
+ *
+ * If this breaks, first check:
+ *   - GetById (not a status-filtered query) backing findById.
+ */
+BOOST_AUTO_TEST_CASE(find_by_id_returns_inactive_record)
+{
+    ManualClock clock(kT0);
+    auto repo = std::make_shared<FakeMetadataRepository>();
+    Link deleted = makeLink("gone");
     deleted.deleted_at = "2026-02-02T00:00:00Z";
     deleted.enabled = false;
     repo->put(makeRecord(deleted));
-
-    RepositoryLinkStoreOptions options;
-    options.id_scan_page = 2;
     auto l1 =
         std::make_shared<ExpiringLinkCache>(clock, std::chrono::seconds(0));
-    RepositoryLinkStore store(repo, nullptr, l1, clock, options);
+    RepositoryLinkStore store(repo, nullptr, l1, clock);
 
-    // First page: id-s0 at index 0.
-    repo->list_calls = 0;
-    const auto first = store.findById("id-s0");
-    BOOST_REQUIRE(first.has_value());
-    BOOST_CHECK_EQUAL(first->slug, "s0");
-    BOOST_CHECK_EQUAL(repo->list_calls, 1);
-
-    // Third page: id-s4 at index 4 (pages [0,1],[2,3],[4]).
-    repo->list_calls = 0;
-    const auto third = store.findById("id-s4");
-    BOOST_REQUIRE(third.has_value());
-    BOOST_CHECK_EQUAL(third->slug, "s4");
-    BOOST_CHECK(third->deleted_at.has_value());  // soft-deleted still found
-    BOOST_CHECK_EQUAL(repo->list_calls, 3);
-
-    // Absent id scans every page and returns nullopt.
-    BOOST_CHECK(!store.findById("id-missing").has_value());
+    const auto found = store.findById("id-gone");
+    BOOST_REQUIRE(found.has_value());
+    BOOST_CHECK_EQUAL(found->slug, "gone");
+    BOOST_CHECK(found->deleted_at.has_value());
+    BOOST_CHECK(!found->enabled);
 }
 
 /**
- * [Unit][App] findById stops after id_scan_max records even when the
- * target is absent (threat model T-36 bounded scan).
- *
- * Scenario:
- *   Given 10 non-matching records, id_scan_page=2 and id_scan_max=4.
- *   When findById is called for an absent id.
- *   Then exactly 2 pages (4 records) are scanned before giving up.
+ * [Unit][App] A backend error from GetById surfaces as nullopt and
+ * caches nothing (R-5 / threat model T-35).
  *
  * If this breaks, first check:
- *   - the id_scan_max guard incrementing per record and bailing.
+ *   - findById returning nullopt when GetById sets an error.
+ *   - nothing written to L1 on an error.
  */
-BOOST_AUTO_TEST_CASE(find_by_id_stops_at_scan_max)
+BOOST_AUTO_TEST_CASE(find_by_id_backend_error_is_nullopt)
 {
-    ManualClock clock(kT0);
-    auto repo = std::make_shared<FakeMetadataRepository>();
-    for (int i = 0; i < 10; ++i) {
-        repo->put(makeRecord(makeLink("s" + std::to_string(i))));
+    for (const auto err :
+         {::RepoError::transient_failure, ::RepoError::permanent_failure})
+    {
+        ManualClock clock(kT0);
+        auto repo = std::make_shared<FakeMetadataRepository>();
+        repo->put(makeRecord(makeLink("a")));
+        repo->get_by_id_error = err;
+        auto l1 =
+            std::make_shared<ExpiringLinkCache>(clock, std::chrono::seconds(0));
+        RepositoryLinkStore store(repo, nullptr, l1, clock);
+
+        BOOST_CHECK(!store.findById("id-a").has_value());
+        BOOST_CHECK(!l1->get("a").has_value());
     }
-
-    RepositoryLinkStoreOptions options;
-    options.id_scan_page = 2;
-    options.id_scan_max = 4;
-    auto l1 =
-        std::make_shared<ExpiringLinkCache>(clock, std::chrono::seconds(0));
-    RepositoryLinkStore store(repo, nullptr, l1, clock, options);
-
-    BOOST_CHECK(!store.findById("id-absent").has_value());
-    BOOST_CHECK_EQUAL(repo->list_calls, 2);  // 2 pages x 2 = 4 == id_scan_max
 }
 
 /**
- * [Unit][App] findById on an empty id short-circuits without scanning.
+ * [Unit][App] findById on an empty id short-circuits without a GetById
+ * call.
  *
  * If this breaks, first check:
- *   - the early empty-id return before any ListLinks call.
+ *   - the early empty-id return before any GetById call.
  */
 BOOST_AUTO_TEST_CASE(find_by_id_empty_id_is_nullopt)
 {
@@ -534,7 +594,7 @@ BOOST_AUTO_TEST_CASE(find_by_id_empty_id_is_nullopt)
     RepositoryLinkStore store(repo, nullptr, l1, clock);
 
     BOOST_CHECK(!store.findById("").has_value());
-    BOOST_CHECK_EQUAL(repo->list_calls, 0);
+    BOOST_CHECK_EQUAL(repo->get_by_id_calls, 0);
 }
 
 /**

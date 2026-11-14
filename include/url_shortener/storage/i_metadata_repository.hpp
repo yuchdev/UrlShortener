@@ -62,6 +62,27 @@ public:
         const std::string& short_code, RepoError* error = nullptr) const = 0;
 
     /**
+     * @brief Looks up a record by its stable caller-assigned id.
+     *
+     * Returns the record regardless of lifecycle status: an inactive
+     * (`is_active == false`) or soft-deleted record is still returned, so
+     * admin paths (`link get --id`) can inspect disabled/deleted links. This
+     * mirrors GetByShortCode, which also does not filter by status.
+     *
+     * @param id Stable identifier to look up (the `LinkRecord::id` assigned
+     * at CreateLink). An empty id never matches and returns `std::nullopt`
+     * with `error` untouched.
+     * @param[out] error If non-null and a backend error occurs (not a plain
+     * not-found), receives the failure reason; left untouched on success and
+     * when the id simply does not exist.
+     * @return The matching `LinkRecord` if found; `std::nullopt` if the id
+     * does not exist or a backend error occurred (callers distinguish the two
+     * by inspecting `error`).
+     */
+    virtual std::optional<LinkRecord> GetById(
+        const std::string& id, RepoError* error = nullptr) const = 0;
+
+    /**
      * @brief Replaces the mutable fields of an existing record.
      * @param record Updated record; the backend looks it up by
      * `record.short_code`.

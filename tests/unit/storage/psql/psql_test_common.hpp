@@ -29,6 +29,13 @@ struct FakeSqlSession final : ISqlSession {
         if (error) *error = RepoError::none;
         return it->second;
     }
+    std::optional<SqlRow> SelectById(const std::string&, const std::string& id, RepoError* error) override {
+        for (const auto& [_, row] : state->table) {
+            if (row.id.value_or("") == id) { if (error) *error = RepoError::none; return row; }
+        }
+        if (error) *error = RepoError::not_found;
+        return std::nullopt;
+    }
     bool UpdateLink(const std::string&, const SqlRow& row, RepoError* error) override {
         auto key = row.short_code.value_or("");
         auto it = state->table.find(key);

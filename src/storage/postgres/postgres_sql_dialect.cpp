@@ -17,6 +17,11 @@ CREATE TABLE IF NOT EXISTS links (
 )SQL";
 }
 
+std::string PostgresSqlDialect::CreateIdIndexSql() const
+{
+    return "CREATE INDEX IF NOT EXISTS idx_links_id ON links(id);";
+}
+
 std::string PostgresSqlDialect::InsertSql() const
 {
     return "INSERT INTO links(id, short_code, target_url, created_at, updated_at, expires_at, is_active, owner_id, attributes_json) "
@@ -33,6 +38,17 @@ std::string PostgresSqlDialect::SelectByShortCodeSql() const
            "CASE WHEN is_active THEN 1 ELSE 0 END AS is_active, "
            "owner_id, CASE WHEN attributes_json IS NULL THEN NULL ELSE attributes_json::text END AS attributes_json "
            "FROM links WHERE short_code = :short_code;";
+}
+
+std::string PostgresSqlDialect::SelectByIdSql() const
+{
+    return "SELECT id, short_code, target_url, "
+           "CAST(EXTRACT(EPOCH FROM created_at) AS BIGINT) AS created_at, "
+           "CAST(EXTRACT(EPOCH FROM updated_at) AS BIGINT) AS updated_at, "
+           "CASE WHEN expires_at IS NULL THEN NULL ELSE CAST(EXTRACT(EPOCH FROM expires_at) AS BIGINT) END AS expires_at, "
+           "CASE WHEN is_active THEN 1 ELSE 0 END AS is_active, "
+           "owner_id, CASE WHEN attributes_json IS NULL THEN NULL ELSE attributes_json::text END AS attributes_json "
+           "FROM links WHERE id = :id LIMIT 1;";
 }
 
 std::string PostgresSqlDialect::UpdateSql() const

@@ -1,13 +1,11 @@
 #include <stdexcept>
 #include <utility>
-#include <vector>
 
 #include <url_shortener/app/link_record_codec.hpp>
 #include <url_shortener/app/repository_link_store.hpp>
 #include <url_shortener/observability/logger_factory.hpp>
 #include <url_shortener/storage/errors/repo_error.hpp>
 #include <url_shortener/storage/models/link_record.hpp>
-#include <url_shortener/storage/models/list_links_query.hpp>
 
 namespace url_shortener
 {
@@ -152,60 +150,30 @@ std::optional<Link> RepositoryLinkStore::findById(const std::string& id) const
         return std::nullopt;
     }
 
-    // No GetById on the port: page ListLinks (including inactive and
-    // soft-deleted records so an admin lookup finds disabled/deleted
-    // links), decode each record, and stop at the first match or after
-    // id_scan_max records. O(n), admin paths only (threat model T-36).
-    std::size_t scanned = 0;
-    std::size_t offset = 0;
-    const std::size_t page = m_options_.id_scan_page;
+    // Single indexed lookup: GetById returns inactive and soft-deleted
+    // records too, so an admin lookup finds disabled/deleted links. The
+    // former bounded ListLinks scan (threat model T-36) is gone.
+    ::RepoError repo_error = ::RepoError::none;
+    std::optional<::LinkRecord> record = m_repo_->GetById(id, &repo_error);
 
-    while (scanned < m_options_.id_scan_max) {
-        ListLinksQuery query;
-        query.owner = std::nullopt;
-        query.include_inactive = true;
-        query.include_deleted = true;
-        query.offset = offset;
-        query.limit = page;
-
-        ::RepoError repo_error = ::RepoError::none;
-        std::vector<::LinkRecord> records =
-            m_repo_->ListLinks(query, &repo_error);
-
+    if (!record.has_value()) {
+        // An absent id is not an error and is not logged. A backend error
+        // is logged with the id and error name only and also surfaces as
+        // nullopt (R-5 / T-35).
         if (repo_error != ::RepoError::none) {
             auto log = observability::LoggerFactory::Component(k_log_component);
             log.warn("link_store_read_failed",
                      {{"id", id}, {"error", repo_error_name(repo_error)}});
-            return std::nullopt;
         }
-
-        if (records.empty()) {
-            // End of data: no further pages.
-            return std::nullopt;
-        }
-
-        for (const ::LinkRecord& record : records) {
-            if (record.id == id) {
-                std::optional<Link> link = decode(record, record.short_code);
-                if (link.has_value()) {
-                    m_l1_->set(link->slug, *link);
-                }
-                return link;
-            }
-            if (++scanned >= m_options_.id_scan_max) {
-                return std::nullopt;
-            }
-        }
-
-        if (records.size() < page) {
-            // Short page: the backend returned fewer than requested, so
-            // there are no further records to scan.
-            return std::nullopt;
-        }
-        offset += records.size();
+        return std::nullopt;
     }
 
-    return std::nullopt;
+    // Decode (fail-closed) and populate L1 on success.
+    std::optional<Link> link = decode(*record, record->short_code);
+    if (link.has_value()) {
+        m_l1_->set(link->slug, *link);
+    }
+    return link;
 }
 
 bool RepositoryLinkStore::slugExists(const std::string& slug) const

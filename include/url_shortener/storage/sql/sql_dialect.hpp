@@ -28,6 +28,19 @@ public:
     virtual std::string BootstrapSchemaSql() const = 0;
 
     /**
+     * @brief Returns the DDL to create the non-unique secondary index on
+     * the `links(id)` column (`CREATE INDEX IF NOT EXISTS idx_links_id …`).
+     *
+     * Issued as a separate `ISqlSession::Bootstrap` statement after the
+     * table DDL: SOCI/SQLite executes one statement per `session_ << sql`,
+     * so this must not be concatenated onto `BootstrapSchemaSql`. The index
+     * makes `GetById` O(log n) instead of a table scan (threat model T-36).
+     * @return A complete, self-contained `CREATE INDEX IF NOT EXISTS` DDL
+     * string.
+     */
+    virtual std::string CreateIdIndexSql() const = 0;
+
+    /**
      * @brief Returns the INSERT statement for a new link row, with named
      * SOCI bind parameters matching `SqlRow` fields.
      * @return A complete INSERT SQL string.
@@ -40,6 +53,17 @@ public:
      * @return A complete SELECT SQL string.
      */
     virtual std::string SelectByShortCodeSql() const = 0;
+
+    /**
+     * @brief Returns the SELECT statement to fetch one link row by its
+     * stable id, with an `:id` named parameter.
+     *
+     * Same column list as `SelectByShortCodeSql`, but filters on the `id`
+     * column and appends `LIMIT 1` because `id` is indexed but not unique
+     * (uniqueness is a caller invariant, not a DB constraint).
+     * @return A complete `SELECT … WHERE id = :id … LIMIT 1` SQL string.
+     */
+    virtual std::string SelectByIdSql() const = 0;
 
     /**
      * @brief Returns the UPDATE statement to modify an existing link row,

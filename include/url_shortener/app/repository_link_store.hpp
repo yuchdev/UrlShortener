@@ -23,9 +23,7 @@ namespace app
  * @brief Tunable knobs for `RepositoryLinkStore`.
  *
  * Defaults match the values validated by the subtask-03 read tests and
- * the subtask-05 write-behind design. All values are bounds, not
- * promises: a backend with fewer records than `id_scan_max` simply
- * stops early.
+ * the subtask-05 write-behind design.
  */
 struct RepositoryLinkStoreOptions
 {
@@ -35,18 +33,6 @@ struct RepositoryLinkStoreOptions
     ///< write-through in subtask 05. Carried here so the type is
     ///< stable across subtasks.
     std::chrono::seconds stats_flush_interval {30};
-
-    ///< Page size (`ListLinksQuery::limit`) used when `findById`
-    ///< scans the repository one page at a time. Larger pages mean
-    ///< fewer round trips but more records decoded per call.
-    std::size_t id_scan_page = 200;
-
-    ///< Hard upper bound on the number of records `findById` will
-    ///< scan before giving up and returning `std::nullopt`. Caps the
-    ///< worst-case cost of an admin `link get --id <absent>` against a
-    ///< large backend (threat model T-36); never reached on the
-    ///< redirect fast path, which only uses `findBySlug`.
-    std::size_t id_scan_max = 100000;
 };
 
 /**
@@ -67,9 +53,11 @@ struct RepositoryLinkStoreOptions
  *   (threat model T-38); the full `Link` cannot be represented by
  *   `CacheValue`, and a poisoned shared cache must never be able to
  *   answer a redirect.
- * - `findById` has no port method; it pages `ListLinks` and decodes
- *   each record until the first match or `id_scan_max` records
- *   (O(n), admin paths only — never the redirect fast path).
+ * - `findById` issues a single indexed `::IMetadataRepository::GetById`
+ *   lookup (O(1) in-memory, O(log n) on SQL backends), decodes the
+ *   record, and populates L1 on success (admin paths only — never the
+ *   redirect fast path). The former bounded `ListLinks` scan (threat
+ *   model T-36) is removed.
  * - Repository failures are logged with the error name only and
  *   surface as `std::nullopt`; an outage therefore looks like
  *   "not found" (accepted limitation R-5 / threat model T-35).
@@ -149,21 +137,21 @@ public:
     std::optional<Link> findBySlug(const std::string& slug) const override;
 
     /**
-     * @brief Looks up a link by its stable identifier via a bounded
-     * repository scan.
+     * @brief Looks up a link by its stable identifier via a single
+     * indexed repository lookup.
      *
-     * There is no `GetById` on `::IMetadataRepository`, so this pages
-     * `ListLinks` (`owner` unset, `include_inactive=true`,
-     * `include_deleted=true`, `limit=id_scan_page`), decoding each
-     * record and returning the first whose `id` matches. The scan
-     * stops after `id_scan_max` records or when a page comes back
-     * short (end of data). A match is also written to L1. Cost is
-     * O(n); used only by admin paths (`link get --id`), never by
-     * redirects.
+     * Calls `::IMetadataRepository::GetById` once (O(1) in-memory,
+     * O(log n) on SQL backends thanks to the `idx_links_id` index),
+     * which returns inactive and soft-deleted records too so an admin
+     * lookup finds disabled/deleted links. A decoded match is written to
+     * L1. Used only by admin paths (`link get --id`), never by redirects
+     * (C10). The former bounded `ListLinks` scan (threat model T-36) is
+     * removed.
      * @param id Stable link identifier to look up.
-     * @return The matching link; `std::nullopt` if no record matches
-     * within `id_scan_max`, the id is empty, or the repository errors
-     * (logged as `link_store_read_failed`, error name only).
+     * @return The matching link; `std::nullopt` if the id is empty, no
+     * record matches, the record fails to decode (logged as
+     * `link_store_decode_failed`, slug only), or the repository errors
+     * (logged as `link_store_read_failed`, id and error name only).
      */
     std::optional<Link> findById(const std::string& id) const override;
 

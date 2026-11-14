@@ -20,6 +20,12 @@ public:
     std::string BootstrapSchemaSql() const override;
 
     /**
+     * @brief Returns `CREATE INDEX IF NOT EXISTS idx_links_id ON
+     * links(id)`.
+     */
+    std::string CreateIdIndexSql() const override;
+
+    /**
      * @brief Returns `INSERT INTO links(…) VALUES(…)` with named SOCI
      * parameters matching all `SqlRow` fields.
      */
@@ -29,6 +35,11 @@ public:
      * @brief Returns `SELECT … FROM links WHERE short_code = :short_code`.
      */
     std::string SelectByShortCodeSql() const override;
+
+    /**
+     * @brief Returns `SELECT … FROM links WHERE id = :id LIMIT 1`.
+     */
+    std::string SelectByIdSql() const override;
 
     /**
      * @brief Returns `UPDATE links SET … WHERE short_code = :short_code`.

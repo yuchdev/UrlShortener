@@ -11,6 +11,7 @@ class DummyRepo final : public IMetadataRepository {
 public:
     bool CreateLink(const CreateLinkRequest&, const std::string&, const std::chrono::system_clock::time_point&, RepoError*) override { return true; }
     std::optional<LinkRecord> GetByShortCode(const std::string&, RepoError*) const override { return std::nullopt; }
+    std::optional<LinkRecord> GetById(const std::string&, RepoError*) const override { return std::nullopt; }
     bool UpdateLink(const LinkRecord&, RepoError*) override { return true; }
     bool DeleteLink(const std::string&, RepoError*) override { return true; }
     std::vector<LinkRecord> ListLinks(const ListLinksQuery&, RepoError*) const override { return {}; }

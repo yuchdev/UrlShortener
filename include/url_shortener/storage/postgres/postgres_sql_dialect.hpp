@@ -21,6 +21,13 @@ public:
     std::string BootstrapSchemaSql() const override;
 
     /**
+     * @brief Returns `CREATE INDEX IF NOT EXISTS idx_links_id ON
+     * links(id)`. Mirrors migration `005_index_links_id` for
+     * non-migration bootstrap deployments.
+     */
+    std::string CreateIdIndexSql() const override;
+
+    /**
      * @brief Returns `INSERT INTO links(…) VALUES(…)` using
      * `to_timestamp(:created_at)` / `to_timestamp(:updated_at)` for
      * timestamps and `CAST(:attributes_json AS JSONB)`.
@@ -33,6 +40,13 @@ public:
      * `BOOLEAN` to `0`/`1` for `SqlRow` binding.
      */
     std::string SelectByShortCodeSql() const override;
+
+    /**
+     * @brief Returns `SELECT … FROM links WHERE id = :id LIMIT 1`, casting
+     * `TIMESTAMPTZ` and `BOOLEAN` columns for `SqlRow` binding as
+     * `SelectByShortCodeSql` does.
+     */
+    std::string SelectByIdSql() const override;
 
     /**
      * @brief Returns `UPDATE links SET … WHERE short_code = :short_code`

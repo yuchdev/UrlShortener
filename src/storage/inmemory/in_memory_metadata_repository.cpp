@@ -34,6 +34,7 @@ bool InMemoryMetadataRepository::CreateLink(const CreateLinkRequest& request,
     record.attributes = request.attributes;
     record.is_active = request.is_active;
     by_code_[record.short_code] = record;
+    by_id_[record.id] = record.short_code;
     if (error != nullptr) {
         *error = RepoError::none;
     }
@@ -56,6 +57,24 @@ std::optional<LinkRecord> InMemoryMetadataRepository::GetByShortCode(const std::
     return std::nullopt;
 }
 
+std::optional<LinkRecord> InMemoryMetadataRepository::GetById(const std::string& id,
+                                                              RepoError* error) const
+{
+    std::shared_lock lock(mutex_);
+    if (const auto id_it = by_id_.find(id); id_it != by_id_.end()) {
+        if (const auto code_it = by_code_.find(id_it->second); code_it != by_code_.end()) {
+            if (error != nullptr) {
+                *error = RepoError::none;
+            }
+            return code_it->second;
+        }
+    }
+    if (error != nullptr) {
+        *error = RepoError::none;
+    }
+    return std::nullopt;
+}
+
 bool InMemoryMetadataRepository::UpdateLink(const LinkRecord& record, RepoError* error)
 {
     std::unique_lock lock(mutex_);
@@ -66,7 +85,13 @@ bool InMemoryMetadataRepository::UpdateLink(const LinkRecord& record, RepoError*
         }
         return false;
     }
+    // Keep the id index consistent: if the record's id changed, drop the
+    // stale id -> short_code mapping before re-asserting the current one.
+    if (it->second.id != record.id) {
+        by_id_.erase(it->second.id);
+    }
     it->second = record;
+    by_id_[record.id] = record.short_code;
     if (error != nullptr) {
         *error = RepoError::none;
     }
@@ -76,7 +101,10 @@ bool InMemoryMetadataRepository::UpdateLink(const LinkRecord& record, RepoError*
 bool InMemoryMetadataRepository::DeleteLink(const std::string& short_code, RepoError* error)
 {
     std::unique_lock lock(mutex_);
-    by_code_.erase(short_code);
+    if (const auto it = by_code_.find(short_code); it != by_code_.end()) {
+        by_id_.erase(it->second.id);
+        by_code_.erase(it);
+    }
     if (error != nullptr) {
         *error = RepoError::none;
     }
