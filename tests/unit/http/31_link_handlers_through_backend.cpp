@@ -39,6 +39,7 @@
  */
 #define BOOST_TEST_MODULE LinkHandlersThroughBackend
 #include <array>
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
@@ -46,6 +47,9 @@
 #include <functional>
 #include <memory>
 #include <optional>
+#include <regex>
+#include <set>
+#include <sstream>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -302,8 +306,8 @@ BOOST_FIXTURE_TEST_CASE(create_runs_through_backend, BackendFixture)
     BOOST_TEST(store->createCount() == 1U);
 
     // The legacy singleton was never written.
-    BOOST_TEST(!url_shortener::linkRepository().getBySlug("bk31create01")
-                    .has_value());
+    BOOST_TEST(
+        !url_shortener::linkRepository().getBySlug("bk31create01").has_value());
 
     // C3: the create body reflects exactly the stored link — identical to a
     // GET of the same slug, which reads it back through the fake.
@@ -341,18 +345,19 @@ BOOST_FIXTURE_TEST_CASE(read_update_lifecycle_through_backend, BackendFixture)
     BOOST_TEST(store->findCount() >= 1U);
 
     const std::size_t before_patch = store->updateCount();
-    const auto patch = dispatch(makeRequest(bhttp::verb::patch,
-                                            "/api/v1/links/bk31rw01",
-                                            "{\"enabled\":false}"));
+    const auto patch = dispatch(makeRequest(
+        bhttp::verb::patch, "/api/v1/links/bk31rw01", "{\"enabled\":false}"));
     BOOST_TEST(patch.result_int() == 200);
-    BOOST_TEST(patch.body().find("\"status\":\"disabled\"") != std::string::npos);
+    BOOST_TEST(patch.body().find("\"status\":\"disabled\"")
+               != std::string::npos);
     BOOST_TEST(store->updateCount() > before_patch);
 
     const std::size_t before_disable = store->updateCount();
     const auto disable = dispatch(
         makeRequest(bhttp::verb::post, "/api/v1/links/bk31rw01/disable"));
     BOOST_TEST(disable.result_int() == 200);
-    BOOST_TEST(disable.body().find("\"status\":\"disabled\"") != std::string::npos);
+    BOOST_TEST(disable.body().find("\"status\":\"disabled\"")
+               != std::string::npos);
     BOOST_TEST(store->updateCount() > before_disable);
 
     // Re-enable before deleting so the restore below reverts to active, which
@@ -361,7 +366,8 @@ BOOST_FIXTURE_TEST_CASE(read_update_lifecycle_through_backend, BackendFixture)
     const auto enable = dispatch(
         makeRequest(bhttp::verb::post, "/api/v1/links/bk31rw01/enable"));
     BOOST_TEST(enable.result_int() == 200);
-    BOOST_TEST(enable.body().find("\"status\":\"active\"") != std::string::npos);
+    BOOST_TEST(enable.body().find("\"status\":\"active\"")
+               != std::string::npos);
     BOOST_TEST(store->updateCount() > before_enable);
 
     const std::size_t before_delete = store->updateCount();
@@ -374,11 +380,12 @@ BOOST_FIXTURE_TEST_CASE(read_update_lifecycle_through_backend, BackendFixture)
     const auto restore = dispatch(
         makeRequest(bhttp::verb::post, "/api/v1/links/bk31rw01/restore"));
     BOOST_TEST(restore.result_int() == 200);
-    BOOST_TEST(restore.body().find("\"status\":\"active\"") != std::string::npos);
+    BOOST_TEST(restore.body().find("\"status\":\"active\"")
+               != std::string::npos);
     BOOST_TEST(store->updateCount() > before_restore);
 
-    BOOST_TEST(!url_shortener::linkRepository().getBySlug("bk31rw01")
-                    .has_value());
+    BOOST_TEST(
+        !url_shortener::linkRepository().getBySlug("bk31rw01").has_value());
 }
 
 /**
@@ -407,13 +414,15 @@ BOOST_FIXTURE_TEST_CASE(legacy_stats_reads_through_backend, BackendFixture)
     const auto stats = dispatch(
         makeRequest(bhttp::verb::get, "/api/v1/links/bk31stats01/stats"));
     BOOST_TEST(stats.result_int() == 200);
-    BOOST_TEST(stats.body().find("\"total_redirects\":42") != std::string::npos);
+    BOOST_TEST(stats.body().find("\"total_redirects\":42")
+               != std::string::npos);
     BOOST_TEST(stats.body().find("\"redirects_24h\":7") != std::string::npos);
 
     const auto missing = dispatch(
         makeRequest(bhttp::verb::get, "/api/v1/links/bk31missing01/stats"));
     BOOST_TEST(missing.result_int() == 404);
-    BOOST_TEST(missing.body().find("\"code\":\"not_found\"") != std::string::npos);
+    BOOST_TEST(missing.body().find("\"code\":\"not_found\"")
+               != std::string::npos);
 }
 
 /**
@@ -444,7 +453,8 @@ BOOST_FIXTURE_TEST_CASE(placeholder_existence_through_backend, BackendFixture)
     const auto missing = dispatch(
         makeRequest(bhttp::verb::get, "/api/v1/links/bk31missing02/qr"));
     BOOST_TEST(missing.result_int() == 404);
-    BOOST_TEST(missing.body().find("\"code\":\"not_found\"") != std::string::npos);
+    BOOST_TEST(missing.body().find("\"code\":\"not_found\"")
+               != std::string::npos);
 }
 
 /**
@@ -498,38 +508,44 @@ BOOST_FIXTURE_TEST_CASE(legacy_path_after_reset, BackendFixture)
     const auto get =
         dispatch(makeRequest(bhttp::verb::get, "/api/v1/links/bk31legacy01"));
     BOOST_TEST(get.result_int() == 200);
-    BOOST_TEST(get.body().find("\"slug\":\"bk31legacy01\"") != std::string::npos);
+    BOOST_TEST(get.body().find("\"slug\":\"bk31legacy01\"")
+               != std::string::npos);
 }
 
 namespace
 {
 
-/// Direct-write patterns forbidden anywhere under src/http or src/cli: every
-/// create/update must flow through LinkCommandService (which owns URL/slug/SSRF
-/// validation), never a direct store write or a legacy write helper
-/// (threat model T-40). Reads (`store().findBySlug`, `store().slugExists`) and
-/// the best-effort `store().recordRedirect` are allowed and not listed.
-constexpr std::array<std::string_view, 5> k_forbidden_writes = {
-    "store().create(",
-    "store().update(",
-    "linkRepository().create(",
-    "linkRepository().update(",
-    "updateLinkAndInvalidateCache(",
+/// Direct-write patterns forbidden anywhere under src/http or src/cli
+/// (threat model T-40): every create/update must flow through
+/// LinkCommandService, which owns URL/slug/SSRF validation. Matched as
+/// whitespace-tolerant regexes over whole files, so a reference alias
+/// (`auto& s = store(); s.create(`), a pointer (`bundle.store->create(`) and
+/// a call wrapped across lines are all caught. Reads (`findBySlug`,
+/// `slugExists`) and the best-effort `recordRedirect` are allowed.
+const std::array<std::regex, 2> k_forbidden_writes = {
+    std::regex(R"((\.|->)\s*(create|update)\s*\()"),
+    std::regex(R"(updateLinkAndInvalidateCache\s*\()"),
 };
 
-/// @return `true` if @p line contains any forbidden direct-write pattern.
-bool line_has_forbidden_write(const std::string& line)
+/// Storage headers src/http and src/cli must not include: reaching a store or
+/// repository type directly is the first step to bypassing the service.
+const std::array<std::regex, 1> k_forbidden_includes = {
+    std::regex(R"(#\s*include\s*[<"][^>"]*)"
+               R"((storage/link_repository|app/repository_link_store)"
+               R"(|storage/i_metadata_repository)\.hpp[>"])"),
+};
+
+/// Removes `//` line comments and `/* */` block comments so prose that
+/// mentions a forbidden call (e.g. a doc comment) is not reported.
+std::string strip_comments(const std::string& text)
 {
-    for (const std::string_view bad : k_forbidden_writes) {
-        if (line.find(bad) != std::string::npos) {
-            return true;
-        }
-    }
-    return false;
+    static const std::regex block(R"(/\*[\s\S]*?\*/)");
+    static const std::regex line(R"(//[^\n]*)");
+    return std::regex_replace(std::regex_replace(text, block, " "), line, " ");
 }
 
-/// Scans every `*.cpp` under @p dir (recursively) and returns the
-/// `(path, line)` pairs that contain a forbidden direct-write pattern.
+/// Scans every `*.cpp` and `*.hpp` under @p dir (recursively) and returns
+/// `(path, matched text)` pairs for forbidden writes and includes.
 std::vector<std::pair<std::string, std::string>> forbidden_writes_under(
     const fs::path& dir)
 {
@@ -538,14 +554,29 @@ std::vector<std::pair<std::string, std::string>> forbidden_writes_under(
         return hits;
     }
     for (const auto& entry : fs::recursive_directory_iterator(dir)) {
-        if (!entry.is_regular_file() || entry.path().extension() != ".cpp") {
+        const auto ext = entry.path().extension();
+        if (!entry.is_regular_file() || (ext != ".cpp" && ext != ".hpp")) {
             continue;
         }
         std::ifstream in(entry.path());
-        std::string line;
-        while (std::getline(in, line)) {
-            if (line_has_forbidden_write(line)) {
-                hits.emplace_back(entry.path().string(), line);
+        std::stringstream buffer;
+        buffer << in.rdbuf();
+        const std::string raw = buffer.str();
+        const std::string code = strip_comments(raw);
+        for (const auto& re : k_forbidden_writes) {
+            for (std::sregex_iterator it(code.begin(), code.end(), re), done;
+                 it != done;
+                 ++it)
+            {
+                hits.emplace_back(entry.path().string(), it->str());
+            }
+        }
+        for (const auto& re : k_forbidden_includes) {
+            for (std::sregex_iterator it(raw.begin(), raw.end(), re), done;
+                 it != done;
+                 ++it)
+            {
+                hits.emplace_back(entry.path().string(), it->str());
             }
         }
     }
@@ -571,8 +602,9 @@ fs::path source_root()
  * LinkCommandService (threat model T-40).
  *
  * Scenario:
- *   Scans every .cpp under src/http and src/cli for `store().create(` /
- *   `store().update(` and the legacy direct-write helpers.
+ *   Scans every .cpp and .hpp under src/http and src/cli for any
+ *   `.create(` / `->create(` / `.update(` / `->update(` call, the legacy
+ *   write helper, and includes of the storage/store headers.
  *   Then no file matches.
  *
  * If this breaks, first check:
@@ -594,7 +626,8 @@ BOOST_AUTO_TEST_CASE(no_direct_store_writes_in_http_or_cli)
     }
 
     for (const auto& [path, line] : hits) {
-        BOOST_TEST(false, "direct store/legacy write in " << path << ": " << line);
+        BOOST_TEST(false,
+                   "direct store/legacy write in " << path << ": " << line);
     }
     BOOST_TEST(hits.empty());
 }
@@ -605,38 +638,54 @@ BOOST_AUTO_TEST_CASE(no_direct_store_writes_in_http_or_cli)
  * vacuously.
  *
  * Scenario:
- *   A temp .cpp containing `app::LinkBackend::store().create(link);` fed to the
- *   same scanner is reported; a clean read-only line is not.
+ *   Temp files planting each bypass form - canonical call, reference alias,
+ *   pointer through a bundle, a call wrapped across lines, a header, and a
+ *   forbidden storage include - are each reported; a file with only reads and
+ *   a write mentioned in a comment is not (security review LOW on 02.0/09).
  *
  * If this breaks, first check:
- *   - line_has_forbidden_write / the forbidden-pattern list stopped
- *     recognizing `store().create(`.
+ *   - k_forbidden_writes / k_forbidden_includes or strip_comments changed.
  */
 BOOST_AUTO_TEST_CASE(guard_detects_a_planted_direct_write)
 {
-    const fs::path dir =
-        fs::temp_directory_path() / "url_shortener_store_write_selftest";
+    const fs::path dir = fs::temp_directory_path()
+        / ("url_shortener_store_write_selftest_"
+           + std::to_string(
+               std::chrono::steady_clock::now().time_since_epoch().count()));
     fs::remove_all(dir);
     fs::create_directories(dir);
-    {
-        std::ofstream bad(dir / "tainted.cpp");
-        bad << "void f() {\n";
-        bad << "    app::LinkBackend::store().create(link);\n";
-        bad << "}\n";
-    }
-    {
-        std::ofstream clean(dir / "clean.cpp");
-        clean << "void g() {\n";
-        clean << "    const auto l = app::LinkBackend::store().findBySlug(s);\n";
-        clean << "}\n";
-    }
+    const auto write = [&](const char* name, const std::string& body)
+    { std::ofstream(dir / name) << body; };
+    // One file per bypass form the guard must catch.
+    write("canonical.cpp",
+          "void f() { app::LinkBackend::store().create(l); }\n");
+    write("alias.cpp",
+          "void f() { auto& s = app::LinkBackend::store(); s.update(l); }\n");
+    write("pointer.cpp", "void f() { bundle.store->create(l); }\n");
+    write(
+        "wrapped.cpp",
+        "void f() {\n    app::LinkBackend::store()\n        .create(l);\n}\n");
+    write("header.hpp", "inline void f() { bundle.store->update(l); }\n");
+    write("include.cpp",
+          "#include <url_shortener/app/repository_link_store.hpp>\n");
+    // Must not be reported: reads, and a write mentioned only in a comment.
+    write("clean.cpp",
+          "// store().create(l) is forbidden here\n"
+          "void g() { const auto l = app::LinkBackend::store().findBySlug(s);"
+          " (void)app::LinkBackend::store().slugExists(s); }\n");
 
     const auto hits = forbidden_writes_under(dir);
     fs::remove_all(dir);
 
-    BOOST_TEST(hits.size() == 1U);
-    if (!hits.empty()) {
-        BOOST_TEST(hits.front().second.find("store().create(")
-                   != std::string::npos);
+    std::set<std::string> flagged;
+    for (const auto& [path, text] : hits) {
+        flagged.insert(fs::path(path).filename().string());
     }
+    const std::set<std::string> expected = {"canonical.cpp",
+                                            "alias.cpp",
+                                            "pointer.cpp",
+                                            "wrapped.cpp",
+                                            "header.hpp",
+                                            "include.cpp"};
+    BOOST_TEST(flagged == expected);
 }
