@@ -151,6 +151,11 @@ include(CTest)
     set_tests_properties(${unit_name} PROPERTIES LABELS "unit")
   endforeach()
 
+  # The direct-write guard in this test scans src/http and src/cli from the
+  # source tree, so it needs the project root at compile time.
+  target_compile_definitions(31_link_handlers_through_backend
+      PRIVATE SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
+
   # Helper macro to register C++ tests with unique target names (parent_dir__filename)
   # and the appropriate CTest label so suites can be run independently.
   macro(register_labeled_cpp_tests src_list label)

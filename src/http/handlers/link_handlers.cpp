@@ -7,12 +7,12 @@
 #include <utility>
 #include <vector>
 
+#include <url_shortener/app/link_backend.hpp>
 #include <url_shortener/composition/link_command_service_factory.hpp>
 #include <url_shortener/core/utils.hpp>
 #include <url_shortener/http/analytics_stats_handler.hpp>
 #include <url_shortener/http/handlers/link_handlers.hpp>
 #include <url_shortener/http/request_handlers.hpp>
-#include <url_shortener/storage/link_repository.hpp>
 
 #include "url_shortener/storage/memory/in_memory_click_event_repository.hpp"
 
@@ -429,9 +429,8 @@ BeastResponse handlePatchLink(const BeastRequest& req,
     command.slug = pathValue(context, "slug");
 
     const auto command_service = makeCommandService(config);
-    if (const auto existing =
-            command_service.service->GetLink({app::GetLinkBy::slug,
-                                              command.slug});
+    if (const auto existing = command_service.service->GetLink(
+            {app::GetLinkBy::slug, command.slug});
         !existing.ok())
     {
         return appErrorResponse(req, config, is_tls, existing.error);
@@ -622,7 +621,7 @@ BeastResponse handlePlaceholderFeature(const BeastRequest& req,
                                        const RouteContext& context)
 {
     const auto slug = pathValue(context, "slug");
-    const auto link = url_shortener::getLinkForRead(slug);
+    const auto link = app::LinkBackend::store().findBySlug(slug);
     if (!link.has_value()) {
         return linkNotFound(req, config, is_tls);
     }
@@ -661,7 +660,7 @@ BeastResponse handleLinkStats(const BeastRequest& req,
             "application/json");
     }
 
-    const auto link = url_shortener::getLinkForRead(slug);
+    const auto link = app::LinkBackend::store().findBySlug(slug);
     if (!link.has_value()) {
         return linkNotFound(req, config, is_tls);
     }
