@@ -38,7 +38,7 @@ Two halves that can run in parallel:
 |---|----------|--------|------------|--------|
 | 01 | [ListLinksQuery extension, eval helper, `ListLinksPage`](01-list-links-query-and-page.md) | ✅ Complete | none | 02, 12, 05.0/10 |
 | 02 | [Contract tests for extended listing](02-list-links-page-contract-tests.md) | ✅ Complete | 01 | 12 |
-| 03 | [`IClickEventRepository::ListEvents` and in-memory impl](03-click-event-listing-interface-and-memory.md) | ⬜ Not started | none | 04, 16 |
+| 03 | [`IClickEventRepository::ListEvents` and in-memory impl](03-click-event-listing-interface-and-memory.md) | ✅ Complete | none | 04, 16 |
 | 04 | [`ListEvents` for the SQL repository](04-click-event-listing-sql.md) | ⬜ Not started | 03 | 16 |
 | 05 | [Link command codec helpers](05-link-command-codec-helpers.md) | ⬜ Not started | 01.0/02, 01.0/05, 01.0/06, 01.0/07 | 07, 08, 09, 10, 05.0/08 |
 | 06 | [Dry-run validation methods on `LinkCommandService`](06-service-dry-run-validation.md) | ⬜ Not started | none | 07, 09, 05.0/08 |
