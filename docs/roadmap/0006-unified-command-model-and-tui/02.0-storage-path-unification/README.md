@@ -106,7 +106,7 @@ deliberately filters in the app layer instead, 03.0/01 and 03.0/12).
 | 04 | [RepositoryLinkStore: writes](04-repository-link-store-writes.md) | ✅ Complete | 03 | 05, 06, 11 |
 | 05 | [recordRedirect and write-behind stats](05-record-redirect-write-behind.md) | ✅ Complete | 04 | 08, 11 |
 | 06 | [Store tests on in-memory and SQLite](06-repository-link-store-backend-tests.md) | ✅ Complete | 04 | none |
-| 07 | [LinkBackend holder and factory](07-link-backend-holder.md) | ⬜ Not started | none | 08, 09, 11, 03.0/11 |
+| 07 | [LinkBackend holder and factory](07-link-backend-holder.md) | ✅ Complete | none | 08, 09, 11, 03.0/11 |
 | 08 | [Redirect handlers through the backend](08-redirect-handlers-through-backend.md) | ⬜ Not started | 05, 07, 16 | 12, 07.0/31 |
 | 09 | [REST and slug paths through the backend](09-rest-and-slug-paths-through-backend.md) | ⬜ Not started | 07 | 12 |
 | 10 | [--storage-config flag and env](10-storage-config-flag-and-env.md) | ⬜ Not started | none | 11, 03.0/17, 04.0/12, 06.0/19 |
