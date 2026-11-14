@@ -347,6 +347,8 @@ set(URL_SHORTENER_SOURCES
       tests/integration/cpp/analytics/06_retention_cleanup_deletes_old_events.cpp
       tests/integration/cpp/storage/analytics_sqlite_repository_roundtrip.cpp
       tests/integration/cpp/storage/analytics_postgresql_repository_roundtrip.cpp
+      tests/integration/cpp/storage/analytics_sqlite_list_events.cpp
+      tests/integration/cpp/storage/analytics_postgresql_list_events.cpp
   )
 
   set(CONFIG_INTEGRATION_SOURCES
