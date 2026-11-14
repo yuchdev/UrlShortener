@@ -310,6 +310,7 @@ set(URL_SHORTENER_SOURCES
       tests/unit/app/21_repository_link_store_reads.cpp
       tests/unit/app/22_repository_link_store_writes.cpp
       tests/unit/app/23_record_redirect_write_behind.cpp
+      tests/unit/app/24_link_backend_holder.cpp
   )
 
   set(CLI_UNIT_SOURCES
@@ -460,6 +461,7 @@ set(URL_SHORTENER_SOURCES
       ${CMAKE_CURRENT_SOURCE_DIR}/src/app/expiring_link_cache.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/app/link_record_codec.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/app/repository_link_store.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/app/link_backend.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/composition/link_command_service_factory.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/config/storage_config.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/composition/storage_factory.cpp
