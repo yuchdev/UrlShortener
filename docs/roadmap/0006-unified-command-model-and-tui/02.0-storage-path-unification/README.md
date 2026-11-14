@@ -115,7 +115,7 @@ deliberately filters in the app layer instead, 03.0/01 and 03.0/12).
 | 13 | [CLI persistence tests](13-cli-persistence-tests.md) | ⬜ Not started | 12 | 15 |
 | 14 | [Server and CLI on one SQLite file](14-server-and-cli-shared-sqlite-test.md) | ⬜ Not started | 12 | 15 |
 | 15 | [Docs sync](15-docs-sync.md) | ⬜ Not started | 13, 14 | none |
-| 16 | [IMetadataRepository::GetById (indexed lookup by id)](16-metadata-repository-get-by-id.md) | ⬜ Not started | 03 | 08, 11 |
+| 16 | [IMetadataRepository::GetById (indexed lookup by id)](16-metadata-repository-get-by-id.md) | ✅ Complete | 03 | 08, 11 |
 
 ### Dependency graph
 

@@ -7,7 +7,7 @@ Tracks progress against [plan.md](/docs/roadmap/0006-unified-command-model-and-t
 | Task | Name | Status | Tests |
 |------|------|--------|-------|
 | 01.0 | Command model core | ✅ Complete (13/13 subtasks) | 14 (`commands__01`-`14`) |
-| 02.0 | Storage path unification | 🔶 In progress (3/16 subtasks) | 3 (`app__19`-`21`) |
+| 02.0 | Storage path unification | 🔶 In progress (4/16 subtasks) | 4 (`app__19`-`21`, `metadata__09`) |
 | 03.0 | Link and browse commands | ⬜ Not started | 0 |
 | 04.0 | REST and CLI adapters | ⬜ Not started | 0 |
 | 05.0 | Jobs, pair import/export, stdio | ⬜ Not started | 0 |
@@ -223,3 +223,12 @@ or thread, collapsing the former get+set into one locked lookup-and-mutate):
   Decided with the user: add `GetById` to `::IMetadataRepository` with
   indexed implementations in every adapter and contract tests (new subtask
   02.0/16), then switch `findById` to it. Must land before 02.0/08 and 11.
+- *2026-11-14, 02.0/16 Postgres verification:* run against a temporary
+  local PostgreSQL 16 cluster (loopback only). `GetById` and migration
+  `005` work (`idx_links_id` present; the id query uses an index scan).
+  Two problems that predate this milestone surfaced: the Postgres contract
+  harness shares one database across cases and runs (no reset), and
+  `metadata__06_list_filtering_pagination` fails on Postgres even on a
+  fresh database (`ListLinks` owner filter returns 0 rows; likely the
+  untyped `:owner_id IS NULL` parameter). Both routed to 03.0/01-02, which
+  rework `ListLinks` and its contract tests.
