@@ -34,9 +34,12 @@ namespace app
  * Thread-safety: all public methods are safe to call concurrently;
  * every operation takes a single short lock on `m_mutex_`, holds it
  * only for a hash-map lookup (and, for `get`, a copy of the `Link`
- * out), performs no I/O, and spawns no thread. `get`, `set`, `erase`
- * and `patch` are O(1) average, preserving the redirect fast path's
- * complexity (plan C10).
+ * out), performs no I/O, and spawns no thread. `get`, `erase` and
+ * `patch` are O(1) average; `set` is O(1) amortized, doing bounded
+ * constant work at the size bound — on overflow it samples at most
+ * `k_eviction_sample_size` entries to pick a victim rather than
+ * sweeping the whole map, so an insert on the redirect path can never
+ * degrade to O(n) (plan C10, CWE-400).
  *
  * Lifetime: the `IClock` is held by reference (same convention as
  * `LinkService` / `InMemoryCacheStore`); the caller must keep the
@@ -51,6 +54,19 @@ class ExpiringLinkCache final : public url_shortener::ILinkCacheStore
 {
 public:
     /**
+     * @brief Maximum number of entries `set` inspects when choosing an
+     * eviction victim at the size bound.
+     *
+     * Bounds the per-insert work to a constant: on overflow `set`
+     * examines at most this many entries, evicts the first expired one
+     * it finds, and otherwise evicts the first entry it looked at. This
+     * keeps the redirect-path insert O(1) amortized instead of sweeping
+     * the entire map (plan C10, CWE-400). It is exposed so tests can
+     * reason about the sampling bound relative to `max_entries`.
+     */
+    static constexpr std::size_t k_eviction_sample_size = 8;
+
+    /**
      * @brief Constructs an empty cache bound to `clock`.
      * @param clock Clock used to timestamp entries on `set` and to
      * evaluate expiry on `get` / `patch`. Must outlive this object;
@@ -58,10 +74,11 @@ public:
      * @param ttl Time-to-live applied to each entry, measured from
      * its `set` time. A value of zero disables expiry entirely
      * (entries live until evicted, erased, or cleared).
-     * @param max_entries Upper bound on the number of cached entries;
-     * a `set` that would exceed it first drops expired entries and,
-     * if still at the bound, drops one arbitrary entry. Protects
-     * memory only; it is not an LRU.
+     * @param max_entries Upper bound on the number of cached entries,
+     * strictly enforced: a `set` that would exceed it first evicts one
+     * entry, preferring an expired entry among the first
+     * `k_eviction_sample_size` examined and otherwise dropping the
+     * first one examined. Protects memory only; it is not an LRU.
      */
     ExpiringLinkCache(const IClock& clock,
                       std::chrono::seconds ttl,
@@ -70,7 +87,9 @@ public:
     /**
      * @brief Looks up a cached link by slug, applying lazy expiry.
      *
-     * If the entry exists but has reached its TTL it is removed and
+     * If the entry exists but has reached its TTL — or its stored-at
+     * time is in the future relative to the clock, which a backward
+     * clock step can produce (see `is_expired`) — it is removed and
      * treated as a miss.
      * @param slug Slug to look up.
      * @return A copy of the cached `Link` if present and not expired;
@@ -82,9 +101,12 @@ public:
      * @brief Stores or overwrites the entry for `slug`, resetting its
      * TTL anchor to the clock's current time.
      *
-     * When the cache is at its size bound and `slug` is new, expired
-     * entries are evicted first; if the cache is still full one
-     * arbitrary entry is dropped before inserting.
+     * When the cache is at its size bound and `slug` is new, one entry
+     * is evicted before inserting: `set` examines at most
+     * `k_eviction_sample_size` entries and drops the first expired one
+     * it finds, falling back to the first entry it examined when none
+     * of the sampled entries is expired. The work is bounded by a
+     * constant regardless of cache size.
      * @param slug Cache key.
      * @param link Link value to cache (copied in).
      */
@@ -116,8 +138,12 @@ public:
      * @param slug Cache key to mutate.
      * @param mutator Callback invoked with a mutable reference to the
      * stored `Link`; called exactly once, only when the entry is
-     * present and live, while the cache lock is held (it must not
-     * call back into this cache). Not retained after the call.
+     * present and live, while the cache lock is held. It must not call
+     * back into this cache (the lock is non-reentrant — doing so
+     * deadlocks) and must not throw: an exception thrown by `mutator`
+     * propagates out of `patch`, the lock is released by stack
+     * unwinding, and the entry is left in whatever partially-mutated
+     * state the callback reached. Not retained after the call.
      * @return `true` if an entry was present, live, and mutated;
      * `false` if the slug was absent or expired (in which case the
      * cache is left unchanged and nothing is inserted).
@@ -157,11 +183,23 @@ private:
 
     /**
      * @brief Reports whether `e` has reached its TTL relative to
-     * `now`.
+     * `now`, fail-safe against a backward clock step.
+     *
+     * The injected clock is a wall clock, which can jump backwards
+     * (NTP correction, VM resume). Were expiry computed purely as
+     * `now - e.stored_at >= m_ttl_`, such a jump would make the
+     * difference small or negative and silently extend every entry's
+     * lifetime by the size of the jump, reopening the cross-process
+     * staleness window this cache exists to bound (threat model T-32).
+     * To make a clock anomaly only ever shorten a lifetime and never
+     * extend it, an entry whose `stored_at` is in the future relative
+     * to `now` (`now < e.stored_at`) is treated as expired.
      * @param e Entry to test.
      * @param now Current clock time.
      * @return `false` when `m_ttl_` is zero (expiry disabled);
-     * otherwise `true` once `now - e.stored_at >= m_ttl_`.
+     * `true` when `now < e.stored_at` (stored in the future — a
+     * backward clock step, treated as expired) or once
+     * `now - e.stored_at >= m_ttl_`; `false` otherwise.
      */
     bool is_expired(const entry& e,
                     std::chrono::system_clock::time_point now) const;

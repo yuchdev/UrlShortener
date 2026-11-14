@@ -22,6 +22,13 @@ bool ExpiringLinkCache::is_expired(
     if (m_ttl_ == std::chrono::seconds::zero()) {
         return false;
     }
+    // Fail-safe against a backward clock step (NTP, VM resume): an
+    // entry stored in the future relative to `now` is treated as
+    // expired, so a clock anomaly can only shorten a lifetime, never
+    // extend it (threat model T-32).
+    if (now < e.stored_at) {
+        return true;
+    }
     return now - e.stored_at >= m_ttl_;
 }
 
@@ -53,19 +60,30 @@ void ExpiringLinkCache::set(const std::string& slug, const Link& link)
         return;
     }
 
-    // Inserting a new key: enforce the size bound. Drop expired
-    // entries first; if still full, drop one arbitrary live entry.
+    // Inserting a new key: enforce the size bound with bounded work.
+    // Examine at most k_eviction_sample_size entries, evict the first
+    // expired one found; if none of the sampled entries is expired,
+    // evict the first entry examined. This keeps the insert O(1)
+    // amortized on the redirect path instead of sweeping the whole map
+    // (plan C10, CWE-400). Exactly one entry is evicted, so the strict
+    // max_entries bound still holds.
     if (m_max_entries_ > 0 && m_entries_.size() >= m_max_entries_) {
-        for (auto it = m_entries_.begin(); it != m_entries_.end();) {
-            if (is_expired(it->second, now)) {
-                it = m_entries_.erase(it);
+        auto victim = m_entries_.end();
+        std::size_t examined = 0;
+        for (auto it = m_entries_.begin();
+             it != m_entries_.end() && examined < k_eviction_sample_size;
+             ++it, ++examined)
+        {
+            if (victim == m_entries_.end()) {
+                victim = it;  // arbitrary fallback: first examined
             }
-            else {
-                ++it;
+            if (is_expired(it->second, now)) {
+                victim = it;  // prefer an expired entry
+                break;
             }
         }
-        if (m_entries_.size() >= m_max_entries_) {
-            m_entries_.erase(m_entries_.begin());
+        if (victim != m_entries_.end()) {
+            m_entries_.erase(victim);
         }
     }
 

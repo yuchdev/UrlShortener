@@ -140,6 +140,61 @@ BOOST_AUTO_TEST_CASE(ttl_zero_never_expires)
 }
 
 /**
+ * [Unit][App] A backward clock step expires entries fail-safe (threat
+ * model T-32).
+ *
+ * Scenario:
+ *   Given ttl=1h and an entry set at t0.
+ *   When the clock first advances 60s (below ttl) then steps backwards
+ *   an hour so now < stored_at.
+ *   Then the forward read below ttl hits, but after the backward step
+ *   get() misses and patch() returns false without invoking the
+ *   mutator or inserting anything.
+ *
+ * Boundaries:
+ *   now < stored_at (clock moved backwards), which must be treated as
+ *   expired so a clock anomaly can only shorten a lifetime.
+ *
+ * If this breaks, first check:
+ *   - is_expired's `now < e.stored_at` fail-safe branch.
+ *   - that get() and patch() both route through is_expired.
+ */
+BOOST_AUTO_TEST_CASE(backward_clock_step_is_failsafe)
+{
+    ManualClock clock(kT0);
+    ExpiringLinkCache cache(clock, std::chrono::seconds(3600));  // 1h ttl
+
+    cache.set("a", makeLink("a"));
+
+    // A normal forward advance below ttl still hits.
+    clock.advance(std::chrono::seconds(60));
+    BOOST_CHECK(cache.get("a").has_value());
+
+    // Clock steps backwards an hour: now < stored_at. The entry must be
+    // treated as expired rather than gaining an extra hour of life.
+    clock.set(kT0 - std::chrono::hours(1));
+    BOOST_CHECK(!cache.get("a").has_value());
+
+    // patch() under a backward clock returns false without running the
+    // mutator or inserting anything.
+    ManualClock clock2(kT0);
+    ExpiringLinkCache cache2(clock2, std::chrono::seconds(3600));
+    cache2.set("a", makeLink("a"));
+    clock2.set(kT0 - std::chrono::hours(1));
+
+    bool mutator_called = false;
+    const bool patched =
+        cache2.patch("a", [&](Link&) { mutator_called = true; });
+    BOOST_CHECK(!patched);
+    BOOST_CHECK(!mutator_called);
+    BOOST_CHECK(!cache2.get("a").has_value());
+
+    // patch() on an unknown slug under a backward clock inserts nothing.
+    BOOST_CHECK(!cache2.patch("ghost", [](Link&) {}));
+    BOOST_CHECK_EQUAL(cache2.size(), 0u);
+}
+
+/**
  * [Unit][App] Size bound keeps size() <= max_entries on overflow.
  *
  * Scenario:
@@ -184,6 +239,12 @@ BOOST_AUTO_TEST_CASE(expired_evicted_before_live)
     cache.set("a", makeLink("a"));
     cache.set("b", makeLink("b"));
 
+    // max_entries (3) <= k_eviction_sample_size (8), so the whole map
+    // is within the eviction sample and the expired-first preference
+    // is guaranteed to find an expired entry if one exists.
+    static_assert(3u <= ExpiringLinkCache::k_eviction_sample_size,
+                  "this test relies on the cache fitting in one sample");
+
     clock.advance(std::chrono::seconds(4));  // t0 + 4
     cache.set("c", makeLink("c"));
 
@@ -193,6 +254,51 @@ BOOST_AUTO_TEST_CASE(expired_evicted_before_live)
     BOOST_CHECK_LE(cache.size(), 3u);
     BOOST_CHECK(cache.get("c").has_value());  // live entry survived
     BOOST_CHECK(cache.get("d").has_value());
+}
+
+/**
+ * [Unit][App] Size bound is strictly enforced even when max_entries
+ * exceeds the eviction sample size (C10 / CWE-400 bounded eviction).
+ *
+ * Scenario:
+ *   Given ttl=0 (no entry ever expires) and max_entries chosen larger
+ *   than k_eviction_sample_size, filled exactly to the bound.
+ *   When many further distinct slugs are inserted.
+ *   Then size() never exceeds max_entries at any point.
+ *
+ * Boundaries:
+ *   max_entries > k_eviction_sample_size, so a full-map sweep is never
+ *   an option: eviction samples a bounded prefix and, finding no
+ *   expired entry (ttl=0), drops the first sampled entry. Each insert
+ *   therefore examines at most k_eviction_sample_size entries — the
+ *   O(1)-amortized guarantee — while still holding the strict bound.
+ *
+ * If this breaks, first check:
+ *   - set evicts exactly one entry at the bound (arbitrary fallback
+ *     when nothing in the sample is expired).
+ *   - the sample loop stops after k_eviction_sample_size iterations.
+ */
+BOOST_AUTO_TEST_CASE(size_bound_enforced_above_sample_size)
+{
+    static_assert(ExpiringLinkCache::k_eviction_sample_size < 16u,
+                  "this test assumes max_entries exceeds the sample size");
+
+    ManualClock clock(kT0);
+    const std::size_t max_entries = 16;
+    ExpiringLinkCache cache(clock, std::chrono::seconds(0), max_entries);
+
+    for (std::size_t i = 0; i < max_entries; ++i) {
+        cache.set("k" + std::to_string(i), makeLink("k" + std::to_string(i)));
+    }
+    BOOST_CHECK_EQUAL(cache.size(), max_entries);
+
+    // Every further insert must evict exactly one entry, so size() is
+    // pinned at the bound and never grows past it.
+    for (std::size_t i = max_entries; i < max_entries + 50; ++i) {
+        cache.set("k" + std::to_string(i), makeLink("k" + std::to_string(i)));
+        BOOST_CHECK_LE(cache.size(), max_entries);
+    }
+    BOOST_CHECK_EQUAL(cache.size(), max_entries);
 }
 
 /**
