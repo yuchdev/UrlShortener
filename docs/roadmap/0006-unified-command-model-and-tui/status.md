@@ -7,7 +7,7 @@ Tracks progress against [plan.md](/docs/roadmap/0006-unified-command-model-and-t
 | Task | Name | Status | Tests |
 |------|------|--------|-------|
 | 01.0 | Command model core | ✅ Complete (13/13 subtasks) | 14 (`commands__01`-`14`) |
-| 02.0 | Storage path unification | 🔶 In progress (15/16 subtasks) | 14 (+ `cli_03` and `e2e_12` extended) |
+| 02.0 | Storage path unification | ✅ Complete (16/16 subtasks, incl. added 02.0/16) | 15 targets (`app__19`-`24`, `metadata__09`, `inmemory__16`, `storage__15` x2, http `30`/`31`, `cli__05`, `cli_03`/`17`/`18`, `e2e_12`) |
 | 03.0 | Link and browse commands | ⬜ Not started | 0 |
 | 04.0 | REST and CLI adapters | ⬜ Not started | 0 |
 | 05.0 | Jobs, pair import/export, stdio | ⬜ Not started | 0 |
@@ -98,6 +98,65 @@ Completed 2026-11-14 on branch `milestone/0006-unified-command-model-and-tui`.
 - 0007: `jsonEscape` control-character passthrough; SQLite unit tests use
   fixed DB files (collide under concurrent ctest); e2e GNU `timeout`;
   `parseRfc3339Zulu` missing-`Z` leniency may be platform-dependent.
+
+### Task 02.0 - Storage path unification (✅)
+
+Completed 2026-11-14 on branch `milestone/0006-unified-command-model-and-tui`.
+
+**Delivered:**
+
+- `ExpiringLinkCache` (L1, TTL with clock-safe expiry, bounded sampled
+  eviction, `patch()` that never refreshes `stored_at` - T-32).
+- `link_record_codec` (`Link` <-> `LinkRecord`, `lnk_*` attributes,
+  fail-closed `lnk_v`, bounded/validated read path).
+- `RepositoryLinkStore`: L1-then-repository reads, indexed `findById`,
+  writes invalidating both cache tiers on every outcome, write-behind
+  `recordRedirect` with a background flusher, store write mutex shared by
+  flush and writes (R-1, user decision), exception-safe and time-boxed
+  shutdown flush.
+- `IMetadataRepository::GetById` on every backend (new subtask 02.0/16,
+  user decision; SQLite `idx_links_id`, Postgres migration `005`).
+- `LinkBackend` holder (lock-free `store()`, serving latch, `shutdown()`),
+  `InitLinkBackend` bootstrap (fail-closed, redacted messages, 0600 via
+  umask incl. SQLite companions, exit code 4), `--storage-config` /
+  `URL_SHORTENER_STORAGE_CONFIG`, `main.cpp` startup/shutdown order.
+- Redirect, REST and slug paths rerouted through `LinkBackend::store()`;
+  hardened T-40 guard test against direct store writes from `src/http` /
+  `src/cli`.
+- Docs: CLI storage/backend selection, storage configuration, adapter
+  guide (`GetById`), ADR 0001 note.
+
+**Tests / gate:**
+
+- 15 new or extended test targets (listed in the table above).
+- `cli_18_server_and_cli_share_sqlite`: a CLI disable of a continuously
+  hit link becomes 410 on the running server after ~4.9 s (5 s L1 TTL) -
+  T-32 verified end to end; no "database is locked".
+- Postgres path verified on a temporary local PostgreSQL 16 cluster
+  (index scan on `idx_links_id`).
+- Every subtask: `/verify-subtask` and a security review; Task-close
+  `/pr-review`: feature REQUEST_CHANGES on one wrong lifetime comment
+  (fixed in `491832b`) -> APPROVE; security PASS_WITH_FOLLOWUP with no new
+  findings. Threat model:
+  [docs/security/0006-02.0-storage-path-unification-threat-model.md](/docs/security/0006-02.0-storage-path-unification-threat-model.md)
+  ("Task 02.0 close" section).
+- Full suite `-L "unit|contract|integration|e2e"`: 299/304; the 5 failures
+  are `e2e_14`-`18`, which need GNU `timeout` (absent on macOS) - unchanged
+  by this Task.
+
+**Carried forward:**
+
+- 03.0: Postgres `ListLinks` owner filter returns 0 rows
+  (`metadata__06`, pre-existing) and the Postgres contract harness lacks
+  per-case isolation; redirect returns 404/410 instead of 5xx on a
+  repository outage (T-35/R-5); `audit_target` and dry-run job body
+  obligations from Task 01.0.
+- 07.0: server-spawning integration tests flaky under parallel load.
+- 08.0: `GetById` in the port lists of `CLAUDE.md` / `ARCHITECTURE.md`.
+- 0007: shared limit constants (codec duplicates `core/utils` limits),
+  `redis_address` validation, logger CR/LF stripping and testability,
+  SQLite unit tests' fixed DB files, e2e GNU `timeout`, clang-format
+  version pinning and the whole-file post-edit format hook.
 
 ## Open risks
 

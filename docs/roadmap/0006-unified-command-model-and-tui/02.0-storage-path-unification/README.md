@@ -1,7 +1,7 @@
 # Task 02.0 - Storage path unification (prerequisite)
 
 **Parent milestone:** [Milestone 0006 - Unified Command Model and TUI](/docs/roadmap/0006-unified-command-model-and-tui/plan.md)
-**Status:** ⬜ Not started
+**Status:** ✅ Complete (2026-11-14)
 **Depends on:** none (runs in parallel with [Task 01.0](/docs/roadmap/0006-unified-command-model-and-tui/01.0-command-model-core/README.md))
 **Blocks:** Task 03.0 (all subtasks), and through it 04.0, 05.0, 06.0
 
@@ -113,8 +113,8 @@ deliberately filters in the app layer instead, 03.0/01 and 03.0/12).
 | 11 | [Backend bootstrap](11-backend-bootstrap.md) | ✅ Complete | 04, 05, 07, 10, 16 | 12 |
 | 12 | [main.cpp wiring order](12-main-wiring-order.md) | ✅ Complete | 08, 09, 11 | 13, 14, 03.0/18, 05.0/20, 06.0/19 |
 | 13 | [CLI persistence tests](13-cli-persistence-tests.md) | ✅ Complete | 12 | 15 |
-| 14 | [Server and CLI on one SQLite file](14-server-and-cli-shared-sqlite-test.md) | ⬜ Not started | 12 | 15 |
-| 15 | [Docs sync](15-docs-sync.md) | ⬜ Not started | 13, 14 | none |
+| 14 | [Server and CLI on one SQLite file](14-server-and-cli-shared-sqlite-test.md) | ✅ Complete | 12 | 15 |
+| 15 | [Docs sync](15-docs-sync.md) | ✅ Complete | 13, 14 | none |
 | 16 | [IMetadataRepository::GetById (indexed lookup by id)](16-metadata-repository-get-by-id.md) | ✅ Complete | 03 | 08, 11 |
 
 ### Dependency graph
