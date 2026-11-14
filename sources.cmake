@@ -140,6 +140,7 @@ set(URL_SHORTENER_SOURCES
       tests/unit/storage/inmemory/13_cache_fail_open_behavior.cpp
       tests/unit/storage/inmemory/14_analytics_emit_and_flush.cpp
       tests/unit/storage/inmemory/15_rate_limit_allow_window.cpp
+      tests/unit/storage/inmemory/16_repository_link_store_contract.cpp
   )
 
   set(CONTRACT_METADATA_SOURCES
@@ -162,6 +163,7 @@ set(URL_SHORTENER_SOURCES
       tests/integration/storage/05_inmemory_redirect_visible_states.cpp
       tests/integration/storage/06_inmemory_analytics_best_effort.cpp
       tests/integration/storage/07_sqlite_service_full_flow.cpp
+      tests/integration/storage/15_repository_link_store_sqlite.cpp
   )
 
   set(SQL_FOUNDATION_UNIT_SOURCES
