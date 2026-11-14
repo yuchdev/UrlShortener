@@ -92,15 +92,78 @@ def _probe_cli_support(binary: str) -> bool:
 # Helper: run CLI
 # ---------------------------------------------------------------------------
 
-def run_cli(binary: str, *args: str, cwd: str | None = None, timeout: int = 10):
-    """Run the binary with *args and return CompletedProcess."""
+def run_cli(
+    binary: str,
+    *args: str,
+    cwd: str | None = None,
+    timeout: int = 10,
+    env: dict | None = None,
+):
+    """Run the binary with *args and return CompletedProcess.
+
+    :param binary: Absolute path to the url_shortener executable.
+    :param args: CLI arguments appended after the binary name.
+    :param cwd: Working directory for the child process (``None`` inherits).
+    :param timeout: Hard wall-clock limit in seconds enforced by
+        ``subprocess.run`` (no reliance on the GNU ``timeout`` binary, which
+        is absent on macOS). A hang raises ``subprocess.TimeoutExpired``.
+    :param env: Full environment mapping for the child. ``None`` inherits the
+        caller's environment unchanged (legacy default). Pass ``clean_env()``
+        to guarantee ``URL_SHORTENER_STORAGE_CONFIG`` cannot leak in (T-41),
+        or an explicit map to select a backend for the persistence cases.
+    :return: The completed process with captured text stdout/stderr.
+    """
     return subprocess.run(
         [binary, *args],
         capture_output=True,
         text=True,
         timeout=timeout,
         cwd=cwd,
+        env=env,
     )
+
+
+def clean_env() -> dict:
+    """Return a copy of the current environment with the storage-config env
+    var removed.
+
+    A stray ``URL_SHORTENER_STORAGE_CONFIG`` inherited from the developer's
+    shell or CI would silently activate a persistent backend and make the
+    default (in-memory) isolation assertions non-hermetic (threat model
+    T-41). Isolation cases run under this environment so they exercise the
+    unchanged in-memory default regardless of the ambient environment.
+
+    :return: A fresh ``dict`` copy of ``os.environ`` without
+        ``URL_SHORTENER_STORAGE_CONFIG``.
+    """
+    env = dict(os.environ)
+    env.pop("URL_SHORTENER_STORAGE_CONFIG", None)
+    return env
+
+
+def write_sqlite_storage_yaml(
+    tmpdir: str, name: str = "shortener.sqlite3"
+) -> str:
+    """Write a minimal SQLite ``--storage-config`` YAML into *tmpdir*.
+
+    The database path is absolute and uses forward slashes so the YAML is
+    valid on Windows as well as POSIX hosts; ``name`` is kept unique per
+    temp directory by the caller's use of a fresh ``TemporaryDirectory``, so
+    overlapping ctest runs never collide on a fixed database file.
+
+    :param tmpdir: Directory (owned by the caller) to write ``storage.yaml``
+        and host the SQLite database file in.
+    :param name: Database file name placed alongside the YAML.
+    :return: Absolute path to the written ``storage.yaml`` file, suitable as
+        the argument to ``--storage-config``.
+    """
+    path = Path(tmpdir) / "storage.yaml"
+    db = (Path(tmpdir) / name).as_posix()
+    path.write_text(
+        f"metadata:\n  backend: sqlite\n  sqlite_path: {db}\n",
+        encoding="utf-8",
+    )
+    return str(path)
 
 
 def parse_json_stdout(proc) -> dict:
