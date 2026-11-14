@@ -159,4 +159,15 @@ struct ServerConfig
 
     ///< Maximum request-target (path + query) length in bytes.
     uint32_t max_request_target_length = 2048;
+
+    ///< Path of the storage configuration YAML selecting the
+    ///< metadata/cache/analytics/rate_limit backends; `std::nullopt`
+    ///< (no `--storage-config` flag and no
+    ///< `URL_SHORTENER_STORAGE_CONFIG` env var) means the legacy
+    ///< default in-memory backend. Recorded verbatim at parse time:
+    ///< no `~` expansion, existence check, or canonicalization
+    ///< happens here. The bootstrap opens and validates the file and
+    ///< resolves a relative path against the process working
+    ///< directory.
+    std::optional<std::string> storage_config_path;
 };

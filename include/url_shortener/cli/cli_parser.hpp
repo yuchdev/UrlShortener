@@ -114,9 +114,11 @@ public:
      * The following environment variables are read before any flag:
      * `SHORTENER_BASE_DOMAIN`, `SHORTENER_DEFAULT_REDIRECT_TYPE`,
      * `SHORTENER_DEFAULT_EXPIRY_SECONDS`,
-     * `SHORTENER_GENERATED_SLUG_LENGTH`, and
-     * `SHORTENER_ALLOW_PRIVATE_TARGETS`; a CLI flag overrides the value
-     * set by its corresponding env var when both are present.
+     * `SHORTENER_GENERATED_SLUG_LENGTH`,
+     * `SHORTENER_ALLOW_PRIVATE_TARGETS`, and
+     * `URL_SHORTENER_STORAGE_CONFIG` (the storage configuration YAML
+     * path, equivalent to `--storage-config`); a CLI flag overrides the
+     * value set by its corresponding env var when both are present.
      *
      * When `argv[1]` is `"link"`, link-subcommand mode is entered and
      * all server-flag parsing is skipped.

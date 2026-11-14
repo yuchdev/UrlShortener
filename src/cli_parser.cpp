@@ -140,7 +140,12 @@ std::string buildLinkHelpText()
         "  disable  Disable a link.\n"
         "  restore  Restore a soft-deleted link.\n"
         "  preview  Preview a link's target without redirecting.\n"
-        "  stats    Report click statistics for a link.\n";
+        "  stats    Report click statistics for a link.\n\n"
+        "Global options (all verbs):\n"
+        "  --storage-config <FILE>    Storage configuration YAML "
+        "(metadata/cache/\n"
+        "                             analytics/rate_limit backends). Default: "
+        "in-memory.\n";
 }
 
 /**
@@ -251,6 +256,78 @@ std::string buildLinkVerbHelpText(LinkCliVerb verb)
 }
 
 /**
+ * @brief Extract the global `--storage-config` flag from a verb's argument
+ * list, recording its value in @p config.
+ *
+ * Scans @p args for `--storage-config <FILE>` or `--storage-config=<FILE>` in
+ * any position, erases the matched token(s), and stores the path verbatim in
+ * `config.storage_config_path` (no `~` expansion, existence check, or
+ * canonicalization — the bootstrap performs those). Removing the flag here
+ * keeps it invisible to the strict per-verb parsers, which reject unknown
+ * flags. Reused by future one-shot modes beyond `link <verb>`.
+ *
+ * Performs no filesystem I/O. Error messages name only the flag and never echo
+ * the path value, which may reveal filesystem layout.
+ *
+ * @param args Verb-scoped tokens (the flags following `link <verb>`); the
+ *        matched `--storage-config` token(s) are erased in place when the flag
+ *        is present and left unchanged otherwise.
+ * @param config Destination configuration; `storage_config_path` is set to the
+ *        flag value when the flag is present and left untouched otherwise.
+ * @throws std::invalid_argument If the flag appears more than once, its value
+ *         is missing (the flag is the last token or is immediately followed by
+ *         another `--`-prefixed token), or its value is empty.
+ */
+void extract_storage_config_flag(
+    std::vector<std::string>& args, ServerConfig& config)
+{
+    static const std::string flag = "--storage-config";
+    static const std::string flag_eq = flag + "=";
+
+    bool found = false;
+    std::string value;
+
+    for (std::size_t i = 0; i < args.size();) {
+        const std::string token = args[i];
+        if (token == flag) {
+            if (found) {
+                throw std::invalid_argument("Repeated --storage-config flag.");
+            }
+            if (i + 1 >= args.size() || args[i + 1].rfind("--", 0) == 0) {
+                throw std::invalid_argument(
+                    "Missing value for --storage-config flag.");
+            }
+            value = args[i + 1];
+            if (value.empty()) {
+                throw std::invalid_argument(
+                    "Empty value for --storage-config flag.");
+            }
+            found = true;
+            args.erase(args.begin() + i, args.begin() + i + 2);
+            continue;
+        }
+        if (token.rfind(flag_eq, 0) == 0) {
+            if (found) {
+                throw std::invalid_argument("Repeated --storage-config flag.");
+            }
+            value = token.substr(flag_eq.size());
+            if (value.empty()) {
+                throw std::invalid_argument(
+                    "Empty value for --storage-config flag.");
+            }
+            found = true;
+            args.erase(args.begin() + i);
+            continue;
+        }
+        ++i;
+    }
+
+    if (found) {
+        config.storage_config_path = value;
+    }
+}
+
+/**
  * @brief Parse a `link <verb> [options]` invocation into a LinkCliCommand.
  *
  * Recognizes the verb (argv[2]) and maps the remaining flags into the matching
@@ -280,7 +357,12 @@ LinkCliCommand parseLinkCommand(int argc, char* argv[], ServerConfig& config)
     command.verb = parseLinkVerb(argv[2]);
 
     // Flags that follow the verb, e.g. everything after `link create`.
-    const std::vector<std::string> verb_args(argv + 3, argv + argc);
+    std::vector<std::string> verb_args(argv + 3, argv + argc);
+
+    // The global --storage-config flag may appear in any position; strip it
+    // (recording the path in config) before the strict per-verb parsers run,
+    // so they never see it yet still reject genuinely unknown flags.
+    extract_storage_config_flag(verb_args, config);
 
     switch (command.verb) {
     case LinkCliVerb::create:
@@ -375,6 +457,13 @@ ParseResult CliParser::parse(int argc, char* argv[]) const
         env != nullptr)
     {
         cfg.shortener_allow_private_targets = parseBool(env);
+    }
+    if (const char* env = std::getenv("URL_SHORTENER_STORAGE_CONFIG");
+        env != nullptr)
+    {
+        // Recorded verbatim; the flag (parsed below for server mode, or by
+        // extract_storage_config_flag for link mode) overrides it. No I/O here.
+        cfg.storage_config_path = std::string(env);
     }
 
     // Top-level command dispatch: a leading `link` positional selects the
@@ -546,6 +635,14 @@ ParseResult CliParser::parse(int argc, char* argv[]) const
         "Allow private/intranet target URLs (true/false, default: false)."
     );
 
+    po::options_description storage_opts("Storage options");
+    storage_opts.add_options()(
+        "storage-config",
+        po::value<std::string>()->value_name("FILE"),
+        "Path of the storage configuration YAML "
+        "(metadata/cache/analytics/rate_limit backends). Default: in-memory."
+    );
+
     po::options_description analytics_opts("Analytics options");
     analytics_opts.add_options()(
         "analytics-enabled",
@@ -602,6 +699,7 @@ ParseResult CliParser::parse(int argc, char* argv[]) const
         .add(http_opts)
         .add(tls_opts)
         .add(shortener_opts)
+        .add(storage_opts)
         .add(analytics_opts)
         .add(request_opts)
         .add(positional_hidden);
@@ -611,6 +709,7 @@ ParseResult CliParser::parse(int argc, char* argv[]) const
         .add(http_opts)
         .add(tls_opts)
         .add(shortener_opts)
+        .add(storage_opts)
         .add(analytics_opts)
         .add(request_opts);
 
@@ -707,6 +806,16 @@ ParseResult CliParser::parse(int argc, char* argv[]) const
 
     if (!analytics_enabled_str.empty()) {
         cfg.analytics_enabled = parseBool(analytics_enabled_str);
+    }
+
+    // The flag overrides any URL_SHORTENER_STORAGE_CONFIG env value above.
+    if (vm.count("storage-config")) {
+        const auto path = vm["storage-config"].as<std::string>();
+        if (path.empty()) {
+            throw std::invalid_argument(
+                "Empty value for --storage-config flag.");
+        }
+        cfg.storage_config_path = path;
     }
 
     return result;

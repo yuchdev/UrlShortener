@@ -1013,6 +1013,11 @@ URL shortener options:
                                         Allow private/intranet target URLs 
                                         (true/false, default: false).
 
+Storage options:
+  --storage-config FILE                 Path of the storage configuration YAML 
+                                        (metadata/cache/analytics/rate_limit 
+                                        backends). Default: in-memory.
+
 Analytics options:
   --analytics-enabled BOOL              Enable analytics collection 
                                         (true/false, default: true).

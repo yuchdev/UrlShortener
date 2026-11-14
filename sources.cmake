@@ -320,6 +320,7 @@ set(URL_SHORTENER_SOURCES
       tests/unit/cli/02_cli_dispatch_reachable.cpp
       tests/unit/cli/03_cli_success_output.cpp
       tests/unit/cli/04_cli_exit_codes.cpp
+      tests/unit/cli/05_cli_storage_config_flag.cpp
   )
 
   set(ANALYTICS_INTEGRATION_SOURCES
