@@ -36,7 +36,7 @@ Two halves that can run in parallel:
 
 | # | Document | Status | Depends on | Blocks |
 |---|----------|--------|------------|--------|
-| 01 | [ListLinksQuery extension, eval helper, `ListLinksPage`](01-list-links-query-and-page.md) | ⬜ Not started | none | 02, 12, 05.0/10 |
+| 01 | [ListLinksQuery extension, eval helper, `ListLinksPage`](01-list-links-query-and-page.md) | ✅ Complete | none | 02, 12, 05.0/10 |
 | 02 | [Contract tests for extended listing](02-list-links-page-contract-tests.md) | ⬜ Not started | 01 | 12 |
 | 03 | [`IClickEventRepository::ListEvents` and in-memory impl](03-click-event-listing-interface-and-memory.md) | ⬜ Not started | none | 04, 16 |
 | 04 | [`ListEvents` for the SQL repository](04-click-event-listing-sql.md) | ⬜ Not started | 03 | 16 |
