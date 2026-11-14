@@ -5,6 +5,7 @@
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <string>
 #include <utility>
 
@@ -27,11 +28,6 @@ bool is_postgres_dsn(const std::string& dsn) {
         || dsn.find("host=") != std::string::npos
         || dsn.find("dbname=") != std::string::npos;
 }
-/// Maximum byte length accepted for `ClickEventQuery::text`. Defense in depth:
-/// the argument layer already bounds the operator-supplied `q`/`text` to this
-/// size, so a longer value reaching the repository is treated as invalid.
-constexpr std::size_t kMaxClickEventTextFilterLength = 256;
-
 /// Builds the ORDER BY clause for `ListEvents`. The column name is chosen from a
 /// fixed set of string literals by a `switch` over `ClickEventSort` - it never
 /// derives from user text - and the final tie-break `event_id ASC` keeps the
@@ -314,7 +310,7 @@ bool SqlClickEventRepository::ListEvents(
         if (error) { error->code = analytics::AnalyticsErrorCode::validation; error->message = "ListEvents range is inverted (from > to)"; }
         return false;
     }
-    if (query.text && query.text->size() > kMaxClickEventTextFilterLength) {
+    if (query.text && query.text->size() > analytics::kMaxClickEventTextFilterLength) {
         if (error) { error->code = analytics::AnalyticsErrorCode::validation; error->message = "ListEvents text filter exceeds maximum length"; }
         return false;
     }
@@ -365,7 +361,14 @@ bool SqlClickEventRepository::ListEvents(
         // TEXT to dodge SOCI integer-type differences across backends.
         long long lim = static_cast<long long>(
             std::min(query.limit, analytics::kMaxClickEventPageSize));
-        long long off = static_cast<long long>(query.offset);
+        // Clamp the offset to LLONG_MAX before narrowing to the bound SQL integer:
+        // a size_t offset above LLONG_MAX would otherwise wrap negative (PostgreSQL
+        // rejects it, SQLite silently treats it as 0). Clamping yields a well-defined
+        // empty window while `total` is still counted across every match, matching the
+        // in-memory adapter's "offset past the end -> empty page" behavior.
+        constexpr std::size_t kMaxOffset = static_cast<std::size_t>(
+            std::numeric_limits<long long>::max());
+        long long off = static_cast<long long>(std::min(query.offset, kMaxOffset));
         const std::string occurred_expr = is_postgres_
             ? "CAST(CAST(EXTRACT(EPOCH FROM occurred_at) AS BIGINT) AS TEXT)"
             : "CAST(occurred_at AS TEXT)";
