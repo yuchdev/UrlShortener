@@ -295,7 +295,10 @@ BOOST_AUTO_TEST_CASE(update_backend_failure_is_storage_failure)
     BOOST_CHECK(error.code == AppErrorCode::storage_failure);
     BOOST_CHECK_EQUAL(error.detail, "repository failure");
     BOOST_CHECK(!l1->get("uuu").has_value());  // L1 erased
-    BOOST_CHECK_EQUAL(cache->delete_calls, 0);  // not required on failure
+    // The shared cache is invalidated on failure too: the write may have
+    // committed before the error was reported (security review MEDIUM on
+    // 02.0/04).
+    BOOST_CHECK_EQUAL(cache->delete_calls, 1);
 }
 
 /**

@@ -214,11 +214,13 @@ public:
      * through `link_to_record` — a codec failure yields
      * `AppErrorCode::internal` ("invalid link record") and the
      * repository is not called; (2) `::IMetadataRepository::UpdateLink`;
-     * (3) *always* erase the L1 entry (`m_l1_->erase`) whether the
-     * repository call succeeded or failed — a failed write leaves an
-     * uncertain state, so the next read must reload rather than serve a
-     * value older than this write; (4) on success only, `Delete` the
-     * configured `::ICacheStore` entry best-effort. No lock is taken;
+     * (3) *always* erase the L1 entry (`m_l1_->erase`) and `Delete` the
+     * configured `::ICacheStore` entry best-effort, whether the
+     * repository call succeeded or failed — a failed write may still have
+     * committed (e.g. a post-commit timeout), so the next read must
+     * reload rather than serve a value older than this write; the shared
+     * cache holds non-expiring links without a TTL, so skipping it would
+     * let a lost disable/delete be served indefinitely. No lock is taken;
      * concurrent updates are last-writer-wins (version is not
      * persisted by the SQL backend).
      * @param link Fully-formed, already-validated updated link; must

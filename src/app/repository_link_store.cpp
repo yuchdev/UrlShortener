@@ -317,17 +317,19 @@ bool RepositoryLinkStore::update(const Link& link, AppError* error)
     ::RepoError repo_error = ::RepoError::none;
     const bool ok = m_repo_->UpdateLink(record, &repo_error);
 
-    // 3. Invalidate L1 whether the write succeeded or failed: a failed
-    //    write leaves an uncertain state, so the next read must reload
-    //    and never serve a value older than this write.
+    // 3. Invalidate both tiers whether the write succeeded or failed: a
+    //    failed write leaves an uncertain state (it may have committed
+    //    before the error, e.g. a post-commit timeout), so the next read
+    //    must reload and never serve a value older than this write. The
+    //    shared cache matters most: entries for non-expiring links carry
+    //    no TTL there, so a lost disable/delete would otherwise be served
+    //    indefinitely.
     m_l1_->erase(link.slug);
+    best_effort_cache_delete(m_cache_.get(), link.slug);
     if (!ok) {
         map_repo_error(repo_error, error);
         return false;
     }
-
-    // 4. On success, also invalidate the configured cache best-effort.
-    best_effort_cache_delete(m_cache_.get(), link.slug);
     return true;
 }
 
