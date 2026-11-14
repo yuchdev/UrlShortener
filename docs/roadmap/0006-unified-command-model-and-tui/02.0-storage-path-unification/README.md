@@ -103,7 +103,7 @@ deliberately filters in the app layer instead, 03.0/01 and 03.0/12).
 | 01 | [Expiring link cache](01-expiring-link-cache.md) | ✅ Complete | none | 03 |
 | 02 | [Link <-> record codec](02-link-record-codec.md) | ✅ Complete | none | 03, 03.0/12 |
 | 03 | [RepositoryLinkStore: reads and cache](03-repository-link-store-reads.md) | ✅ Complete (findById superseded by 16) | 01, 02 | 04, 16 |
-| 04 | [RepositoryLinkStore: writes](04-repository-link-store-writes.md) | ⬜ Not started | 03 | 05, 06, 11 |
+| 04 | [RepositoryLinkStore: writes](04-repository-link-store-writes.md) | ✅ Complete | 03 | 05, 06, 11 |
 | 05 | [recordRedirect and write-behind stats](05-record-redirect-write-behind.md) | ⬜ Not started | 04 | 08, 11 |
 | 06 | [Store tests on in-memory and SQLite](06-repository-link-store-backend-tests.md) | ⬜ Not started | 04 | none |
 | 07 | [LinkBackend holder and factory](07-link-backend-holder.md) | ⬜ Not started | none | 08, 09, 11, 03.0/11 |
