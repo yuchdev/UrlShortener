@@ -3,7 +3,7 @@
 **Parent task:** 02.0 Storage path unification
 **State:** ⬜ Not started
 **Depends on:** 02.0/01, 02.0/02
-**Blocks:** 04
+**Blocks:** 04, 16
 **Estimated size:** M
 **Suggested agent:** cpp-expert
 
@@ -83,7 +83,12 @@ Read semantics:
   **Known limitation:** `ILinkStore::findBySlug` returns `optional`, so an
   outage looks like "not found" (redirect 404/410 instead of 5xx). Changing the
   interface to carry an error is deferred (risk below).
-- `findById`: no `GetById` exists on the port. Scan
+- `findById`: **superseded by subtask 16** - the scan below is replaced by a
+  single `::IMetadataRepository::GetById` call and the `id_scan_page`/
+  `id_scan_max` options are removed (security finding T-36). The description
+  here reflects 03 as first implemented (commit `e35333a`); see
+  [16](16-metadata-repository-get-by-id.md) for the new body and test changes.
+  Original (pre-16) behavior: no `GetById` exists on the port, so scan
   `ListLinks({.owner=nullopt, include_inactive=true, include_deleted=true,
   offset, limit=id_scan_page})` page by page, decode each record, stop at the
   first match or after `id_scan_max` records. A match is also written to L1.
@@ -161,7 +166,9 @@ ctest --test-dir cmake-build -R "^app__21_repository_link_store_reads$" --output
 - **R-5** outage looks like not-found (interface limitation); fix = change
   `findBySlug` to return a `Result<std::optional<Link>>`, touching
   `LinkCommandService` and its tests; propose in Task 03.0 or a separate ADR.
-- `findById` scan cost; add `GetById` to `::IMetadataRepository` (three
-  adapters + contract suite) if admin usage shows it matters.
+- `findById` scan cost: **resolved by subtask 16** - `GetById` is added to
+  `::IMetadataRepository` (three adapters + contract suite) and `findById`
+  switches to it, removing this scan (security finding T-36, re-rated HIGH;
+  must land before 02.0/08 and 02.0/11).
 - `ICacheStore` is only invalidated, never read, for Link data (see README
   decision 2).

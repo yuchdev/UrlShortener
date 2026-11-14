@@ -7,7 +7,7 @@ Tracks progress against [plan.md](/docs/roadmap/0006-unified-command-model-and-t
 | Task | Name | Status | Tests |
 |------|------|--------|-------|
 | 01.0 | Command model core | ✅ Complete (13/13 subtasks) | 14 (`commands__01`-`14`) |
-| 02.0 | Storage path unification | 🔶 In progress (2/15 subtasks) | 2 (`app__19`, `app__20`) |
+| 02.0 | Storage path unification | 🔶 In progress (3/16 subtasks) | 3 (`app__19`-`21`) |
 | 03.0 | Link and browse commands | ⬜ Not started | 0 |
 | 04.0 | REST and CLI adapters | ⬜ Not started | 0 |
 | 05.0 | Jobs, pair import/export, stdio | ⬜ Not started | 0 |
@@ -216,3 +216,10 @@ or thread, collapsing the former get+set into one locked lookup-and-mutate):
 - *2026-11-14, 02.0/14 (T-32):* added a one-line cross-reference noting that
   steps 6-7's convergence depends on the 01/05 patch fix (each poll is itself a
   redirect).
+- *2026-11-14, 02.0/03 (user decision):* the security review found
+  `RepositoryLinkStore::findById` scans up to 100,000 records per call and
+  will be reachable from the unauthenticated `GET /api/v1/links/id/{id}`
+  route - a DoS vector and a regression from today's O(1) legacy lookup.
+  Decided with the user: add `GetById` to `::IMetadataRepository` with
+  indexed implementations in every adapter and contract tests (new subtask
+  02.0/16), then switch `findById` to it. Must land before 02.0/08 and 11.
