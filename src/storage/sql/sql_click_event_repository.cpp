@@ -419,11 +419,11 @@ bool SqlClickEventRepository::ListEvents(
         long long lim = static_cast<long long>(
             std::min(query.limit, analytics::kMaxClickEventPageSize));
         // Clamp the offset to LLONG_MAX before narrowing to the bound SQL
-        // integer: a size_t offset above LLONG_MAX would otherwise wrap to a
-        // negative value (PostgreSQL rejects it, SQLite silently treats it as
-        // 0). Clamping yields a well-defined empty window while `total` is
-        // still counted across every match, matching the in-memory adapter's
-        // "offset past the end -> empty page" behavior.
+        // integer: a size_t offset above LLONG_MAX would otherwise wrap
+        // negative (PostgreSQL rejects it, SQLite silently treats it as 0).
+        // Clamping yields a well-defined empty window while `total` is still
+        // counted across every match, matching the in-memory adapter's "offset
+        // past the end -> empty page" behavior.
         constexpr std::size_t kMaxOffset =
             static_cast<std::size_t>(std::numeric_limits<long long>::max());
         long long off =
