@@ -1,0 +1,240 @@
+#pragma once
+
+#include <chrono>
+#include <cstddef>
+#include <memory>
+#include <optional>
+#include <string>
+
+#include <url_shortener/app/app_error.hpp>
+#include <url_shortener/app/link_command_service.hpp>
+#include <url_shortener/core/clock.hpp>
+#include <url_shortener/core/types.hpp>
+#include <url_shortener/storage/i_cache_store.hpp>
+#include <url_shortener/storage/i_metadata_repository.hpp>
+#include <url_shortener/storage/link_repository.hpp>
+
+namespace url_shortener
+{
+namespace app
+{
+
+/**
+ * @brief Tunable knobs for `RepositoryLinkStore`.
+ *
+ * Defaults match the values validated by the subtask-03 read tests and
+ * the subtask-05 write-behind design. All values are bounds, not
+ * promises: a backend with fewer records than `id_scan_max` simply
+ * stops early.
+ */
+struct RepositoryLinkStoreOptions
+{
+    ///< Interval at which the subtask-05 background flusher persists
+    ///< pending redirect-stat deltas. Unused by the read side
+    ///< implemented in subtask 03; a value of zero selects
+    ///< write-through in subtask 05. Carried here so the type is
+    ///< stable across subtasks.
+    std::chrono::seconds stats_flush_interval {30};
+
+    ///< Page size (`ListLinksQuery::limit`) used when `findById`
+    ///< scans the repository one page at a time. Larger pages mean
+    ///< fewer round trips but more records decoded per call.
+    std::size_t id_scan_page = 200;
+
+    ///< Hard upper bound on the number of records `findById` will
+    ///< scan before giving up and returning `std::nullopt`. Caps the
+    ///< worst-case cost of an admin `link get --id <absent>` against a
+    ///< large backend (threat model T-36); never reached on the
+    ///< redirect fast path, which only uses `findBySlug`.
+    std::size_t id_scan_max = 100000;
+};
+
+/**
+ * @brief `ILinkStore` over the pluggable `::IMetadataRepository` /
+ * `::ICacheStore` ports, with a process-local full-`Link` L1 cache in
+ * front of the repository.
+ *
+ * This is the store installed when the server/CLI runs with
+ * `--storage-config` (Task 02.0 README decision 1). It replaces neither
+ * the legacy `LegacyLinkStore` nor the global singletons it wraps;
+ * both coexist until the bootstrap (subtask 11) selects one.
+ *
+ * Read model (subtask 03):
+ * - `findBySlug` consults the L1 cache (`m_l1_`) first, then the
+ *   repository on a miss, decoding the `::LinkRecord` through the
+ *   subtask-02 codec and populating L1 on success. The configured
+ *   `::ICacheStore` is *never read* for link data — only invalidated
+ *   (threat model T-38); the full `Link` cannot be represented by
+ *   `CacheValue`, and a poisoned shared cache must never be able to
+ *   answer a redirect.
+ * - `findById` has no port method; it pages `ListLinks` and decodes
+ *   each record until the first match or `id_scan_max` records
+ *   (O(n), admin paths only — never the redirect fast path).
+ * - Repository failures are logged with the error name only and
+ *   surface as `std::nullopt`; an outage therefore looks like
+ *   "not found" (accepted limitation R-5 / threat model T-35).
+ *
+ * Write model (`create`/`update`/`recordRedirect`) is stubbed to fail
+ * with `AppErrorCode::internal` until subtasks 04/05 fill it in, so
+ * this subtask is independently reviewable.
+ *
+ * Privacy: logs only the slug and backend error names. Decoded
+ * `target_url`/tag/metadata/campaign bytes are untrusted (a foreign
+ * process may have written the record) and are never logged (threat
+ * model T-37; `record_to_link` warning).
+ *
+ * Thread-safety: safe to call concurrently. This object holds no
+ * mutable state of its own; every read forwards through the
+ * thread-safe collaborators (`m_repo_`, `m_l1_`, `m_cache_`) behind
+ * their `shared_ptr`s. The `const` read methods mutate those
+ * collaborators through the pointers, which is permitted.
+ *
+ * Lifetime: owns shared references to `repo`, `l1`, and (optionally)
+ * `cache` via `shared_ptr`, so they outlive this object by
+ * construction. The `IClock` is held by reference and is *not* owned;
+ * the caller must keep the referenced clock alive for the entire
+ * lifetime of this object (same convention as `ExpiringLinkCache`).
+ */
+class RepositoryLinkStore final : public ILinkStore
+{
+public:
+    /**
+     * @brief Wires the store to its ports and clock.
+     * @param repo Authoritative metadata repository; must not be null
+     * (a null `repo` is a startup programming error and throws
+     * `std::invalid_argument`). Shared ownership is taken.
+     * @param cache Configured cache-aside store, invalidated
+     * best-effort on writes and never read for link data; may be null
+     * (no configured cache). Shared ownership is taken when present.
+     * @param l1 Process-local full-`Link` hot-path cache (subtask 01);
+     * must not be null (throws `std::invalid_argument`). Shared
+     * ownership is taken.
+     * @param clock Clock used by the store; held by reference and not
+     * owned, so it must outlive this object.
+     * @param options Scan/flush tuning; see `RepositoryLinkStoreOptions`.
+     */
+    RepositoryLinkStore(std::shared_ptr<::IMetadataRepository> repo,
+                        std::shared_ptr<::ICacheStore> cache,
+                        std::shared_ptr<url_shortener::ILinkCacheStore> l1,
+                        const IClock& clock,
+                        RepositoryLinkStoreOptions options = {});
+
+    /**
+     * @brief Persists a new link. Not implemented in subtask 03.
+     * @param link Link to store (ignored by the stub).
+     * @param[out] error If non-null, receives
+     * `AppErrorCode::internal` with detail `"not implemented"`.
+     * @return Always `false` until subtask 04 implements the write
+     * path.
+     */
+    bool create(const Link& link, AppError* error = nullptr) override;
+
+    /**
+     * @brief Looks up a link by slug: L1 cache, then repository.
+     *
+     * Read path, in order: (1) `m_l1_->get(slug)` — a hit returns
+     * immediately; (2) on a miss, `m_repo_->GetByShortCode(slug)` — an
+     * absent code returns `std::nullopt` and caches nothing (negative
+     * results are not cached); (3) a present record is decoded with
+     * `record_to_link` and, on success, written to L1 before being
+     * returned. The configured `::ICacheStore` is never consulted
+     * (threat model T-38).
+     * @param slug Short-code slug to look up.
+     * @return The matching link; `std::nullopt` on an absent slug, a
+     * repository error (logged as `link_store_read_failed`, error name
+     * only), or an undecodable record (logged as
+     * `link_store_decode_failed`, slug only). A repository error is
+     * indistinguishable from "not found" to the caller (R-5).
+     */
+    std::optional<Link> findBySlug(const std::string& slug) const override;
+
+    /**
+     * @brief Looks up a link by its stable identifier via a bounded
+     * repository scan.
+     *
+     * There is no `GetById` on `::IMetadataRepository`, so this pages
+     * `ListLinks` (`owner` unset, `include_inactive=true`,
+     * `include_deleted=true`, `limit=id_scan_page`), decoding each
+     * record and returning the first whose `id` matches. The scan
+     * stops after `id_scan_max` records or when a page comes back
+     * short (end of data). A match is also written to L1. Cost is
+     * O(n); used only by admin paths (`link get --id`), never by
+     * redirects.
+     * @param id Stable link identifier to look up.
+     * @return The matching link; `std::nullopt` if no record matches
+     * within `id_scan_max`, the id is empty, or the repository errors
+     * (logged as `link_store_read_failed`, error name only).
+     */
+    std::optional<Link> findById(const std::string& id) const override;
+
+    /**
+     * @brief Reports whether `slug` is registered in the repository.
+     * @param slug Short-code slug to check.
+     * @return `true` if the repository reports the slug exists;
+     * `false` if it does not or the backend errored. On a backend
+     * error the error name is logged (`link_store_exists_failed`) and
+     * `false` is returned — a subsequent `create` still fails on the
+     * uniqueness constraint and maps to `slug_conflict`.
+     */
+    bool slugExists(const std::string& slug) const override;
+
+    /**
+     * @brief Drops any cached copy of `slug` from both cache tiers.
+     *
+     * Erases the L1 entry (`m_l1_->erase`) and, when a configured
+     * `::ICacheStore` is present, calls `m_cache_->Delete(slug)`
+     * best-effort, ignoring its result so a cache failure never fails
+     * the request (cache-aside contract, CLAUDE.md).
+     * @param slug Short-code slug whose cached copies to evict.
+     */
+    void invalidateCache(const std::string& slug) override;
+
+    /**
+     * @brief Persists a full-record update. Not implemented in
+     * subtask 03.
+     * @param link Updated link (ignored by the stub).
+     * @param[out] error If non-null, receives
+     * `AppErrorCode::internal` with detail `"not implemented"`.
+     * @return Always `false` until subtask 04 implements the write
+     * path.
+     */
+    bool update(const Link& link, AppError* error = nullptr) override;
+
+    /**
+     * @brief Records a redirect against `link`. Not implemented in
+     * subtask 03.
+     *
+     * Deliberately *not* marked `override`: `ILinkStore` does not yet
+     * declare `recordRedirect` — subtask 05 adds the virtual method to
+     * the interface and the write-behind body here. The stub exists so
+     * the class shape matches the subtask-03 spec and callers can be
+     * wired incrementally.
+     * @param link Link that served a redirect (ignored by the stub).
+     * @param[out] error If non-null, receives
+     * `AppErrorCode::internal` with detail `"not implemented"`.
+     * @return Always `false` until subtask 05 implements write-behind
+     * stats.
+     */
+    bool recordRedirect(const Link& link, AppError* error = nullptr);
+
+private:
+    ///< Authoritative metadata repository; shared, never null.
+    std::shared_ptr<::IMetadataRepository> m_repo_;
+
+    ///< Configured cache-aside store; invalidate-only, never read for
+    ///< link data (T-38). May be null when no cache is configured.
+    std::shared_ptr<::ICacheStore> m_cache_;
+
+    ///< Process-local full-`Link` hot-path cache (L1); shared, never
+    ///< null.
+    std::shared_ptr<url_shortener::ILinkCacheStore> m_l1_;
+
+    ///< Clock used by the store; not owned, must outlive this object.
+    const IClock& m_clock_;
+
+    ///< Scan/flush tuning.
+    RepositoryLinkStoreOptions m_options_;
+};
+
+}  // namespace app
+}  // namespace url_shortener

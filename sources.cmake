@@ -304,6 +304,7 @@ set(URL_SHORTENER_SOURCES
       tests/unit/app/18_link_command_service_update_storage_failure.cpp
       tests/unit/app/19_expiring_link_cache.cpp
       tests/unit/app/20_link_record_codec.cpp
+      tests/unit/app/21_repository_link_store_reads.cpp
   )
 
   set(CLI_UNIT_SOURCES
@@ -453,6 +454,7 @@ set(URL_SHORTENER_SOURCES
       ${CMAKE_CURRENT_SOURCE_DIR}/src/app/legacy_adapters.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/app/expiring_link_cache.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/app/link_record_codec.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/app/repository_link_store.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/composition/link_command_service_factory.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/config/storage_config.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/composition/storage_factory.cpp
