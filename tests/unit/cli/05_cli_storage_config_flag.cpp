@@ -8,14 +8,13 @@
  * Milestone 0006, Task 02.0, subtask 10.
  */
 #define BOOST_TEST_MODULE CliStorageConfigFlag
-#include <boost/test/unit_test.hpp>
-
 #include <cstdlib>
 #include <stdexcept>
 #include <string>
 #include <utility>
 #include <vector>
 
+#include <boost/test/unit_test.hpp>
 #include <url_shortener/cli/cli_parser.hpp>
 
 namespace
@@ -36,15 +35,9 @@ public:
         }
     }
 
-    int argc() const
-    {
-        return static_cast<int>(m_pointers_.size());
-    }
+    int argc() const { return static_cast<int>(m_pointers_.size()); }
 
-    char** argv()
-    {
-        return m_pointers_.data();
-    }
+    char** argv() { return m_pointers_.data(); }
 
 private:
     std::vector<std::string> m_storage_;
@@ -117,7 +110,9 @@ std::optional<std::string> parsePath(std::vector<std::string> tokens)
 {
     ::unsetenv(kStorageEnvVar);
     ArgvBuilder args(std::move(tokens));
-    return CliParser{}.parse(args.argc(), args.argv()).config.storage_config_path;
+    return CliParser {}
+        .parse(args.argc(), args.argv())
+        .config.storage_config_path;
 }
 
 }  // namespace
@@ -191,13 +186,14 @@ BOOST_AUTO_TEST_CASE(env_var_sets_path_when_flag_absent)
     ScopedEnv env(kStorageEnvVar, "/e.yaml");
 
     ArgvBuilder server({"url_shortener"});
-    const auto sp =
-        CliParser{}.parse(server.argc(), server.argv()).config.storage_config_path;
+    const auto sp = CliParser {}
+                        .parse(server.argc(), server.argv())
+                        .config.storage_config_path;
     BOOST_REQUIRE(sp.has_value());
     BOOST_CHECK_EQUAL(*sp, "/e.yaml");
 
     ArgvBuilder link({"url_shortener", "link", "get", "--slug", "a"});
-    const auto lr = CliParser{}.parse(link.argc(), link.argv());
+    const auto lr = CliParser {}.parse(link.argc(), link.argv());
     BOOST_REQUIRE(lr.config.storage_config_path.has_value());
     BOOST_CHECK_EQUAL(*lr.config.storage_config_path, "/e.yaml");
 }
@@ -213,15 +209,20 @@ BOOST_AUTO_TEST_CASE(flag_overrides_env_var)
     ScopedEnv env(kStorageEnvVar, "/e.yaml");
 
     ArgvBuilder server({"url_shortener", "--storage-config", "/x.yaml"});
-    const auto sp =
-        CliParser{}.parse(server.argc(), server.argv()).config.storage_config_path;
+    const auto sp = CliParser {}
+                        .parse(server.argc(), server.argv())
+                        .config.storage_config_path;
     BOOST_REQUIRE(sp.has_value());
     BOOST_CHECK_EQUAL(*sp, "/x.yaml");
 
-    ArgvBuilder link(
-        {"url_shortener", "link", "get", "--slug", "a", "--storage-config",
-            "/x.yaml"});
-    const auto lr = CliParser{}.parse(link.argc(), link.argv());
+    ArgvBuilder link({"url_shortener",
+                      "link",
+                      "get",
+                      "--slug",
+                      "a",
+                      "--storage-config",
+                      "/x.yaml"});
+    const auto lr = CliParser {}.parse(link.argc(), link.argv());
     BOOST_REQUIRE(lr.config.storage_config_path.has_value());
     BOOST_CHECK_EQUAL(*lr.config.storage_config_path, "/x.yaml");
 }
@@ -243,15 +244,24 @@ BOOST_AUTO_TEST_CASE(link_get_strips_flag_in_any_position)
     namespace app = url_shortener::app;
 
     const std::vector<std::vector<std::string>> variants = {
-        {"url_shortener", "link", "get", "--slug", "a", "--storage-config",
-            "/x.yaml"},
-        {"url_shortener", "link", "get", "--storage-config=/x.yaml", "--slug",
-            "a"},
+        {"url_shortener",
+         "link",
+         "get",
+         "--slug",
+         "a",
+         "--storage-config",
+         "/x.yaml"},
+        {"url_shortener",
+         "link",
+         "get",
+         "--storage-config=/x.yaml",
+         "--slug",
+         "a"},
     };
 
     for (const auto& tokens : variants) {
         ArgvBuilder args(tokens);
-        const auto r = CliParser{}.parse(args.argc(), args.argv());
+        const auto r = CliParser {}.parse(args.argc(), args.argv());
 
         BOOST_REQUIRE(r.command.has_value());
         const auto* q = std::get_if<app::GetLinkQuery>(&r.command->payload);
@@ -282,8 +292,16 @@ BOOST_AUTO_TEST_CASE(all_link_verbs_accept_the_flag)
         {"link", "disable", "--slug", "a"},
         {"link", "restore", "--slug", "a"},
         {"link", "preview", "--slug", "a"},
-        {"link", "stats", "--slug", "a", "--from", "0", "--to", "10",
-            "--bucket", "hour"},
+        {"link",
+         "stats",
+         "--slug",
+         "a",
+         "--from",
+         "0",
+         "--to",
+         "10",
+         "--bucket",
+         "hour"},
     };
 
     for (auto tokens : invocations) {
@@ -295,9 +313,10 @@ BOOST_AUTO_TEST_CASE(all_link_verbs_accept_the_flag)
         argv.push_back("/s.yaml");
 
         ArgvBuilder args(std::move(argv));
-        const auto r = CliParser{}.parse(args.argc(), args.argv());
+        const auto r = CliParser {}.parse(args.argc(), args.argv());
 
-        BOOST_REQUIRE_MESSAGE(r.command.has_value(),
+        BOOST_REQUIRE_MESSAGE(
+            r.command.has_value(),
             "verb invocation did not parse: " << tokens.at(1));
         BOOST_REQUIRE(r.config.storage_config_path.has_value());
         BOOST_CHECK_EQUAL(*r.config.storage_config_path, "/s.yaml");
@@ -311,10 +330,17 @@ BOOST_AUTO_TEST_CASE(all_link_verbs_accept_the_flag)
  */
 BOOST_AUTO_TEST_CASE(unknown_verb_flag_still_rejected_after_extraction)
 {
-    ArgvBuilder args({"url_shortener", "link", "get", "--slug", "a",
-        "--storage-config", "/x.yaml", "--bogus", "y"});
-    BOOST_CHECK_THROW(
-        CliParser{}.parse(args.argc(), args.argv()), std::invalid_argument);
+    ArgvBuilder args({"url_shortener",
+                      "link",
+                      "get",
+                      "--slug",
+                      "a",
+                      "--storage-config",
+                      "/x.yaml",
+                      "--bogus",
+                      "y"});
+    BOOST_CHECK_THROW(CliParser {}.parse(args.argc(), args.argv()),
+                      std::invalid_argument);
 }
 
 // ---------------------------------------------------------------------------
@@ -338,23 +364,30 @@ BOOST_AUTO_TEST_CASE(malformed_flag_throws_naming_only_the_flag)
         {"url_shortener", "link", "get", "--slug", "a", "--storage-config"},
         {"url_shortener", "link", "get", "--storage-config", "--slug", "a"},
         {"url_shortener", "link", "get", "--slug", "a", "--storage-config="},
-        {"url_shortener", "link", "get", "--slug", "a", "--storage-config",
-            hidden_path, "--storage-config", "/other.yaml"},
+        {"url_shortener",
+         "link",
+         "get",
+         "--slug",
+         "a",
+         "--storage-config",
+         hidden_path,
+         "--storage-config",
+         "/other.yaml"},
     };
 
     for (const auto& tokens : bad) {
         ArgvBuilder args(tokens);
         bool threw = false;
         try {
-            CliParser{}.parse(args.argc(), args.argv());
-        }
-        catch (const std::invalid_argument& e) {
+            CliParser {}.parse(args.argc(), args.argv());
+        } catch (const std::invalid_argument& e) {
             threw = true;
             const std::string msg = e.what();
-            BOOST_CHECK_MESSAGE(msg.find("--storage-config") != std::string::npos,
+            BOOST_CHECK_MESSAGE(
+                msg.find("--storage-config") != std::string::npos,
                 "error must name the flag: " << msg);
             BOOST_CHECK_MESSAGE(msg.find(hidden_path) == std::string::npos,
-                "error must not echo the path value: " << msg);
+                                "error must not echo the path value: " << msg);
         }
         BOOST_CHECK_MESSAGE(threw, "malformed flag did not throw");
     }
@@ -369,12 +402,11 @@ BOOST_AUTO_TEST_CASE(server_mode_rejects_empty_value)
     ArgvBuilder args({"url_shortener", "--storage-config="});
     bool threw = false;
     try {
-        CliParser{}.parse(args.argc(), args.argv());
-    }
-    catch (const std::invalid_argument& e) {
+        CliParser {}.parse(args.argc(), args.argv());
+    } catch (const std::invalid_argument& e) {
         threw = true;
         BOOST_CHECK(std::string(e.what()).find("--storage-config")
-            != std::string::npos);
+                    != std::string::npos);
     }
     BOOST_CHECK(threw);
 }
@@ -392,14 +424,14 @@ BOOST_AUTO_TEST_CASE(help_text_documents_the_flag)
 {
     {
         ArgvBuilder args({"url_shortener", "--help"});
-        const auto r = CliParser{}.parse(args.argc(), args.argv());
+        const auto r = CliParser {}.parse(args.argc(), args.argv());
         BOOST_CHECK(r.help_requested);
         BOOST_CHECK(r.help_text.find("--storage-config") != std::string::npos);
         BOOST_CHECK(r.help_text.find("Storage options") != std::string::npos);
     }
     {
         ArgvBuilder args({"url_shortener", "link", "--help"});
-        const auto r = CliParser{}.parse(args.argc(), args.argv());
+        const auto r = CliParser {}.parse(args.argc(), args.argv());
         BOOST_CHECK(r.help_requested);
         BOOST_CHECK(r.help_text.find("--storage-config") != std::string::npos);
     }
