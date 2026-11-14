@@ -109,7 +109,7 @@ deliberately filters in the app layer instead, 03.0/01 and 03.0/12).
 | 07 | [LinkBackend holder and factory](07-link-backend-holder.md) | ✅ Complete | none | 08, 09, 11, 03.0/11 |
 | 08 | [Redirect handlers through the backend](08-redirect-handlers-through-backend.md) | ✅ Complete | 05, 07, 16 | 12, 07.0/31 |
 | 09 | [REST and slug paths through the backend](09-rest-and-slug-paths-through-backend.md) | ✅ Complete | 07 | 12 |
-| 10 | [--storage-config flag and env](10-storage-config-flag-and-env.md) | ⬜ Not started | none | 11, 03.0/17, 04.0/12, 06.0/19 |
+| 10 | [--storage-config flag and env](10-storage-config-flag-and-env.md) | ✅ Complete | none | 11, 03.0/17, 04.0/12, 06.0/19 |
 | 11 | [Backend bootstrap](11-backend-bootstrap.md) | ⬜ Not started | 04, 05, 07, 10, 16 | 12 |
 | 12 | [main.cpp wiring order](12-main-wiring-order.md) | ⬜ Not started | 08, 09, 11 | 13, 14, 03.0/18, 05.0/20, 06.0/19 |
 | 13 | [CLI persistence tests](13-cli-persistence-tests.md) | ⬜ Not started | 12 | 15 |
