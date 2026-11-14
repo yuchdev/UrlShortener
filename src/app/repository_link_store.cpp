@@ -1,4 +1,6 @@
+#include <algorithm>
 #include <stdexcept>
+#include <unordered_map>
 #include <utility>
 
 #include <url_shortener/app/link_record_codec.hpp>
@@ -236,9 +238,13 @@ std::optional<Link> RepositoryLinkStore::findBySlug(
         return std::nullopt;
     }
 
-    // 3. Decode (fail-closed) and populate L1 on success.
+    // 3. Decode (fail-closed), merge any pending stat delta, and populate
+    //    L1 on success. Merging before caching keeps "persisted + pending"
+    //    the observed value, so an L1 expiry/eviction never regresses
+    //    counts (subtask 05 merge-on-load).
     std::optional<Link> link = decode(*record, slug);
     if (link.has_value()) {
+        merge_pending_stats(slug, &*link);
         m_l1_->set(slug, *link);
     }
     return link;
@@ -268,9 +274,11 @@ std::optional<Link> RepositoryLinkStore::findById(const std::string& id) const
         return std::nullopt;
     }
 
-    // Decode (fail-closed) and populate L1 on success.
+    // Decode (fail-closed), merge any pending stat delta, and populate L1
+    // on success (subtask 05 merge-on-load).
     std::optional<Link> link = decode(*record, record->short_code);
     if (link.has_value()) {
+        merge_pending_stats(link->slug, &*link);
         m_l1_->set(link->slug, *link);
     }
     return link;
@@ -333,12 +341,193 @@ bool RepositoryLinkStore::update(const Link& link, AppError* error)
     return true;
 }
 
-bool RepositoryLinkStore::recordRedirect(const Link& /*link*/, AppError* error)
+RepositoryLinkStore::~RepositoryLinkStore()
 {
-    if (error != nullptr) {
-        *error = AppError {AppErrorCode::internal, "not implemented"};
+    stop_stats_flusher();
+}
+
+bool RepositoryLinkStore::recordRedirect(const Link& served, AppError* error)
+{
+    (void)error;  // best-effort: never surfaces a synchronous failure.
+    const std::string& slug = served.slug;
+    const auto now = m_clock_.now();
+
+    // 1. Accumulate the delta under the stats lock (O(1), no I/O).
+    {
+        std::lock_guard<std::mutex> lock(m_stats_mutex_);
+        StatsDelta& delta = m_pending_[slug];
+        delta.redirects += 1;
+        if (!delta.last_accessed_at.has_value()
+            || *delta.last_accessed_at < now)
+        {
+            delta.last_accessed_at = now;
+        }
     }
-    return false;
+
+    // 2. Patch the L1 copy in place. MUST be patch, never set: set would
+    //    refresh stored_at on every redirect, so a continuously hit link
+    //    disabled/deleted by another process would never expire (T-32).
+    //    patch is a no-op on an absent/expired entry (never resurrects).
+    m_l1_->patch(slug,
+                 [&now](Link& cached)
+                 {
+                     cached.stats.total_redirects += 1;
+                     cached.stats.redirects_24h += 1;
+                     cached.stats.redirects_7d += 1;
+                     cached.stats.last_accessed_at = formatTimestamp(now);
+                 });
+
+    // 3. Write-through mode (in-memory backend, interval == 0): persist
+    //    now from the caller's thread. On persistent backends this branch
+    //    is never taken, so the request thread does no repository I/O.
+    if (m_options_.stats_flush_interval.count() == 0) {
+        flush_stats();
+    }
+    return true;
+}
+
+void RepositoryLinkStore::merge_pending_stats(const std::string& slug,
+                                              Link* link) const
+{
+    std::lock_guard<std::mutex> lock(m_stats_mutex_);
+    const auto it = m_pending_.find(slug);
+    if (it == m_pending_.end()) {
+        return;
+    }
+    const StatsDelta& delta = it->second;
+    link->stats.total_redirects += delta.redirects;
+    link->stats.redirects_24h += delta.redirects;
+    link->stats.redirects_7d += delta.redirects;
+    if (delta.last_accessed_at.has_value()) {
+        link->stats.last_accessed_at = formatTimestamp(*delta.last_accessed_at);
+    }
+}
+
+void RepositoryLinkStore::requeue_delta(const std::string& slug,
+                                        const StatsDelta& delta)
+{
+    std::lock_guard<std::mutex> lock(m_stats_mutex_);
+    StatsDelta& current = m_pending_[slug];
+    current.redirects += delta.redirects;
+    if (delta.last_accessed_at.has_value()
+        && (!current.last_accessed_at.has_value()
+            || *current.last_accessed_at < *delta.last_accessed_at))
+    {
+        current.last_accessed_at = delta.last_accessed_at;
+    }
+}
+
+void RepositoryLinkStore::flush_stats()
+{
+    // 1. Swap pending out under the lock; new deltas accumulate in a fresh
+    //    map while we persist, and the lock is never held across I/O.
+    std::unordered_map<std::string, StatsDelta> pending;
+    {
+        std::lock_guard<std::mutex> lock(m_stats_mutex_);
+        pending.swap(m_pending_);
+    }
+    if (pending.empty()) {
+        return;
+    }
+
+    for (const auto& entry : pending) {
+        const std::string& slug = entry.first;
+        const StatsDelta& delta = entry.second;
+
+        // 2. Read the record fresh (bypassing L1).
+        ::RepoError repo_error = ::RepoError::none;
+        std::optional<::LinkRecord> fresh =
+            m_repo_->GetByShortCode(slug, &repo_error);
+        if (!fresh.has_value()) {
+            if (repo_error != ::RepoError::none) {
+                // Backend error, not a confirmed deletion: keep the delta.
+                requeue_delta(slug, delta);
+                auto log =
+                    observability::LoggerFactory::Component(k_log_component);
+                log.warn(
+                    "link_store_stats_flush_failed",
+                    {{"slug", slug}, {"error", repo_error_name(repo_error)}});
+            }
+            // Absent with no error: link deleted upstream, drop the delta.
+            continue;
+        }
+
+        // 3. Narrow read-modify-write of only the lnk_stats attribute on
+        //    the fresh record, so enabled/deleted_at/tags that changed
+        //    since the redirect read cannot be reverted (except R-1).
+        Link::Stats stats;
+        if (auto existing = get_stats_attribute(fresh->attributes)) {
+            stats = *existing;
+        }
+        stats.total_redirects += delta.redirects;
+        stats.redirects_24h += delta.redirects;
+        stats.redirects_7d += delta.redirects;
+        if (delta.last_accessed_at.has_value()) {
+            stats.last_accessed_at = formatTimestamp(*delta.last_accessed_at);
+        }
+        set_stats_attribute(&fresh->attributes, stats);
+
+        ::RepoError update_error = ::RepoError::none;
+        if (!m_repo_->UpdateLink(*fresh, &update_error)) {
+            // Re-queue (no loss, no double count) and continue.
+            requeue_delta(slug, delta);
+            auto log = observability::LoggerFactory::Component(k_log_component);
+            log.warn(
+                "link_store_stats_flush_failed",
+                {{"slug", slug}, {"error", repo_error_name(update_error)}});
+        }
+    }
+}
+
+void RepositoryLinkStore::flusher_loop()
+{
+    std::unique_lock<std::mutex> lock(m_flusher_mutex_);
+    while (!m_flusher_stop_) {
+        // Wait out the interval; wake early only on stop. A timeout (the
+        // predicate is still false) means "time to flush".
+        m_flusher_cv_.wait_for(lock,
+                               m_options_.stats_flush_interval,
+                               [this] { return m_flusher_stop_; });
+        if (m_flusher_stop_) {
+            break;
+        }
+        // Release the flusher lock across the (potentially slow) flush so
+        // stop_stats_flusher can still signal promptly.
+        lock.unlock();
+        flush_stats();
+        lock.lock();
+    }
+}
+
+void RepositoryLinkStore::start_stats_flusher()
+{
+    // Write-through mode needs no thread.
+    if (m_options_.stats_flush_interval.count() == 0) {
+        return;
+    }
+    if (m_flusher_thread_.joinable()) {
+        return;  // already running
+    }
+    {
+        std::lock_guard<std::mutex> lock(m_flusher_mutex_);
+        m_flusher_stop_ = false;
+    }
+    m_flusher_thread_ = std::thread([this] { flusher_loop(); });
+}
+
+void RepositoryLinkStore::stop_stats_flusher()
+{
+    if (m_flusher_thread_.joinable()) {
+        {
+            std::lock_guard<std::mutex> lock(m_flusher_mutex_);
+            m_flusher_stop_ = true;
+        }
+        m_flusher_cv_.notify_all();
+        m_flusher_thread_.join();
+    }
+    // Final drain so a delta accumulated since the last tick is not lost,
+    // including when the flusher was never started (tests, write-through).
+    flush_stats();
 }
 
 }  // namespace app

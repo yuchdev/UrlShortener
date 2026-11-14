@@ -1,10 +1,15 @@
 #pragma once
 
 #include <chrono>
+#include <condition_variable>
 #include <cstddef>
+#include <cstdint>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <string>
+#include <thread>
+#include <unordered_map>
 
 #include <url_shortener/app/app_error.hpp>
 #include <url_shortener/app/link_command_service.hpp>
@@ -72,18 +77,50 @@ struct RepositoryLinkStoreOptions
  * `::ICacheStore` on success), never failing a request on a cache
  * error. Validation (SSRF/URL/slug) stays upstream in
  * `LinkCommandService`; these methods are persistence only (threat
- * model T-40). `recordRedirect` remains stubbed until subtask 05.
+ * model T-40).
+ *
+ * Redirect-stat write-behind (subtask 05): `recordRedirect` adds **no
+ * repository I/O to a redirect request** (plan C10). On the request
+ * thread it only accumulates a per-slug delta under `m_stats_mutex_`
+ * and patches the L1 copy in place (`m_l1_->patch`, never `set`, so a
+ * hot link's TTL is not refreshed — threat model T-32). Every record
+ * loaded from the repository has its still-pending delta merged back in
+ * (merge-on-load), so an L1 TTL expiry or size eviction never loses or
+ * regresses counts. A background flusher thread persists the coalesced
+ * deltas on `m_options_.stats_flush_interval`, reading each record fresh
+ * and rewriting only its `lnk_stats` attribute (via `set_stats_attribute`
+ * over `get_stats_attribute`), so a flush can never revert a concurrent
+ * `disable`/`delete`/field change (except race R-1, documented on
+ * `flush_stats`). With `stats_flush_interval == 0` no thread runs and
+ * `recordRedirect` writes through synchronously from the caller's thread
+ * (in-memory backend only, subtask 11).
  *
  * Privacy: logs only the slug and backend error names. Decoded
  * `target_url`/tag/metadata/campaign bytes are untrusted (a foreign
  * process may have written the record) and are never logged (threat
- * model T-37; `record_to_link` warning).
+ * model T-37; `record_to_link` warning). The flusher logs only the slug
+ * and backend error name on a failed persist.
  *
- * Thread-safety: safe to call concurrently. This object holds no
- * mutable state of its own; every read forwards through the
- * thread-safe collaborators (`m_repo_`, `m_l1_`, `m_cache_`) behind
- * their `shared_ptr`s. The `const` read methods mutate those
- * collaborators through the pointers, which is permitted.
+ * Thread-safety: the read/write ports (`create`, `findBySlug`,
+ * `findById`, `slugExists`, `update`, `invalidateCache`) are safe to
+ * call concurrently; they forward through the thread-safe collaborators
+ * (`m_repo_`, `m_l1_`, `m_cache_`). `recordRedirect`, merge-on-load, and
+ * `flush_stats` coordinate on `m_stats_mutex_`, which guards `m_pending_`
+ * only and is never held across repository I/O. The flusher thread is
+ * the only thread that calls the repository from inside `flush_stats`
+ * during normal operation; the request threads never do.
+ *
+ * Lifecycle (thread ownership): the flusher thread is **not** started by
+ * the constructor. The composition root calls `start_stats_flusher()`
+ * after wiring and `stop_stats_flusher()` before teardown; the
+ * destructor calls `stop_stats_flusher()` as a safety net (idempotent).
+ * `start_stats_flusher()` / `stop_stats_flusher()` are not themselves
+ * thread-safe against each other and are meant to be driven from the
+ * owning (composition/shutdown) thread only. `flush_stats()` is safe to
+ * call from that thread at any time (tests drive flushes explicitly
+ * rather than sleeping for the timer). Destroying the object while
+ * another thread is still calling `recordRedirect` is undefined, as with
+ * any store.
  *
  * Lifetime: owns shared references to `repo`, `l1`, and (optionally)
  * `cache` via `shared_ptr`, so they outlive this object by
@@ -114,6 +151,22 @@ public:
                         std::shared_ptr<url_shortener::ILinkCacheStore> l1,
                         const IClock& clock,
                         RepositoryLinkStoreOptions options = {});
+
+    /**
+     * @brief Stops the flusher thread (if running) and performs a final
+     * `flush_stats()` so no pending delta is lost on teardown.
+     *
+     * Equivalent to calling `stop_stats_flusher()`; idempotent and safe
+     * even if the flusher was never started. Must not run concurrently
+     * with `recordRedirect` on another thread (see the class lifecycle
+     * notes).
+     */
+    ~RepositoryLinkStore() override;
+
+    RepositoryLinkStore(const RepositoryLinkStore&) = delete;
+    RepositoryLinkStore& operator=(const RepositoryLinkStore&) = delete;
+    RepositoryLinkStore(RepositoryLinkStore&&) = delete;
+    RepositoryLinkStore& operator=(RepositoryLinkStore&&) = delete;
 
     /**
      * @brief Persists a new link, then invalidates both cache tiers.
@@ -237,23 +290,148 @@ public:
     bool update(const Link& link, AppError* error = nullptr) override;
 
     /**
-     * @brief Records a redirect against `link`. Not implemented in
-     * subtask 03.
+     * @brief Records one successful redirect of @p served with no
+     * repository I/O on the request thread (write-behind, plan C10).
      *
-     * Deliberately *not* marked `override`: `ILinkStore` does not yet
-     * declare `recordRedirect` — subtask 05 adds the virtual method to
-     * the interface and the write-behind body here. The stub exists so
-     * the class shape matches the subtask-03 spec and callers can be
-     * wired incrementally.
-     * @param link Link that served a redirect (ignored by the stub).
-     * @param[out] error If non-null, receives
-     * `AppErrorCode::internal` with detail `"not implemented"`.
-     * @return Always `false` until subtask 05 implements write-behind
-     * stats.
+     * Request-thread steps (O(1), no I/O, never throws):
+     * 1. Under `m_stats_mutex_`, accumulate into `m_pending_[served.slug]`:
+     *    `redirects += 1` and `last_accessed_at = max(old, clock.now())`.
+     * 2. Patch the L1 copy in place via `m_l1_->patch` (never `set`):
+     *    apply the same `+1`/timestamp to the cached `Link` *without*
+     *    refreshing its TTL anchor (threat model T-32), so a continuously
+     *    hit but cross-process-disabled link still expires within one L1
+     *    TTL. `patch` is a no-op returning `false` when the entry is
+     *    absent or already expired — it never re-inserts or resurrects.
+     * 3. Return `true`; never touches `m_cache_` or `m_repo_`.
+     *
+     * Persistence is deferred to the flusher thread (or, when
+     * `stats_flush_interval == 0`, written through synchronously from the
+     * caller's thread for the in-memory backend). A repository that is
+     * down therefore never affects a redirect.
+     * @param served The link that served the redirect.
+     * @param[out] error In write-behind mode (interval > 0) left
+     * untouched (deferred persistence has no synchronous failure). In
+     * write-through mode (interval == 0) left untouched as well: persist
+     * failures are re-queued, not surfaced, because stats are best-effort.
+     * @return `true` always; stat recording never fails the caller.
      */
-    bool recordRedirect(const Link& link, AppError* error = nullptr);
+    bool recordRedirect(const Link& served, AppError* error = nullptr) override;
+
+    /**
+     * @brief Persists every pending redirect-stat delta now.
+     *
+     * Called by the flusher thread on each interval and once more on
+     * shutdown; also used by tests to drive a deterministic flush instead
+     * of sleeping for the timer. **Never called from a request thread.**
+     *
+     * Algorithm:
+     * 1. Swap `m_pending_` out under `m_stats_mutex_` into a local map, so
+     *    new deltas accumulate in a fresh map while this flush runs and
+     *    the lock is not held across any repository call.
+     * 2. For each slug: read the record fresh with
+     *    `m_repo_->GetByShortCode` (bypassing L1). If it is absent with no
+     *    backend error, the link was deleted upstream — drop the delta. If
+     *    it is absent because of a backend error, re-queue the delta
+     *    (merge back into `m_pending_`) and continue. Otherwise read the
+     *    record's current stats (`get_stats_attribute`), **add** the delta
+     *    to all three counters and advance `last_accessed_at`, write just
+     *    that one attribute back (`set_stats_attribute`) and persist with
+     *    `m_repo_->UpdateLink`. Because only `lnk_stats` on a *fresh*
+     *    record is touched, a flush cannot revert a concurrent
+     *    `enabled`/`deleted_at`/tag change that landed since the redirect
+     *    read its snapshot — except inside the narrow read-then-write
+     *    window (race R-1, cross-process; accepted as stats are
+     *    display-only). On `UpdateLink` failure the delta is re-queued
+     *    (no loss, no double count) and the next slug is processed.
+     * 3. Logs only the slug and backend error name on failure — never
+     *    record values.
+     */
+    void flush_stats();
+
+    /**
+     * @brief Starts the background flusher thread.
+     *
+     * A no-op when `m_options_.stats_flush_interval == 0` (write-through
+     * mode: `recordRedirect` persists from the caller's thread, no thread
+     * is needed) or when the flusher is already running. Otherwise spawns
+     * one `std::thread` that waits on a condition variable with timeout
+     * `stats_flush_interval` and calls `flush_stats()` on each timeout.
+     * Intended to be called once, from the owning thread, after wiring.
+     */
+    void start_stats_flusher();
+
+    /**
+     * @brief Stops the background flusher thread and performs a final
+     * `flush_stats()`.
+     *
+     * Sets the stop flag, notifies the condition variable, joins the
+     * thread, then runs one final `flush_stats()` so a delta accumulated
+     * since the last tick is not lost. Idempotent and safe to call when
+     * the flusher was never started (it still performs the final flush).
+     * Also invoked by the destructor. Intended to run from the owning
+     * (shutdown) thread only.
+     */
+    void stop_stats_flusher();
 
 private:
+    /**
+     * @brief Accumulated, not-yet-persisted redirect counts for one slug.
+     *
+     * A delta is relative, never an absolute snapshot: the flusher adds it
+     * to whatever the repository currently holds, so two processes against
+     * one database sum their counts instead of overwriting (last-writer
+     * wins only inside race R-1).
+     */
+    struct StatsDelta
+    {
+        ///< Number of redirects to add to all three monotonic counters
+        ///< (`total_redirects`, `redirects_24h`, `redirects_7d`).
+        std::uint64_t redirects = 0;
+
+        ///< Most recent redirect instant seen for this slug since the
+        ///< last flush; written to `last_accessed_at` on persist. Absent
+        ///< until the first redirect in the current window.
+        std::optional<std::chrono::system_clock::time_point> last_accessed_at;
+    };
+
+    /**
+     * @brief Adds the pending delta for @p slug (if any) into @p link's
+     * stats. Called on every repository load before caching/returning.
+     *
+     * Under `m_stats_mutex_`, looks up @p slug in `m_pending_` and, when
+     * present, adds its `redirects` to all three counters and advances
+     * `last_accessed_at`. This keeps "persisted counters + pending deltas"
+     * as the value observed outside a flush, so an L1 TTL expiry (5 s)
+     * shorter than the flush interval (30 s), or a size eviction, does not
+     * regress counts. (Transient under-read race R-2 during a flush swap
+     * is documented on `flush_stats`.)
+     * @param slug Slug whose pending delta to apply.
+     * @param[in,out] link Decoded link whose `stats` are incremented in
+     * place; must not be null.
+     */
+    void merge_pending_stats(const std::string& slug, Link* link) const;
+
+    /**
+     * @brief Re-queues a delta that failed to persist by merging it back
+     * into `m_pending_` under `m_stats_mutex_`.
+     *
+     * Merges rather than overwrites, because new redirects may have
+     * accumulated for the slug since the flush swapped the map out, so the
+     * failed delta is added to (not substituted for) the current pending
+     * entry — no loss, no double count.
+     * @param slug Slug the delta belongs to.
+     * @param delta The delta that could not be written.
+     */
+    void requeue_delta(const std::string& slug, const StatsDelta& delta);
+
+    /**
+     * @brief Flusher-thread body: waits on `m_flusher_cv_` with timeout
+     * `stats_flush_interval` and calls `flush_stats()` on each timeout,
+     * exiting promptly when the stop flag is set (the final flush is run
+     * by `stop_stats_flusher`, not here).
+     */
+    void flusher_loop();
+
     ///< Authoritative metadata repository; shared, never null.
     std::shared_ptr<::IMetadataRepository> m_repo_;
 
@@ -270,6 +448,29 @@ private:
 
     ///< Scan/flush tuning.
     RepositoryLinkStoreOptions m_options_;
+
+    ///< Guards `m_pending_` only; a short lock taken by `recordRedirect`,
+    ///< `merge_pending_stats`, `requeue_delta`, and the swap in
+    ///< `flush_stats`. Never held across repository I/O. Mutable so the
+    ///< `const` read paths can merge pending deltas under it.
+    mutable std::mutex m_stats_mutex_;
+
+    ///< Slug -> not-yet-persisted redirect delta. Empty between flushes
+    ///< once the flusher has drained it.
+    std::unordered_map<std::string, StatsDelta> m_pending_;
+
+    ///< Background flusher thread; joinable only while running. Not
+    ///< started by the constructor (see the class lifecycle notes).
+    std::thread m_flusher_thread_;
+
+    ///< Guards `m_flusher_stop_` and backs `m_flusher_cv_`'s wait.
+    std::mutex m_flusher_mutex_;
+
+    ///< Signals the flusher to wake for a stop (or an early flush).
+    std::condition_variable m_flusher_cv_;
+
+    ///< Stop flag read by `flusher_loop`; set by `stop_stats_flusher`.
+    bool m_flusher_stop_ = false;
 };
 
 }  // namespace app

@@ -10,6 +10,7 @@
 #include <url_shortener/app/app_error.hpp>
 #include <url_shortener/core/config.hpp>
 #include <url_shortener/core/types.hpp>
+#include <url_shortener/core/utils.hpp>
 
 namespace url_shortener
 {
@@ -398,6 +399,49 @@ public:
      * exist or the backend rejected the write.
      */
     virtual bool update(const Link& link, AppError* error = nullptr) = 0;
+
+    /**
+     * @brief Records one successful redirect of @p served (the record
+     * the redirect path just read).
+     *
+     * Best effort and non-authoritative: the caller ignores the result,
+     * and a `false` return must never change the redirect response or its
+     * latency (analytics/stat best-effort rule, CLAUDE.md). The redirect
+     * counters this maintains are provisional; `GetLinkStats` click-event
+     * aggregates remain the authoritative metric.
+     *
+     * Non-pure so every existing `ILinkStore` implementer compiles
+     * unchanged: the default body reproduces the legacy handler behavior
+     * exactly — it copies @p served, increments
+     * `total_redirects`/`redirects_24h`/`redirects_7d`, stamps
+     * `last_accessed_at` with the current wall-clock time, and writes the
+     * whole record back through @ref update (which also invalidates the
+     * cache). `RepositoryLinkStore` overrides it with a write-behind path
+     * that adds no repository I/O to the request thread (subtask 05).
+     *
+     * @param served The link that served the redirect, as read by the
+     * redirect path.
+     * @param[out] error If non-null and the underlying @ref update fails,
+     * receives that failure (storage-layer dependent); left untouched on
+     * success. Overrides that never touch the repository on the request
+     * thread leave it untouched.
+     * @return `true` if the update was recorded; `false` if the default's
+     * @ref update call failed. Overrides may always return `true`.
+     */
+    virtual bool recordRedirect(const Link& served, AppError* error = nullptr)
+    {
+        // Legacy behavior, moved verbatim out of the redirect handler
+        // (incrementRedirectStats): copy the served record, bump all three
+        // monotonic counters and the last-access timestamp, and write the
+        // whole record back through update (which also invalidates the
+        // cache).
+        Link updated = served;
+        updated.stats.total_redirects++;
+        updated.stats.redirects_24h++;
+        updated.stats.redirects_7d++;
+        updated.stats.last_accessed_at = currentTimestamp();
+        return update(updated, error);
+    }
 };
 
 /**

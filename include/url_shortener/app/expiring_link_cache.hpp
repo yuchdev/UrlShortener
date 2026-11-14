@@ -149,7 +149,7 @@ public:
      * cache is left unchanged and nothing is inserted).
      */
     bool patch(const std::string& slug,
-               const std::function<void(Link&)>& mutator);
+               const std::function<void(Link&)>& mutator) override;
 
     /**
      * @brief Removes all cached entries.

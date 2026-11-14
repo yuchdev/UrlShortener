@@ -307,6 +307,7 @@ set(URL_SHORTENER_SOURCES
       tests/unit/app/20_link_record_codec.cpp
       tests/unit/app/21_repository_link_store_reads.cpp
       tests/unit/app/22_repository_link_store_writes.cpp
+      tests/unit/app/23_record_redirect_write_behind.cpp
   )
 
   set(CLI_UNIT_SOURCES

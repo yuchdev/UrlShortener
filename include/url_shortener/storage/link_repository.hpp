@@ -1,5 +1,6 @@
 #pragma once
 
+#include <functional>
 #include <optional>
 #include <shared_mutex>
 #include <string>
@@ -127,6 +128,40 @@ public:
      * @param slug Cache key to evict.
      */
     virtual void erase(const std::string& slug) = 0;
+
+    /**
+     * @brief Mutates a cached `Link` in place without refreshing its
+     * expiry anchor, if the implementation tracks one.
+     *
+     * Non-pure so existing caches (e.g. the legacy non-expiring
+     * `InMemoryLinkCacheStore`) need no change: the base implementation
+     * is a no-op that returns `false`, i.e. "nothing patched". An
+     * expiry-aware cache (`app::ExpiringLinkCache`) overrides it to
+     * mutate the stored value in place while leaving its stored-at time
+     * untouched, so a hot entry still expires one TTL after it was
+     * loaded no matter how often it is patched (threat model T-32).
+     *
+     * The write-behind redirect-stats path (`app::RepositoryLinkStore::
+     * recordRedirect`, subtask 05) uses this instead of `set` precisely
+     * so a continuously hit link whose record was disabled/deleted by
+     * another process still expires from L1 within one TTL rather than
+     * being kept alive forever.
+     * @param slug Cache key to mutate.
+     * @param mutator Callback invoked with a mutable reference to the
+     * stored `Link`; called at most once, only when the entry is present
+     * and live. Overrides may hold an internal lock while invoking it, so
+     * it must not call back into the cache and must not throw.
+     * @return `true` if an entry was present, live, and mutated; `false`
+     * if absent/expired or if the implementation does not patch in place.
+     * The base implementation always returns `false`.
+     */
+    virtual bool patch(const std::string& slug,
+                       const std::function<void(Link&)>& mutator)
+    {
+        (void)slug;
+        (void)mutator;
+        return false;
+    }
 };
 
 /**
