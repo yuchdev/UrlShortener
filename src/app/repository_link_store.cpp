@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <stdexcept>
+#include <string>
 #include <unordered_map>
 #include <utility>
 
@@ -197,7 +198,12 @@ bool RepositoryLinkStore::create(const Link& link, AppError* error)
         return false;
     }
 
-    // 3. Persist. Uniqueness is enforced atomically by the repository.
+    // 3. Persist + invalidate under the store write lock (outer lock in
+    //    the m_write_mutex_ -> m_stats_mutex_ order), so this create cannot
+    //    interleave with a concurrent update/flush_stats of the same slug.
+    //    Uniqueness is still enforced atomically by the repository. The
+    //    redirect fast path never takes this lock (C10).
+    std::lock_guard<std::mutex> write_lock(m_write_mutex_);
     ::RepoError repo_error = ::RepoError::none;
     if (!m_repo_->CreateLink(request, link.id, *now, &repo_error)) {
         map_repo_error(repo_error, error);
@@ -321,7 +327,13 @@ bool RepositoryLinkStore::update(const Link& link, AppError* error)
         return false;
     }
 
-    // 2. Persist the update.
+    // 2. Persist + invalidate under the store write lock (outer lock in
+    //    the m_write_mutex_ -> m_stats_mutex_ order), so the write and the
+    //    both-tier invalidation cannot interleave with the flusher's
+    //    read-modify-write of the same slug. This closes the in-process
+    //    R-1 window: a concurrent flush can no longer revert this
+    //    disable/soft-delete. The cross-process race remains accepted (D12).
+    std::lock_guard<std::mutex> write_lock(m_write_mutex_);
     ::RepoError repo_error = ::RepoError::none;
     const bool ok = m_repo_->UpdateLink(record, &repo_error);
 
@@ -419,8 +431,15 @@ void RepositoryLinkStore::requeue_delta(const std::string& slug,
 
 void RepositoryLinkStore::flush_stats()
 {
-    // 1. Swap pending out under the lock; new deltas accumulate in a fresh
-    //    map while we persist, and the lock is never held across I/O.
+    // Periodic / explicit flush: process every pending slug (no deadline).
+    drain_pending(std::nullopt);
+}
+
+void RepositoryLinkStore::drain_pending(
+    std::optional<std::chrono::steady_clock::time_point> deadline)
+{
+    // 1. Swap pending out under the stats lock; new deltas accumulate in a
+    //    fresh map while we persist, and the lock is never held across I/O.
     std::unordered_map<std::string, StatsDelta> pending;
     {
         std::lock_guard<std::mutex> lock(m_stats_mutex_);
@@ -430,52 +449,94 @@ void RepositoryLinkStore::flush_stats()
         return;
     }
 
-    for (const auto& entry : pending) {
-        const std::string& slug = entry.first;
-        const StatsDelta& delta = entry.second;
+    // Coalesced failure/drop accounting: at most one warn line per cycle.
+    int failures = 0;
+    ::RepoError last_error = ::RepoError::none;
+    int dropped = 0;
 
-        // 2. Read the record fresh (bypassing L1).
-        ::RepoError repo_error = ::RepoError::none;
-        std::optional<::LinkRecord> fresh =
-            m_repo_->GetByShortCode(slug, &repo_error);
-        if (!fresh.has_value()) {
-            if (repo_error != ::RepoError::none) {
-                // Backend error, not a confirmed deletion: keep the delta.
-                requeue_delta(slug, delta);
-                auto log =
-                    observability::LoggerFactory::Component(k_log_component);
-                log.warn(
-                    "link_store_stats_flush_failed",
-                    {{"slug", slug}, {"error", repo_error_name(repo_error)}});
+    auto entry = pending.begin();
+    for (; entry != pending.end(); ++entry) {
+        // Time-box the shutdown flush: once the budget is spent, stop and
+        // drop the remaining deltas (best-effort stats, D12).
+        if (deadline.has_value()
+            && std::chrono::steady_clock::now() >= *deadline)
+        {
+            break;
+        }
+
+        const std::string& slug = entry->first;
+        const StatsDelta& delta = entry->second;
+
+        // 2. Per-slug read-modify-write under the store write lock (taken
+        //    and released per slug, so a long flush never blocks writers).
+        //    Holding it across the GetByShortCode -> patch lnk_stats ->
+        //    UpdateLink serializes the flush with create/update and closes
+        //    the in-process R-1 window. The whole body is guarded so a
+        //    throwing repository (or bad_alloc) re-queues the delta instead
+        //    of propagating out of the flusher thread / destructor.
+        std::lock_guard<std::mutex> write_lock(m_write_mutex_);
+        try {
+            ::RepoError repo_error = ::RepoError::none;
+            std::optional<::LinkRecord> fresh =
+                m_repo_->GetByShortCode(slug, &repo_error);
+            if (!fresh.has_value()) {
+                if (repo_error != ::RepoError::none) {
+                    // Backend error, not a confirmed deletion: keep it.
+                    requeue_delta(slug, delta);
+                    ++failures;
+                    last_error = repo_error;
+                }
+                // Absent with no error: deleted upstream, drop the delta.
+                continue;
             }
-            // Absent with no error: link deleted upstream, drop the delta.
-            continue;
-        }
 
-        // 3. Narrow read-modify-write of only the lnk_stats attribute on
-        //    the fresh record, so enabled/deleted_at/tags that changed
-        //    since the redirect read cannot be reverted (except R-1).
-        Link::Stats stats;
-        if (auto existing = get_stats_attribute(fresh->attributes)) {
-            stats = *existing;
-        }
-        stats.total_redirects += delta.redirects;
-        stats.redirects_24h += delta.redirects;
-        stats.redirects_7d += delta.redirects;
-        if (delta.last_accessed_at.has_value()) {
-            stats.last_accessed_at = formatTimestamp(*delta.last_accessed_at);
-        }
-        set_stats_attribute(&fresh->attributes, stats);
+            // 3. Narrow read-modify-write of only the lnk_stats attribute
+            //    on the fresh record, so enabled/deleted_at/tags that
+            //    changed since the redirect read cannot be reverted.
+            Link::Stats stats;
+            if (auto existing = get_stats_attribute(fresh->attributes)) {
+                stats = *existing;
+            }
+            stats.total_redirects += delta.redirects;
+            stats.redirects_24h += delta.redirects;
+            stats.redirects_7d += delta.redirects;
+            if (delta.last_accessed_at.has_value()) {
+                stats.last_accessed_at =
+                    formatTimestamp(*delta.last_accessed_at);
+            }
+            set_stats_attribute(&fresh->attributes, stats);
 
-        ::RepoError update_error = ::RepoError::none;
-        if (!m_repo_->UpdateLink(*fresh, &update_error)) {
-            // Re-queue (no loss, no double count) and continue.
+            ::RepoError update_error = ::RepoError::none;
+            if (!m_repo_->UpdateLink(*fresh, &update_error)) {
+                // Re-queue (no loss, no double count) and continue.
+                requeue_delta(slug, delta);
+                ++failures;
+                last_error = update_error;
+            }
+        } catch (...) {
+            // Non-conforming repository or bad_alloc: keep the delta so the
+            // next cycle can retry, and never propagate.
             requeue_delta(slug, delta);
-            auto log = observability::LoggerFactory::Component(k_log_component);
-            log.warn(
-                "link_store_stats_flush_failed",
-                {{"slug", slug}, {"error", repo_error_name(update_error)}});
+            ++failures;
         }
+    }
+
+    // Any slug not reached before the deadline is dropped (best-effort).
+    for (; entry != pending.end(); ++entry) {
+        ++dropped;
+    }
+
+    // 4. Coalesced logging: one line per cycle, no slug list, no values.
+    if (failures > 0) {
+        auto log = observability::LoggerFactory::Component(k_log_component);
+        log.warn("link_store_stats_flush_failed",
+                 {{"failures", std::to_string(failures)},
+                  {"error", repo_error_name(last_error)}});
+    }
+    if (dropped > 0) {
+        auto log = observability::LoggerFactory::Component(k_log_component);
+        log.warn("link_store_stats_flush_dropped",
+                 {{"dropped", std::to_string(dropped)}});
     }
 }
 
@@ -492,9 +553,16 @@ void RepositoryLinkStore::flusher_loop()
             break;
         }
         // Release the flusher lock across the (potentially slow) flush so
-        // stop_stats_flusher can still signal promptly.
+        // stop_stats_flusher can still signal promptly. Guard the flush so
+        // a throwing repository cannot escape and std::terminate the
+        // process; pending deltas are preserved by drain_pending's per-slug
+        // guard and retried on the next interval.
         lock.unlock();
-        flush_stats();
+        try {
+            flush_stats();
+        } catch (...) {
+            // Swallowed: the flusher thread must survive any flush failure.
+        }
         lock.lock();
     }
 }
@@ -525,9 +593,21 @@ void RepositoryLinkStore::stop_stats_flusher()
         m_flusher_cv_.notify_all();
         m_flusher_thread_.join();
     }
-    // Final drain so a delta accumulated since the last tick is not lost,
-    // including when the flusher was never started (tests, write-through).
-    flush_stats();
+    // Final, time-boxed drain so a delta accumulated since the last tick is
+    // not lost, without letting teardown block unboundedly on slow backend
+    // I/O: persist pending slugs until shutdown_flush_budget (measured on a
+    // steady clock, never the injected IClock) elapses, then drop the rest.
+    // Wrapped in catch(...) so this never throws from the (noexcept)
+    // destructor. Runs even when the flusher was never started (tests,
+    // write-through).
+    try {
+        const auto deadline =
+            std::chrono::steady_clock::now() + m_options_.shutdown_flush_budget;
+        drain_pending(deadline);
+    } catch (...) {
+        // Teardown must never throw; a failed final flush drops its
+        // best-effort deltas.
+    }
 }
 
 }  // namespace app

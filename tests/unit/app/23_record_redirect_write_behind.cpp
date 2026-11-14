@@ -21,11 +21,21 @@
  *     after recovery; a deleted-from-repo link drops its delta.
  *   - The flusher thread persists on its own interval; shutdown/destructor
  *     flush once; thread-safety smoke over 4 threads.
+ *   - Follow-up hardening (02.0/05 security review):
+ *     * Fix 1: the per-slug flush read-modify-write is serialized with
+ *       `update` by the store write mutex, so a concurrent in-process
+ *       disable committed during the flush window is not reverted.
+ *     * Fix 2: a repository that throws from `UpdateLink` does not take
+ *       down an explicit flush, the flusher thread, or the destructor.
+ *     * Fix 4: the final (shutdown) flush is time-boxed by
+ *       `shutdown_flush_budget`; deltas still pending past the deadline are
+ *       dropped and teardown returns promptly.
  */
 #define BOOST_TEST_MODULE RecordRedirectWriteBehind
 #include <atomic>
 #include <chrono>
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <string>
@@ -136,16 +146,23 @@ public:
     }
 };
 
-/// Reads the persisted total_redirects for `slug` from the fake repo.
-std::uint64_t persistedTotal(CountingMetadataRepository& repo,
+/// Reads the persisted total_redirects for `slug` from a fake repo.
+std::uint64_t persistedTotal(FakeMetadataRepository& repo,
                              const std::string& slug)
 {
-    const ::LinkRecord* record = repo.inner->find(slug);
+    const ::LinkRecord* record = repo.find(slug);
     if (record == nullptr) {
         return 0;
     }
     const auto stats = get_stats_attribute(record->attributes);
     return stats.has_value() ? stats->total_redirects : 0;
+}
+
+/// Reads the persisted total_redirects for `slug` via the counting wrapper.
+std::uint64_t persistedTotal(CountingMetadataRepository& repo,
+                             const std::string& slug)
+{
+    return persistedTotal(*repo.inner, slug);
 }
 
 /**
@@ -671,4 +688,285 @@ BOOST_AUTO_TEST_CASE(concurrent_record_redirect_sums_correctly)
         sum += persistedTotal(*repo, slug);
     }
     BOOST_CHECK_EQUAL(sum, 2000u);
+}
+
+namespace
+{
+
+/**
+ * @brief `::IMetadataRepository` wrapper that can (a) fire a one-shot hook
+ * inside the first `GetByShortCode` and (b) throw from `UpdateLink`.
+ *
+ * Used by the follow-up hardening tests to drive a deterministic
+ * intra-process race (the hook runs while the flusher holds the store write
+ * lock) and to prove a throwing backend never terminates the flusher or
+ * teardown. All other behavior delegates to `inner`.
+ */
+class HookingMetadataRepository final : public ::IMetadataRepository
+{
+public:
+    ///< Delegate holding the actual records and error knobs.
+    std::shared_ptr<FakeMetadataRepository> inner =
+        std::make_shared<FakeMetadataRepository>();
+
+    ///< Fired exactly once, after the first `GetByShortCode` reads its
+    ///< record (so the hook observes the pre-mutation record). Empty by
+    ///< default.
+    std::function<void(const std::string&)> on_first_get;
+
+    ///< Guards the one-shot `on_first_get` (mutable: set from the const
+    ///< `GetByShortCode`).
+    mutable std::atomic<bool> get_hook_fired {false};
+
+    ///< When true, `UpdateLink` throws before touching `inner`.
+    std::atomic<bool> throw_on_update {false};
+
+    ///< Number of `UpdateLink` entries (incremented even when it throws),
+    ///< so a test can confirm the flusher kept retrying after a throw.
+    std::atomic<int> update_attempts {0};
+
+    bool CreateLink(const ::CreateLinkRequest& request,
+                    const std::string& id,
+                    const std::chrono::system_clock::time_point& now,
+                    ::RepoError* error = nullptr) override
+    {
+        return inner->CreateLink(request, id, now, error);
+    }
+
+    std::optional<::LinkRecord> GetByShortCode(
+        const std::string& short_code,
+        ::RepoError* error = nullptr) const override
+    {
+        auto record = inner->GetByShortCode(short_code, error);
+        if (on_first_get && !get_hook_fired.exchange(true)) {
+            on_first_get(short_code);
+        }
+        return record;
+    }
+
+    std::optional<::LinkRecord> GetById(
+        const std::string& id, ::RepoError* error = nullptr) const override
+    {
+        return inner->GetById(id, error);
+    }
+
+    bool UpdateLink(const ::LinkRecord& record,
+                    ::RepoError* error = nullptr) override
+    {
+        ++update_attempts;
+        if (throw_on_update.load()) {
+            throw std::runtime_error("UpdateLink failure (test)");
+        }
+        return inner->UpdateLink(record, error);
+    }
+
+    bool DeleteLink(const std::string& slug,
+                    ::RepoError* error = nullptr) override
+    {
+        return inner->DeleteLink(slug, error);
+    }
+
+    std::vector<::LinkRecord> ListLinks(
+        const ::ListLinksQuery& query,
+        ::RepoError* error = nullptr) const override
+    {
+        return inner->ListLinks(query, error);
+    }
+
+    bool Exists(const std::string& slug,
+                ::RepoError* error = nullptr) const override
+    {
+        return inner->Exists(slug, error);
+    }
+};
+
+}  // namespace
+
+/**
+ * [Unit][App] Fix 1 (serialize flush with update): a disable committed by
+ * update() while a flush is in its read-modify-write window is NOT reverted.
+ *
+ * Scenario:
+ *   Given a link with one pending redirect delta.
+ *   When flush_stats runs and, inside its GetByShortCode (while the store
+ *   write mutex is held), a second thread calls store.update(disabled).
+ *   Then the disable blocks on the write mutex until the flush's RMW
+ *   finishes and lands afterwards, so the final record stays disabled.
+ *
+ * The hook spins on an atomic the updater sets (a handshake, not a timed
+ * sleep) so the updater is already contending for the write mutex before
+ * the flush proceeds. With the write mutex removed, the two writes race and
+ * the flush can clobber the disable (the former R-1 window), which this test
+ * guards against.
+ *
+ * If this breaks, first check:
+ *   - update() and flush_stats' per-slug RMW both hold m_write_mutex_.
+ *   - the lock is taken around GetByShortCode..UpdateLink, not just one of
+ *     them.
+ */
+BOOST_AUTO_TEST_CASE(flush_rmw_is_serialized_with_concurrent_disable)
+{
+    ManualClock clock(kT0);
+    auto repo = std::make_shared<HookingMetadataRepository>();
+    auto l1 =
+        std::make_shared<ExpiringLinkCache>(clock, std::chrono::seconds(0));
+    RepositoryLinkStore store(repo, nullptr, l1, clock, writeBehind());
+
+    BOOST_REQUIRE(store.create(makeLink("aaa")));
+    store.recordRedirect(makeLink("aaa"));  // one pending delta
+
+    std::atomic<bool> updater_started {false};
+    std::thread updater;
+    repo->on_first_get = [&](const std::string&)
+    {
+        // Runs inside the flush's GetByShortCode while m_write_mutex_ is
+        // held. Launch a concurrent disable that must block on the write
+        // mutex until this flush's RMW completes.
+        updater = std::thread(
+            [&]
+            {
+                updater_started.store(true);
+                Link disabled = makeLink("aaa");
+                disabled.enabled = false;
+                store.update(disabled);
+            });
+        while (!updater_started.load()) {
+            std::this_thread::yield();  // handshake, not a sleep
+        }
+    };
+
+    store.flush_stats();  // holds m_write_mutex_ across the RMW
+    updater.join();  // the disable lands strictly after the RMW
+
+    const auto reloaded = store.findBySlug("aaa");
+    BOOST_REQUIRE(reloaded.has_value());
+    BOOST_CHECK_EQUAL(reloaded->enabled, false);  // disable survived
+}
+
+/**
+ * [Unit][App] Fix 2 (harden the flusher): a repository that throws from
+ * UpdateLink does not propagate out of an explicit flush, and the delta is
+ * re-queued and persisted after recovery.
+ *
+ * If this breaks, first check:
+ *   - drain_pending wraps each slug's RMW in catch(...) and requeues.
+ */
+BOOST_AUTO_TEST_CASE(throwing_update_does_not_escape_flush)
+{
+    ManualClock clock(kT0);
+    auto repo = std::make_shared<HookingMetadataRepository>();
+    auto l1 =
+        std::make_shared<ExpiringLinkCache>(clock, std::chrono::seconds(0));
+    RepositoryLinkStore store(repo, nullptr, l1, clock, writeBehind());
+
+    BOOST_REQUIRE(store.create(makeLink("aaa")));
+    store.recordRedirect(makeLink("aaa"));
+
+    repo->throw_on_update = true;
+    BOOST_CHECK_NO_THROW(store.flush_stats());  // exception contained
+    BOOST_CHECK_EQUAL(persistedTotal(*repo->inner, "aaa"), 0u);  // not written
+
+    repo->throw_on_update = false;
+    store.flush_stats();  // re-queued delta persists now
+    BOOST_CHECK_EQUAL(persistedTotal(*repo->inner, "aaa"), 1u);
+}
+
+/**
+ * [Unit][App] Fix 2: a throwing UpdateLink does not take down the flusher
+ * thread (it keeps retrying) and does not terminate on destruction.
+ *
+ * Uses a real system clock and the smallest non-zero interval, polling the
+ * atomic UpdateLink-attempt counter with a bounded timeout (the same pattern
+ * as the plain flusher-thread test).
+ *
+ * If this breaks, first check:
+ *   - flusher_loop wraps flush_stats in catch(...).
+ *   - the destructor's final (time-boxed) flush is wrapped too.
+ */
+BOOST_AUTO_TEST_CASE(throwing_update_does_not_kill_flusher_or_destructor)
+{
+    SystemClock clock;
+    auto repo = std::make_shared<HookingMetadataRepository>();
+    auto l1 =
+        std::make_shared<ExpiringLinkCache>(clock, std::chrono::seconds(0));
+
+    RepositoryLinkStoreOptions options;
+    options.stats_flush_interval = std::chrono::seconds(1);
+
+    {
+        RepositoryLinkStore store(repo, nullptr, l1, clock, options);
+        BOOST_REQUIRE(store.create(makeLink("aaa")));
+        store.recordRedirect(makeLink("aaa"));
+
+        repo->throw_on_update = true;
+        store.start_stats_flusher();
+
+        // The thread must survive the first throw and try again.
+        const auto deadline =
+            std::chrono::steady_clock::now() + std::chrono::seconds(8);
+        while (repo->update_attempts.load() < 2
+               && std::chrono::steady_clock::now() < deadline)
+        {
+            std::this_thread::sleep_for(std::chrono::milliseconds(20));
+        }
+        BOOST_CHECK_GE(repo->update_attempts.load(), 2);
+
+        // Recovery: once the backend stops throwing the delta persists.
+        repo->throw_on_update = false;
+        const auto deadline2 =
+            std::chrono::steady_clock::now() + std::chrono::seconds(8);
+        while (persistedTotal(*repo->inner, "aaa") == 0u
+               && std::chrono::steady_clock::now() < deadline2)
+        {
+            std::this_thread::sleep_for(std::chrono::milliseconds(20));
+        }
+        BOOST_CHECK_EQUAL(persistedTotal(*repo->inner, "aaa"), 1u);
+
+        // Leave a delta pending and re-arm the throw so the destructor's
+        // final flush also hits a throwing UpdateLink; it must not
+        // terminate.
+        store.recordRedirect(makeLink("aaa"));
+        repo->throw_on_update = true;
+    }  // destructor -> stop_stats_flusher -> time-boxed final flush
+
+    BOOST_CHECK(true);  // reaching here proves no std::terminate
+}
+
+/**
+ * [Unit][App] Fix 4 (time-box the shutdown flush): with a zero
+ * shutdown_flush_budget every pending slug is past the deadline, so the
+ * final flush drops them all (no UpdateLink) and teardown returns promptly.
+ *
+ * The positive path (default budget persists all pending deltas) is covered
+ * by stop_and_destructor_flush_pending_deltas.
+ *
+ * If this breaks, first check:
+ *   - stop_stats_flusher computes a steady-clock deadline from
+ *     shutdown_flush_budget and drain_pending breaks the loop past it.
+ */
+BOOST_AUTO_TEST_CASE(shutdown_flush_time_box_drops_pending_past_budget)
+{
+    ManualClock clock(kT0);
+    auto repo = std::make_shared<CountingMetadataRepository>();
+    auto l1 =
+        std::make_shared<ExpiringLinkCache>(clock, std::chrono::seconds(0));
+
+    RepositoryLinkStoreOptions options;
+    options.stats_flush_interval = std::chrono::seconds(30);  // write-behind
+    options.shutdown_flush_budget = std::chrono::milliseconds(0);  // no budget
+    RepositoryLinkStore store(repo, nullptr, l1, clock, options);
+
+    for (int i = 0; i < 5; ++i) {
+        const std::string slug = "slug" + std::to_string(i);
+        BOOST_REQUIRE(store.create(makeLink(slug)));
+        store.recordRedirect(makeLink(slug));
+    }
+
+    store.stop_stats_flusher();  // time-boxed final flush, zero budget
+
+    BOOST_CHECK_EQUAL(repo->update_calls.load(), 0);  // nothing persisted
+    for (int i = 0; i < 5; ++i) {
+        BOOST_CHECK_EQUAL(persistedTotal(*repo, "slug" + std::to_string(i)),
+                          0u);
+    }
 }

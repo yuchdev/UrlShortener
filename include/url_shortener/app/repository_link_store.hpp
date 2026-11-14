@@ -38,6 +38,18 @@ struct RepositoryLinkStoreOptions
     ///< write-through in subtask 05. Carried here so the type is
     ///< stable across subtasks.
     std::chrono::seconds stats_flush_interval {30};
+
+    ///< Wall-clock budget for the *final* (shutdown) stats flush run by
+    ///< `stop_stats_flusher`/the destructor. The shutdown flush does one
+    ///< repository session per pending slug, each of which may block on a
+    ///< backend `busy_timeout`; to bound teardown latency the shutdown
+    ///< flush stops once this budget elapses (measured on a *steady*
+    ///< clock, never the injected `IClock`), drops the remaining pending
+    ///< deltas (stats are best-effort, D12) and logs one coalesced warn.
+    ///< Does **not** apply to the periodic flusher-thread flushes, which
+    ///< run to completion. The 5 s default is a safety bound; tests set a
+    ///< tiny value to exercise the drop path deterministically.
+    std::chrono::milliseconds shutdown_flush_budget {std::chrono::seconds(5)};
 };
 
 /**
@@ -110,6 +122,32 @@ struct RepositoryLinkStoreOptions
  * the only thread that calls the repository from inside `flush_stats`
  * during normal operation; the request threads never do.
  *
+ * Two mutexes, with a strict lock order:
+ * 1. `m_write_mutex_` (coarse "store write" lock) is held by `create`,
+ *    `update`, and by `flush_stats` **around each slug's**
+ *    read-modify-write (per slug, released between slugs so a long flush
+ *    never blocks writers for long). It serializes the flusher's
+ *    `GetByShortCode -> patch lnk_stats -> UpdateLink` against a
+ *    `create`/`update` of the same slug, so an in-process `disable`/
+ *    soft-delete committed by `update` can no longer be reverted by a
+ *    concurrent flush that read the record just before (the former R-1
+ *    window is now closed *within one process*). `recordRedirect` and
+ *    the read paths (`findBySlug`/`findById`/`merge_pending_stats`) do
+ *    **not** take `m_write_mutex_`: the redirect fast path stays O(1)
+ *    with no new lock (C10), and reads remain independent of writers
+ *    (last-writer-wins on the repository).
+ * 2. `m_stats_mutex_` (fine "pending map" lock) guards `m_pending_` only.
+ *
+ * Lock order is `m_write_mutex_` **then** `m_stats_mutex_`, and never the
+ * reverse: the only nesting is `flush_stats`/`create`/`update` holding
+ * `m_write_mutex_` and then briefly taking `m_stats_mutex_` (via the swap
+ * / `requeue_delta` / `merge`). `m_stats_mutex_` is never held while
+ * taking `m_write_mutex_` and never held across repository I/O. This
+ * makes the pair deadlock-free. The *cross-process* lost-update window
+ * (two processes flushing the same slug) is unaffected and remains
+ * accepted per decision-log D12 (amended) — the write mutex is
+ * process-local only.
+ *
  * Lifecycle (thread ownership): the flusher thread is **not** started by
  * the constructor. The composition root calls `start_stats_flusher()`
  * after wiring and `stop_stats_flusher()` before teardown; the
@@ -180,8 +218,12 @@ public:
      * `::IMetadataRepository::CreateLink(request, link.id, now)`; (4)
      * on success, populate L1 with a fresh copy (`m_l1_->set`) and
      * `Delete(link.slug)` on the configured `::ICacheStore`
-     * best-effort. No lock is taken; slug uniqueness is enforced
-     * atomically by the repository.
+     * best-effort. Steps (3) and (4) run under `m_write_mutex_` so the
+     * persist + invalidation is atomic with respect to a concurrent
+     * `update`/`flush_stats` of the same slug (lock order: this is the
+     * outer lock, see the class thread-safety notes); slug uniqueness is
+     * still enforced atomically by the repository. The redirect fast path
+     * never takes this lock.
      * @param link Fully-formed, already-validated link to store;
      * `link.id`, `link.slug`, and `link.created_at` must be set.
      * URL/SSRF/slug validation is the caller's responsibility
@@ -273,9 +315,14 @@ public:
      * committed (e.g. a post-commit timeout), so the next read must
      * reload rather than serve a value older than this write; the shared
      * cache holds non-expiring links without a TTL, so skipping it would
-     * let a lost disable/delete be served indefinitely. No lock is taken;
-     * concurrent updates are last-writer-wins (version is not
-     * persisted by the SQL backend).
+     * let a lost disable/delete be served indefinitely. Steps (2) and (3)
+     * run under `m_write_mutex_` so this write + invalidation cannot
+     * interleave with the flusher's read-modify-write of the same slug
+     * (closing the in-process R-1 window; a concurrent flush can no longer
+     * revert this disable/soft-delete). Concurrent updates from different
+     * callers are still last-writer-wins (version is not persisted by the
+     * SQL backend), and the *cross-process* flush race remains accepted
+     * per decision-log D12.
      * @param link Fully-formed, already-validated updated link; must
      * already exist in the repository (matched by `link.slug`).
      * Validation stays upstream (threat model T-40).
@@ -328,23 +375,31 @@ public:
      * 1. Swap `m_pending_` out under `m_stats_mutex_` into a local map, so
      *    new deltas accumulate in a fresh map while this flush runs and
      *    the lock is not held across any repository call.
-     * 2. For each slug: read the record fresh with
-     *    `m_repo_->GetByShortCode` (bypassing L1). If it is absent with no
-     *    backend error, the link was deleted upstream — drop the delta. If
-     *    it is absent because of a backend error, re-queue the delta
-     *    (merge back into `m_pending_`) and continue. Otherwise read the
-     *    record's current stats (`get_stats_attribute`), **add** the delta
-     *    to all three counters and advance `last_accessed_at`, write just
-     *    that one attribute back (`set_stats_attribute`) and persist with
-     *    `m_repo_->UpdateLink`. Because only `lnk_stats` on a *fresh*
-     *    record is touched, a flush cannot revert a concurrent
-     *    `enabled`/`deleted_at`/tag change that landed since the redirect
-     *    read its snapshot — except inside the narrow read-then-write
-     *    window (race R-1, cross-process; accepted as stats are
-     *    display-only). On `UpdateLink` failure the delta is re-queued
-     *    (no loss, no double count) and the next slug is processed.
-     * 3. Logs only the slug and backend error name on failure — never
-     *    record values.
+     * 2. For each slug, **under `m_write_mutex_`** (taken and released per
+     *    slug so a long flush does not block writers): read the record
+     *    fresh with `m_repo_->GetByShortCode` (bypassing L1). If it is
+     *    absent with no backend error, the link was deleted upstream —
+     *    drop the delta. If it is absent because of a backend error,
+     *    re-queue the delta (merge back into `m_pending_`) and continue.
+     *    Otherwise read the record's current stats (`get_stats_attribute`),
+     *    **add** the delta to all three counters and advance
+     *    `last_accessed_at`, write just that one attribute back
+     *    (`set_stats_attribute`) and persist with `m_repo_->UpdateLink`.
+     *    Holding `m_write_mutex_` across this read-modify-write serializes
+     *    it with `create`/`update`, so an in-process `enabled`/`deleted_at`
+     *    change can no longer be reverted (the former R-1 window is closed
+     *    within one process); the *cross-process* flush race is unaffected
+     *    and accepted per D12. On `UpdateLink` failure the delta is
+     *    re-queued (no loss, no double count) and the next slug is
+     *    processed.
+     * 3. Every per-slug body is wrapped so a throwing repository (or
+     *    `std::bad_alloc`) re-queues that slug's delta and continues
+     *    instead of propagating; the flusher thread and the destructor
+     *    never see an exception from here.
+     * 4. Failures are coalesced: at most **one** warn line per flush cycle
+     *    (`link_store_stats_flush_failed`) summarizing the failure count
+     *    and the last backend error name — never a per-slug line and never
+     *    any record value.
      */
     void flush_stats();
 
@@ -365,11 +420,18 @@ public:
      * `flush_stats()`.
      *
      * Sets the stop flag, notifies the condition variable, joins the
-     * thread, then runs one final `flush_stats()` so a delta accumulated
-     * since the last tick is not lost. Idempotent and safe to call when
-     * the flusher was never started (it still performs the final flush).
-     * Also invoked by the destructor. Intended to run from the owning
-     * (shutdown) thread only.
+     * thread, then runs one final, **time-boxed** flush so a delta
+     * accumulated since the last tick is not lost without letting teardown
+     * block unboundedly on slow backend I/O. The final flush persists
+     * pending slugs until `m_options_.shutdown_flush_budget` elapses
+     * (measured on a steady clock); any slugs still pending past the
+     * deadline are dropped (stats are best-effort, D12) and one coalesced
+     * warn (`link_store_stats_flush_dropped`) is logged. The whole final
+     * flush is wrapped in a `catch (...)` so this never throws — safe to
+     * call from the (implicitly `noexcept`) destructor. Idempotent and
+     * safe to call when the flusher was never started (it still performs
+     * the final flush). Also invoked by the destructor. Intended to run
+     * from the owning (shutdown) thread only.
      */
     void stop_stats_flusher();
 
@@ -425,10 +487,30 @@ private:
     void requeue_delta(const std::string& slug, const StatsDelta& delta);
 
     /**
+     * @brief Shared body of `flush_stats()` (no deadline) and the
+     * time-boxed shutdown flush.
+     *
+     * Implements the algorithm documented on `flush_stats`. When @p
+     * deadline is set, the per-slug loop stops once the steady clock
+     * reaches it and the remaining pending deltas are dropped with one
+     * coalesced `link_store_stats_flush_dropped` warn; when it is
+     * `std::nullopt` every pending slug is processed (periodic/explicit
+     * flush). Takes `m_write_mutex_` per slug; never propagates a
+     * repository exception (each slug body is guarded, re-queuing on
+     * failure).
+     * @param deadline Steady-clock instant past which remaining pending
+     * slugs are dropped, or `std::nullopt` to process all of them.
+     */
+    void drain_pending(
+        std::optional<std::chrono::steady_clock::time_point> deadline);
+
+    /**
      * @brief Flusher-thread body: waits on `m_flusher_cv_` with timeout
      * `stats_flush_interval` and calls `flush_stats()` on each timeout,
      * exiting promptly when the stop flag is set (the final flush is run
-     * by `stop_stats_flusher`, not here).
+     * by `stop_stats_flusher`, not here). The `flush_stats()` call is
+     * wrapped in a `catch (...)` so a throwing repository can never
+     * propagate out of the thread and `std::terminate` the process.
      */
     void flusher_loop();
 
@@ -448,6 +530,15 @@ private:
 
     ///< Scan/flush tuning.
     RepositoryLinkStoreOptions m_options_;
+
+    ///< Coarse "store write" lock serializing `create`, `update`, and the
+    ///< flusher's per-slug read-modify-write in `flush_stats`. Outer lock
+    ///< in the `m_write_mutex_ -> m_stats_mutex_` order (never the
+    ///< reverse). Deliberately **not** taken by `recordRedirect` or the
+    ///< read paths, keeping the redirect fast path lock-free (C10).
+    ///< Process-local: it does not close the cross-process flush race
+    ///< (D12).
+    std::mutex m_write_mutex_;
 
     ///< Guards `m_pending_` only; a short lock taken by `recordRedirect`,
     ///< `merge_pending_stats`, `requeue_delta`, and the swap in
