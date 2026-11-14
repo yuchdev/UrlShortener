@@ -7,15 +7,18 @@
  * [Contract][Metadata] GetById returns a created record, with
  * short_code/target_url matching, on every backend harness.
  */
+// Each case uses its own slug/id: the Postgres harness shares one
+// database across cases (no per-case reset), unlike the in-memory and
+// SQLite harnesses.
 BOOST_AUTO_TEST_CASE(contract_get_by_id_found)
 {
     for (auto& h : MakeMetadataHarnesses()) {
         BOOST_REQUIRE(h.repo->CreateLink(
-            BasicRequest("abc123", "https://a"), "id1", h.clock->now()));
-        auto rec = h.repo->GetById("id1");
+            BasicRequest("gbi001", "https://a"), "gbid-1", h.clock->now()));
+        auto rec = h.repo->GetById("gbid-1");
         BOOST_REQUIRE_MESSAGE(rec.has_value(), h.name << ": id1 not found");
-        BOOST_TEST(rec->id == "id1");
-        BOOST_TEST(rec->short_code == "abc123");
+        BOOST_TEST(rec->id == "gbid-1");
+        BOOST_TEST(rec->short_code == "gbi001");
         BOOST_TEST(rec->target_url == "https://a");
     }
 }
@@ -44,13 +47,13 @@ BOOST_AUTO_TEST_CASE(contract_get_by_id_inactive_returned)
 {
     for (auto& h : MakeMetadataHarnesses()) {
         BOOST_REQUIRE(h.repo->CreateLink(
-            BasicRequest("abc123", "https://a"), "id1", h.clock->now()));
-        auto rec = h.repo->GetByShortCode("abc123");
+            BasicRequest("gbi002", "https://a"), "gbid-2", h.clock->now()));
+        auto rec = h.repo->GetByShortCode("gbi002");
         BOOST_REQUIRE(rec.has_value());
         rec->is_active = false;
         BOOST_REQUIRE(h.repo->UpdateLink(*rec));
 
-        auto fetched = h.repo->GetById("id1");
+        auto fetched = h.repo->GetById("gbid-2");
         BOOST_REQUIRE_MESSAGE(fetched.has_value(),
                               h.name << ": inactive id1 not returned");
         BOOST_TEST(fetched->is_active == false);
@@ -65,15 +68,15 @@ BOOST_AUTO_TEST_CASE(contract_get_by_id_after_update)
 {
     for (auto& h : MakeMetadataHarnesses()) {
         BOOST_REQUIRE(h.repo->CreateLink(
-            BasicRequest("abc123", "https://a"), "id1", h.clock->now()));
-        auto rec = h.repo->GetByShortCode("abc123");
+            BasicRequest("gbi003", "https://a"), "gbid-3", h.clock->now()));
+        auto rec = h.repo->GetByShortCode("gbi003");
         BOOST_REQUIRE(rec.has_value());
         rec->target_url = "https://b";
         BOOST_REQUIRE(h.repo->UpdateLink(*rec));
 
-        auto fetched = h.repo->GetById("id1");
+        auto fetched = h.repo->GetById("gbid-3");
         BOOST_REQUIRE(fetched.has_value());
-        BOOST_TEST(fetched->id == "id1");
+        BOOST_TEST(fetched->id == "gbid-3");
         BOOST_TEST(fetched->target_url == "https://b");
     }
 }
@@ -86,9 +89,9 @@ BOOST_AUTO_TEST_CASE(contract_get_by_id_after_delete)
 {
     for (auto& h : MakeMetadataHarnesses()) {
         BOOST_REQUIRE(h.repo->CreateLink(
-            BasicRequest("abc123", "https://a"), "id1", h.clock->now()));
-        BOOST_REQUIRE(h.repo->DeleteLink("abc123"));
-        BOOST_TEST(!h.repo->GetById("id1").has_value());
+            BasicRequest("gbi004", "https://a"), "gbid-4", h.clock->now()));
+        BOOST_REQUIRE(h.repo->DeleteLink("gbi004"));
+        BOOST_TEST(!h.repo->GetById("gbid-4").has_value());
     }
 }
 
