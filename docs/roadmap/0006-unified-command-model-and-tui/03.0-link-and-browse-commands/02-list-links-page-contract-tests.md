@@ -34,6 +34,7 @@ is not persisted) explicit in a test instead of a surprise.
 | `tests/contract/metadata/10_list_page_window_and_total.cpp` | create | Offset/limit/total boundaries, scan behavior with many rows. |
 | `tests/contract/metadata/11_list_page_flags_and_predicate.cpp` | create | `include_inactive`, `owner`, `extra_filter` on all backends; `include_deleted` in-memory only. |
 | `sources.cmake` | modify | Append the three files to `CONTRACT_METADATA_SOURCES` (currently ends at `08_concurrent_create_one_wins.cpp`). |
+| `tests/contract/metadata/metadata_contract_common.hpp` | modify | **(amended 2026-11-14, threat model T-50)** Add a per-harness reset helper (`ResetMetadataHarness(MetadataHarness&)`): in-memory replaces the `repo` with a fresh `InMemoryMetadataRepository`; SQLite deletes/recreates the temp file; Postgres issues `DELETE FROM links` through the `PostgresSessionFactory`. Mirrors the existing SQLite file-reset in `MakeMetadataHarnesses()` and gives the Postgres harness per-case isolation. |
 
 No `CMakeLists.txt` change: `register_labeled_cpp_tests(CONTRACT_METADATA_SOURCES "contract")`
 already exists.
@@ -74,6 +75,28 @@ Real symbols used: `IMetadataRepository::CreateLink(const CreateLinkRequest&, co
    with `deleted_at` set and assert `include_deleted` true/false.
 5. Append the files to `CONTRACT_METADATA_SOURCES`; build and run.
 6. If any SQL harness fails because of data not backend logic, fix the test, never the helper.
+   - **(amended 2026-11-14, threat model T-50)** Qualified: step 6 covers **only** test-data mistakes inside the test file
+     (records less than 1 s apart, a wrong expected vector, a reused slug). It does **not** authorize weakening, skipping, or
+     owner-scoping-away a case to make a backend pass. If a case fails on exactly one backend because that backend's SQL is
+     wrong - as with the Postgres owner-filter defect fixed in subtask 01 - **fix the backend, not the test.** A `continue`/skip
+     is allowed only for a *documented capability gap* (e.g. SQL not persisting `deleted_at`), never to hide a product defect.
+7. **(amended 2026-11-14, threat model T-50) Run the `owner` case on Postgres and assert it narrows.** In 11, the `owner`
+   narrowing case runs on **every** backend including Postgres (no `continue` on SQL for it). Seed two owners; query
+   `owner = o1` and assert the returned slug set is exactly o1's rows and `total` equals o1's count. This is a real assertion
+   that would fail against the pre-fix `(:owner_id IS NULL OR owner_id = :owner_id)` bind, so it guards subtask 01's fix. Use a
+   per-run-unique owner value (e.g. suffix the test name) so a shared Postgres database cannot accumulate same-owner rows
+   across runs.
+8. **(amended 2026-11-14, threat model T-50) Postgres per-case isolation.** The Postgres harness shares one database with no
+   reset, so repeated slugs across cases collide and stale rows corrupt `total`/paging assertions. Wrap 09/10/11 cases in a
+   Boost per-case fixture that calls the new `ResetMetadataHarness` on every harness **before each case**; for the Postgres
+   harness this issues `DELETE FROM links`, mirroring the SQLite file-reset. **Chosen approach and why:** a per-case
+   `DELETE FROM links` is picked over the two alternatives because it fits the existing fixed-dialect harness with the
+   smallest change - (a) a *unique table prefix* is rejected because `PostgresSqlDialect` hardcodes the unqualified table
+   name `links` in every statement, so a prefix would have to thread through the whole dialect; (b) a *unique schema per
+   harness* is rejected because it would need the `PostgresSessionFactory` to `CREATE SCHEMA`, set `search_path` and run DDL,
+   touching production wiring for a test concern. A per-case `DELETE FROM links` makes absolute-`total` and owner-narrowing
+   assertions deterministic regardless of execution order or prior runs, and - crucially - does **not** rely on the owner
+   filter that is itself under test.
 
 ## Commands
 
@@ -97,6 +120,11 @@ Windows/multi-config: add `--config Debug` and `-C Debug`. Contract tests run se
 | `tests/contract/metadata/10_list_page_window_and_total.cpp` | `metadata__10_list_page_window_and_total` | contract | pages of 3 over 7 rows; `total` stable across pages; `offset == total`; `offset > total`; `limit == 0`; single-row repository. |
 | `tests/contract/metadata/11_list_page_flags_and_predicate.cpp` | `metadata__11_list_page_flags_and_predicate` | contract | `include_inactive` true/false; `owner`; `extra_filter` on an attribute with `total` counted after it; predicate rejecting everything; `include_deleted` (in-memory only, named skip on SQL). |
 
+**(amended 2026-11-14, threat model T-50)** For 11, the `owner` case additionally **runs on the `postgres` harness** (when the
+DSN is set) and asserts the filter narrows to exactly o1's rows with a matching `total` (guarding subtask 01's owner-bind
+fix); only `include_deleted` keeps its named in-memory-only skip. Every case in 09/10/11 is reset per case via the new
+`ResetMetadataHarness` fixture, so the `postgres` harness starts each case from an empty `links` table.
+
 Manual check: with Postgres available, set `URL_SHORTENER_TEST_POSTGRES_DSN` and confirm the
 harness list contains `postgres` (print `h.name` once with `BOOST_TEST_MESSAGE`).
 
@@ -105,6 +133,9 @@ harness list contains `postgres` (print `h.name` once with `BOOST_TEST_MESSAGE`)
 - Tests exercise only the port (`IMetadataRepository`), never SQL or SOCI directly.
 - Deterministic time: only `ManualClock`; no `std::chrono::system_clock::now()` in assertions.
 - Do not weaken a case to make SQL pass; skip with a named reason instead.
+- **(amended 2026-11-14, threat model T-50)** A named skip is for a *documented capability gap* only (e.g. SQL not persisting
+  `deleted_at`). The `owner` case must **not** be skipped on Postgres: it runs and asserts narrowing on every backend. A
+  single-backend failure caused by a backend SQL defect is fixed in the backend (subtask 01), never masked by a skip.
 - Repo test conventions: numeric prefix continuing the directory (`09`, `10`, `11`),
   Boost.Test, `BOOST_TEST_MODULE` defined per file.
 
@@ -116,6 +147,9 @@ harness list contains `postgres` (print `h.name` once with `BOOST_TEST_MESSAGE`)
    against literal expected vectors, not against another backend).
 3. `ctest -L contract` is green (no interference with the existing eight contract tests).
 4. The `include_deleted` case is skipped on SQL with a comment referencing Task 02.0.
+5. **(amended 2026-11-14, threat model T-50)** With `URL_SHORTENER_TEST_POSTGRES_DSN` set, the `owner` case passes on the
+   `postgres` harness (filter narrows to o1's rows and `total`), and running `ctest -L contract` twice in succession is green
+   both times - proving the per-case `ResetMetadataHarness` isolation leaves no stale rows between cases or runs.
 
 ## Out of scope / risks
 

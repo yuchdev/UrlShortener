@@ -296,3 +296,30 @@ or thread, collapsing the former get+set into one locked lookup-and-mutate):
   lose a counter as D12 described. Decided with the user: a store-level write
   mutex shared by the flush and `update()` closes the same-process race; the
   cross-process window stays accepted. D12 and threat T-33 amended to say so.
+
+**2026-11-14 (threat-model amendments, pre-implementation 03.0 T-50, MEDIUM).**
+Applied the MEDIUM follow-up from
+[the 03.0 threat model](/docs/security/0006-03.0-link-and-browse-commands-threat-model.md)
+(PASS_WITH_FOLLOWUP) as additive spec amendments; no decision D1-D16 or contract
+C1-C11 changed, Depends on/Blocks headers unchanged:
+
+- *2026-11-14, 03.0/01 (T-50):* spec 01 now owns the Postgres `ListLinks`
+  owner-filter defect. Root-caused the `metadata__06` Postgres failure to
+  `PostgresSqlDialect::ListSql()` repeating the named parameter `:owner_id`
+  (`(:owner_id IS NULL OR owner_id = :owner_id)`) while `PostgresSession::List`
+  binds it once, so SOCI's second positional placeholder is unbound and an
+  owner-scoped query returns 0 rows (SQLite tolerates the repeat). Amended to fix
+  it with a single-use `has_owner` guard `(:has_owner = 0 OR owner_id = :owner_id)`
+  mirroring 03.0/04, carved out the one allowed dialect/session edit against the
+  "no SQL change" constraint and success criterion 4, and reaffirmed scan overflow
+  -> `permanent_failure` (never silent truncation, T-56). No API/signature or schema
+  migration; SQLite/in-memory untouched.
+- *2026-11-14, 03.0/02 (T-50):* spec 02 now runs the `owner` narrowing case on
+  the Postgres harness and asserts it narrows (guarding 01's fix), gives the
+  Postgres harness per-case isolation via a new `ResetMetadataHarness` fixture
+  that issues `DELETE FROM links` before each case (chosen over a unique table
+  prefix - dialect hardcodes `links` - and a unique schema - would need
+  `CREATE SCHEMA`/`search_path`/DDL in the session factory), and qualified the
+  "fix the test, never the helper" / "skip with a named reason" instructions so a
+  single-backend failure from a backend SQL defect is fixed in the backend, never
+  masked by weakening or skipping a case.
