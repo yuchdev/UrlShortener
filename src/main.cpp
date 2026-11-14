@@ -91,6 +91,15 @@ int main(int argc, char* argv[])
             return url_shortener::cli::ExitCodeForAppError(
                 url_shortener::app::AppErrorCode::storage_failure);
         }
+        catch (const std::exception&) {
+            // Any other bootstrap failure (e.g. std::logic_error from a
+            // malformed redis_address port) still maps to the storage exit
+            // code; its what() is not known to be value-free, so print a
+            // fixed message instead.
+            std::cerr << "storage backend unavailable\n";
+            return url_shortener::cli::ExitCodeForAppError(
+                url_shortener::app::AppErrorCode::storage_failure);
+        }
 
         // Latch "serving" before any request-handling thread can exist (before
         // CLI dispatch and before HttpServer is constructed), so install()/

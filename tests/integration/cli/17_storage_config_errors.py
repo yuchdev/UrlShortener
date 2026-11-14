@@ -114,6 +114,30 @@ class StorageConfigErrorsTest(CliIntegrationBase):
             self.assertNotIn(cfg, proc.stderr)
             self.assertNotIn("bad_backend.yaml", proc.stderr)
 
+    def test_malformed_redis_port_exits_4_without_echo(self):
+        """A redis cache whose redis_address has a non-numeric port makes the
+        adapter factory throw a non-runtime_error; it must still exit 4 with a
+        fixed message and never echo the address (security review LOW on
+        02.0/12)."""
+        with self.make_tmpdir() as tmpdir:
+            cfg = self._write_cfg(
+                tmpdir,
+                "bad_redis.yaml",
+                "metadata:\n  backend: inmemory\n"
+                "cache:\n  backend: redis\n"
+                "  redis_address: cachehost-marker:notaport\n",
+            )
+            proc = run_cli(
+                self._binary,
+                "link", "get", "--slug", "x",
+                "--storage-config", cfg,
+                cwd=tmpdir,
+            )
+            self.assertEqual(proc.returncode, 4, proc.stderr)
+            self.assertEqual(proc.stdout.strip(), "")
+            self.assertNotIn("cachehost-marker", proc.stderr)
+            self.assertNotIn("notaport", proc.stderr)
+
     def test_sqlite_path_in_missing_directory_backend_unavailable(self):
         """A SQLite path under a nonexistent directory -> exit 4, stderr
         `storage backend unavailable` (no path echoed)."""
