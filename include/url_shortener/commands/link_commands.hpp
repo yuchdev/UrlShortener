@@ -146,4 +146,109 @@ CommandDescriptor make_link_preview_descriptor(
  */
 CommandDescriptor make_link_stats_descriptor(app::LinkCommandService& service);
 
+/**
+ * @brief Builds the `link.delete` command descriptor (catalog 3.1).
+ *
+ * The one definition of the soft-delete operation (milestone contract C1): the
+ * returned descriptor is `write`, `sync`, `mutating`, and does NOT support
+ * `dry_run` (the catalog lists no dry-run mode, so `options.dry_run = true` is
+ * rejected by the registry as `unsupported` before the handler runs, never a
+ * silent real mutation). Its single `slug` argument is decoded by the one
+ * shared lifecycle slug decoder, the handler calls
+ * `app::LinkCommandService::DeleteLink`, and the outcome is projected with
+ * `app::serializeLinkViewJson` via @ref link_view_result. Preserves today's
+ * REST `DELETE /api/v1/links/{slug}` semantics exactly: `deleted_at` and
+ * `updated_at` are set, the enabled flag is untouched, and re-deleting an
+ * already-deleted link succeeds and overwrites `deleted_at`.
+ *
+ * Lifetime: the handler captures `&service`, so @p service must outlive the
+ * @ref CommandRegistry the descriptor is added to. Because the registry is
+ * non-copyable and non-movable and stores the handler, the handler can never
+ * outlive the registry, but the registry itself must not outlive @p service.
+ *
+ * @param service The application service the handler delegates to; must outlive
+ * the registry the descriptor is registered on.
+ * @return A fully populated @ref CommandDescriptor ready for
+ * @ref CommandRegistry::add.
+ */
+CommandDescriptor make_link_delete_descriptor(app::LinkCommandService& service);
+
+/**
+ * @brief Builds the `link.enable` command descriptor (catalog 3.1).
+ *
+ * The one definition of the enable operation (milestone contract C1): the
+ * returned descriptor is `write`, `sync`, `mutating`, and does NOT support
+ * `dry_run` (an `options.dry_run = true` request is rejected by the registry as
+ * `unsupported` before the handler, never a silent real mutation). Its single
+ * `slug` argument is decoded by the one shared lifecycle slug decoder, the
+ * handler calls `app::LinkCommandService::SetLinkEnabled` with the enabled flag
+ * set to `true`, and the outcome is projected with `app::serializeLinkViewJson`
+ * via @ref link_view_result. Preserves today's REST
+ * `POST /api/v1/links/{slug}/enable` semantics exactly, including that enabling
+ * a soft-deleted link succeeds while its computed status stays `deleted`.
+ *
+ * Lifetime: the handler captures `&service`, so @p service must outlive the
+ * @ref CommandRegistry the descriptor is added to. Because the registry is
+ * non-copyable and non-movable and stores the handler, the handler can never
+ * outlive the registry, but the registry itself must not outlive @p service.
+ *
+ * @param service The application service the handler delegates to; must outlive
+ * the registry the descriptor is registered on.
+ * @return A fully populated @ref CommandDescriptor ready for
+ * @ref CommandRegistry::add.
+ */
+CommandDescriptor make_link_enable_descriptor(app::LinkCommandService& service);
+
+/**
+ * @brief Builds the `link.disable` command descriptor (catalog 3.1).
+ *
+ * The one definition of the disable operation (milestone contract C1): the
+ * returned descriptor is `write`, `sync`, `mutating`, and does NOT support
+ * `dry_run` (an `options.dry_run = true` request is rejected by the registry as
+ * `unsupported` before the handler, never a silent real mutation). Its single
+ * `slug` argument is decoded by the one shared lifecycle slug decoder, the
+ * handler calls `app::LinkCommandService::SetLinkEnabled` with the enabled flag
+ * set to `false`, and the outcome is projected with
+ * `app::serializeLinkViewJson` via @ref link_view_result. Preserves today's
+ * REST `POST /api/v1/links/{slug}/disable` semantics exactly.
+ *
+ * Lifetime: the handler captures `&service`, so @p service must outlive the
+ * @ref CommandRegistry the descriptor is added to. Because the registry is
+ * non-copyable and non-movable and stores the handler, the handler can never
+ * outlive the registry, but the registry itself must not outlive @p service.
+ *
+ * @param service The application service the handler delegates to; must outlive
+ * the registry the descriptor is registered on.
+ * @return A fully populated @ref CommandDescriptor ready for
+ * @ref CommandRegistry::add.
+ */
+CommandDescriptor make_link_disable_descriptor(
+    app::LinkCommandService& service);
+
+/**
+ * @brief Builds the `link.restore` command descriptor (catalog 3.1).
+ *
+ * The one definition of the restore operation (milestone contract C1): the
+ * returned descriptor is `write`, `sync`, `mutating`, and does NOT support
+ * `dry_run` (an `options.dry_run = true` request is rejected by the registry as
+ * `unsupported` before the handler, never a silent real mutation). Its single
+ * `slug` argument is decoded by the one shared lifecycle slug decoder, the
+ * handler calls `app::LinkCommandService::RestoreLink`, and the outcome is
+ * projected with `app::serializeLinkViewJson` via @ref link_view_result.
+ * Preserves today's REST `POST /api/v1/links/{slug}/restore` semantics exactly:
+ * only `deleted_at` is cleared (and `updated_at` refreshed).
+ *
+ * Lifetime: the handler captures `&service`, so @p service must outlive the
+ * @ref CommandRegistry the descriptor is added to. Because the registry is
+ * non-copyable and non-movable and stores the handler, the handler can never
+ * outlive the registry, but the registry itself must not outlive @p service.
+ *
+ * @param service The application service the handler delegates to; must outlive
+ * the registry the descriptor is registered on.
+ * @return A fully populated @ref CommandDescriptor ready for
+ * @ref CommandRegistry::add.
+ */
+CommandDescriptor make_link_restore_descriptor(
+    app::LinkCommandService& service);
+
 }  // namespace url_shortener::commands
