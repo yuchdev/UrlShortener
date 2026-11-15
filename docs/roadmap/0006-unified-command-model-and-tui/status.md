@@ -8,7 +8,7 @@ Tracks progress against [plan.md](/docs/roadmap/0006-unified-command-model-and-t
 |------|------|--------|-------|
 | 01.0 | Command model core | ✅ Complete (13/13 subtasks) | 14 (`commands__01`-`14`) |
 | 02.0 | Storage path unification | ✅ Complete (16/16 subtasks, incl. added 02.0/16) | 15 targets (`app__19`-`24`, `metadata__09`, `inmemory__16`, `storage__15` x2, http `30`/`31`, `cli__05`, `cli_03`/`17`/`18`, `e2e_12`) |
-| 03.0 | Link and browse commands | 🔶 In progress (13/18 subtasks) | 7 (+ `memory__17`, `analytics__16`) |
+| 03.0 | Link and browse commands | 🔶 In progress (14/18 subtasks) | 7 (+ `memory__17`, `analytics__16`) |
 | 04.0 | REST and CLI adapters | ⬜ Not started | 0 |
 | 05.0 | Jobs, pair import/export, stdio | ⬜ Not started | 0 |
 | 06.0 | Terminal UI | ⬜ Not started | 0 |
