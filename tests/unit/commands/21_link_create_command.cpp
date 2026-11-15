@@ -369,6 +369,71 @@ BOOST_AUTO_TEST_CASE(too_many_tags_is_invalid_field)
     BOOST_TEST((response.error.code == CommandErrorCode::invalid_field));
 }
 
+// Type: unit (metadata limit, invalid-field category, C3 outer-cap proof).
+// Scenario: exceeding the service metadata-entry limit (50) yields invalid_field
+//   with the service's own fixed message, proving the registry's generous outer
+//   caps (k_collection_max_items=4096) do not pre-empt the service validator; the
+//   51 entries sit far below the outer cap yet above validateMetadata's limit.
+// Boundaries: the service, not the ArgSpec, enforces the 50-entry limit; the
+//   message is validateMetadata's fixed text, never the ArgSpec "<name>: ..."
+//   form; nothing is persisted.
+// On failure first check: did the ArgSpec max_items drop below 50 and start
+//   rejecting first with a different message, or did validateMetadata's limit
+//   or message change?
+BOOST_AUTO_TEST_CASE(too_many_metadata_entries_is_invalid_field)
+{
+    Harness h;
+    std::string metadata = "{";
+    for (int i = 0; i < 51; ++i) {
+        if (i != 0) {
+            metadata += ",";
+        }
+        metadata += "\"k" + std::to_string(i) + "\":\"v\"";
+    }
+    metadata += "}";
+
+    const CommandResponse response = h.run(
+        admin_caller(),
+        create_request(
+            R"({"target_url":"https://example.com/meta","slug":"meta-slug",)"
+            R"("metadata":)"
+            + metadata + "}"));
+
+    BOOST_TEST(!response.ok);
+    BOOST_TEST((response.error.code == CommandErrorCode::invalid_field));
+    BOOST_TEST(response.error.message == "metadata must be flat object with limits");
+    BOOST_TEST(!h.store.findBySlug("meta-slug").has_value());
+}
+
+// Type: unit (campaign field limit, invalid-field category, C3 outer-cap proof).
+// Scenario: a campaign member value over validateCampaign's 128-char per-field
+//   limit yields invalid_field with the service's own fixed message; the 129-char
+//   value sits far below the registry's free-text cap (k_text_max_length=65536),
+//   proving the outer cap does not pre-empt the service validator.
+// Boundaries: the service, not the ArgSpec, enforces the 128-char field limit;
+//   the message is validateCampaign's fixed text, never the ArgSpec "<name>: ..."
+//   form; nothing is persisted.
+// On failure first check: did the campaign field ArgSpec max_length drop below
+//   128 and reject first with a different message, or did validateCampaign's
+//   limit or message change?
+BOOST_AUTO_TEST_CASE(oversized_campaign_field_is_invalid_field)
+{
+    Harness h;
+    const std::string long_name(129, 'x');
+
+    const CommandResponse response = h.run(
+        admin_caller(),
+        create_request(
+            R"({"target_url":"https://example.com/camp","slug":"camp-slug",)"
+            R"("campaign":{"name":")"
+            + long_name + R"("}})"));
+
+    BOOST_TEST(!response.ok);
+    BOOST_TEST((response.error.code == CommandErrorCode::invalid_field));
+    BOOST_TEST(response.error.message == "campaign must be valid object");
+    BOOST_TEST(!h.store.findBySlug("camp-slug").has_value());
+}
+
 // Type: unit (bad timestamp).
 // Scenario: a non-RFC3339 expires_at is rejected with invalid_field (the
 //   timestamp ArgSpec gates it before the service even runs).
