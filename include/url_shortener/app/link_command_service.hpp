@@ -649,6 +649,25 @@ public:
      */
     Result<LinkView> PreviewLink(const GetLinkQuery& query) const;
 
+    /**
+     * @brief Projects a `Link` into the same `LinkView` every query and
+     * command method returns, for callers that already hold a decoded link.
+     *
+     * Public, thin wrapper over the private `toView`: it computes `short_url`
+     * from `config_` and `status` via `resolveLinkStatus` exactly as `GetLink`
+     * does, so a view produced here is byte-identical (after
+     * `serializeLinkViewJson`) to the one `GetLink` would return for the same
+     * link. Used by `RepositoryLinkLister` (and the legacy lister) so list
+     * items can never disagree with `link.get` about a link's projection or
+     * status. Performs no storage access and does not mutate this service.
+     *
+     * @param link Already-decoded link (e.g. from `record_to_link`) to
+     * project; taken by const reference and not retained.
+     * @return The corresponding `LinkView`, identical to the `GetLink`
+     * projection of the same link.
+     */
+    LinkView ViewOf(const Link& link) const;
+
 private:
     /**
      * @brief Shared create path for `CreateLink` and `ValidateCreateLink`.

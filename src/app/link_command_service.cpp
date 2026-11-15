@@ -343,6 +343,11 @@ Result<LinkStatsView> LinkCommandService::GetLinkStats(
     return stats_reader_.read(query);
 }
 
+LinkView LinkCommandService::ViewOf(const Link& link) const
+{
+    return toView(link);
+}
+
 LinkView LinkCommandService::toView(const Link& link) const
 {
     LinkView view;
