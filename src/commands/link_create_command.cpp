@@ -29,8 +29,8 @@ namespace
 constexpr std::size_t k_text_max_length = 65536;
 
 /// Per-arg item cap for the list/map arguments (contract C3): large enough that
-/// the registry never rejects input the service's `validateTags`/
-/// `validateMetadata` would otherwise classify with their own messages.
+/// the registry never rejects input the service's tag and metadata
+/// validators would otherwise classify with their own messages.
 constexpr std::size_t k_collection_max_items = 4096;
 
 /**
