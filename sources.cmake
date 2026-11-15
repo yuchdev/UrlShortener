@@ -83,6 +83,7 @@ set(URL_SHORTENER_SOURCES
       tests/unit/core/06_slug_collision_retry_test.cpp
       tests/unit/core/07_expiry_logic_test.cpp
       tests/unit/core/08_redirect_status_test.cpp
+      tests/unit/core/09_json_escape_hardening_test.cpp
   )
 
   set(LINK_MANAGEMENT_UNIT_SOURCES
@@ -330,6 +331,8 @@ set(URL_SHORTENER_SOURCES
       tests/unit/app/43_repository_link_lister.cpp
       tests/unit/app/44_legacy_link_lister.cpp
       tests/unit/app/45_table_catalog.cpp
+      tests/unit/app/46_links_table_source.cpp
+      tests/unit/app/47_click_events_table_source.cpp
   )
 
   set(CLI_UNIT_SOURCES
@@ -502,6 +505,8 @@ set(URL_SHORTENER_SOURCES
       ${CMAKE_CURRENT_SOURCE_DIR}/src/app/repository_link_store.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/app/link_lister.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/app/table_catalog.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/app/links_table_source.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/app/click_events_table_source.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/app/repository_link_lister.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/app/legacy_link_lister.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/app/link_backend.cpp
