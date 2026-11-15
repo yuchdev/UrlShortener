@@ -42,7 +42,7 @@ Two halves that can run in parallel:
 | 04 | [`ListEvents` for the SQL repository](04-click-event-listing-sql.md) | ✅ Complete | 03 | 16 |
 | 05 | [Link command codec helpers](05-link-command-codec-helpers.md) | ✅ Complete | 01.0/02, 01.0/05, 01.0/06, 01.0/07 | 07, 08, 09, 10, 05.0/08 |
 | 06 | [Dry-run validation methods on `LinkCommandService`](06-service-dry-run-validation.md) | ✅ Complete | none | 07, 09, 05.0/08 |
-| 07 | [`link.create` command](07-link-create-command.md) | ⬜ Not started | 05, 06, 01.0/05, 01.0/06, 01.0/07 | 11, 05.0/08 |
+| 07 | [`link.create` command](07-link-create-command.md) | ✅ Complete | 05, 06, 01.0/05, 01.0/06, 01.0/07 | 11, 05.0/08 |
 | 08 | [`link.get`, `link.preview`, `link.stats` commands](08-link-get-preview-stats-commands.md) | ⬜ Not started | 05, 01.0/05, 01.0/06, 01.0/07 | 11, 04.0/03, 06.0/13 |
 | 09 | [`link.update` command](09-link-update-command.md) | ⬜ Not started | 05, 06, 01.0/05, 01.0/06, 01.0/07 | 11, 04.0/05 |
 | 10 | [`link.delete`, `link.enable`, `link.disable`, `link.restore`](10-link-lifecycle-commands.md) | ⬜ Not started | 05, 01.0/05, 01.0/06, 01.0/07 | 11, 04.0/06 |
