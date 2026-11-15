@@ -5,6 +5,7 @@
 #include <shared_mutex>
 #include <string>
 #include <unordered_map>
+#include <vector>
 
 #include <url_shortener/core/types.hpp>
 
@@ -88,6 +89,24 @@ public:
      * `link.id`.
      */
     virtual bool update(const Link& link, RepoError* error = nullptr) = 0;
+
+    /**
+     * @brief Returns a copy of every stored link, regardless of lifecycle
+     * state.
+     *
+     * The returned vector includes disabled, expired and soft-deleted links
+     * (lifecycle filtering is the caller's concern, e.g.
+     * `app::LegacyLinkLister`); the order of the elements is unspecified.
+     * This is a read-only operation intended for the management-plane browse
+     * path only: it must never be called on the redirect fast path, and
+     * implementations must acquire at most a shared lock so concurrent reads
+     * and writes are not stalled.
+     *
+     * @return A snapshot copy of all stored links; empty when the repository
+     * holds none. The copy is independent of the repository, so a later
+     * mutation does not affect an already-returned vector.
+     */
+    virtual std::vector<Link> snapshot() const = 0;
 };
 
 /**
@@ -211,6 +230,12 @@ public:
      * @see IMetadataRepository::update
      */
     bool update(const Link& link, RepoError* error = nullptr) override;
+
+    /**
+     * @brief Copies every value of `by_id_` under a shared lock.
+     * @see IMetadataRepository::snapshot
+     */
+    std::vector<Link> snapshot() const override;
 
 private:
     ///< Protects repository maps.

@@ -1,12 +1,16 @@
-#include <url_shortener/storage/link_repository.hpp>
 #include <mutex>
 
-namespace url_shortener {
+#include <url_shortener/storage/link_repository.hpp>
+
+namespace url_shortener
+{
 
 bool InMemoryMetadataRepository::create(const Link& link, RepoError* error)
 {
     std::unique_lock lock(mutex_);
-    if (slug_to_id_.find(link.slug) != slug_to_id_.end() || by_id_.find(link.id) != by_id_.end()) {
+    if (slug_to_id_.find(link.slug) != slug_to_id_.end()
+        || by_id_.find(link.id) != by_id_.end())
+    {
         if (error != nullptr) {
             *error = RepoError::already_exists;
         }
@@ -17,11 +21,16 @@ bool InMemoryMetadataRepository::create(const Link& link, RepoError* error)
     return true;
 }
 
-std::optional<Link> InMemoryMetadataRepository::getBySlug(const std::string& slug, RepoError* error) const
+std::optional<Link> InMemoryMetadataRepository::getBySlug(
+    const std::string& slug, RepoError* error) const
 {
     std::shared_lock lock(mutex_);
-    if (const auto slug_it = slug_to_id_.find(slug); slug_it != slug_to_id_.end()) {
-        if (const auto id_it = by_id_.find(slug_it->second); id_it != by_id_.end()) {
+    if (const auto slug_it = slug_to_id_.find(slug);
+        slug_it != slug_to_id_.end())
+    {
+        if (const auto id_it = by_id_.find(slug_it->second);
+            id_it != by_id_.end())
+        {
             return id_it->second;
         }
     }
@@ -31,7 +40,8 @@ std::optional<Link> InMemoryMetadataRepository::getBySlug(const std::string& slu
     return std::nullopt;
 }
 
-std::optional<Link> InMemoryMetadataRepository::getById(const std::string& id, RepoError* error) const
+std::optional<Link> InMemoryMetadataRepository::getById(const std::string& id,
+                                                        RepoError* error) const
 {
     std::shared_lock lock(mutex_);
     if (const auto it = by_id_.find(id); it != by_id_.end()) {
@@ -43,7 +53,8 @@ std::optional<Link> InMemoryMetadataRepository::getById(const std::string& id, R
     return std::nullopt;
 }
 
-bool InMemoryMetadataRepository::slugExists(const std::string& slug, RepoError*) const
+bool InMemoryMetadataRepository::slugExists(const std::string& slug,
+                                            RepoError*) const
 {
     std::shared_lock lock(mutex_);
     return slug_to_id_.find(slug) != slug_to_id_.end();
@@ -61,6 +72,17 @@ bool InMemoryMetadataRepository::update(const Link& link, RepoError* error)
     }
     it->second = link;
     return true;
+}
+
+std::vector<Link> InMemoryMetadataRepository::snapshot() const
+{
+    std::shared_lock lock(mutex_);
+    std::vector<Link> links;
+    links.reserve(by_id_.size());
+    for (const auto& entry : by_id_) {
+        links.push_back(entry.second);
+    }
+    return links;
 }
 
 std::optional<Link> InMemoryLinkCacheStore::get(const std::string& slug)
@@ -118,4 +140,4 @@ bool updateLinkAndInvalidateCache(const Link& link)
     return true;
 }
 
-} // namespace url_shortener
+}  // namespace url_shortener
