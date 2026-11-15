@@ -48,7 +48,7 @@ Two halves that can run in parallel:
 | 10 | [`link.delete`, `link.enable`, `link.disable`, `link.restore`](10-link-lifecycle-commands.md) | ✅ Complete | 05, 01.0/05, 01.0/06, 01.0/07 | 11, 04.0/06 |
 | 11 | [Register the nine commands and REST parity gate](11-register-link-commands-and-rest-parity.md) | ✅ Complete | 07, 08, 09, 10, 02.0/07 | 14, 18, 04.0/03, 04.0/04, 04.0/05, 04.0/14, 06.0/12, 06.0/13 |
 | 12 | [`ILinkLister` port and repository-backed lister](12-link-lister-port-and-repository-impl.md) | ✅ Complete | 01, 02, 02.0/02 | 13, 14, 16, 05.0/10 |
-| 13 | [Lister for the default (legacy) store](13-legacy-link-lister.md) | ⬜ Not started | 12 | 18 |
+| 13 | [Lister for the default (legacy) store](13-legacy-link-lister.md) | ✅ Complete | 12 | 18 |
 | 14 | [`link.list` command](14-link-list-command.md) | ⬜ Not started | 11, 12, 01.0/05, 01.0/06, 01.0/07 | 18, 04.0/07, 05.0/10, 06.0/12, 06.0/17 |
 | 15 | [`ITableSource` port, `db.tables`, `db.rows`](15-table-source-port-and-db-commands.md) | ⬜ Not started | 01.0/05, 01.0/06, 01.0/07 | 16, 05.0/21, 06.0/14, 06.0/17 |
 | 16 | [Links and click-events table sources](16-links-and-click-events-table-sources.md) | ⬜ Not started | 03, 04, 12, 15 | 18, 06.0/14 |
