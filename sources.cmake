@@ -411,6 +411,7 @@ set(URL_SHORTENER_SOURCES
       tests/unit/commands/13_error_code_coverage.cpp
       tests/unit/commands/14_include_hygiene.cpp
       tests/unit/commands/20_link_command_codec.cpp
+      tests/unit/commands/21_link_create_command.cpp
   )
 
   set(COMMON_CPP_SOURCES
@@ -424,6 +425,7 @@ set(URL_SHORTENER_SOURCES
       ${CMAKE_CURRENT_SOURCE_DIR}/src/commands/builtin_commands.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/commands/catalog.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/commands/link_command_codec.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/commands/link_create_command.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/cli_parser.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/cli/link_command_args.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/cli/link_command_dispatch.cpp
