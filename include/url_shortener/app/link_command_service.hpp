@@ -530,6 +530,31 @@ public:
     Result<LinkView> CreateLink(const CreateLinkCommand& command) const;
 
     /**
+     * @brief Run every `CreateLink` check and return the view `CreateLink`
+     * would return, without calling `ILinkStore::create` or
+     * `ILinkStore::invalidateCache`.
+     *
+     * Honors the `options.dry_run` command contract ("validate and authorize,
+     * do not mutate"): the full validation path (URL normalization, slug
+     * choice, redirect type, expiry parse/default, tag/metadata/campaign
+     * validators) runs and returns the identical `Result<LinkView>` a real
+     * `CreateLink` would, but no record is written and no cache entry is
+     * evicted. The returned `id`/`created_at` are freshly generated
+     * placeholders; a generated slug is NOT reserved, so a later real
+     * `CreateLink` may choose a different one and a concurrent create may make
+     * a previously valid dry-run slug conflict.
+     *
+     * @param command Command with the same fields and constraints as
+     * `CreateLink`.
+     * @return `Result<LinkView>` populated on success with the would-be view;
+     * on failure the same `AppErrorCode`/detail `CreateLink` returns
+     * (`invalid_url`, `invalid_slug`, `reserved_slug`, `slug_conflict`,
+     * `invalid_field`, `internal`). `storage_failure` is never returned because
+     * no repository write is attempted.
+     */
+    Result<LinkView> ValidateCreateLink(const CreateLinkCommand& command) const;
+
+    /**
      * @brief Retrieves a link by slug or stable ID.
      * @param query Lookup discriminator and value.
      * @return `Result<LinkView>` on success; `not_found` if no link
@@ -561,6 +586,27 @@ public:
      * `storage_failure` if the repository write failed.
      */
     Result<LinkView> UpdateLink(const UpdateLinkCommand& command) const;
+
+    /**
+     * @brief Run every `UpdateLink` check (including the existence lookup)
+     * without calling `ILinkStore::update`.
+     *
+     * Honors the `options.dry_run` command contract ("validate and authorize,
+     * do not mutate"): the link is loaded via `ILinkStore::findBySlug`, the
+     * PATCH fields are applied through the same validators `UpdateLink` uses
+     * and `updated_at` is refreshed, but the result is never written back, so
+     * the stored record is left byte-identical. The returned view is the
+     * would-be post-update state (fields applied, `updated_at` refreshed in the
+     * view only).
+     *
+     * @param command Partial-update command with the same PATCH semantics as
+     * `UpdateLink`.
+     * @return `Result<LinkView>` with the would-be updated view on success;
+     * `not_found` if the slug does not exist; `invalid_field` if any present
+     * field fails validation. `storage_failure` is never returned because no
+     * repository write is attempted.
+     */
+    Result<LinkView> ValidateUpdateLink(const UpdateLinkCommand& command) const;
 
     /**
      * @brief Soft-delete an existing link by setting `deleted_at`.
@@ -604,6 +650,44 @@ public:
     Result<LinkView> PreviewLink(const GetLinkQuery& query) const;
 
 private:
+    /**
+     * @brief Shared create path for `CreateLink` and `ValidateCreateLink`.
+     *
+     * Runs the full validate-and-build sequence exactly once (normalize URL,
+     * choose slug, resolve redirect type, parse/default expiry, validate
+     * tags/metadata/campaign, build the `Link`). The persistence step
+     * (`ILinkStore::create` followed by `ILinkStore::invalidateCache`) runs
+     * only when @p persist is `true`.
+     * @param command The create command to validate and (optionally) persist.
+     * @param persist `true` for the real `CreateLink` (write and invalidate
+     * cache); `false` for `ValidateCreateLink` (dry run: skip the write, no
+     * `storage_failure` possible).
+     * @return `Result<LinkView>` with the created/would-be view on success, or
+     * the first validation/persistence error; see `CreateLink` for the full
+     * error set.
+     */
+    Result<LinkView> CreateLinkImpl(const CreateLinkCommand& command,
+                                    bool persist) const;
+
+    /**
+     * @brief Shared update path for `UpdateLink` and `ValidateUpdateLink`.
+     *
+     * Loads the link, applies the PATCH fields through the shared validators
+     * and refreshes `updated_at` exactly once. The write-back
+     * (`ILinkStore::update`) runs only when @p persist is `true`.
+     * @param command The partial-update command to validate and (optionally)
+     * persist.
+     * @param persist `true` for the real `UpdateLink` (write back); `false`
+     * for `ValidateUpdateLink` (dry run: skip the write, no `storage_failure`
+     * possible).
+     * @return `Result<LinkView>` with the updated/would-be view on success;
+     * `not_found` if the slug does not exist; `invalid_field` on a failing
+     * field; `storage_failure` only when @p persist is `true` and the write
+     * fails.
+     */
+    Result<LinkView> UpdateLinkImpl(const UpdateLinkCommand& command,
+                                    bool persist) const;
+
     /**
      * @brief Validates or generates the slug for a `CreateLink` call.
      *

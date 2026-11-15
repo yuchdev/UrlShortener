@@ -66,6 +66,18 @@ Result<std::string> LinkCommandService::chooseSlug(
 Result<LinkView> LinkCommandService::CreateLink(
     const CreateLinkCommand& command) const
 {
+    return CreateLinkImpl(command, true);
+}
+
+Result<LinkView> LinkCommandService::ValidateCreateLink(
+    const CreateLinkCommand& command) const
+{
+    return CreateLinkImpl(command, false);
+}
+
+Result<LinkView> LinkCommandService::CreateLinkImpl(
+    const CreateLinkCommand& command, bool persist) const
+{
     const auto normalized_url = normalizeTargetUrl(command.target_url, config_);
     if (!normalized_url.has_value()) {
         return {std::nullopt, error(AppErrorCode::invalid_url, "url must be an absolute http/https URL")};
@@ -118,14 +130,16 @@ Result<LinkView> LinkCommandService::CreateLink(
     link.campaign = command.campaign;
     link.redirect_type = redirect_type;
 
-    AppError store_error;
-    if (!store_.create(link, &store_error)) {
-        if (store_error.code == AppErrorCode::none) {
-            store_error = error(AppErrorCode::slug_conflict, "slug already in use");
+    if (persist) {
+        AppError store_error;
+        if (!store_.create(link, &store_error)) {
+            if (store_error.code == AppErrorCode::none) {
+                store_error = error(AppErrorCode::slug_conflict, "slug already in use");
+            }
+            return {std::nullopt, store_error};
         }
-        return {std::nullopt, store_error};
+        store_.invalidateCache(link.slug);
     }
-    store_.invalidateCache(link.slug);
     return {toView(link), {}};
 }
 
@@ -142,6 +156,18 @@ Result<LinkView> LinkCommandService::GetLink(const GetLinkQuery& query) const
 
 Result<LinkView> LinkCommandService::UpdateLink(
     const UpdateLinkCommand& command) const
+{
+    return UpdateLinkImpl(command, true);
+}
+
+Result<LinkView> LinkCommandService::ValidateUpdateLink(
+    const UpdateLinkCommand& command) const
+{
+    return UpdateLinkImpl(command, false);
+}
+
+Result<LinkView> LinkCommandService::UpdateLinkImpl(
+    const UpdateLinkCommand& command, bool persist) const
 {
     auto link = store_.findBySlug(command.slug);
     if (!link.has_value()) {
@@ -200,10 +226,12 @@ Result<LinkView> LinkCommandService::UpdateLink(
     }
 
     link->updated_at = currentTimestamp();
-    if (AppError update_error; !store_.update(*link, &update_error)) {
-        return {std::nullopt, update_error.code == AppErrorCode::none
-            ? error(AppErrorCode::storage_failure, "failed to persist link update")
-            : update_error};
+    if (persist) {
+        if (AppError update_error; !store_.update(*link, &update_error)) {
+            return {std::nullopt, update_error.code == AppErrorCode::none
+                ? error(AppErrorCode::storage_failure, "failed to persist link update")
+                : update_error};
+        }
     }
     return {toView(*link), {}};
 }
