@@ -772,5 +772,30 @@ std::string serializeLinkPreviewJson(const LinkView& link);
  */
 std::string serializeLinkStatsJson(const LinkStatsView& stats);
 
+/**
+ * @brief Serializes the lifetime redirect counters of a link to JSON.
+ *
+ * Emits the six-key lifetime-stats body the
+ * `GET /api/v1/links/{slug}/stats` REST endpoint returns when no
+ * `from`/`to`/`bucket` range is supplied, in this exact order:
+ * `slug`, `total_redirects`, `redirects_24h`, `redirects_7d`,
+ * `last_accessed_at` (a JSON string when present, otherwise `null`),
+ * `created_at`. The three counters come from @ref LinkView::stats and
+ * are written as bare JSON numbers; `slug`, `last_accessed_at` and
+ * `created_at` are escaped via `jsonString`. This is the lifetime
+ * (non-range) stats shape, distinct from the range report produced by
+ * @ref serializeLinkStatsJson.
+ *
+ * Shared verbatim so the REST handler and the `link.stats` command stay
+ * byte-for-byte identical (milestone contract C1/C3): the output is
+ * byte-equal to the inline body built in
+ * `src/http/handlers/link_handlers.cpp::handleLinkStats`.
+ *
+ * @param link Fully populated view returned by
+ * @ref LinkCommandService::GetLink for the addressed slug.
+ * @return The canonical lifetime-stats JSON object for @p link.
+ */
+std::string serializeLinkLifetimeStatsJson(const LinkView& link);
+
 }  // namespace app
 }  // namespace url_shortener

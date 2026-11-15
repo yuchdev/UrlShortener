@@ -326,6 +326,7 @@ set(URL_SHORTENER_SOURCES
       tests/unit/app/24_link_backend_holder.cpp
       tests/unit/app/40_link_command_service_validate_create.cpp
       tests/unit/app/41_link_command_service_validate_update.cpp
+      tests/unit/app/42_serialize_link_lifetime_stats_json.cpp
   )
 
   set(CLI_UNIT_SOURCES
@@ -412,6 +413,7 @@ set(URL_SHORTENER_SOURCES
       tests/unit/commands/14_include_hygiene.cpp
       tests/unit/commands/20_link_command_codec.cpp
       tests/unit/commands/21_link_create_command.cpp
+      tests/unit/commands/22_link_read_commands.cpp
   )
 
   set(COMMON_CPP_SOURCES
@@ -426,6 +428,7 @@ set(URL_SHORTENER_SOURCES
       ${CMAKE_CURRENT_SOURCE_DIR}/src/commands/catalog.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/commands/link_command_codec.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/commands/link_create_command.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/commands/link_read_commands.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/cli_parser.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/cli/link_command_args.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/cli/link_command_dispatch.cpp
