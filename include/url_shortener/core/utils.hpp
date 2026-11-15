@@ -276,14 +276,32 @@ std::optional<std::string> headerString(
 // ---------------------------------------------------------------------------
 
 /**
- * @brief Escapes a string for safe embedding inside a JSON string
- * literal.
+ * @brief Escapes a string so the result is always a valid JSON string body
+ * (no surrounding quotes), regardless of what bytes @p input contains.
  *
- * Escapes `\`, `"`, `\n`, `\r`, and `\t` with standard JSON
- * backslash sequences. Other characters are passed through unchanged;
- * control characters other than those four are not escaped.
- * @param input Raw string to escape.
- * @return Escaped string without surrounding quotes.
+ * Shared by every JSON serializer in the codebase (REST bodies, command
+ * results, `db.*` rows), so it treats @p input as fully untrusted and
+ * guarantees well-formed, control-character-free output:
+ * - `\`, `"`, `\n`, `\r`, and `\t` become their short JSON backslash
+ *   sequences (unchanged from the historical behavior).
+ * - every other ASCII control byte (`< 0x20`) and `0x7F` (DEL) become a
+ *   `\u00XX` escape, so no raw control byte ever reaches the output.
+ * - the Unicode line/paragraph separators U+2028 and U+2029 become
+ *   ` `/` ` (valid JSON but invalid in JavaScript string
+ *   literals, so escaping them keeps embedded output safe).
+ * - any byte sequence that is not valid UTF-8 (a lone continuation byte, a
+ *   truncated multi-byte tail, an overlong encoding, a surrogate code
+ *   point, or a code point above U+10FFFF) is replaced with the Unicode
+ *   replacement character U+FFFD (`EF BF BD`); one replacement is emitted
+ *   per offending byte and decoding resynchronizes at the next byte.
+ *
+ * Valid UTF-8 text that contains none of the escaped code points is copied
+ * through byte-for-byte, so already-valid inputs serialize identically to
+ * the historical implementation.
+ *
+ * @param input Raw, untrusted string to escape.
+ * @return Escaped string without surrounding quotes; always valid as the
+ * contents of a JSON string literal.
  */
 std::string jsonEscape(const std::string& input);
 
