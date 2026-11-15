@@ -119,6 +119,7 @@ bool is_allowed_url_shortener(const std::string& target)
         return true;
     }
     return target == "url_shortener/app/app_error.hpp"
+        || target == "url_shortener/core/types.hpp"
         || target == "url_shortener/security/control_set.hpp"
         || target == "url_shortener/observability/logger.hpp";
 }
