@@ -19,13 +19,13 @@ namespace
 {
 
 /// Byte cap on the `tag` filter, matching the service's per-tag length limit
-/// (`validateTags`: 32 bytes). A longer filter value could never match a stored
+/// (32 bytes per tag). A longer filter value could never match a stored
 /// tag, so this bound only pre-empts pointless scan work (threat model T-56)
 /// and never rejects a value that could succeed.
 constexpr std::size_t k_tag_max_length = 32;
 
 /// Byte cap on the `campaign` filter, matching the service's campaign-field
-/// length limit (`validateCampaignField`: 128 bytes). A longer value could
+/// length limit (128 bytes). A longer value could
 /// never equal any stored `campaign.name`, so this bound only pre-empts
 /// pointless scan work (threat model T-56).
 constexpr std::size_t k_campaign_max_length = 128;
