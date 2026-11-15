@@ -20,6 +20,42 @@ class LinkCommandService;
 namespace url_shortener::commands
 {
 
+// Forward declaration: `register_link_commands` takes the process registry by
+// reference and only calls `add`. The full definition lives in
+// `commands/command_registry.hpp`, included by the registering `.cpp`, so this
+// header stays free of the registry's `std::map`/envelope includes.
+class CommandRegistry;
+
+/**
+ * @brief Registers the nine link commands on @p registry (milestone contract
+ * C1/C3): `link.create`, `link.get`, `link.update`, `link.delete`,
+ * `link.enable`, `link.disable`, `link.restore`, `link.preview`, `link.stats`.
+ *
+ * The single registration entry point for the link command family: it calls the
+ * nine `make_link_*_descriptor` factories with @p service and hands each
+ * descriptor to @ref CommandRegistry::add, in catalog order. Every descriptor's
+ * handler produces exactly the body and error class the equivalent REST
+ * resource route produces today (the parity gate proves this), so a transport
+ * can swap onto the registry without changing any status, field, or error code
+ * (contract C3). `link.list` and the job commands are registered elsewhere.
+ *
+ * This function only builds descriptors and binds them to @p service; it never
+ * invokes a handler, opens a listener, or touches `uri.txt`/`UriMapSingleton`
+ * (threat model T-58), so it is safe to call from a catalog/registry builder.
+ *
+ * Lifetime: each descriptor's handler captures `&service`, so @p service must
+ * outlive @p registry. Because the registry stores the handlers and is
+ * non-copyable/non-movable, the handlers never outlive the registry, but the
+ * registry must not outlive @p service.
+ *
+ * @param registry The registry the nine descriptors are added to; must be empty
+ * of these nine names (a duplicate name makes @ref CommandRegistry::add throw).
+ * @param service The application service every handler delegates to; must
+ * outlive @p registry.
+ */
+void register_link_commands(CommandRegistry& registry,
+                            app::LinkCommandService& service);
+
 /**
  * @brief Builds the `link.create` command descriptor (catalog 3.1).
  *

@@ -416,6 +416,7 @@ set(URL_SHORTENER_SOURCES
       tests/unit/commands/22_link_read_commands.cpp
       tests/unit/commands/23_link_update_command.cpp
       tests/unit/commands/24_link_lifecycle_commands.cpp
+      tests/unit/commands/25_link_commands_rest_parity.cpp
   )
 
   set(COMMON_CPP_SOURCES
@@ -433,6 +434,7 @@ set(URL_SHORTENER_SOURCES
       ${CMAKE_CURRENT_SOURCE_DIR}/src/commands/link_update_command.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/commands/link_read_commands.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/commands/link_lifecycle_commands.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/commands/link_commands.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/cli_parser.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/cli/link_command_args.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/cli/link_command_dispatch.cpp
