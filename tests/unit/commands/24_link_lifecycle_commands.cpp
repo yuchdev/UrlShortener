@@ -547,3 +547,61 @@ BOOST_AUTO_TEST_CASE(denied_call_is_audited_with_empty_target_for_each)
         BOOST_TEST(sink->records[0].outcome == "not_authorized", command);
     }
 }
+
+// Type: unit (dry_run rejection is audited with empty target; requirement 3).
+// Scenario: an authorized (Admin) call with options.dry_run = true to each
+//   mutating lifecycle command is rejected by the registry as unsupported (these
+//   commands set supports_dry_run = false) yet still emits exactly one audit
+//   record, with an empty target (resolve_dispatch fails closed before the
+//   handler sets a validated slug) and an "unsupported" outcome.
+// Boundaries: the dry-run rejection audit carries an empty target, never the
+//   addressed slug; the outcome is "unsupported" (step 8 derives it from the
+//   error code), not "not_authorized" or "ok".
+// On failure first check: did a descriptor set supports_dry_run = true, or did
+//   step 8 stop auditing the unsupported-dispatch rejection?
+BOOST_AUTO_TEST_CASE(dry_run_rejection_is_audited_for_each)
+{
+    for (const std::string& command : all_commands()) {
+        Harness h;
+        seed_link(h.store, "dry-audit");
+        auto sink = std::make_shared<CapturingAuditSink>();
+        h.registry.set_audit_sink(sink);
+
+        const CommandResponse response =
+            h.run(admin_caller(),
+                  lifecycle_request(command,
+                                    R"({"slug":"dry-audit"})",
+                                    /*dry_run=*/true));
+
+        BOOST_TEST(!response.ok, command);
+        BOOST_TEST((response.error.code == CommandErrorCode::unsupported),
+                   command);
+        BOOST_REQUIRE_EQUAL(sink->records.size(), 1u);
+        BOOST_TEST(sink->records[0].command == command, command);
+        BOOST_TEST(sink->records[0].target.empty(), command);
+        BOOST_TEST(sink->records[0].outcome == "unsupported", command);
+    }
+}
+
+// Type: unit (idempotent enable on an already-enabled link; requirement 5).
+// Scenario: link.enable on a link that is already enabled succeeds, leaves
+//   enabled == true, and returns text byte-equal to serializeLinkViewJson of the
+//   stored record.
+// Boundaries: re-enabling is not rejected; the already-true flag is written
+//   verbatim and the result still comes from the shared serializer.
+// On failure first check: did SetLinkEnabled start rejecting a no-op enable, or
+//   did the handler stop routing through link_view_result?
+BOOST_AUTO_TEST_CASE(enable_on_already_enabled_link_succeeds)
+{
+    Harness h;
+    seed_link(h.store, "en-already");  // seed_link enables by default
+
+    const CommandResponse response =
+        h.run(admin_caller(),
+              lifecycle_request("link.enable", R"({"slug":"en-already"})"));
+
+    BOOST_TEST(response.ok);
+    BOOST_TEST((response.error.code == CommandErrorCode::none));
+    BOOST_TEST(response.result_json == stored_view_json(h.service, "en-already"));
+    BOOST_TEST(h.store.findBySlug("en-already")->enabled == true);
+}
