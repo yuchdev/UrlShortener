@@ -654,6 +654,74 @@ BOOST_AUTO_TEST_CASE(update_unknown_failure_parity)
         rest, cmd, CommandErrorCode::not_found, "update unknown");
 }
 
+// Type: unit (parity, delete unknown).
+// Scenario: DELETE on an unknown slug is 404 not_found on both paths.
+// Boundaries: not_found arises from the service's DeleteLink on both.
+// On failure first check: did the DeleteLink error mapping or status table
+//   change?
+BOOST_AUTO_TEST_CASE(delete_unknown_failure_parity)
+{
+    ParityFixture f;
+    const auto rest = f.dispatch(
+        make_request(bhttp::verb::delete_, "/api/v1/links/par-rest-delghost"));
+    const auto cmd =
+        f.run_cmd("link.delete", R"({"slug":"par-cmd-delghost"})");
+
+    expect_failure_parity(
+        rest, cmd, CommandErrorCode::not_found, "delete unknown");
+}
+
+// Type: unit (parity, enable unknown).
+// Scenario: POST /enable on an unknown slug is 404 not_found on both paths.
+// Boundaries: not_found arises from the service's EnableLink on both.
+// On failure first check: did the enable existence check or error mapping
+//   change?
+BOOST_AUTO_TEST_CASE(enable_unknown_failure_parity)
+{
+    ParityFixture f;
+    const auto rest = f.dispatch(make_request(
+        bhttp::verb::post, "/api/v1/links/par-rest-enghost/enable"));
+    const auto cmd =
+        f.run_cmd("link.enable", R"({"slug":"par-cmd-enghost"})");
+
+    expect_failure_parity(
+        rest, cmd, CommandErrorCode::not_found, "enable unknown");
+}
+
+// Type: unit (parity, disable unknown).
+// Scenario: POST /disable on an unknown slug is 404 not_found on both paths.
+// Boundaries: not_found arises from the service's DisableLink on both.
+// On failure first check: did the disable existence check or error mapping
+//   change?
+BOOST_AUTO_TEST_CASE(disable_unknown_failure_parity)
+{
+    ParityFixture f;
+    const auto rest = f.dispatch(make_request(
+        bhttp::verb::post, "/api/v1/links/par-rest-disghost/disable"));
+    const auto cmd =
+        f.run_cmd("link.disable", R"({"slug":"par-cmd-disghost"})");
+
+    expect_failure_parity(
+        rest, cmd, CommandErrorCode::not_found, "disable unknown");
+}
+
+// Type: unit (parity, restore unknown).
+// Scenario: POST /restore on an unknown slug is 404 not_found on both paths.
+// Boundaries: not_found arises from the service's RestoreLink on both.
+// On failure first check: did the restore existence check or error mapping
+//   change?
+BOOST_AUTO_TEST_CASE(restore_unknown_failure_parity)
+{
+    ParityFixture f;
+    const auto rest = f.dispatch(make_request(
+        bhttp::verb::post, "/api/v1/links/par-rest-resghost/restore"));
+    const auto cmd =
+        f.run_cmd("link.restore", R"({"slug":"par-cmd-resghost"})");
+
+    expect_failure_parity(
+        rest, cmd, CommandErrorCode::not_found, "restore unknown");
+}
+
 // Type: unit (parity, stats invalid bucket; C3 special case).
 // Scenario: a stats range with an unrecognized bucket is 400 on both paths; the
 //   REST `code` is the detail-derived "invalid_bucket" while the command
