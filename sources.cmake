@@ -329,6 +329,7 @@ set(URL_SHORTENER_SOURCES
       tests/unit/app/42_serialize_link_lifetime_stats_json.cpp
       tests/unit/app/43_repository_link_lister.cpp
       tests/unit/app/44_legacy_link_lister.cpp
+      tests/unit/app/45_table_catalog.cpp
   )
 
   set(CLI_UNIT_SOURCES
@@ -420,6 +421,7 @@ set(URL_SHORTENER_SOURCES
       tests/unit/commands/24_link_lifecycle_commands.cpp
       tests/unit/commands/25_link_commands_rest_parity.cpp
       tests/unit/commands/26_link_list_command.cpp
+      tests/unit/commands/27_db_commands.cpp
   )
 
   set(COMMON_CPP_SOURCES
@@ -438,6 +440,7 @@ set(URL_SHORTENER_SOURCES
       ${CMAKE_CURRENT_SOURCE_DIR}/src/commands/link_read_commands.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/commands/link_lifecycle_commands.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/commands/link_list_command.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/commands/db_commands.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/commands/link_commands.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/cli_parser.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/cli/link_command_args.cpp
@@ -498,6 +501,7 @@ set(URL_SHORTENER_SOURCES
       ${CMAKE_CURRENT_SOURCE_DIR}/src/app/link_record_codec.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/app/repository_link_store.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/app/link_lister.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/app/table_catalog.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/app/repository_link_lister.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/app/legacy_link_lister.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/app/link_backend.cpp
