@@ -45,6 +45,36 @@ namespace url_shortener::commands
 CommandDescriptor make_link_create_descriptor(app::LinkCommandService& service);
 
 /**
+ * @brief Builds the `link.update` command descriptor (catalog 3.1).
+ *
+ * The one definition of the partial-update operation (milestone contract C1):
+ * the returned descriptor is `write`, `sync`, `mutating`, `supports_dry_run`,
+ * and its handler decodes the validated arguments into an
+ * `app::UpdateLinkCommand`, calls `app::LinkCommandService::UpdateLink` (or
+ * `ValidateUpdateLink` under `options.dry_run`), and projects the outcome with
+ * `app::serializeLinkViewJson` via @ref link_view_result. PATCH semantics are
+ * identical to `PATCH /api/v1/links/{slug}`: an absent argument leaves the
+ * field untouched, an explicit JSON `null` clears the nullable
+ * `expires_at`/`campaign`, and a value replaces. The handler only decodes the
+ * three states (via
+ * @ref patch_state_of) into the double-optional command fields; all domain
+ * validation (expiry parsing, SSRF/URL checks are not applicable here, and
+ * tag/metadata/campaign limits) stays in the service. `target_url` is immutable
+ * through this command and is therefore not a declared argument.
+ *
+ * Lifetime: the handler captures `&service`, so @p service must outlive the
+ * @ref CommandRegistry the descriptor is added to. Because the registry is
+ * non-copyable and non-movable and stores the handler, the handler can never
+ * outlive the registry, but the registry itself must not outlive @p service.
+ *
+ * @param service The application service the handler delegates to; must outlive
+ * the registry the descriptor is registered on.
+ * @return A fully populated @ref CommandDescriptor ready for
+ * @ref CommandRegistry::add.
+ */
+CommandDescriptor make_link_update_descriptor(app::LinkCommandService& service);
+
+/**
  * @brief Builds the `link.get` command descriptor (catalog 3.1).
  *
  * The one definition of the read-by-identifier operation (milestone contract
