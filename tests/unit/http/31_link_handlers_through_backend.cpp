@@ -58,6 +58,8 @@
 #include <boost/test/unit_test.hpp>
 #include <url_shortener/app/link_backend.hpp>
 #include <url_shortener/app/link_command_service.hpp>
+#include <url_shortener/composition/command_runtime.hpp>
+#include <url_shortener/composition/link_backend_bootstrap.hpp>
 #include <url_shortener/core/config.hpp>
 #include <url_shortener/core/types.hpp>
 #include <url_shortener/core/utils.hpp>
@@ -66,6 +68,7 @@
 #include <url_shortener/storage/link_repository.hpp>
 
 namespace bhttp = boost::beast::http;
+namespace composition = url_shortener::composition;
 namespace fs = std::filesystem;
 using url_shortener::Link;
 using url_shortener::RedirectType;
@@ -201,16 +204,30 @@ public:
 };
 
 /**
- * @brief Clears any installed store before and after each case so cases cannot
- * leak an installation into one another.
+ * @brief Clears any installed store and the process command runtime before and
+ * after each case so cases cannot leak an installation into one another.
+ *
+ * The process runtime is reset alongside the store because the migrated read
+ * routes (Task 04.0 subtask 03) resolve their link through the process-wide
+ * command runtime, not a per-request store binding: a runtime installed by one
+ * case must never survive into the next, where it would reference a freed
+ * fake store.
  */
 struct BackendFixture
 {
-    /// Ensures a clean (default) holder at the start of the case.
-    BackendFixture() { LinkBackend::reset(); }
+    /// Ensures a clean (default) holder and no installed runtime at case start.
+    BackendFixture()
+    {
+        composition::reset_process_command_runtime();
+        LinkBackend::reset();
+    }
 
-    /// Restores the default so a leaked fake never outlives the case.
-    ~BackendFixture() { LinkBackend::reset(); }
+    /// Restores the defaults so a leaked fake/runtime never outlives the case.
+    ~BackendFixture()
+    {
+        composition::reset_process_command_runtime();
+        LinkBackend::reset();
+    }
 };
 
 /**
@@ -275,6 +292,26 @@ Link makeLink(const std::string& slug)
     return link;
 }
 
+/**
+ * @brief Installs a process command runtime over the currently-installed
+ * backend, mirroring how `main` wires the runtime from the active store.
+ *
+ * The migrated read routes (Task 04.0 subtask 03) resolve their link through
+ * `http::request_runtime()`, which prefers the installed process runtime. This
+ * helper builds that runtime over an inactive `LinkBackendHandle`, so the link
+ * service binds to `app::LinkBackend::store()` (the fake installed just before
+ * this call) and reads flow through it, exactly as production reads flow through
+ * the active backend. Must be called after the case's store is installed; the
+ * BackendFixture resets it afterwards.
+ */
+void installRuntimeOverCurrentBackend()
+{
+    composition::install_process_command_runtime(
+        std::make_shared<composition::CommandRuntime>(
+            composition::build_command_runtime(
+                testConfig(), url_shortener::app::LinkBackendHandle {})));
+}
+
 }  // namespace
 
 /**
@@ -295,6 +332,9 @@ BOOST_FIXTURE_TEST_CASE(create_runs_through_backend, BackendFixture)
 {
     auto store = std::make_shared<FakeLinkStore>();
     LinkBackend::install(store);
+    // Reads (the GET-back below) resolve through the process runtime; wire it
+    // over the just-installed fake so reads hit the same store the write did.
+    installRuntimeOverCurrentBackend();
 
     const auto created = dispatch(makeRequest(
         bhttp::verb::post,
@@ -338,6 +378,9 @@ BOOST_FIXTURE_TEST_CASE(read_update_lifecycle_through_backend, BackendFixture)
     auto store = std::make_shared<FakeLinkStore>();
     store->seed(makeLink("bk31rw01"));
     LinkBackend::install(store);
+    // GET below is a migrated read route: route it through the process runtime
+    // bound to this fake.
+    installRuntimeOverCurrentBackend();
 
     const auto get =
         dispatch(makeRequest(bhttp::verb::get, "/api/v1/links/bk31rw01"));
@@ -410,6 +453,9 @@ BOOST_FIXTURE_TEST_CASE(legacy_stats_reads_through_backend, BackendFixture)
     link.stats.redirects_7d = 9;
     store->seed(link);
     LinkBackend::install(store);
+    // The no-window stats body is now built by the migrated link.stats command
+    // via the process runtime; bind it to this fake.
+    installRuntimeOverCurrentBackend();
 
     const auto stats = dispatch(
         makeRequest(bhttp::verb::get, "/api/v1/links/bk31stats01/stats"));
@@ -504,6 +550,10 @@ BOOST_FIXTURE_TEST_CASE(legacy_path_after_reset, BackendFixture)
     link.id = url_shortener::generateId();
     BOOST_REQUIRE(url_shortener::linkRepository().create(link));
     url_shortener::linkCache().erase(link.slug);
+
+    // After reset() the backend resolves to the LegacyLinkStore default; wire a
+    // process runtime over it so the migrated read route serves this slug.
+    installRuntimeOverCurrentBackend();
 
     const auto get =
         dispatch(makeRequest(bhttp::verb::get, "/api/v1/links/bk31legacy01"));

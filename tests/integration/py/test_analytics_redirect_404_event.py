@@ -15,9 +15,11 @@ class AnalyticsRedirect404Event(LinkManagementIntegrationBase):
         status,_,_=request(self.port,"GET","/missing-stage4")
         self.assertEqual(404,status)
         now = int(time.time())
+        # Bounded +-1h window: keeps the span under the T-76 10,000-bucket
+        # cap (04.0/03) while still bracketing the just-recorded event.
         status,payload,_=request(
             self.port,"GET",
-            f"/api/v1/links/missing-stage4/stats?from=0&to={now + 3600}&bucket=hour"
+            f"/api/v1/links/missing-stage4/stats?from={now - 3600}&to={now + 3600}&bucket=hour"
         )
         self.assertEqual(200,status)
         self.assertIn('"total_attempts":1',payload)

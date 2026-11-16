@@ -1,16 +1,18 @@
 #include <algorithm>
 #include <chrono>
 #include <optional>
-#include <sstream>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <utility>
 #include <vector>
 
 #include <url_shortener/app/link_backend.hpp>
+#include <url_shortener/commands/args_builder.hpp>
 #include <url_shortener/composition/link_command_service_factory.hpp>
 #include <url_shortener/core/utils.hpp>
 #include <url_shortener/http/analytics_stats_handler.hpp>
+#include <url_shortener/http/command_bridge.hpp>
 #include <url_shortener/http/handlers/link_handlers.hpp>
 #include <url_shortener/http/request_handlers.hpp>
 
@@ -50,6 +52,47 @@ std::string getQueryParam(const std::string& query_string,
     return val_end == std::string::npos
         ? query_string.substr(val_start)
         : query_string.substr(val_start, val_end - val_start);
+}
+
+/**
+ * @brief Runs one read-only resource command through the command bridge and
+ * renders its outcome as the exact HTTP response the route returns today.
+ *
+ * The single seam every migrated read handler collapses onto (milestone 0006
+ * contract C1): it hands the already-built `args` object to
+ * @ref execute_resource_command as the legacy Admin caller (threat model T-60
+ * status quo for these open resource routes) and renders the result with
+ * @ref resource_response at HTTP 200 for a success. The handler itself no
+ * longer touches `app::` DTO types, the stats reader, or any error-code switch;
+ * status codes, bodies and error codes are produced entirely by the bridge
+ * (contract C3). The redirect fast path is unaffected (contract C10): this is
+ * the management plane.
+ *
+ * @param req Incoming request; supplies the HTTP version and the validated
+ * request id echoed into the response.
+ * @param config Server configuration threaded to the response helpers; the
+ * command runtime itself is process-wide and config-bound at startup.
+ * @param is_tls `true` on HTTPS connections; gates HSTS/`nosniff` on the
+ * rendered response.
+ * @param command The registry command name to execute (e.g. `"link.get"`).
+ * @param args The assembled `args` object; its JSON text is moved into the
+ * request verbatim. Taken by reference because the caller owns it.
+ * @return The fully-rendered Beast response: a 200 success body on success, or
+ * the bridge's byte-identical legacy error envelope on failure.
+ */
+BeastResponse run_read_command(const BeastRequest& req,
+                               const ::ServerConfig& config,
+                               const bool is_tls,
+                               const std::string_view command,
+                               commands::args_builder& args)
+{
+    return resource_response(
+        req,
+        config,
+        is_tls,
+        execute_resource_command(
+            config, command, args.str(), requestIdFromRequest(req)),
+        200);
 }
 
 std::optional<Link::Campaign> extractCampaign(const std::string& body)
@@ -373,20 +416,12 @@ BeastResponse handleGetLinkById(const BeastRequest& req,
                                 const bool is_tls,
                                 const RouteContext& context)
 {
-    const auto id = pathValue(context, "id");
-    const auto command_service = makeCommandService(config);
-    const auto result =
-        command_service.service->GetLink({app::GetLinkBy::id, id});
-    if (!result.ok()) {
-        return appErrorResponse(req, config, is_tls, result.error);
-    }
-    return url_shortener::makeResponse(
-        req,
-        config,
-        is_tls,
-        200,
-        app::serializeLinkViewJson(*result.value),
-        "application/json");
+    // Address the link by its opaque id through link.get; the registry's
+    // slug_or_id one-of group accepts the single `id` selector and the service
+    // resolves it via the indexed findById lookup.
+    commands::args_builder args;
+    args.add_string("id", pathValue(context, "id"));
+    return run_read_command(req, config, is_tls, "link.get", args);
 }
 
 BeastResponse handleGetLinkBySlug(const BeastRequest& req,
@@ -394,20 +429,11 @@ BeastResponse handleGetLinkBySlug(const BeastRequest& req,
                                   const bool is_tls,
                                   const RouteContext& context)
 {
-    const auto slug = pathValue(context, "slug");
-    const auto command_service = makeCommandService(config);
-    const auto result =
-        command_service.service->GetLink({app::GetLinkBy::slug, slug});
-    if (!result.ok()) {
-        return appErrorResponse(req, config, is_tls, result.error);
-    }
-    return url_shortener::makeResponse(
-        req,
-        config,
-        is_tls,
-        200,
-        app::serializeLinkViewJson(*result.value),
-        "application/json");
+    // Address the link by slug through link.get; the registry's slug_or_id
+    // one-of group accepts the single `slug` selector.
+    commands::args_builder args;
+    args.add_string("slug", pathValue(context, "slug"));
+    return run_read_command(req, config, is_tls, "link.get", args);
 }
 
 BeastResponse handlePatchLink(const BeastRequest& req,
@@ -594,25 +620,13 @@ BeastResponse handlePreviewLink(const BeastRequest& req,
                                 const bool is_tls,
                                 const RouteContext& context)
 {
-    // Read-only lookup runs through LinkCommandService::PreviewLink (no write
-    // path). PreviewLink returns the full LinkView; shaping it down to the
-    // reduced preview response is delegated to the shared
-    // app::serializeLinkPreviewJson serializer so the REST and CLI `preview`
+    // Read-only lookup runs through the link.preview command; the reduced
+    // preview body is produced by the shared app::serializeLinkPreviewJson
+    // serializer behind the command handler, so the REST and CLI `preview`
     // outputs stay byte-for-byte identical (single source of truth).
-    const auto slug = pathValue(context, "slug");
-    const auto command_service = makeCommandService(config);
-    const auto result =
-        command_service.service->PreviewLink({app::GetLinkBy::slug, slug});
-    if (!result.ok()) {
-        return appErrorResponse(req, config, is_tls, result.error);
-    }
-    return url_shortener::makeResponse(
-        req,
-        config,
-        is_tls,
-        200,
-        app::serializeLinkPreviewJson(*result.value),
-        "application/json");
+    commands::args_builder args;
+    args.add_string("slug", pathValue(context, "slug"));
+    return run_read_command(req, config, is_tls, "link.preview", args);
 }
 
 BeastResponse handlePlaceholderFeature(const BeastRequest& req,
@@ -639,47 +653,25 @@ BeastResponse handleLinkStats(const BeastRequest& req,
                               const bool is_tls,
                               const RouteContext& context)
 {
-    const auto slug = pathValue(context, "slug");
+    // Range vs lifetime mode selection mirrors the old handler exactly: only
+    // when from, to and bucket are all present and non-empty does link.stats
+    // run the range aggregation; otherwise the command falls back to the
+    // six-key lifetime body. getQueryParam keeps its documented quirks (naive
+    // `key=` substring, first match, no percent-decoding) on purpose. The
+    // T-76 bucket-count cap lives in the shared stats reader, so an over-cap
+    // span returns range_too_large identically for REST and link.stats.
+    commands::args_builder args;
+    args.add_string("slug", pathValue(context, "slug"));
     const std::string from_param = getQueryParam(context.query_string, "from");
     const std::string to_param = getQueryParam(context.query_string, "to");
     const std::string bucket_param =
         getQueryParam(context.query_string, "bucket");
     if (!from_param.empty() && !to_param.empty() && !bucket_param.empty()) {
-        const auto command_service = makeCommandService(config);
-        const auto result = command_service.service->GetLinkStats(
-            {slug, from_param, to_param, bucket_param});
-        if (!result.ok()) {
-            return appErrorResponse(req, config, is_tls, result.error);
-        }
-        return url_shortener::makeResponse(
-            req,
-            config,
-            is_tls,
-            200,
-            app::serializeLinkStatsJson(*result.value),
-            "application/json");
+        args.add_string("from", from_param);
+        args.add_string("to", to_param);
+        args.add_string("bucket", bucket_param);
     }
-
-    const auto link = app::LinkBackend::store().findBySlug(slug);
-    if (!link.has_value()) {
-        return linkNotFound(req, config, is_tls);
-    }
-    std::ostringstream body;
-    body << "{\"slug\":" << url_shortener::jsonString(link->slug)
-         << ",\"total_redirects\":" << link->stats.total_redirects
-         << ",\"redirects_24h\":" << link->stats.redirects_24h
-         << ",\"redirects_7d\":" << link->stats.redirects_7d
-         << ",\"last_accessed_at\":";
-    if (link->stats.last_accessed_at.has_value()) {
-        body << url_shortener::jsonString(*link->stats.last_accessed_at);
-    }
-    else {
-        body << "null";
-    }
-    body << ",\"created_at\":" << url_shortener::jsonString(link->created_at)
-         << '}';
-    return url_shortener::makeResponse(
-        req, config, is_tls, 200, body.str(), "application/json");
+    return run_read_command(req, config, is_tls, "link.stats", args);
 }
 
 BeastResponse handleEnableLink(const BeastRequest& req,

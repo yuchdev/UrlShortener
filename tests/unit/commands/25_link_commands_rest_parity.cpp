@@ -541,13 +541,18 @@ BOOST_AUTO_TEST_CASE(stats_range_body_parity)
         seed_click(slug, 302, "example.com", 1500100000);
     }
 
-    const std::string window = "?from=1000000000&to=2000000000&bucket=day";
+    // Window brackets both seeded events (epoch 1500000000 / 1500100000) while
+    // staying under the T-76 10,000-bucket cap (04.0/03): ~23 day buckets, not
+    // the ~11,574 the old 1e9..2e9 span implied, which now returns
+    // range_too_large. Both transports use the identical window, so the echoed
+    // from/to and the aggregate stay byte-for-byte in parity.
+    const std::string window = "?from=1499000000&to=1501000000&bucket=day";
     const auto rest = f.dispatch(make_request(
         bhttp::verb::get, "/api/v1/links/par-rest-statsr/stats" + window));
     const auto cmd =
         f.run_cmd("link.stats",
-                  R"({"slug":"par-cmd-statsr","from":"1000000000",)"
-                  R"("to":"2000000000","bucket":"day"})");
+                  R"({"slug":"par-cmd-statsr","from":"1499000000",)"
+                  R"("to":"1501000000","bucket":"day"})");
 
     expect_body_parity(
         rest, cmd, "par-rest-statsr", "par-cmd-statsr", "stats range");
@@ -664,8 +669,7 @@ BOOST_AUTO_TEST_CASE(delete_unknown_failure_parity)
     ParityFixture f;
     const auto rest = f.dispatch(
         make_request(bhttp::verb::delete_, "/api/v1/links/par-rest-delghost"));
-    const auto cmd =
-        f.run_cmd("link.delete", R"({"slug":"par-cmd-delghost"})");
+    const auto cmd = f.run_cmd("link.delete", R"({"slug":"par-cmd-delghost"})");
 
     expect_failure_parity(
         rest, cmd, CommandErrorCode::not_found, "delete unknown");
@@ -681,8 +685,7 @@ BOOST_AUTO_TEST_CASE(enable_unknown_failure_parity)
     ParityFixture f;
     const auto rest = f.dispatch(make_request(
         bhttp::verb::post, "/api/v1/links/par-rest-enghost/enable"));
-    const auto cmd =
-        f.run_cmd("link.enable", R"({"slug":"par-cmd-enghost"})");
+    const auto cmd = f.run_cmd("link.enable", R"({"slug":"par-cmd-enghost"})");
 
     expect_failure_parity(
         rest, cmd, CommandErrorCode::not_found, "enable unknown");

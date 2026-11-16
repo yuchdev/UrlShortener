@@ -168,7 +168,7 @@ in [`docs/api/README.md`](../api/README.md).
 | Disable | `curl -X POST http://localhost:8000/api/v1/links/docs/disable` | `url_shortener link disable --slug docs` |
 | Restore | `curl -X POST http://localhost:8000/api/v1/links/docs/restore` | `url_shortener link restore --slug docs` |
 | Preview | `curl http://localhost:8000/api/v1/links/docs/preview` | `url_shortener link preview --slug docs` |
-| Stats | `curl http://localhost:8000/api/v1/links/docs/stats?from=0&to=9999999999&bucket=day` | `url_shortener link stats --slug docs --from 0 --to 9999999999 --bucket day` |
+| Stats | `curl http://localhost:8000/api/v1/links/docs/stats?from=1710000000&to=1710086400&bucket=day` | `url_shortener link stats --slug docs --from 1710000000 --to 1710086400 --bucket day` |
 
 **One real difference:** REST commands act on whatever link state the running
 server holds in its configured backend. The CLI's default in-memory store is
