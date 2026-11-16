@@ -124,14 +124,27 @@ The server has no authentication in front of `/api/v1/*` today. Therefore:
   requests whose TCP peer address is loopback** (`127.0.0.0/8`; `::1` is also
   accepted but cannot occur while the acceptors are IPv4-only); requests from
   any other peer, or with no known peer, run as `user`.
+- **What enabling the gate exposes:** turning on `--command-api-enabled true`
+  publishes every `user`-level (read) command — `link.list` (listing active,
+  disabled and expired links), `link.get`/`link.stats`, the `db.*` reads of the
+  non-auth allowlisted tables, and `system.info` — to **every client that can
+  reach the bound interfaces, with no per-request credential** (there is no
+  authentication until Milestone 0002). `GET /api/v1/commands` lists the full
+  command catalog to any such caller. The config gate is the only access
+  control; keep it `false` unless the interface is otherwise protected.
 - **Reverse proxies:** the check uses the TCP peer, not `X-Forwarded-For` /
   `Forwarded` (those headers are spoofable and are **not honoured**). Behind a
   reverse proxy on the same host every request arrives from loopback, so
-  `--command-api-role admin` would make every client an admin: such
-  deployments must keep `--command-api-role user` (decision log D4).
-- The generic endpoint requires `Content-Type: application/json` (`415`
-  otherwise), which forces a CORS preflight and blocks "simple" cross-site
-  `POST`s.
+  `--command-api-role admin` would make **every** client of the proxy an admin
+  (threat model T-64/T-65): such deployments must keep `--command-api-role user`
+  (the recommended role behind any proxy, decision log D4) and should front the
+  endpoint with a proxy ACL (allowlist) restricting who can reach it.
+- The generic endpoint requires `Content-Type: application/json` (`415` before
+  the body is parsed), which forces a CORS preflight the server never grants and
+  blocks "simple" cross-site `POST`s. This content-type gate is the **only**
+  CSRF defence for a loopback `admin` caller; **enabling any CORS allowance
+  (an `Access-Control-Allow-Origin` response, a permissive proxy) would reopen
+  this CSRF hole** and must not be added in front of the command API.
 - Commands whose permission is `manage_users` (reserved for Milestone 0002)
   are always refused over REST with `not_authorized` until session-derived
   callers exist, whatever the role flag says.

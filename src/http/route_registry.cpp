@@ -85,7 +85,8 @@ std::vector<RouteParameterDoc> pathParametersFor(const std::string& path)
     return params;
 }
 
-std::vector<RouteParameterDoc> queryParametersFor(const std::string& path)
+std::vector<RouteParameterDoc> queryParametersFor(const std::string& method,
+                                                  const std::string& path)
 {
     if (path == "/api/v1/links/{slug}/stats") {
         return {
@@ -94,7 +95,10 @@ std::vector<RouteParameterDoc> queryParametersFor(const std::string& path)
             {"bucket", "Aggregate bucket size: hour, day, or week.", false},
         };
     }
-    if (path == "/api/v1/links") {
+    // The list filters belong to GET /api/v1/links only; POST /api/v1/links
+    // (create) shares the path but takes no query parameters, so it must not
+    // inherit these (keeps its generated row byte-identical, contract C3).
+    if (method == "GET" && path == "/api/v1/links") {
         return {
             {"status", "Lifecycle filter: all, active, disabled, expired, or "
                        "deleted (default active). all and deleted require "
@@ -154,6 +158,12 @@ std::vector<RouteResponseDoc> responsesFor(
     if (method == "POST" && path == "/api/v1/short-urls") {
         return {{201, "Compatibility link created."}, {400, "Invalid request."}};
     }
+    if (method == "GET" && path == "/api/v1/commands") {
+        return {{200, "Registered commands listed."},
+                {400, "Command API disabled, or a malformed/unknown query "
+                      "parameter."},
+                {403, "Not authorized."}};
+    }
     if (method == "POST" && path == "/api/v1/commands") {
         return {{200, "Command executed; response envelope returned."},
                 {400, "Invalid request envelope."},
@@ -191,7 +201,9 @@ RouteDescriptor route(
     descriptor.tags = {tagFor(descriptor.route_label, descriptor.path_pattern)};
     descriptor.operation_id = operationIdFor(descriptor.method, descriptor.path_pattern);
     descriptor.path_parameters = pathParametersFor(descriptor.path_pattern);
-    descriptor.query_parameters = queryParametersFor(descriptor.path_pattern);
+    descriptor.query_parameters = queryParametersFor(
+        descriptor.method,
+        descriptor.path_pattern);
     descriptor.request_body_description = requestBodyFor(
         descriptor.method,
         descriptor.path_pattern);
@@ -275,6 +287,9 @@ const std::vector<RouteDescriptor>& registeredRoutes()
 
         // Generic command API (/api/v1/commands), gated by
         // --command-api-enabled.
+        route("GET", "/api/v1/commands", "api_commands",
+         "List the registered commands and their argument schemas (gated by "
+         "--command-api-enabled)."),
         route("POST", "/api/v1/commands", "api_commands",
          "Execute one command request envelope and return its response "
          "envelope (gated by --command-api-enabled)."),

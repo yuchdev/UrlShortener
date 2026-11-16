@@ -2,12 +2,15 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <vector>
 
+#include <url_shortener/commands/args_builder.hpp>
 #include <url_shortener/commands/command_registry.hpp>
 #include <url_shortener/commands/envelope.hpp>
 #include <url_shortener/core/config.hpp>
 #include <url_shortener/http/command_bridge.hpp>
 #include <url_shortener/http/handlers/command_handlers.hpp>
+#include <url_shortener/http/query_params.hpp>
 #include <url_shortener/http/request_handlers.hpp>
 
 namespace url_shortener
@@ -89,6 +92,38 @@ BeastResponse renderEnvelope(const BeastRequest& req,
                                        "application/json");
 }
 
+/**
+ * @brief Whether a query-parameter name matches the args-object name grammar
+ * `[a-z][a-z0-9_]*`.
+ *
+ * @ref commands::args_builder::add_string throws `std::invalid_argument` on a
+ * name outside this grammar, so @ref handleListCommands validates every
+ * forwarded name here first and turns a bad name into a `400` rather than
+ * letting it reach (and throw inside) the builder. A name that matches the
+ * grammar but is not a `command.list` argument (which takes none) is still
+ * forwarded, so the registry reports it as `<name>: unknown`. Mirrors the
+ * identically-named helper in `link_handlers.cpp` (duplicated rather than
+ * shared to keep the handler files decoupled in this slice).
+ *
+ * @param name Decoded query-parameter name.
+ * @return `true` when @p name is non-empty, starts with `a-z`, and otherwise
+ * contains only `a-z`, `0-9` or `_`; `false` otherwise.
+ */
+bool is_valid_arg_name(const std::string& name)
+{
+    if (name.empty() || name.front() < 'a' || name.front() > 'z') {
+        return false;
+    }
+    for (const char c : name) {
+        const bool ok = (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9')
+            || c == '_';
+        if (!ok) {
+            return false;
+        }
+    }
+    return true;
+}
+
 }  // namespace
 
 BeastResponse handleExecuteCommand(const BeastRequest& req,
@@ -164,6 +199,71 @@ BeastResponse handleExecuteCommand(const BeastRequest& req,
         is_tls,
         execute_command_envelope(
             config, request, command_api_caller(config, context.peer)));
+}
+
+BeastResponse handleListCommands(const BeastRequest& req,
+                                 const ::ServerConfig& config,
+                                 const bool is_tls,
+                                 const RouteContext& context)
+{
+    // 1. Gate (threat model T-64): when the command API is disabled (the secure
+    // default), answer byte-for-byte like GET /api/v1/commands did before this
+    // route existed. POST /api/v1/commands (subtask 09) already makes the path
+    // exist, so today's router returns 400 invalid_method "Only POST is
+    // supported" (the same subtlety handleListLinks handles for the POST-only
+    // /api/v1/links path), not a 404. The catalog is never disclosed here and
+    // the query is never read.
+    if (!command_api_enabled(config)) {
+        return url_shortener::makeApiErrorResponse(
+            req, config, is_tls, 400, "invalid_method",
+            "Only POST is supported");
+    }
+
+    // 2. Parse the query string (percent-decoded, repeated keys preserved). A
+    // malformed query -> 400 invalid_request with a fixed, value-free message
+    // (threat model T-73). command.list takes no arguments.
+    std::vector<query_param> params;
+    std::string parse_error;
+    if (!parse_query_string(context.query_string, &params, &parse_error)) {
+        return url_shortener::makeApiErrorResponse(
+            req, config, is_tls, 400, "invalid_request",
+            "malformed query string");
+    }
+
+    // Forward every parameter as an args member (contract C1: the handler only
+    // assembles args via args_builder). Each name is validated against the
+    // args-object grammar first (the builder throws on a bad name) and a
+    // duplicate is a 400; a grammar-valid but unknown name is forwarded so the
+    // registry rejects it as <name>: unknown (surfaced as 400 invalid_request).
+    commands::args_builder args;
+    for (const query_param& param : params) {
+        if (!is_valid_arg_name(param.name)) {
+            return url_shortener::makeApiErrorResponse(
+                req, config, is_tls, 400, "invalid_request",
+                "invalid parameter name");
+        }
+        if (args.has(param.name)) {
+            return url_shortener::makeApiErrorResponse(
+                req, config, is_tls, 400, "invalid_request",
+                param.name + ": duplicate");
+        }
+        args.add_string(param.name, param.value);
+    }
+
+    // 3/4. Execute command.list as the gated caller (subtask 08) and render
+    // resource-style: the result verbatim at 200, or the legacy error envelope
+    // (a permission failure maps to 403 not_authorized). command.list is a read
+    // command, so a User caller may list (threat model T-74).
+    return resource_response(
+        req,
+        config,
+        is_tls,
+        execute_resource_command(config,
+                                 "command.list",
+                                 args.str(),
+                                 requestIdFromRequest(req),
+                                 command_api_caller(config, context.peer)),
+        200);
 }
 
 }  // namespace http

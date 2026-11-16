@@ -58,6 +58,7 @@ Router RouterBuilder::buildApplicationRouter()
     router.add(bhttp::verb::delete_, "/api/v1/links/{slug}", "api_links", handleDeleteLink);
     router.add(bhttp::verb::post, "/api/v1/links", "api_links", handleCreateLink);
 
+    router.add(bhttp::verb::get, "/api/v1/commands", "api_commands", handleListCommands);
     router.add(bhttp::verb::post, "/api/v1/commands", "api_commands", handleExecuteCommand);
 
     router.add(bhttp::verb::post, "/api/v1/short-urls", "api_links", handleCompatCreateLink);

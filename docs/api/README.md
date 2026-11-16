@@ -9,6 +9,7 @@ IDs, compatibility markers, placeholders, and documentation grouping.
 | GET | `/healthz` | `get_healthz` | Observability | - | - | - | Liveness probe; returns 200 when the process is running. |
 | GET | `/readyz` | `get_readyz` | Observability | - | - | - | Readiness probe; returns 200 when the server can serve traffic. |
 | GET | `/metrics` | `get_metrics` | Observability | - | - | - | Prometheus-style metrics exposition endpoint. |
+| GET | `/api/v1/links` | `get_api_v1_links` | Links | `status`, `q`, `tag`, `campaign`, `sort`, `order`, `offset`, `limit` | - | - | List links with filtering, sorting and paging. |
 | POST | `/api/v1/links` | `post_api_v1_links` | Links | - | JSON object containing target_url and optional slug, metadata, tags, campaign, expiry, and redirect type fields. | - | Create a short link from a target URL and optional attributes. |
 | GET | `/api/v1/links/id/{id}` | `get_api_v1_links_id_id` | Links | - | - | - | Fetch a link by its opaque identifier. |
 | GET | `/api/v1/links/{slug}` | `get_api_v1_links_slug` | Links | - | - | - | Fetch a link's full metadata by slug. |
@@ -21,6 +22,8 @@ IDs, compatibility markers, placeholders, and documentation grouping.
 | POST | `/api/v1/links/{slug}/enable` | `post_api_v1_links_slug_enable` | Links | - | - | - | Enable a previously disabled link. |
 | POST | `/api/v1/links/{slug}/disable` | `post_api_v1_links_slug_disable` | Links | - | - | - | Disable a link so it stops redirecting. |
 | POST | `/api/v1/links/{slug}/restore` | `post_api_v1_links_slug_restore` | Links | - | - | - | Restore a soft-deleted link. |
+| GET | `/api/v1/commands` | `get_api_v1_commands` | Commands | - | - | - | List the registered commands and their argument schemas (gated by --command-api-enabled). |
+| POST | `/api/v1/commands` | `post_api_v1_commands` | Commands | - | Command request envelope: an object with a command name, an args object, optional options (dry_run/async) and id. | - | Execute one command request envelope and return its response envelope (gated by --command-api-enabled). |
 | POST | `/api/v1/short-urls` | `post_api_v1_short_urls` | Compatibility | - | Compatibility JSON object containing url and optional code fields. | compatibility alias | Compatibility alias for creating a short link. |
 | GET | `/api/v1/short-urls/{slug}` | `get_api_v1_short_urls_slug` | Compatibility | - | - | compatibility alias | Compatibility alias for fetching a link by slug. |
 | GET | `/r/{slug}` | `get_r_slug` | Redirects | - | - | - | Prefixed redirect to a link's target URL. |
