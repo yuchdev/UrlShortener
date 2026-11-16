@@ -118,6 +118,11 @@ include(CTest)
         ${HIREDIS_LIB}
         yaml-cpp::yaml-cpp
   )
+  # Forward the CMake project version to C++ so `system.info` can report it
+  # without a hard-coded literal (Task 03.0 subtask 17). PUBLIC so every target
+  # linking url_shortener_common sees the same definition.
+  target_compile_definitions(url_shortener_common
+      PUBLIC URL_SHORTENER_VERSION="${PROJECT_VERSION}")
 
   add_executable(route_registry_dump
       ${CMAKE_CURRENT_SOURCE_DIR}/tools/route_registry_dump.cpp
