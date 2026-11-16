@@ -287,9 +287,20 @@ std::string summarize_storage_config(const StorageConfig& config);
  * - `"storage backend unavailable"` when the metadata probe reports a
  *   backend error.
  *
- * @param config Server configuration; only `storage_config_path` is
- * read here. When it is `std::nullopt`, an inactive handle is returned
- * and nothing is installed (today's legacy in-memory default, C3/C4).
+ * Side effect: publishes the process-wide `system.info` snapshot via
+ * `app::set_process_system_info` exactly once, after the config is validated
+ * and before any command runtime or transport can read it — from the validated
+ * `StorageConfig` when a path is configured, or from a default `StorageConfig`
+ * (the inmemory/none/noop/disabled backends the legacy path actually uses)
+ * paired with @p config otherwise, so the snapshot always reflects the live
+ * shortener settings. The snapshot carries only allowlisted, non-secret values
+ * and is never logged (threat model T-53, milestone contract C6).
+ *
+ * @param config Server configuration; `storage_config_path` selects the
+ * backend, and the non-secret shortener/request-hardening fields feed the
+ * published `system.info` snapshot. When `storage_config_path` is
+ * `std::nullopt`, an inactive handle is returned and nothing is installed
+ * (today's legacy in-memory default, C3/C4).
  * @return An active handle (installed store) when a path is configured
  * and the backend is reachable; an inactive handle otherwise.
  * @throws std::runtime_error with one of the fixed, value-free messages

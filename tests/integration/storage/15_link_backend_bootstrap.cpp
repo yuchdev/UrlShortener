@@ -26,6 +26,7 @@
 
 #include <boost/test/unit_test.hpp>
 #include <url_shortener/app/link_backend.hpp>
+#include <url_shortener/app/system_info.hpp>
 #include <url_shortener/composition/link_backend_bootstrap.hpp>
 #include <url_shortener/core/config.hpp>
 #include <url_shortener/core/types.hpp>
@@ -43,6 +44,9 @@ namespace
 using url_shortener::app::InitLinkBackend;
 using url_shortener::app::LinkBackend;
 using url_shortener::app::LinkBackendHandle;
+using url_shortener::app::make_system_info;
+using url_shortener::app::process_system_info;
+using url_shortener::app::set_process_system_info;
 using url_shortener::app::summarize_storage_config;
 
 /// Monotonic counter making each temp path within one process unique.
@@ -782,6 +786,60 @@ BOOST_AUTO_TEST_CASE(serving_latch_and_shutdown)
 
     // The handle still owns the (now stopped) store; its destructor's
     // stop_stats_flusher is idempotent and safe after shutdown.
+    std::filesystem::remove(db);
+    std::filesystem::remove(yaml);
+}
+
+/**
+ * [Integration][App] InitLinkBackend publishes the process-wide system.info
+ * snapshot from the resolved config (subtask 03.0/18 follow-up).
+ *
+ * Scenario: bootstrap over a SQLite config and read process_system_info();
+ * then bootstrap with no config and read it again.
+ * Boundaries: the SQLite path yields metadata "sqlite" / persistent true; the
+ * no-config path yields metadata "inmemory" / persistent false from the default
+ * StorageConfig, so system.info no longer always reports the in-memory default.
+ * On failure first check: the set_process_system_info call in both branches of
+ * InitLinkBackend.
+ */
+BOOST_AUTO_TEST_CASE(bootstrap_publishes_system_info_snapshot)
+{
+    // Restore the process-wide snapshot to the default on scope exit so later
+    // tests that rely on the untouched default are not affected.
+    struct SnapshotReset
+    {
+        ~SnapshotReset()
+        {
+            set_process_system_info(
+                make_system_info(StorageConfig {}, ServerConfig {}));
+        }
+    } snapshot_reset;
+
+    BackendResetGuard guard;
+    const auto db = temp_path(".db");
+    const auto yaml = temp_path(".yaml");
+    std::filesystem::remove(db);
+    write_file(
+        yaml,
+        "metadata:\n  backend: sqlite\n  sqlite_path: " + db.string() + "\n");
+
+    ServerConfig config;
+    config.storage_config_path = yaml.string();
+    {
+        LinkBackendHandle handle = InitLinkBackend(config);
+        const auto info = process_system_info();
+        BOOST_CHECK_EQUAL(info.metadata, "sqlite");
+        BOOST_CHECK(info.persistent);
+    }
+    LinkBackend::reset();
+
+    // No configured path -> the default StorageConfig snapshot (inmemory).
+    ServerConfig default_config;  // storage_config_path unset
+    LinkBackendHandle inactive = InitLinkBackend(default_config);
+    const auto default_info = process_system_info();
+    BOOST_CHECK_EQUAL(default_info.metadata, "inmemory");
+    BOOST_CHECK(!default_info.persistent);
+
     std::filesystem::remove(db);
     std::filesystem::remove(yaml);
 }

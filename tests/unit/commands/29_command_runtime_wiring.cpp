@@ -5,6 +5,7 @@
 #include <memory>
 #include <optional>
 #include <set>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -27,6 +28,7 @@
 #include "url_shortener/commands/envelope.hpp"
 #include "url_shortener/commands/error_codes.hpp"
 #include "url_shortener/commands/link_commands.hpp"
+#include "url_shortener/commands/system_commands.hpp"
 #include "url_shortener/composition/command_runtime.hpp"
 #include "url_shortener/composition/link_backend_bootstrap.hpp"
 #include "url_shortener/config/storage_config.hpp"
@@ -70,6 +72,7 @@ using url_shortener::commands::LoggerAuditSink;
 using url_shortener::commands::register_browse_commands;
 using url_shortener::commands::register_builtin_commands;
 using url_shortener::commands::register_documented_commands;
+using url_shortener::commands::make_system_info_descriptor;
 using url_shortener::commands::register_link_commands;
 using url_shortener::commands::render_catalog_markdown;
 using url_shortener::composition::build_command_runtime;
@@ -569,4 +572,26 @@ BOOST_AUTO_TEST_CASE(sqlite_backed_runtime_persists_to_file)
         make_system_info(StorageConfig {}, ServerConfig {}));
     std::filesystem::remove(db);
     std::filesystem::remove(yaml);
+}
+
+// Type: unit (fail-closed duplicate registration on the built runtime registry).
+// Scenario: the runtime registry already holds "system.info"; adding a second
+//   descriptor whose name collides with an existing one throws invalid_argument.
+// Boundaries: CommandRegistry::add rejects a duplicate name rather than silently
+//   shadowing a command (C11, one definition per command).
+// On failure first check: did CommandRegistry::add stop enforcing unique names?
+BOOST_AUTO_TEST_CASE(duplicate_command_name_throws)
+{
+    url_shortener::app::LinkBackend::reset();
+    ServerConfig server;
+    url_shortener::app::LinkBackendHandle backend;  // inactive / legacy
+
+    const CommandRuntime runtime = build_command_runtime(server, backend);
+    BOOST_REQUIRE(runtime.registry != nullptr);
+
+    // "system.info" is already registered by build_command_runtime; registering
+    // a second descriptor with that name must fail closed.
+    BOOST_CHECK_THROW(
+        runtime.registry->add(make_system_info_descriptor(SystemInfo {})),
+        std::invalid_argument);
 }

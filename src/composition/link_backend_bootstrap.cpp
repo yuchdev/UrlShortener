@@ -15,6 +15,7 @@
 
 #include "url_shortener/app/expiring_link_cache.hpp"
 #include "url_shortener/app/link_backend.hpp"
+#include "url_shortener/app/system_info.hpp"
 #include "url_shortener/storage/errors/repo_error.hpp"
 
 namespace url_shortener
@@ -284,8 +285,15 @@ void LinkBackendHandle::flush()
 LinkBackendHandle InitLinkBackend(const ServerConfig& config)
 {
     // 1. No path configured -> inactive handle, nothing installed
-    //    (today's legacy in-memory default, C3/C4).
+    //    (today's legacy in-memory default, C3/C4). Publish the process-wide
+    //    system.info snapshot from a *default* StorageConfig (the backends this
+    //    mode actually uses: inmemory/none/noop/disabled) paired with the real
+    //    ServerConfig, so system.info reflects the live shortener settings even
+    //    on the legacy path. Set exactly once, before any command runtime or
+    //    transport can read process_system_info(). Never logs the snapshot or
+    //    any config value (threat model T-53, milestone contract C6).
     if (!config.storage_config_path) {
+        set_process_system_info(make_system_info(StorageConfig {}, config));
         return LinkBackendHandle {};
     }
 
@@ -293,6 +301,13 @@ LinkBackendHandle InitLinkBackend(const ServerConfig& config)
     //    messages (T-31).
     const StorageConfig cfg =
         parse_config_or_throw(*config.storage_config_path);
+
+    // Publish the process-wide system.info snapshot from the validated config,
+    // once, after validation and before any command runtime/transport is built
+    // (the probe and store construction below never read it). make_system_info
+    // copies only allowlisted backend names and the non-secret ServerConfig
+    // subset, never a DSN/path/salt/TLS; the snapshot is never logged (T-53/C6).
+    set_process_system_info(make_system_info(cfg, config));
 
     const bool persistent = cfg.metadata.backend != "inmemory";
 
