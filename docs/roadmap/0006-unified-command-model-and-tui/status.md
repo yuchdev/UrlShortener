@@ -8,7 +8,7 @@ Tracks progress against [plan.md](/docs/roadmap/0006-unified-command-model-and-t
 |------|------|--------|-------|
 | 01.0 | Command model core | ✅ Complete (13/13 subtasks) | 14 (`commands__01`-`14`) |
 | 02.0 | Storage path unification | ✅ Complete (16/16 subtasks, incl. added 02.0/16) | 15 targets (`app__19`-`24`, `metadata__09`, `inmemory__16`, `storage__15` x2, http `30`/`31`, `cli__05`, `cli_03`/`17`/`18`, `e2e_12`) |
-| 03.0 | Link and browse commands | 🔶 In progress (18/18 subtasks) | 7 (+ `memory__17`, `analytics__16`) |
+| 03.0 | Link and browse commands | ✅ Complete (18/18 subtasks) | 23 targets (`commands__20`-`30`, `app__40`-`48`, `core 09`, `memory__17`, `analytics__16`, storage list-events SQLite/Postgres, contract `10`-`12`) |
 | 04.0 | REST and CLI adapters | ⬜ Not started | 0 |
 | 05.0 | Jobs, pair import/export, stdio | ⬜ Not started | 0 |
 | 06.0 | Terminal UI | ⬜ Not started | 0 |
@@ -157,6 +157,53 @@ Completed 2026-11-14 on branch `milestone/0006-unified-command-model-and-tui`.
   `redis_address` validation, logger CR/LF stripping and testability,
   SQLite unit tests' fixed DB files, e2e GNU `timeout`, clang-format
   version pinning and the whole-file post-edit format hook.
+
+### Task 03.0 - Link and browse commands (✅)
+
+Completed 2026-11-16 on branch `milestone/0006-unified-command-model-and-tui`.
+
+**Delivered:**
+
+- Storage query layer: `ListLinksQuery` (text, sort, order, extra filter),
+  `ListLinksPage` default with `kListScanLimit`, Postgres owner-filter bind
+  fix (T-50); `IClickEventRepository::ListEvents` (in-memory + SQL, bound
+  parameters, whitelisted ORDER BY, escaped LIKE, shared 256-byte text cap,
+  offset clamp, page cap 500).
+- Command layer: codec helpers (C1), `ValidateCreateLink`/`ValidateUpdateLink`
+  dry-run variants, `link.create/get/preview/stats/update/delete/enable/
+  disable/restore`, `register_link_commands` with a 26-case REST parity gate
+  (C3), `serializeLinkLifetimeStatsJson`.
+- Browse: `ILinkLister` (repository + legacy snapshot listers sharing one
+  filter implementation), `link.list`, `ITableSource`/`TableCatalog`
+  (allowlist = catalog, auth tables refused), `db.tables`/`db.rows`,
+  `links`/`click_events` sources (hashed client id only, referrer query,
+  fragment and userinfo stripped), `system.info` (allowlisted backend names,
+  non-secret settings, `URL_SHORTENER_VERSION`).
+- Composition: `build_command_runtime` (14 commands, mandatory audit sink),
+  `LinkBackendHandle::repository()`, system-info snapshot published by
+  `InitLinkBackend`, documented registry over inert placeholders with
+  catalog block 3.7 regenerated.
+- Hardening: shared `jsonEscape` now always emits valid JSON (all C0, DEL,
+  U+2028/2029 escaped; invalid UTF-8 -> U+FFFD).
+- Tooling (user decisions): Stop hook busy guard (`1609d41`); whole-file
+  reformat of legacy files accepted.
+
+**Tests / gate:**
+
+- 23 new or extended test targets (table above); full serial suite 314/316
+  with the two known flaky server-start tests passing alone (tracked for
+  07.0).
+- Every subtask: `/verify-subtask` and a security review; findings fixed in
+  the same iteration or carried forward with an owner.
+- Task-close `/pr-review`: feature LGTM (4 non-blocking suggestions ->
+  0007 list); security PASS_WITH_FOLLOWUP (no CRITICAL/new HIGH). Threat
+  model with Task-close section:
+  [docs/security/0006-03.0-link-and-browse-commands-threat-model.md](/docs/security/0006-03.0-link-and-browse-commands-threat-model.md)
+
+**Open decisions raised at close:** unbounded stats range (max bucket
+count), SQLite 32-bit INTEGER read (Y2038), T-54 storage-outage semantics
+ADR, clang-format version pinning, public `GET /api/v1/links` gating +
+100k scan (04.0/07).
 
 ## Open risks
 
