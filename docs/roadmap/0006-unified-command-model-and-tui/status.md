@@ -229,6 +229,21 @@ ADR, clang-format version pinning, public `GET /api/v1/links` gating +
 
 ## Notes & decisions
 
+- 2026-11-16 (user, raised at Task 03.0 close):
+  - **Stats range:** cap the number of buckets a stats request may produce
+    (fixed maximum, e.g. 10,000; over-cap -> `invalid_field` with a fixed
+    detail). Applies to REST `GET /api/v1/links/{slug}/stats` and
+    `link.stats` alike. Owner: Task 04.0 (REST stats adapter subtask).
+  - **Y2038:** fix the SQLite 32-bit INTEGER read before Task 04.0 starts
+    (03.0 follow-up; round-trip test with a post-2038 timestamp).
+  - **Link listing (04.0/07):** `GET /api/v1/links` requires an
+    authenticated caller (401 otherwise); `status=all|deleted` additionally
+    require write/admin.
+  - **Storage-outage semantics (T-54):** app-architect drafts an ADR
+    (Proposed) at milestone close (08.0); the user accepts or rejects it.
+  - **clang-format version pinning:** not scheduled in 0006; stays on the
+    0007 list.
+
 See [decision-log.md](/docs/roadmap/0006-unified-command-model-and-tui/decision-log.md)
 for every choice made without asking the user, with alternatives.
 
