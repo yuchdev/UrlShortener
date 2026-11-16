@@ -187,6 +187,21 @@ commands::CommandResponse execute_resource_command(
     // ServerConfig and the response renderers still take it. In production the
     // installed runtime was built from this same config.
     (void)config;
+    // Fail closed while serving (security finding 04.0/03): the lazily-built
+    // fallback in request_runtime() borrows app::LinkBackend::store() by
+    // reference and is only ever valid for non-serving unit tests/tools. If the
+    // process has latched "serving" yet no process runtime was installed, that
+    // fallback's borrow may dangle, so refuse the command with a value-free
+    // `internal` error (rendered as 500 internal_error) instead of executing
+    // against it. The fallback is still used for the non-serving case below.
+    if (app::LinkBackend::serving()
+        && composition::process_command_runtime() == nullptr)
+    {
+        return commands::make_failure(
+            std::move(request_id),
+            commands::make_error(commands::CommandErrorCode::internal,
+                                 "internal error"));
+    }
     const std::shared_ptr<composition::CommandRuntime> runtime =
         request_runtime();
     return execute_resource_command(*runtime->registry,

@@ -369,6 +369,40 @@ BOOST_AUTO_TEST_CASE(stats_range_validation_errors_keep_promoted_codes)
     BOOST_TEST(extract_code(bad_bucket.body()) == "invalid_bucket");
 }
 
+// Type: unit (stats epoch range guard, T-76 overflow fix / security 04.0/03).
+// Scenario: window bounds outside [1970-01-01T00:00:00Z, 9999-12-31T23:59:59Z]
+//   — a negative from, a to one second past year 9999, a from beyond year 9999,
+//   and the extreme pair from=-5000000000&to=5000000000&bucket=hour whose
+//   native-resolution span would overflow — are each rejected as 400
+//   invalid_timestamp before any time_point arithmetic, so the overflow can
+//   never wrap negative and skip the bucket cap. None ever returns 200.
+// Boundaries: parseEpoch validates the integer in [0, 253402300799] BEFORE
+//   building a time_point; the reader emits invalid_timestamp, which the bridge
+//   promotes to that REST code (T-62). This changes REST behaviour only for
+//   absurd epochs previously accepted/UB (user-approved cap decision).
+// On failure first check: did parseEpoch drop its range check, or did the span
+//   go back to subtracting system_clock time_points?
+BOOST_AUTO_TEST_CASE(stats_out_of_range_epochs_are_invalid_timestamp)
+{
+    Fixture f;
+    seed_click("r16epoch", 1000000);  // In range; must never be aggregated.
+
+    const std::vector<std::string> queries = {
+        "from=-1&to=1000&bucket=day",                    // negative from
+        "from=0&to=253402300800&bucket=day",             // to one past 9999
+        "from=253402300800&to=253402300900&bucket=day",  // from beyond 9999
+        "from=-5000000000&to=5000000000&bucket=hour",    // extreme overflow pair
+    };
+    for (const std::string& q : queries) {
+        const auto res = f.dispatch(make_request(
+            bhttp::verb::get, "/api/v1/links/r16epoch/stats?" + q));
+        BOOST_TEST(res.result_int() == 400, q);
+        BOOST_TEST(extract_code(res.body()) == "invalid_timestamp", q);
+        // Never aggregated: an error envelope carries no stats fields.
+        BOOST_TEST(res.body().find("total_attempts") == std::string::npos, q);
+    }
+}
+
 // Type: unit (stats bucket cap, T-76 over-cap rejection).
 // Scenario: an over-cap span (from=0&to=9999999999&bucket=hour, > 10,000 hour
 //   buckets) returns 400 invalid_request with message range_too_large, and no

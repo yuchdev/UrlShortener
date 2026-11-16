@@ -22,8 +22,38 @@ namespace app
 namespace
 {
 
-std::optional<std::chrono::system_clock::time_point> parseEpoch(
-    const std::string& value)
+/// Lowest accepted Unix epoch for a stats window bound: 1970-01-01T00:00:00Z.
+/// Rejecting negatives keeps the from/to span non-negative so the T-76 bucket
+/// cap can be computed in whole seconds without a signed overflow (CWE-190).
+constexpr long long k_min_epoch_seconds = 0;
+
+/// Highest accepted Unix epoch for a stats window bound:
+/// 9999-12-31T23:59:59Z. Bounding both ends to this range makes the maximum
+/// possible `to - from` span ~2.5e11 seconds, which is far inside `long long`
+/// (and inside `system_clock`'s nanosecond range) so neither the span subt
+/// nor the time_point construction can overflow for absurd query values.
+constexpr long long k_max_epoch_seconds = 253402300799;
+
+/**
+ * @brief Parses a decimal Unix-epoch-seconds string into a bounded seconds
+ * count, rejecting anything a stats window must not accept.
+ *
+ * Validation happens on the integer BEFORE any `time_point` is built, so an
+ * out-of-range value can never reach `system_clock`'s native-resolution
+ * arithmetic (where an extreme epoch would overflow and silently skip the
+ * T-76 cap — the bug this guard closes). Accepted input is a base-10 integer,
+ * with no leading/trailing non-digit characters, whose value lies in
+ * `[k_min_epoch_seconds, k_max_epoch_seconds]`
+ * (1970-01-01T00:00:00Z .. 9999-12-31T23:59:59Z inclusive).
+ *
+ * @param value The raw `from`/`to` query string to parse.
+ * @return The epoch in whole seconds when @p value is a fully-consumed decimal
+ * integer within the accepted range; `std::nullopt` when it is non-numeric,
+ * has trailing junk, over/underflows `long long`, or falls outside the range.
+ * The caller maps a `std::nullopt` to the fixed `invalid_timestamp` detail and
+ * never echoes @p value back.
+ */
+std::optional<long long> parseEpoch(const std::string& value)
 {
     try {
         std::size_t pos = 0;
@@ -31,8 +61,10 @@ std::optional<std::chrono::system_clock::time_point> parseEpoch(
         if (pos != value.size()) {
             return std::nullopt;
         }
-        return std::chrono::system_clock::time_point {
-            std::chrono::seconds(epoch)};
+        if (epoch < k_min_epoch_seconds || epoch > k_max_epoch_seconds) {
+            return std::nullopt;
+        }
+        return epoch;
     } catch (const std::exception&) {
         return std::nullopt;
     }
@@ -112,17 +144,21 @@ Result<LinkStatsView> LegacyLinkStatsReader::read(
                 makeError(AppErrorCode::not_found, "Link not found")};
     }
 
-    const auto from = parseEpoch(query.from);
-    const auto to = parseEpoch(query.to);
-    if (!from.has_value() || !to.has_value() || *from >= *to) {
+    const auto from_epoch = parseEpoch(query.from);
+    const auto to_epoch = parseEpoch(query.to);
+    if (!from_epoch.has_value() || !to_epoch.has_value()
+        || *from_epoch >= *to_epoch)
+    {
         return {std::nullopt,
                 makeError(AppErrorCode::invalid_field, "invalid_timestamp")};
     }
 
     analytics::AggregateQuery aggregate_query;
     aggregate_query.slug = query.slug;
-    aggregate_query.from = *from;
-    aggregate_query.to = *to;
+    aggregate_query.from =
+        std::chrono::system_clock::time_point {std::chrono::seconds(*from_epoch)};
+    aggregate_query.to =
+        std::chrono::system_clock::time_point {std::chrono::seconds(*to_epoch)};
     long long bucket_width_seconds = 0;
     if (query.bucket == "hour") {
         aggregate_query.bucket = analytics::AggregateBucket::hour;
@@ -144,13 +180,17 @@ Result<LinkStatsView> LegacyLinkStatsReader::read(
     // T-76 bucket-count cap: bound the span's bucket count BEFORE calling
     // GetAggregateStats or allocating any bucket. Ordered after the from<to and
     // invalid_bucket checks so a bad timestamp/bucket still reports its own
-    // detail, never range_too_large. `*from < *to` holds here, so the span is
-    // positive; the count is (to - from) / width, exactly the number of whole
-    // buckets the span covers. Over the cap -> a fixed, value-free detail that
-    // never echoes the requested range (contract C6). Shared by REST
-    // GET .../stats and link.stats, so the cap is identical for both (parity).
-    const long long span_seconds =
-        std::chrono::duration_cast<std::chrono::seconds>(*to - *from).count();
+    // detail, never range_too_large. The span is computed in whole seconds
+    // directly from the two validated int64 epochs — NOT by subtracting
+    // system_clock time_points, whose nanosecond resolution would overflow for
+    // extreme epochs and could wrap negative, skipping this cap. Both epochs are
+    // bounded to [0, k_max_epoch_seconds] and `*from_epoch < *to_epoch` holds
+    // here, so the subtraction is non-negative and far inside `long long`; the
+    // count is (to - from) / width, exactly the number of whole buckets the span
+    // covers. Over the cap -> a fixed, value-free detail that never echoes the
+    // requested range (contract C6). Shared by REST GET .../stats and
+    // link.stats, so the cap is identical for both (parity).
+    const long long span_seconds = *to_epoch - *from_epoch;
     if (span_seconds / bucket_width_seconds > k_max_stat_buckets) {
         return {std::nullopt,
                 makeError(AppErrorCode::invalid_field, "range_too_large")};

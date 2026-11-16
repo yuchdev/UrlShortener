@@ -496,3 +496,44 @@ BOOST_AUTO_TEST_CASE(process_runtime_link_list_sees_link_created_through_backend
     std::filesystem::remove(db);
     std::filesystem::remove(yaml);
 }
+
+// Type: unit (fail-closed while serving, security finding 04.0/03).
+// Scenario: with the serving latch set and no process runtime installed,
+//   execute_resource_command refuses rather than touching request_runtime()'s
+//   lazily-built fallback (whose link service borrows LinkBackend::store() by
+//   reference). It returns an internal failure, which resource_response renders
+//   as 500 internal_error.
+// Boundaries: the guard fires only when serving() is true AND
+//   process_command_runtime() is null; the non-serving unit-test/tool path
+//   still uses the fallback (covered by request_runtime_builds_a_populated_
+//   registry). The latch is cleared via LinkBackend::shutdown() in teardown
+//   (the resetter integration test 15 uses) so later cases that install/reset
+//   are not tripped by the install-after-serving assert.
+// On failure first check: did the fail-closed guard move/drop, or did the
+//   internal error code stop mapping to 500 internal_error?
+BOOST_AUTO_TEST_CASE(serving_with_no_runtime_fails_closed_internal)
+{
+    url_shortener::app::LinkBackend::reset();
+    composition::reset_process_command_runtime();
+    const auto req = make_request();
+    const auto config = test_config();
+
+    // Latch "serving" while no process runtime is installed: the fail-closed
+    // condition. (mark_serving must be last; install/reset assert !serving.)
+    url_shortener::app::LinkBackend::mark_serving();
+
+    const commands::CommandResponse response = execute_resource_command(
+        config, "link.get", R"({"slug":"zzserving-bridge"})", "rid-serving");
+    BOOST_TEST(!response.ok);
+    BOOST_TEST((response.error.code == commands::CommandErrorCode::internal));
+
+    const BeastResponse http = resource_response(req, config, false, response);
+    BOOST_TEST(http.result_int() == 500);
+    BOOST_TEST(body_has(http, "\"code\":\"internal_error\""));
+
+    // Teardown: shutdown() is the only path that clears the serving latch; then
+    // restore the process-wide defaults for any following case / executable.
+    url_shortener::app::LinkBackend::shutdown();
+    composition::reset_process_command_runtime();
+    url_shortener::app::LinkBackend::reset();
+}

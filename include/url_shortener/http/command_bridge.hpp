@@ -179,7 +179,8 @@ commands::CommandResponse execute_resource_command(
  * @brief Runs one command for a resource route, as the legacy Admin caller.
  *
  * Obtains the shared runtime (@ref request_runtime) and delegates to the
- * explicit-registry overload with @ref resource_route_caller.
+ * explicit-registry overload with @ref resource_route_caller. Inherits the
+ * fail-closed-while-serving behavior of the explicit-caller overload below.
  *
  * @param config Server configuration; retained for signature symmetry with the
  * REST handlers (subtasks 07/09). The runtime is process-wide and config-bound
@@ -203,6 +204,16 @@ commands::CommandResponse execute_resource_command(const ::ServerConfig& config,
  * (subtask 08). Obtains the shared runtime (@ref request_runtime) and delegates
  * to the explicit-registry overload.
  *
+ * **Fail-closed while serving (security finding 04.0/03):** when the process
+ * has latched `app::LinkBackend::serving()` yet no process runtime was
+ * installed via `composition::install_process_command_runtime`, this overload
+ * does **not** fall back to @ref request_runtime's lazily-built default (whose
+ * link service borrows `app::LinkBackend::store()` by reference and is only
+ * valid for the non-serving unit-test/tool case). It instead returns a
+ * value-free `internal` failure, which @ref resource_response renders as `500`
+ * `internal_error`, rather than risk executing against a dangling borrow. The
+ * fallback runtime is still used normally when the process is not serving.
+ *
  * @param config Server configuration; retained for signature symmetry with the
  * REST handlers (subtasks 07/09). The runtime is process-wide and config-bound
  * at startup, so this argument is no longer read here; in production it equals
@@ -213,7 +224,9 @@ commands::CommandResponse execute_resource_command(const ::ServerConfig& config,
  * request.
  * @param caller The authenticated caller; `control_set` is the sole
  * authorization input.
- * @return The execution response, or a `manage_users` policy refusal.
+ * @return The execution response; a `manage_users` policy refusal; or a
+ * value-free `internal` failure when the process is serving with no process
+ * runtime installed (the fail-closed case above).
  */
 commands::CommandResponse execute_resource_command(
     const ::ServerConfig& config,
