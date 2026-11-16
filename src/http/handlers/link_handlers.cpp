@@ -11,7 +11,6 @@
 
 #include <url_shortener/app/link_backend.hpp>
 #include <url_shortener/commands/args_builder.hpp>
-#include <url_shortener/composition/link_command_service_factory.hpp>
 #include <url_shortener/core/utils.hpp>
 #include <url_shortener/http/analytics_stats_handler.hpp>
 #include <url_shortener/http/command_bridge.hpp>
@@ -150,72 +149,6 @@ std::optional<Link::Campaign> extractCampaign(const std::string& body)
     return campaign;
 }
 
-app::LinkCommandServiceBundle makeCommandService(const ::ServerConfig& config)
-{
-    return app::BuildLegacyLinkCommandService(config);
-}
-
-unsigned statusForAppError(const app::AppErrorCode code)
-{
-    switch (code) {
-        case app::AppErrorCode::reserved_slug:
-        case app::AppErrorCode::slug_conflict:
-            return 409;
-        case app::AppErrorCode::not_found:
-            return 404;
-        case app::AppErrorCode::storage_failure:
-        case app::AppErrorCode::internal:
-            return 500;
-        case app::AppErrorCode::invalid_url:
-        case app::AppErrorCode::invalid_slug:
-        case app::AppErrorCode::invalid_field:
-        case app::AppErrorCode::none:
-            return 400;
-    }
-    return 500;
-}
-
-std::string codeForAppError(const app::AppError& error)
-{
-    if (error.detail == "invalid_timestamp" || error.detail == "invalid_bucket")
-    {
-        return error.detail;
-    }
-    switch (error.code) {
-        case app::AppErrorCode::invalid_url:
-            return "invalid_url";
-        case app::AppErrorCode::invalid_slug:
-            return "invalid_slug";
-        case app::AppErrorCode::reserved_slug:
-            return "reserved_slug";
-        case app::AppErrorCode::slug_conflict:
-            return "slug_conflict";
-        case app::AppErrorCode::not_found:
-            return "not_found";
-        case app::AppErrorCode::storage_failure:
-            return "repository";
-        case app::AppErrorCode::invalid_field:
-            return "invalid_request";
-        case app::AppErrorCode::internal:
-        case app::AppErrorCode::none:
-            return "internal_error";
-    }
-    return "internal_error";
-}
-
-BeastResponse appErrorResponse(const BeastRequest& req,
-                               const ::ServerConfig& config,
-                               const bool is_tls,
-                               const app::AppError& error)
-{
-    return url_shortener::makeApiErrorResponse(req,
-                                               config,
-                                               is_tls,
-                                               statusForAppError(error.code),
-                                               codeForAppError(error),
-                                               error.detail);
-}
-
 BeastResponse linkNotFound(const BeastRequest& req,
                            const ::ServerConfig& config,
                            const bool is_tls)
@@ -224,34 +157,58 @@ BeastResponse linkNotFound(const BeastRequest& req,
         req, config, is_tls, 404, "not_found", "Link not found");
 }
 
+/**
+ * @brief Maps a lifecycle route's action word to its registry command name.
+ *
+ * The REST lifecycle routes (`POST /api/v1/links/{slug}/enable|disable|
+ * restore`) carry their verb as a fixed `action` string; this translates that
+ * closed set to the slug-only command the bridge runs: `"enable"` ->
+ * `"link.enable"`,
+ * `"disable"` -> `"link.disable"`, `"restore"` -> `"link.restore"`. Only those
+ * three values are ever passed by the handlers below, so `"restore"` is handled
+ * explicitly and the remaining enable/disable split is derived from equality
+ * with `"enable"`.
+ *
+ * @param action The lifecycle verb from the route (`"enable"`, `"disable"`, or
+ * `"restore"`); not request-controlled — it is one of the three literals the
+ * handlers pass.
+ * @return The dotted registry command name the bridge executes for @p action.
+ */
+std::string_view lifecycleCommandFor(const std::string& action)
+{
+    if (action == "restore") {
+        return "link.restore";
+    }
+    return action == "enable" ? "link.enable" : "link.disable";
+}
+
 BeastResponse handleLifecycleAction(const BeastRequest& req,
                                     const ::ServerConfig& config,
                                     const bool is_tls,
                                     const RouteContext& context,
                                     const std::string& action)
 {
-    // Transport concern: translate the lifecycle route into the transport-
-    // agnostic command DTO. enable/disable collapse onto SetLinkEnabled with
-    // the target flag; restore maps to RestoreLink. The read-mutate-persist
-    // logic (including the not_found path) lives in LinkCommandService, the
-    // sole mutation path shared with the CLI adapter.
-    const auto slug = pathValue(context, "slug");
-    const auto command_service = makeCommandService(config);
-
-    const auto result = action == "restore"
-        ? command_service.service->RestoreLink(app::RestoreLinkCommand {slug})
-        : command_service.service->SetLinkEnabled(
-              app::SetLinkEnabledCommand {slug, action == "enable"});
-    if (!result.ok()) {
-        return appErrorResponse(req, config, is_tls, result.error);
-    }
-    return url_shortener::makeResponse(
+    // Transport concern: translate the lifecycle route into its slug-only
+    // registry command and run it through the command bridge as the legacy
+    // Admin caller (contract C1, threat model T-60). enable/disable/restore map
+    // to link.enable/link.disable/link.restore; the read-mutate-persist logic
+    // (including the not_found path) lives in the command handler / link
+    // command service, the single mutation path shared with the CLI adapter.
+    // This handler holds no app:: command DTO nor error-code switch (contract
+    // C1); statuses, bodies and error codes come from the bridge (contract C3).
+    // No request body is read. The redirect fast path is unaffected (contract
+    // C10): this is the management plane.
+    commands::args_builder args;
+    args.add_string("slug", pathValue(context, "slug"));
+    return resource_response(
         req,
         config,
         is_tls,
-        200,
-        app::serializeLinkViewJson(*result.value),
-        "application/json");
+        execute_resource_command(config,
+                                 lifecycleCommandFor(action),
+                                 args.str(),
+                                 requestIdFromRequest(req)),
+        200);
 }
 
 }  // namespace
@@ -555,8 +512,9 @@ BeastResponse handlePatchLink(const BeastRequest& req,
     // (contract C3), then run the mutation through the command registry as the
     // legacy Admin caller (contract C1, threat model T-60). Read-mutate-persist
     // and the business validation run once inside the link.update handler /
-    // LinkCommandService::UpdateLink - the single mutation path shared with the
-    // CLI adapter; this handler holds no UpdateLinkCommand DTO nor error switch.
+    // link command service UpdateLink - the single mutation path shared with
+    // the CLI adapter; this handler holds no UpdateLinkCommand DTO nor error
+    // switch.
     //
     // REST contract (C3): existence is checked BEFORE any body validation, so a
     // PATCH to an unknown slug returns 404 not_found even when the body is
@@ -783,21 +741,24 @@ BeastResponse handleDeleteLink(const BeastRequest& req,
                                const bool is_tls,
                                const RouteContext& context)
 {
-    app::DeleteLinkCommand command;
-    command.slug = pathValue(context, "slug");
-
-    const auto command_service = makeCommandService(config);
-    const auto result = command_service.service->DeleteLink(command);
-    if (!result.ok()) {
-        return appErrorResponse(req, config, is_tls, result.error);
-    }
-    return url_shortener::makeResponse(
+    // Transport concern: address the link by slug and run the soft-delete
+    // through the command bridge as the legacy Admin caller (contract C1,
+    // threat model T-60). The read-mutate-persist logic and the not_found path
+    // live in the link.delete handler / link command service DeleteLink, the
+    // single mutation path shared with the CLI adapter; this handler holds no
+    // DeleteLinkCommand DTO nor error-code switch. No request body is read;
+    // statuses, bodies and error codes are produced by the bridge (contract
+    // C3). The redirect fast path is unaffected (contract C10): this is the
+    // management plane.
+    commands::args_builder args;
+    args.add_string("slug", pathValue(context, "slug"));
+    return resource_response(
         req,
         config,
         is_tls,
-        200,
-        app::serializeLinkViewJson(*result.value),
-        "application/json");
+        execute_resource_command(
+            config, "link.delete", args.str(), requestIdFromRequest(req)),
+        200);
 }
 
 BeastResponse handlePreviewLink(const BeastRequest& req,

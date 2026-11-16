@@ -116,6 +116,7 @@ set(URL_SHORTENER_SOURCES
       tests/unit/http/17_rest_create_via_registry.cpp
       tests/unit/http/18_target_requires_peer.cpp
       tests/unit/http/19_rest_patch_via_registry.cpp
+      tests/unit/http/20_rest_lifecycle_via_registry.cpp
       tests/unit/http/30_redirect_through_backend.cpp
       tests/unit/http/31_link_handlers_through_backend.cpp
   )
