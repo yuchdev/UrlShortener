@@ -7,13 +7,11 @@
  *
  *  Scope: the create success/error contract (bodies, status, per-field 400
  *  codes and their ORDER) must stay byte-for-byte what it is today (contract
- *  C3); the only deliberate addition is the new 429 `rate_limited` response when
- *  a per-peer create limit is exceeded. The redirect fast path is untouched
+ *  C3); the only deliberate addition is the new 429 `rate_limited` response
+ * when a per-peer create limit is exceeded. The redirect fast path is untouched
  *  (contract C10); this file only exercises the create management plane.
  */
 #define BOOST_TEST_MODULE RestCreateViaRegistry
-#include <boost/test/unit_test.hpp>
-
 #include <chrono>
 #include <cstdint>
 #include <memory>
@@ -21,7 +19,7 @@
 #include <string>
 
 #include <boost/asio/ip/address.hpp>
-
+#include <boost/test/unit_test.hpp>
 #include <url_shortener/app/link_backend.hpp>
 #include <url_shortener/composition/command_runtime.hpp>
 #include <url_shortener/composition/link_backend_bootstrap.hpp>
@@ -197,7 +195,8 @@ boost::asio::ip::address loopback()
 // Scenario: POST with only `url`, and POST with only `target_url`, each return
 //   201 whose body serializes the created link's view with the target under the
 //   `url` key.
-// Boundaries: both aliases resolve to the single canonical `target_url` arg; the
+// Boundaries: both aliases resolve to the single canonical `target_url` arg;
+// the
 //   body's target key stays `url` (serializer contract).
 // On failure first check: did the url/target_url alias handling or the 201
 //   rendering change?
@@ -227,18 +226,19 @@ BOOST_AUTO_TEST_CASE(create_url_alias_and_target_url_both_succeed)
 // Type: unit (create alias precedence).
 // Scenario: POST with both `url` and `target_url` present stores the `url`
 //   value (url wins), returning 201.
-// Boundaries: the alias order is url-first; the stored target is asserted at the
+// Boundaries: the alias order is url-first; the stored target is asserted at
+// the
 //   repository, not just in the body.
 // On failure first check: did the alias precedence flip to target_url-first?
 BOOST_AUTO_TEST_CASE(create_url_wins_over_target_url)
 {
-    const auto res = dispatch(
-        make_request(bhttp::verb::post,
-                     "/api/v1/links",
-                     R"({"url":"https://example.com/win",)"
-                     R"("target_url":"https://example.com/lose",)"
-                     R"("slug":"c17both"})"),
-        test_config());
+    const auto res =
+        dispatch(make_request(bhttp::verb::post,
+                              "/api/v1/links",
+                              R"({"url":"https://example.com/win",)"
+                              R"("target_url":"https://example.com/lose",)"
+                              R"("slug":"c17both"})"),
+                 test_config());
     BOOST_TEST(res.result_int() == 201);
     const auto stored = url_shortener::linkRepository().getBySlug("c17both");
     BOOST_REQUIRE(stored.has_value());
@@ -250,7 +250,8 @@ BOOST_AUTO_TEST_CASE(create_url_wins_over_target_url)
 //   expires_at and enabled:false returns 201 and the body reflects each field.
 // Boundaries: every optional arg is rebuilt through args_builder and decoded by
 //   the registry; a round-trip proves no field is dropped on the way.
-// On failure first check: did an args_builder add_* mapping or an arg name drift
+// On failure first check: did an args_builder add_* mapping or an arg name
+// drift
 //   from the catalog?
 BOOST_AUTO_TEST_CASE(create_all_optional_fields_round_trip)
 {
@@ -261,9 +262,8 @@ BOOST_AUTO_TEST_CASE(create_all_optional_fields_round_trip)
         R"("metadata":{"team":"core","tier":"gold"},)"
         R"("campaign":{"name":"cn","source":"cs","medium":"cm",)"
         R"("term":"ct","content":"cc","id":"ci"}})";
-    const auto res =
-        dispatch(make_request(bhttp::verb::post, "/api/v1/links", body),
-                 test_config());
+    const auto res = dispatch(
+        make_request(bhttp::verb::post, "/api/v1/links", body), test_config());
     BOOST_TEST(res.result_int() == 201);
     BOOST_TEST(res.body().find("\"redirect_type\":\"permanent\"")
                != std::string::npos);
@@ -280,7 +280,8 @@ BOOST_AUTO_TEST_CASE(create_all_optional_fields_round_trip)
 }
 
 // Type: unit (campaign tri-state + unknown inner key).
-// Scenario: campaign:null, campaign:{}, and a campaign with an unknown inner key
+// Scenario: campaign:null, campaign:{}, and a campaign with an unknown inner
+// key
 //   each return 201; the unknown inner key is ignored (never reaches the
 //   registry's object validator, which would otherwise reject it).
 // Boundaries: the REST layer rebuilds the campaign object from only the six
@@ -339,9 +340,8 @@ BOOST_AUTO_TEST_CASE(create_unknown_top_level_key_is_ignored)
 // On failure first check: did the required-url gate move or change its code?
 BOOST_AUTO_TEST_CASE(create_missing_url_is_invalid_url)
 {
-    const auto res =
-        dispatch(make_request(bhttp::verb::post, "/api/v1/links", "{}"),
-                 test_config());
+    const auto res = dispatch(
+        make_request(bhttp::verb::post, "/api/v1/links", "{}"), test_config());
     BOOST_TEST(res.result_int() == 400);
     BOOST_TEST(extract_code(res.body()) == "invalid_url");
     BOOST_TEST(res.body().find("url is required") != std::string::npos);
@@ -374,9 +374,9 @@ BOOST_AUTO_TEST_CASE(create_per_field_codes_and_order)
         {R"({"url":"https://example.com","campaign":5})", "invalid_campaign"},
     };
     for (const auto& c : cases) {
-        const auto res = dispatch(
-            make_request(bhttp::verb::post, "/api/v1/links", c.body),
-            test_config());
+        const auto res =
+            dispatch(make_request(bhttp::verb::post, "/api/v1/links", c.body),
+                     test_config());
         BOOST_TEST(res.result_int() == 400, c.code);
         BOOST_TEST(extract_code(res.body()) == c.code, c.code);
     }
@@ -395,9 +395,8 @@ BOOST_AUTO_TEST_CASE(create_per_field_codes_and_order)
 
     // Missing url wins over a bad redirect_type.
     const auto missing_url_wins = dispatch(
-        make_request(bhttp::verb::post,
-                     "/api/v1/links",
-                     R"({"redirect_type":"bad"})"),
+        make_request(
+            bhttp::verb::post, "/api/v1/links", R"({"redirect_type":"bad"})"),
         test_config());
     BOOST_TEST(missing_url_wins.result_int() == 400);
     BOOST_TEST(extract_code(missing_url_wins.body()) == "invalid_url");
@@ -411,9 +410,10 @@ BOOST_AUTO_TEST_CASE(create_per_field_codes_and_order)
 BOOST_AUTO_TEST_CASE(create_deleted_at_is_invalid_request)
 {
     const auto res = dispatch(
-        make_request(bhttp::verb::post,
-                     "/api/v1/links",
-                     R"({"url":"https://example.com","deleted_at":"2020-01-01T00:00:00Z"})"),
+        make_request(
+            bhttp::verb::post,
+            "/api/v1/links",
+            R"({"url":"https://example.com","deleted_at":"2020-01-01T00:00:00Z"})"),
         test_config());
     BOOST_TEST(res.result_int() == 400);
     BOOST_TEST(extract_code(res.body()) == "invalid_request");
@@ -433,8 +433,8 @@ BOOST_AUTO_TEST_CASE(create_too_many_tags_is_invalid_request)
 {
     std::string tags;
     for (int i = 0; i < 21; ++i) {
-        tags += (i == 0 ? "\"" : ",\"") + std::string("t")
-            + std::to_string(i) + "\"";
+        tags += (i == 0 ? "\"" : ",\"") + std::string("t") + std::to_string(i)
+            + "\"";
     }
     const auto res = dispatch(
         make_request(bhttp::verb::post,
@@ -456,11 +456,11 @@ BOOST_AUTO_TEST_CASE(create_too_many_tags_is_invalid_request)
 BOOST_AUTO_TEST_CASE(create_long_url_is_accepted)
 {
     const std::string url = "https://example.com/" + std::string(5000, 'a');
-    const auto res = dispatch(
-        make_request(bhttp::verb::post,
-                     "/api/v1/links",
-                     R"({"url":")" + url + R"(","slug":"c17long"})"),
-        test_config());
+    const auto res =
+        dispatch(make_request(bhttp::verb::post,
+                              "/api/v1/links",
+                              R"({"url":")" + url + R"(","slug":"c17long"})"),
+                 test_config());
     BOOST_TEST(res.result_int() == 201);
 }
 
@@ -471,11 +471,11 @@ BOOST_AUTO_TEST_CASE(create_long_url_is_accepted)
 // On failure first check: did the bridge status/code columns drift from 409?
 BOOST_AUTO_TEST_CASE(create_reserved_and_conflicting_slug)
 {
-    const auto reserved = dispatch(
-        make_request(bhttp::verb::post,
-                     "/api/v1/links",
-                     R"({"url":"https://example.com","slug":"api"})"),
-        test_config());
+    const auto reserved =
+        dispatch(make_request(bhttp::verb::post,
+                              "/api/v1/links",
+                              R"({"url":"https://example.com","slug":"api"})"),
+                 test_config());
     BOOST_TEST(reserved.result_int() == 409);
     BOOST_TEST(extract_code(reserved.body()) == "reserved_slug");
 
@@ -535,9 +535,10 @@ BOOST_AUTO_TEST_CASE(compat_code_accepted_and_slug_precedence)
                != std::string::npos);
 
     const auto slug_wins = dispatch(
-        make_request(bhttp::verb::post,
-                     "/api/v1/short-urls",
-                     R"({"url":"https://example.com","slug":"c17s","code":"c17c"})"),
+        make_request(
+            bhttp::verb::post,
+            "/api/v1/short-urls",
+            R"({"url":"https://example.com","slug":"c17s","code":"c17c"})"),
         test_config());
     BOOST_TEST(slug_wins.result_int() == 201);
     BOOST_TEST(slug_wins.body().find("\"slug\":\"c17s\"") != std::string::npos);
@@ -593,9 +594,8 @@ BOOST_AUTO_TEST_CASE(create_request_id_present_on_success_and_error)
     BOOST_TEST(ok.result_int() == 201);
     BOOST_TEST(!ok.base()["X-Request-Id"].empty());
 
-    const auto err =
-        dispatch(make_request(bhttp::verb::post, "/api/v1/links", "{}"),
-                 test_config());
+    const auto err = dispatch(
+        make_request(bhttp::verb::post, "/api/v1/links", "{}"), test_config());
     BOOST_TEST(err.result_int() == 400);
     BOOST_TEST(!err.base()["X-Request-Id"].empty());
 }
@@ -641,12 +641,15 @@ BOOST_AUTO_TEST_CASE(throttle_over_limit_returns_429)
     BOOST_TEST(!url_shortener::linkRepository().getBySlug("c17th2"));
 }
 
-// Type: unit (create throttle, key is the peer not a header).
-// Scenario: the limiter is called with the peer address string even when an
-//   X-Forwarded-For header points at a different value; the bucket is keyed on
-//   the peer only.
-// Boundaries: X-Forwarded-For/Forwarded are deliberately not read (spoofable).
-// On failure first check: did the throttle key start reading a header?
+// Type: unit (create throttle, key is the peer not a header, scoped prefix).
+// Scenario: the limiter is called with the "link_create:"-scoped peer address
+//   string even when an X-Forwarded-For header points at a different value; the
+//   bucket is keyed on the peer only.
+// Boundaries: X-Forwarded-For/Forwarded are deliberately not read (spoofable);
+//   the "link_create:" prefix namespaces the key so it cannot collide with
+//   other IRateLimiter users sharing a Redis rate_limit backend.
+// On failure first check: did the throttle key start reading a header, or did
+//   the "link_create:" scope prefix disappear?
 BOOST_AUTO_TEST_CASE(throttle_key_is_peer_not_forwarded_header)
 {
     auto limiter = std::make_shared<CapturingRateLimiter>();
@@ -654,15 +657,16 @@ BOOST_AUTO_TEST_CASE(throttle_key_is_peer_not_forwarded_header)
     config.link_create_rate_limit = 5;
     ScopedCreateRuntime guard {config, limiter};
 
-    auto req = make_request(bhttp::verb::post,
-                            "/api/v1/links",
-                            R"({"url":"https://example.com","slug":"c17peer"})");
+    auto req =
+        make_request(bhttp::verb::post,
+                     "/api/v1/links",
+                     R"({"url":"https://example.com","slug":"c17peer"})");
     req.set("X-Forwarded-For", "203.0.113.9");
-    const auto res = dispatch(req, guard.config,
-                              boost::asio::ip::make_address("10.0.0.5"));
+    const auto res =
+        dispatch(req, guard.config, boost::asio::ip::make_address("10.0.0.5"));
     BOOST_TEST(res.result_int() == 201);
     BOOST_TEST(limiter->calls == 1);
-    BOOST_TEST(limiter->last_key == "10.0.0.5");
+    BOOST_TEST(limiter->last_key == "link_create:10.0.0.5");
 }
 
 // Type: unit (create throttle, limiter failure is fail-open).
@@ -715,17 +719,21 @@ BOOST_AUTO_TEST_CASE(throttle_limit_zero_disables)
     BOOST_TEST(limiter->calls == 0);
 }
 
-// Type: unit (create throttle, absent peer skipped).
-// Scenario: a request with no peer (dispatch without a peer argument) is not
-//   throttled; the limiter is never called even with a tiny limit.
-// Boundaries: an absent peer means no throttle key (fail-open for that single
-//   request).
-// On failure first check: did the handler start throttling peerless requests?
-BOOST_AUTO_TEST_CASE(throttle_absent_peer_is_not_throttled)
+// Type: unit (create throttle, absent peer shares a fallback bucket).
+// Scenario: a request with no peer (dispatch without a peer argument) is still
+//   throttled - it shares one fixed fallback bucket
+//   ("link_create:peer:unknown") rather than bypassing the limiter. The
+//   capturing limiter records the exact fallback key.
+// Boundaries: SPEC DEVIATION - the spec said a peerless request is not
+//   throttled; the security review fail-closes peerless requests to a shared
+//   bucket so the throttle cannot be escaped by suppressing the peer.
+// On failure first check: did the handler revert to skipping peerless requests,
+//   or did the fallback key change?
+BOOST_AUTO_TEST_CASE(throttle_absent_peer_shares_fallback_bucket)
 {
-    auto limiter = std::make_shared<AlwaysDenyRateLimiter>();
+    auto limiter = std::make_shared<CapturingRateLimiter>();
     ServerConfig config = test_config();
-    config.link_create_rate_limit = 1;
+    config.link_create_rate_limit = 5;
     ScopedCreateRuntime guard {config, limiter};
 
     const auto res = dispatch(
@@ -734,7 +742,40 @@ BOOST_AUTO_TEST_CASE(throttle_absent_peer_is_not_throttled)
                      R"({"url":"https://example.com","slug":"c17nopeer"})"),
         guard.config);  // no peer
     BOOST_TEST(res.result_int() == 201);
-    BOOST_TEST(limiter->calls == 0);
+    BOOST_TEST(limiter->calls == 1);
+    BOOST_TEST(limiter->last_key == "link_create:peer:unknown");
+}
+
+// Type: unit (create throttle, peerless requests share one bucket -> 429).
+// Scenario: with link_create_rate_limit = 1 and a real fixed-window limiter,
+//   two peerless creates share the "peer:unknown" bucket, so the second is
+//   throttled (429). Proves peerless requests are no longer unbounded.
+// Boundaries: the shared fallback bucket is the fail-closed behavior adopted by
+//   the security review (spec deviation).
+// On failure first check: did peerless requests stop sharing a bucket?
+BOOST_AUTO_TEST_CASE(throttle_absent_peer_shares_one_bucket_over_limit)
+{
+    ManualClock clock {std::chrono::system_clock::time_point {}};
+    auto limiter = std::make_shared<InMemoryRateLimiter>(clock);
+    ServerConfig config = test_config();
+    config.link_create_rate_limit = 1;
+    config.link_create_rate_window_seconds = 60;
+    ScopedCreateRuntime guard {config, limiter};
+
+    const auto first = dispatch(
+        make_request(bhttp::verb::post,
+                     "/api/v1/links",
+                     R"({"url":"https://example.com","slug":"c17np1"})"),
+        guard.config);  // no peer
+    BOOST_TEST(first.result_int() == 201);
+
+    const auto second = dispatch(
+        make_request(bhttp::verb::post,
+                     "/api/v1/links",
+                     R"({"url":"https://example.com","slug":"c17np2"})"),
+        guard.config);  // no peer, same fallback bucket
+    BOOST_TEST(second.result_int() == 429);
+    BOOST_TEST(extract_code(second.body()) == "rate_limited");
 }
 
 // Type: unit (create limiter selection: Redis vs in-memory).
@@ -770,7 +811,8 @@ BOOST_AUTO_TEST_CASE(select_create_rate_limiter_prefers_redis_when_enabled)
 }
 
 // Type: unit (peer plumbing seam, plain + TLS behavior-neutral default).
-// Scenario: Router::dispatch copies the passed peer onto RouteContext::peer, and
+// Scenario: Router::dispatch copies the passed peer onto RouteContext::peer,
+// and
 //   defaults it to std::nullopt when no peer is supplied. This is the unit seam
 //   under the plain/TLS session reads (the session-level remote_endpoint() read
 //   is exercised end-to-end, not here).
@@ -783,9 +825,14 @@ BOOST_AUTO_TEST_CASE(dispatch_threads_peer_into_route_context)
     Router router;
     std::optional<boost::asio::ip::address> seen;
     bool invoked = false;
-    router.add(bhttp::verb::get, "/seam", "seam",
-               [&](const BeastRequest&, const ::ServerConfig&, bool,
-                   const RouteContext& ctx) {
+    router.add(bhttp::verb::get,
+               "/seam",
+               "seam",
+               [&](const BeastRequest&,
+                   const ::ServerConfig&,
+                   bool,
+                   const RouteContext& ctx)
+               {
                    invoked = true;
                    seen = ctx.peer;
                    return BeastResponse {bhttp::status::ok, 11};

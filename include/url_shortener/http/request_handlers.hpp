@@ -7,6 +7,7 @@
 #include <mutex>
 #include <optional>
 #include <string>
+#include <string_view>
 
 #include <boost/asio/ip/address.hpp>
 #include <boost/asio/ssl/context.hpp>
@@ -58,6 +59,16 @@ struct MetricsRegistry
 
     ///< Failed TLS reloads.
     std::atomic<uint64_t> tls_reload_failure_total {0};
+
+    ///< Create requests rejected by the create throttle (HTTP 429
+    ///< `rate_limited`, over-limit). Peer-free signal: the counter never
+    ///< carries the client address or key (threat model T-70/T-84).
+    std::atomic<uint64_t> create_throttle_rejected_total {0};
+
+    ///< Create requests that failed open because the rate limiter reported
+    ///< a backend error (e.g. Redis down). A sustained non-zero rate
+    ///< indicates the throttle is not being enforced. Peer-free.
+    std::atomic<uint64_t> create_throttle_fail_open_total {0};
 
     ///< Protects http_requests_total map.
     std::mutex mutex;
@@ -176,6 +187,24 @@ handleShortenerRequest(
     const ServerConfig& config,
     const bool is_tls,
     std::optional<boost::asio::ip::address> peer = std::nullopt);
+
+/**
+ * @brief Whether a request to `target` needs its TCP peer resolved.
+ *
+ * Only the management plane (`/api/...`) consumes `RouteContext::peer`
+ * (the create throttle keys on it). The redirect fast path
+ * (`GET /{slug}`, `GET /r/{slug}`) must not resolve the peer at all -
+ * calling `remote_endpoint()` on it would add a syscall to the hot path
+ * and contradicts contract C10 / threat model T-83 ("redirect path must
+ * not resolve the peer"). The session layer calls this before deciding
+ * whether to read `remote_endpoint()`; a `false` result keeps the
+ * redirect path syscall-free and leaves `RouteContext::peer` empty.
+ * @param target Raw request target (path + optional query), e.g. the
+ *        value of `req.target()`.
+ * @return `true` when `target` begins with `"/api/"` (management plane);
+ *         `false` for every other target, including the redirect paths.
+ */
+bool targetRequiresPeer(std::string_view target);
 
 /**
  * @brief Implements the legacy URI-store fallback.

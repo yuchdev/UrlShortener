@@ -416,22 +416,53 @@ BeastResponse createLinkFromRequest(const BeastRequest& req,
 
     // --- Create throttle (threat model T-75), applied first in the tail,
     // before building args and before execute. Keyed on the TCP peer address
-    // only (never a header). Skipped when no limiter is wired, the request
-    // carries no peer, or the limit is disabled (0). An over-limit decision
-    // (!allowed AND no error) is a 429; a limiter failure (error set) is
-    // fail-open and falls through to the create.
-    if (const auto limiter = create_rate_limiter(); limiter && context.peer
-        && config.link_create_rate_limit > 0)
+    // only (never a header). Skipped only when no limiter is wired or the limit
+    // is disabled (0). An over-limit decision (!allowed AND no error) is a 429;
+    // a limiter failure (error set) is fail-open and falls through to the
+    // create.
+    //
+    // Key scope (threat model, key-namespace collision): the key carries a
+    // "link_create:" prefix so it cannot collide with other IRateLimiter users
+    // that share one Redis rate_limit backend (the Redis limiter composes
+    // prefix+scope+":"+key, and every create-throttle user shares that scope).
+    //
+    // Peerless requests (remote_endpoint error, non-socket dispatch) share one
+    // fixed fallback bucket ("peer:unknown") rather than bypassing the throttle
+    // - fail-closed to a shared bucket. SPEC DEVIATION: the spec said a
+    // peerless request is not throttled; the security review replaced that with
+    // a shared fallback bucket so an attacker cannot escape the throttle by
+    // suppressing the peer.
+    if (const auto limiter = create_rate_limiter();
+        limiter && config.link_create_rate_limit > 0)
     {
+        const std::string throttle_key = "link_create:"
+            + (context.peer.has_value() ? context.peer->to_string()
+                                        : std::string("peer:unknown"));
         RateLimitError rl_error = RateLimitError::none;
         const RateLimitDecision decision = limiter->Allow(
-            context.peer->to_string(),
+            throttle_key,
             config.link_create_rate_limit,
             std::chrono::seconds(config.link_create_rate_window_seconds),
             &rl_error);
         if (!decision.allowed && rl_error == RateLimitError::none) {
+            // Over limit: peer-free counter only (no log flooding, no PII).
+            metricsRegistry().create_throttle_rejected_total.fetch_add(1);
             return url_shortener::makeApiErrorResponse(
                 req, config, is_tls, 429, "rate_limited", "Too many requests");
+        }
+        if (rl_error != RateLimitError::none) {
+            // Limiter failure -> fail open (Redis-down convention). Count every
+            // occurrence and warn only on the first so a sustained limiter
+            // outage is visible without per-request flooding. Never log the
+            // peer, the key, or the body (client PII, threat model T-70/T-84).
+            if (metricsRegistry().create_throttle_fail_open_total.fetch_add(1)
+                == 0)
+            {
+                logStructured("WARN",
+                              "create throttle fail-open: rate limiter "
+                              "unavailable",
+                              {{"component", "url_shortener"}});
+            }
         }
     }
 
@@ -456,10 +487,9 @@ BeastResponse createLinkFromRequest(const BeastRequest& req,
         args.add_string_list("tags", *tags);
     }
     if (metadata.has_value()) {
-        args.add_string_map(
-            "metadata",
-            std::map<std::string, std::string>(metadata->begin(),
-                                               metadata->end()));
+        args.add_string_map("metadata",
+                            std::map<std::string, std::string>(
+                                metadata->begin(), metadata->end()));
     }
     if (campaign_present) {
         if (campaign_is_null) {

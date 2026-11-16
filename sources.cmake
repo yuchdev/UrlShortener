@@ -114,6 +114,7 @@ set(URL_SHORTENER_SOURCES
       tests/unit/http/15_command_bridge.cpp
       tests/unit/http/16_rest_read_routes_via_registry.cpp
       tests/unit/http/17_rest_create_via_registry.cpp
+      tests/unit/http/18_target_requires_peer.cpp
       tests/unit/http/30_redirect_through_backend.cpp
       tests/unit/http/31_link_handlers_through_backend.cpp
   )
@@ -245,6 +246,7 @@ set(URL_SHORTENER_SOURCES
       tests/unit/storage/ratelimiter/05_key_format.cpp
       tests/unit/storage/ratelimiter/06_error_mapping.cpp
       tests/unit/storage/ratelimiter/07_invalid_configuration.cpp
+      tests/unit/storage/ratelimiter/08_bucket_eviction.cpp
   )
 
   set(REDIS_UNIT_SOURCES
