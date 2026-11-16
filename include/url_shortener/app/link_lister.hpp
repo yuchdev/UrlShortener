@@ -135,6 +135,15 @@ struct LinkListPage
 ///< `LinkListQuery::limit`; a limit of 0 or above this is `invalid_field`.
 constexpr std::size_t link_list_max_limit = 500;
 
+///< Inclusive upper bound (lower bound 0) on `LinkListQuery::offset`; an offset
+///< above this is rejected as `invalid_field` before any scan. With
+///< `link_list_max_limit` pages of 500, reaching this offset would take 2000
+///< pages — far past any real paginator — so the cap only bounds the deep-skip
+///< index walk a hostile 18-digit offset would otherwise force (threat model
+///< T-56). The 03.0/14 `link.list` spec states no numeric offset bound, so this
+///< is the newly-chosen value; the registry enforces it on the descriptor.
+constexpr std::size_t link_list_max_offset = 1'000'000;
+
 ///< Inclusive upper bound, in bytes, on `LinkListQuery::q`; a longer value is
 ///< `invalid_field`.
 constexpr std::size_t link_list_max_query_length = 256;

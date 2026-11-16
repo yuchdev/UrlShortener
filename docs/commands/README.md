@@ -262,7 +262,7 @@ Maps to `GET /api/v1/links/{slug}/stats`, `link stats`.
 | `campaign` | string | no | Campaign name. |
 | `sort` | enum `created_at`\|`slug`\|`updated_at` | no | Default `created_at`. |
 | `order` | enum `asc`\|`desc` | no | Default `desc`. |
-| `offset` | int >= 0 | no | Default 0. |
+| `offset` | int 0..1000000 | no | Default 0. |
 | `limit` | int 1..500 | no | Default 50. |
 
 `result`: `{ "items": [LinkView...], "offset": n, "limit": n, "total": n }`.
@@ -474,7 +474,7 @@ List short links with filtering, sorting and paging.
 | `campaign` | string | no | Exact-match campaign name filter. |
 | `sort` | enum `created_at`\|`slug`\|`updated_at` | no | Field the results are ordered by. |
 | `order` | enum `asc`\|`desc` | no | Sort direction. |
-| `offset` | int | no | Zero-based index of the first link to return. |
+| `offset` | int | no | Zero-based index of the first link to return (0..1000000). |
 | `limit` | int | no | Maximum number of links to return (1..500). |
 
 Maps to: `GET /api/v1/links`, `link list`.

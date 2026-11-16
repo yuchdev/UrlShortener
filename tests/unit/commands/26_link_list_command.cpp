@@ -279,6 +279,53 @@ BOOST_AUTO_TEST_CASE(negative_offset_rejected_without_calling_lister)
     BOOST_TEST(h.lister.call_count == 0);
 }
 
+// Type: unit (offset upper bound accepted).
+// Scenario: offset at link_list_max_offset (1000000, the inclusive max) is
+//   accepted and reaches the lister with that value.
+// Boundaries: 1000000 is the last accepted offset of the 0..1000000 range; it
+//   bounds the deep-skip index walk a hostile offset would otherwise force
+//   (threat model T-56).
+// On failure first check: did the offset ArgSpec max drift below
+//   link_list_max_offset, or vanish?
+BOOST_AUTO_TEST_CASE(offset_max_accepted)
+{
+    Harness h;
+    const std::string args =
+        R"({"offset":)"
+        + std::to_string(url_shortener::app::link_list_max_offset) + "}";
+
+    const CommandResponse response = h.run(user_caller(), request(args));
+
+    BOOST_TEST(response.ok);
+    BOOST_TEST(h.lister.call_count == 1);
+    BOOST_TEST(h.lister.last_query.offset
+               == url_shortener::app::link_list_max_offset);
+}
+
+// Type: unit (offset over max rejected before the lister, T-56).
+// Scenario: offset at link_list_max_offset + 1 (1000001) fails with the same
+//   invalid_field / out_of_range shape as limit:501 and the lister is never
+//   called.
+// Boundaries: max+1 is the first rejected value above the range; the cap
+//   stops a huge skip/index walk from an 18-digit offset.
+// On failure first check: did the offset max cap move, or did the registry
+//   stop running before the handler?
+BOOST_AUTO_TEST_CASE(offset_over_max_rejected_without_calling_lister)
+{
+    Harness h;
+    const std::string args =
+        R"({"offset":)"
+        + std::to_string(url_shortener::app::link_list_max_offset + 1) + "}";
+
+    const CommandResponse response = h.run(user_caller(), request(args));
+
+    BOOST_TEST(!response.ok);
+    BOOST_TEST((response.error.code == CommandErrorCode::invalid_field));
+    BOOST_TEST(response.error.message.find("out_of_range")
+               != std::string::npos);
+    BOOST_TEST(h.lister.call_count == 0);
+}
+
 // Type: unit (bad status enum rejected before the lister).
 // Scenario: status:"bogus" fails with invalid_field / not_in_enum and the
 //   lister is never called.
@@ -586,9 +633,10 @@ BOOST_AUTO_TEST_CASE(user_role_allowed)
 }
 
 // Type: unit (handler never calls the lister on any validation failure, T-56).
-// Scenario: a batch of invalid inputs (limit 0/501, offset -1, q 257, oversized
-//   tag/campaign, bad status/sort/order, unknown arg, wrong type) each leave the
-//   lister uncalled, proving validation precedes every lister call.
+// Scenario: a batch of invalid inputs (limit 0/501, offset -1, offset over max,
+//   q 257, oversized tag/campaign, bad status/sort/order, unknown arg, wrong
+//   type) each leave the lister uncalled, proving validation precedes every
+//   lister call.
 // Boundaries: the aggregate call count across all invalid requests stays 0.
 // On failure first check: which invalid input slipped past the registry into
 //   the handler?
@@ -599,6 +647,9 @@ BOOST_AUTO_TEST_CASE(handler_never_calls_lister_on_validation_failure)
         R"({"limit":0})",
         R"({"limit":501})",
         R"({"offset":-1})",
+        R"({"offset":)"
+            + std::to_string(url_shortener::app::link_list_max_offset + 1)
+            + "}",
         R"({"q":")" + std::string(257, 'a') + R"("})",
         R"({"tag":")" + std::string(33, 'a') + R"("})",
         R"({"campaign":")" + std::string(129, 'a') + R"("})",

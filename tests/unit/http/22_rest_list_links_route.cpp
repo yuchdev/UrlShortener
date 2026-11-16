@@ -395,6 +395,10 @@ BOOST_AUTO_TEST_CASE(hostile_parameters_are_400_invalid_request)
         {"limit=501", "limit: out_of_range"},
         {"limit=0", "limit: out_of_range"},
         {"offset=-1", "offset: wrong_type"},
+        // offset at link_list_max_offset + 1 (1000001): the descriptor caps
+        // offset, so an over-max value is rejected with the same shape as
+        // limit=501 (out_of_range -> 400 invalid_request), threat model T-56.
+        {"offset=1000001", "offset: out_of_range"},
         {"limit=abc", "limit: wrong_type"},
         {"status=bogus", "status: not_in_enum"},
         {"foo=1", "foo: unknown"},

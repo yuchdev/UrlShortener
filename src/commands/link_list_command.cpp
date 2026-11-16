@@ -80,7 +80,8 @@ ArgSpec make_enum_arg(std::string name,
  * Declares every bounded-work constraint on the descriptor so an out-of-bounds
  * query is rejected by the registry before the lister scans (threat model
  * T-56): `limit` is an integer in `1..link_list_max_limit`, `offset` an integer
- * `>= 0`, `q` a string capped at `link_list_max_query_length`, and `tag`/
+ * in `0..link_list_max_offset`, `q` a string capped at
+ * `link_list_max_query_length`, and `tag`/
  * `campaign` strings capped at the service's tag/campaign length limits. The
  * `status`/`sort`/`order` enumerations restrict their values so a bad token is
  * `not_in_enum` rather than reaching the handler. The subtask-12 bounds
@@ -95,8 +96,12 @@ std::vector<ArgSpec> make_link_list_args()
     offset.name = "offset";
     offset.type = ArgType::integer;
     offset.min = 0;
+    // Cap the offset the same way as the limit above (threat model T-56): an
+    // unbounded 18-digit offset would force a huge deep-skip index walk per
+    // request. link_list_max_offset is documented next to link_list_max_limit.
+    offset.max = static_cast<long long>(app::link_list_max_offset);
     offset.default_value = "0";
-    offset.doc = "Zero-based index of the first link to return.";
+    offset.doc = "Zero-based index of the first link to return (0..1000000).";
 
     ArgSpec limit;
     limit.name = "limit";
@@ -192,9 +197,9 @@ app::list_sort sort_of(const std::string& value)
  *
  * Absent arguments keep the struct defaults (`active`, `created_at`,
  * descending, offset 0, limit 50). The `order` token maps `asc` to ascending
- * and `desc` to descending. Integer bounds (`offset >= 0`, `limit 1..500`) and
- * the enumeration/length caps were already enforced by the registry, so the
- * casts here cannot narrow a negative or over-large value.
+ * and `desc` to descending. Integer bounds (`offset 0..1000000`,
+ * `limit 1..500`) and the enumeration/length caps were already enforced by the
+ * registry, so the casts here cannot narrow a negative or over-large value.
  *
  * @param args The validated argument view.
  * @return The decoded browse query.
