@@ -430,11 +430,13 @@ set(URL_SHORTENER_SOURCES
       tests/unit/commands/28_system_info_command.cpp
       tests/unit/commands/29_command_runtime_wiring.cpp
       tests/unit/commands/30_browse_security_regression.cpp
+      tests/unit/commands/40_args_builder.cpp
   )
 
   set(COMMON_CPP_SOURCES
       ${SECURITY_SOURCES}
       ${CMAKE_CURRENT_SOURCE_DIR}/src/commands/json_scan.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/commands/args_builder.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/commands/error_codes.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/commands/envelope.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/commands/arg_spec.cpp
