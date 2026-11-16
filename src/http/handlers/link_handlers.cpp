@@ -550,30 +550,41 @@ BeastResponse handlePatchLink(const BeastRequest& req,
                               const bool is_tls,
                               const RouteContext& context)
 {
-    // Transport concern: parse and shape-validate the JSON body into the
-    // transport-agnostic UpdateLinkCommand DTO, preserving the exact per-field
-    // 400 error codes the REST contract locks in. The read-mutate-persist and
-    // business validation then run once inside LinkCommandService::UpdateLink,
-    // which is also the sole path used by the CLI adapter.
+    // Transport concern: shape-validate the JSON body and pick the exact
+    // per-field 400 codes and their ORDER that the REST contract locks in
+    // (contract C3), then run the mutation through the command registry as the
+    // legacy Admin caller (contract C1, threat model T-60). Read-mutate-persist
+    // and the business validation run once inside the link.update handler /
+    // LinkCommandService::UpdateLink - the single mutation path shared with the
+    // CLI adapter; this handler holds no UpdateLinkCommand DTO nor error switch.
     //
-    // REST contract (C3): existence is checked BEFORE any body validation so a
+    // REST contract (C3): existence is checked BEFORE any body validation, so a
     // PATCH to an unknown slug returns 404 not_found even when the body is
-    // malformed. The lookup runs through LinkCommandService::GetLink to avoid
-    // reintroducing direct getLinkForRead calls in this migrated handler.
-    app::UpdateLinkCommand command;
-    command.slug = pathValue(context, "slug");
+    // malformed. The lookup runs link.get through the same bridge, keeping the
+    // existence check in the adapter (a future move into the registry would
+    // alter the REST ordering). The two registry calls (link.get, link.update)
+    // are not atomic - exactly as the two legacy service calls were not.
+    const auto slug = pathValue(context, "slug");
 
-    const auto command_service = makeCommandService(config);
-    if (const auto existing = command_service.service->GetLink(
-            {app::GetLinkBy::slug, command.slug});
-        !existing.ok())
+    // 1. Existence first: an unknown slug is 404 not_found whatever the body.
     {
-        return appErrorResponse(req, config, is_tls, existing.error);
+        commands::args_builder existence_args;
+        existence_args.add_string("slug", slug);
+        const auto existing = execute_resource_command(
+            config, "link.get", existence_args.str(), requestIdFromRequest(req));
+        if (!existing.ok) {
+            return resource_response(req, config, is_tls, existing);
+        }
     }
 
+    // The three-state locals below replace the old std::optional<std::optional>
+    // DTO fields: absent / explicit null / value stay three distinct states that
+    // the args object now carries (add_null vs add_string vs omitted).
+
+    // 2. enabled: present but not a bool -> invalid_enabled.
+    std::optional<bool> enabled;
     if (url_shortener::hasJsonField(req.body(), "enabled")) {
-        const auto enabled =
-            url_shortener::extractJsonBoolField(req.body(), "enabled");
+        enabled = url_shortener::extractJsonBoolField(req.body(), "enabled");
         if (!enabled.has_value()) {
             return url_shortener::makeApiErrorResponse(
                 req,
@@ -583,13 +594,18 @@ BeastResponse handlePatchLink(const BeastRequest& req,
                 "invalid_enabled",
                 "enabled must be boolean");
         }
-        command.enabled = *enabled;
     }
 
+    // 3. expires_at tri-state: token missing -> 400; explicit null -> clear; a
+    // string parsing with parseRfc3339Zulu -> set; anything else -> 400.
+    bool expires_present = false;
+    bool expires_is_null = false;
+    std::optional<std::string> expires;
     if (url_shortener::hasJsonField(req.body(), "expires_at")) {
-        const auto expires_at =
+        expires_present = true;
+        const auto token =
             url_shortener::extractJsonValueToken(req.body(), "expires_at");
-        if (!expires_at.has_value()) {
+        if (!token.has_value()) {
             return url_shortener::makeApiErrorResponse(
                 req,
                 config,
@@ -598,15 +614,15 @@ BeastResponse handlePatchLink(const BeastRequest& req,
                 "invalid_expires_at",
                 "expires_at must be RFC3339 UTC or null");
         }
-        if (*expires_at == "null") {
-            command.expires_at = std::optional<std::string> {};
+        if (*token == "null") {
+            expires_is_null = true;
         }
         else if (const auto parsed = url_shortener::extractJsonStringField(
                      req.body(), "expires_at");
                  parsed.has_value()
                  && url_shortener::parseRfc3339Zulu(*parsed).has_value())
         {
-            command.expires_at = std::optional<std::string> {*parsed};
+            expires = *parsed;
         }
         else {
             return url_shortener::makeApiErrorResponse(
@@ -619,10 +635,13 @@ BeastResponse handlePatchLink(const BeastRequest& req,
         }
     }
 
+    // 4. tags: not a string array -> 400; fails validateTags -> 400; the
+    // normalized (trimmed, de-duplicated) list is what is applied.
+    std::optional<std::vector<std::string>> tags;
     if (url_shortener::hasJsonField(req.body(), "tags")) {
-        const auto tags =
+        const auto raw_tags =
             url_shortener::extractJsonStringArrayField(req.body(), "tags");
-        if (!tags.has_value()) {
+        if (!raw_tags.has_value()) {
             return url_shortener::makeApiErrorResponse(
                 req,
                 config,
@@ -631,7 +650,7 @@ BeastResponse handlePatchLink(const BeastRequest& req,
                 "invalid_tags",
                 "tags must be string array");
         }
-        auto normalized = *tags;
+        auto normalized = *raw_tags;
         if (!validateTags(normalized)) {
             return url_shortener::makeApiErrorResponse(
                 req,
@@ -641,13 +660,15 @@ BeastResponse handlePatchLink(const BeastRequest& req,
                 "invalid_tags",
                 "tags violate constraints");
         }
-        command.tags = std::move(normalized);
+        tags = std::move(normalized);
     }
 
+    // 5. metadata: not a flat string object, or fails validateMetadata -> 400.
+    std::optional<std::unordered_map<std::string, std::string>> metadata;
     if (url_shortener::hasJsonField(req.body(), "metadata")) {
-        const auto metadata = url_shortener::extractJsonFlatObjectStringField(
+        auto parsed = url_shortener::extractJsonFlatObjectStringField(
             req.body(), "metadata");
-        if (!metadata.has_value() || !validateMetadata(*metadata)) {
+        if (!parsed.has_value() || !validateMetadata(*parsed)) {
             return url_shortener::makeApiErrorResponse(
                 req,
                 config,
@@ -656,14 +677,22 @@ BeastResponse handlePatchLink(const BeastRequest& req,
                 "invalid_metadata",
                 "metadata must be flat object with string values");
         }
-        command.metadata = *metadata;
+        metadata = std::move(parsed);
     }
 
+    // 6. campaign tri-state: explicit null -> clear; not an object -> 400; fails
+    // validateCampaign -> 400. The object forwarded to the registry is rebuilt
+    // from only the six known members, so unknown inner keys are ignored (parity)
+    // and never reach the registry's object validator.
+    bool campaign_present = false;
+    bool campaign_is_null = false;
+    std::string campaign_object_text;
     if (url_shortener::hasJsonField(req.body(), "campaign")) {
+        campaign_present = true;
         const auto raw_campaign =
             url_shortener::extractJsonValueToken(req.body(), "campaign");
         if (raw_campaign.has_value() && *raw_campaign == "null") {
-            command.campaign = std::optional<Link::Campaign> {};
+            campaign_is_null = true;
         }
         else {
             auto campaign = extractCampaign(req.body());
@@ -685,21 +714,68 @@ BeastResponse handlePatchLink(const BeastRequest& req,
                     "invalid_campaign",
                     "campaign fields exceed limits");
             }
-            command.campaign = std::move(campaign);
+            commands::args_builder campaign_args;
+            if (raw_campaign.has_value()) {
+                static constexpr const char* k_campaign_fields[] = {
+                    "name", "source", "medium", "term", "content", "id"};
+                for (const char* field : k_campaign_fields) {
+                    if (const auto value =
+                            url_shortener::extractJsonStringField(*raw_campaign,
+                                                                  field);
+                        value.has_value())
+                    {
+                        campaign_args.add_string(field, *value);
+                    }
+                }
+            }
+            campaign_object_text = campaign_args.str();
         }
     }
 
-    const auto result = command_service.service->UpdateLink(command);
-    if (!result.ok()) {
-        return appErrorResponse(req, config, is_tls, result.error);
+    // --- Build the link.update args from the validated locals (known keys
+    // only, so unknown top-level keys are ignored). slug is the addressing arg;
+    // target_url/url never appears here, so the target stays immutable through
+    // PATCH. An empty or non-JSON body leaves only slug, which the service
+    // treats as a no-op update that still refreshes updated_at and returns 200.
+    commands::args_builder args;
+    args.add_string("slug", slug);
+    if (enabled.has_value()) {
+        args.add_bool("enabled", *enabled);
     }
-    return url_shortener::makeResponse(
+    if (expires_present) {
+        if (expires_is_null) {
+            args.add_null("expires_at");
+        }
+        else {
+            args.add_string("expires_at", *expires);
+        }
+    }
+    if (tags.has_value()) {
+        args.add_string_list("tags", *tags);
+    }
+    if (metadata.has_value()) {
+        args.add_string_map("metadata",
+                            std::map<std::string, std::string>(
+                                metadata->begin(), metadata->end()));
+    }
+    if (campaign_present) {
+        if (campaign_is_null) {
+            args.add_null("campaign");
+        }
+        else {
+            // campaign_object_text is produced by a second args_builder, so it
+            // is a single valid JSON object (add_raw's contract).
+            args.add_raw("campaign", campaign_object_text);
+        }
+    }
+
+    return resource_response(
         req,
         config,
         is_tls,
-        200,
-        app::serializeLinkViewJson(*result.value),
-        "application/json");
+        execute_resource_command(
+            config, "link.update", args.str(), requestIdFromRequest(req)),
+        200);
 }
 
 BeastResponse handleDeleteLink(const BeastRequest& req,
