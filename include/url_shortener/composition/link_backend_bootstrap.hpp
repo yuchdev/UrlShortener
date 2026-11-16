@@ -149,6 +149,30 @@ public:
     bool active() const;
 
     /**
+     * @brief Returns the authoritative record-based metadata repository the
+     * installed `RepositoryLinkStore` was built over, or null in legacy mode.
+     *
+     * The single cross-task seam `composition::build_command_runtime`
+     * (Task 03.0 subtask 18) uses to decide which browse lister to wire: a
+     * non-null repository selects `app::RepositoryLinkLister` (reads the live
+     * backend directly), a null one selects `app::LegacyLinkLister` over the
+     * global in-memory `linkRepository()`. The returned pointer is the same
+     * `StorageAdapters::metadata` adapter the installed store wraps, so a
+     * lister built from it sees exactly what the store persists.
+     *
+     * Ownership: shares ownership via `std::shared_ptr` for the returned copy's
+     * lifetime, so a lister built from it keeps the repository alive
+     * independently of this handle. The handle still owns the adapters for its
+     * own lifetime (see the class contract).
+     *
+     * @return The `::IMetadataRepository` of an active handle (never null for
+     * an active handle); a null `std::shared_ptr` for an inactive or moved-from
+     * handle (the legacy in-memory default, where no record-based repository
+     * exists).
+     */
+    std::shared_ptr<::IMetadataRepository> repository() const;
+
+    /**
      * @brief Returns the resolved per-backend settings.
      * @return The settings for an active handle; default-constructed
      * (empty names, zero durations) for an inactive handle.

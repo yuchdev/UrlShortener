@@ -106,13 +106,20 @@ void register_builtin_commands(CommandRegistry& registry);
  *
  * This is the single source the generator uses to build block `### 3.7
  * Generated command reference` of `docs/commands/README.md`; tool and test call
- * it so they cannot diverge. In this subtask it delegates to @ref
- * register_builtin_commands only (`command.list`). Task 03.0 will add
- * `register_link_commands(...)` and Task 05.0 the job/pair commands here, each
- * binding handlers to null services: those handlers exist only so their
- * descriptor metadata can be rendered and MUST never be invoked, because the
- * generator renders metadata via @ref render_catalog_markdown and never calls
- * @ref CommandRegistry::execute (threat model T-19).
+ * it so they cannot diverge. It registers `command.list` (@ref
+ * register_builtin_commands), the nine link commands (@ref
+ * register_link_commands) and the four browse commands (@ref
+ * register_browse_commands), each bound to process-lifetime **placeholder**
+ * services, a placeholder lister/catalog and a default `SystemInfo` snapshot.
+ * Those services are non-null (so registration succeeds; @ref
+ * CommandRegistry::add throws on a null `sync` handler and on a duplicate name)
+ * but their handlers MUST never be invoked: this registry exists only so the
+ * generator can render descriptor metadata via @ref render_catalog_markdown,
+ * which never calls @ref CommandRegistry::execute (threat model T-19). It is a
+ * separate instance from the live runtime registry
+ * `composition::build_command_runtime` builds (Task 03.0 subtask 18); the two
+ * never share objects. Task 05.0 adds the job/pair descriptors here the same
+ * way.
  *
  * @param registry The registry to populate; see @ref register_builtin_commands
  * for the lifetime contract of each registered handler.

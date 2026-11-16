@@ -427,6 +427,8 @@ set(URL_SHORTENER_SOURCES
       tests/unit/commands/26_link_list_command.cpp
       tests/unit/commands/27_db_commands.cpp
       tests/unit/commands/28_system_info_command.cpp
+      tests/unit/commands/29_command_runtime_wiring.cpp
+      tests/unit/commands/30_browse_security_regression.cpp
   )
 
   set(COMMON_CPP_SOURCES
@@ -448,6 +450,7 @@ set(URL_SHORTENER_SOURCES
       ${CMAKE_CURRENT_SOURCE_DIR}/src/commands/db_commands.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/commands/system_commands.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/commands/link_commands.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/commands/browse_commands.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/cli_parser.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/cli/link_command_args.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/cli/link_command_dispatch.cpp
@@ -515,6 +518,7 @@ set(URL_SHORTENER_SOURCES
       ${CMAKE_CURRENT_SOURCE_DIR}/src/app/legacy_link_lister.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/app/link_backend.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/composition/link_command_service_factory.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/composition/command_runtime.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/config/storage_config.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/composition/storage_factory.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/composition/link_backend_bootstrap.cpp

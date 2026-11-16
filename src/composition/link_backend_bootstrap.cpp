@@ -255,6 +255,15 @@ bool LinkBackendHandle::active() const
     return m_store_ != nullptr;
 }
 
+std::shared_ptr<::IMetadataRepository> LinkBackendHandle::repository() const
+{
+    // The installed RepositoryLinkStore was built over m_adapters_.metadata;
+    // an inactive/moved-from handle holds a default-constructed StorageAdapters
+    // whose metadata is null (the legacy in-memory default has no record-based
+    // repository).
+    return m_adapters_.metadata;
+}
+
 const LinkBackendSettings& LinkBackendHandle::settings() const
 {
     return m_settings_;

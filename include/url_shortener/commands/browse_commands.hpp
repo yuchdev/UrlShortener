@@ -21,11 +21,63 @@ class ILinkLister;
 // stays free of any heavier dependency (01.0/13 include-hygiene test).
 class TableCatalog;
 
+// Forward declaration: `register_browse_commands` takes an immutable
+// @ref SystemInfo snapshot by value, which a declaration needs only forward-
+// declared (the complete type is required at the function's definition and call
+// sites). Its full definition lives in `app/system_info.hpp`, included only by
+// the registering `.cpp`.
+struct SystemInfo;
+
 }  // namespace app
 }  // namespace url_shortener
 
 namespace url_shortener::commands
 {
+
+// Forward declaration: `register_browse_commands` takes the registry by
+// reference and only calls `add`. The full definition lives in
+// `commands/command_registry.hpp`, included by the registering `.cpp`, so this
+// header stays free of the registry's `std::map`/envelope includes.
+class CommandRegistry;
+
+/**
+ * @brief Registers the four browse commands on @p registry (milestone contract
+ * C1): `link.list`, `db.tables`, `db.rows`, and `system.info`.
+ *
+ * The single registration entry point for the read/browse surface: it calls
+ * @ref make_link_list_descriptor with @p lister, @ref make_db_tables_descriptor
+ * and @ref make_db_rows_descriptor with @p catalog, and
+ * @ref make_system_info_descriptor with a copy of @p info, then hands each
+ * descriptor to @ref CommandRegistry::add. All four are `read`, `sync`,
+ * non-`mutating` commands, so none is audited and both `ControlSet` roles may
+ * call them. The link commands and the `command.list` built-in are registered
+ * elsewhere.
+ *
+ * This function only builds descriptors and binds them to @p lister /
+ * @p catalog / @p info; it never invokes a handler, opens a listener, or
+ * touches `uri.txt`/`UriMapSingleton` (threat model T-58), so it is safe to
+ * call from a catalog/registry builder.
+ *
+ * Lifetime: the `link.list`, `db.tables` and `db.rows` handlers capture
+ * `&lister` / `&catalog`, so both @p lister and @p catalog must outlive
+ * @p registry. The `system.info` descriptor copies @p info by value and so has
+ * no lifetime dependency. Because the registry stores the handlers and is
+ * non-copyable/non-movable, the handlers never outlive the registry, but the
+ * registry must not outlive @p lister or @p catalog.
+ *
+ * @param registry The registry the four descriptors are added to; must be empty
+ * of these four names (a duplicate name makes @ref CommandRegistry::add throw).
+ * @param lister The browse port `link.list` and the `links` table source
+ * delegate to; must outlive @p registry.
+ * @param catalog The `db.*` table allowlist the `db.tables`/`db.rows` handlers
+ * read; must outlive @p registry.
+ * @param info The immutable system snapshot the `system.info` handler
+ * serializes; copied into the descriptor so it needs no external owner.
+ */
+void register_browse_commands(CommandRegistry& registry,
+                              app::ILinkLister& lister,
+                              app::TableCatalog& catalog,
+                              app::SystemInfo info);
 
 /**
  * @brief Builds the `link.list` command descriptor (catalog 3.2).

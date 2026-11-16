@@ -374,9 +374,160 @@ Until Task 03.0 registers the link/browse commands, this block lists only
 | Command | Perm | Kind | Mut | dry_run | Summary |
 |---|---|---|---|---|---|
 | `command.list` | `read` | sync | no | no | List all commands and their argument schemas |
+| `db.rows` | `read` | sync | no | no | Read a page of rows from a browsable table. |
+| `db.tables` | `read` | sync | no | no | List the browsable tables with their row counts. |
+| `link.create` | `write` | sync | yes | yes | Create a short link. |
+| `link.delete` | `write` | sync | yes | no | Soft-delete a short link. |
+| `link.disable` | `write` | sync | yes | no | Disable a short link. |
+| `link.enable` | `write` | sync | yes | no | Enable a short link. |
+| `link.get` | `read` | sync | no | no | Retrieve a short link by slug or id. |
+| `link.list` | `read` | sync | no | no | List short links with filtering, sorting and paging. |
+| `link.preview` | `read` | sync | no | no | Preview a short link's resolved status. |
+| `link.restore` | `write` | sync | yes | no | Restore a soft-deleted short link. |
+| `link.stats` | `read` | sync | no | no | Retrieve redirect statistics for a short link. |
+| `link.update` | `write` | sync | yes | yes | Apply a partial update to a short link. |
+| `system.info` | `read` | sync | no | no | Report the server version, selected storage backends and non-secret shortener settings. |
 
 #### `command.list` - Perm `read`, sync
 List all commands and their argument schemas
+
+#### `db.rows` - Perm `read`, sync
+Read a page of rows from a browsable table.
+
+| Arg | Type | Req | Description |
+|---|---|---|---|
+| `table` | string | yes | Name of the registered table to read. |
+| `q` | string | no | Free-text filter applied to the table's searchable columns. |
+| `sort` | string | no | Name of a sortable column to order by. |
+| `order` | enum `asc`\|`desc` | no | Sort direction. |
+| `offset` | int | no | Zero-based index of the first row to return. |
+| `limit` | int | no | Maximum number of rows to return (1..500). |
+
+Maps to: `db rows`.
+
+#### `db.tables` - Perm `read`, sync
+List the browsable tables with their row counts.
+
+Maps to: `db tables`.
+
+#### `link.create` - Perm `write`, sync, Mut, `dry_run` yes
+Create a short link.
+
+| Arg | Type | Req | Description |
+|---|---|---|---|
+| `target_url` | string | yes |  |
+| `slug` | string | no |  |
+| `redirect_type` | enum `temporary`\|`permanent` | no |  |
+| `expires_at` | timestamp | no |  |
+| `enabled` | bool | no |  |
+| `tags` | list<string> | no |  |
+| `metadata` | map<string,string> | no |  |
+| `campaign` | object | no |  |
+
+Maps to: `POST /api/v1/links`, `link create`.
+
+#### `link.delete` - Perm `write`, sync, Mut
+Soft-delete a short link.
+
+| Arg | Type | Req | Description |
+|---|---|---|---|
+| `slug` | string | yes |  |
+
+Maps to: `DELETE /api/v1/links/{slug}`, `link delete`.
+
+#### `link.disable` - Perm `write`, sync, Mut
+Disable a short link.
+
+| Arg | Type | Req | Description |
+|---|---|---|---|
+| `slug` | string | yes |  |
+
+Maps to: `POST /api/v1/links/{slug}/disable`, `link disable`.
+
+#### `link.enable` - Perm `write`, sync, Mut
+Enable a short link.
+
+| Arg | Type | Req | Description |
+|---|---|---|---|
+| `slug` | string | yes |  |
+
+Maps to: `POST /api/v1/links/{slug}/enable`, `link enable`.
+
+#### `link.get` - Perm `read`, sync
+Retrieve a short link by slug or id.
+
+| Arg | Type | Req | Description |
+|---|---|---|---|
+| `slug` | string | one of | Look up by slug. |
+| `id` | string | one of | Look up by opaque id. Exactly one of slug/id. |
+
+Maps to: `GET /api/v1/links/{slug}`, `GET /api/v1/links/id/{id}`, `link get`.
+
+#### `link.list` - Perm `read`, sync
+List short links with filtering, sorting and paging.
+
+| Arg | Type | Req | Description |
+|---|---|---|---|
+| `status` | enum `all`\|`active`\|`disabled`\|`expired`\|`deleted` | no | Lifecycle filter; defaults to active. |
+| `q` | string | no | Case-insensitive substring filter on slug or target URL. |
+| `tag` | string | no | Exact-match tag filter. |
+| `campaign` | string | no | Exact-match campaign name filter. |
+| `sort` | enum `created_at`\|`slug`\|`updated_at` | no | Field the results are ordered by. |
+| `order` | enum `asc`\|`desc` | no | Sort direction. |
+| `offset` | int | no | Zero-based index of the first link to return. |
+| `limit` | int | no | Maximum number of links to return (1..500). |
+
+Maps to: `GET /api/v1/links`, `link list`.
+
+#### `link.preview` - Perm `read`, sync
+Preview a short link's resolved status.
+
+| Arg | Type | Req | Description |
+|---|---|---|---|
+| `slug` | string | one of | Look up by slug. |
+| `id` | string | one of | Look up by opaque id. Exactly one of slug/id. |
+
+Maps to: `GET /api/v1/links/{slug}/preview`, `link preview`.
+
+#### `link.restore` - Perm `write`, sync, Mut
+Restore a soft-deleted short link.
+
+| Arg | Type | Req | Description |
+|---|---|---|---|
+| `slug` | string | yes |  |
+
+Maps to: `POST /api/v1/links/{slug}/restore`, `link restore`.
+
+#### `link.stats` - Perm `read`, sync
+Retrieve redirect statistics for a short link.
+
+| Arg | Type | Req | Description |
+|---|---|---|---|
+| `slug` | string | yes |  |
+| `from` | string | no | Range start, decimal Unix epoch seconds. |
+| `to` | string | no | Range end, decimal Unix epoch seconds. |
+| `bucket` | string | no | Time-bucket size: hour\|day\|week. |
+
+Maps to: `GET /api/v1/links/{slug}/stats`, `link stats`.
+
+#### `link.update` - Perm `write`, sync, Mut, `dry_run` yes
+Apply a partial update to a short link.
+
+| Arg | Type | Req | Description |
+|---|---|---|---|
+| `slug` | string | yes |  |
+| `enabled` | bool | no |  |
+| `expires_at` | timestamp | no |  |
+| `tags` | list<string> | no |  |
+| `metadata` | map<string,string> | no |  |
+| `campaign` | object | no |  |
+
+Maps to: `PATCH /api/v1/links/{slug}`, `link update`.
+
+#### `system.info` - Perm `read`, sync
+Report the server version, selected storage backends and non-secret shortener settings.
+
+Maps to: `system info`.
 
 <!-- END GENERATED: commands -->
 

@@ -3,10 +3,19 @@
 #include <utility>
 #include <vector>
 
+#include <url_shortener/app/app_error.hpp>
+#include <url_shortener/app/legacy_adapters.hpp>
+#include <url_shortener/app/link_command_service.hpp>
+#include <url_shortener/app/link_lister.hpp>
+#include <url_shortener/app/system_info.hpp>
+#include <url_shortener/app/table_source.hpp>
 #include <url_shortener/commands/arg_spec.hpp>
+#include <url_shortener/commands/browse_commands.hpp>
 #include <url_shortener/commands/builtin_commands.hpp>
 #include <url_shortener/commands/command_descriptor.hpp>
 #include <url_shortener/commands/command_registry.hpp>
+#include <url_shortener/commands/link_commands.hpp>
+#include <url_shortener/core/config.hpp>
 #include <url_shortener/core/utils.hpp>
 
 namespace url_shortener::commands
@@ -29,6 +38,75 @@ namespace
  * @param arg The argument spec to serialize.
  * @return One well-formed JSON object as text.
  */
+/**
+ * @brief Never-executed placeholder @ref app::ILinkLister for the documented
+ * registry (@ref register_documented_commands).
+ *
+ * The catalog generator renders descriptor metadata only and never calls
+ * @ref CommandRegistry::execute (threat model T-19), so this `list` body is
+ * unreachable in practice; it returns a fixed `internal` error should anything
+ * ever call it, surfacing the invariant violation instead of touching storage.
+ */
+class DocPlaceholderLinkLister final : public app::ILinkLister
+{
+public:
+    /**
+     * @brief Returns a fixed `internal` error; never invoked in the docs path.
+     * @param query Ignored.
+     * @return A failed @ref app::Result with code `internal`.
+     */
+    app::Result<app::LinkListPage> list(
+        const app::LinkListQuery& query) const override
+    {
+        (void)query;
+        app::Result<app::LinkListPage> result;
+        result.error = app::AppError {app::AppErrorCode::internal,
+                                      "documentation placeholder"};
+        return result;
+    }
+};
+
+/**
+ * @brief The process-lifetime placeholder link service the documented link
+ * descriptors bind to.
+ *
+ * Built over a @ref app::LegacyLinkStore / @ref app::LegacyLinkStatsReader and
+ * a default `ServerConfig`; all three are inert on construction (they delegate
+ * to globals only when a method runs, which never happens on the docs path).
+ * The statics live for the program lifetime so any registry
+ * @ref register_documented_commands populates can reference them safely.
+ * @return A reference to the shared placeholder service.
+ */
+app::LinkCommandService& doc_link_service()
+{
+    static app::LegacyLinkStore store;
+    static app::LegacyLinkStatsReader stats;
+    static const ServerConfig config;
+    static app::LinkCommandService service(store, stats, config);
+    return service;
+}
+
+/**
+ * @brief The process-lifetime placeholder browse lister.
+ * @return A reference to the shared placeholder lister.
+ */
+app::ILinkLister& doc_lister()
+{
+    static DocPlaceholderLinkLister lister;
+    return lister;
+}
+
+/**
+ * @brief The process-lifetime placeholder (empty) table catalog the documented
+ * `db.*` descriptors bind to; their metadata does not depend on its contents.
+ * @return A reference to the shared placeholder catalog.
+ */
+app::TableCatalog& doc_catalog()
+{
+    static app::TableCatalog catalog;
+    return catalog;
+}
+
 std::string arg_to_json(const ArgSpec& arg)
 {
     std::string out = "{\"name\":";
@@ -169,7 +247,15 @@ void register_builtin_commands(CommandRegistry& registry)
 
 void register_documented_commands(CommandRegistry& registry)
 {
+    // One shared source for the catalog dump tool and the drift test. Every
+    // descriptor is bound to a process-lifetime placeholder (never-executed)
+    // service/lister/catalog/snapshot: the generator renders metadata only and
+    // never calls execute (threat model T-19). This is a separate registry
+    // instance from the live one build_command_runtime constructs.
     register_builtin_commands(registry);
+    register_link_commands(registry, doc_link_service());
+    register_browse_commands(
+        registry, doc_lister(), doc_catalog(), app::SystemInfo {});
 }
 
 }  // namespace url_shortener::commands
