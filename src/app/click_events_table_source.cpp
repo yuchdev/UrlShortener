@@ -78,33 +78,60 @@ analytics::ClickEventSort to_click_sort(const std::string& sort)
 }
 
 /**
- * @brief Strips the query string and fragment from a referrer value.
+ * @brief Removes credential-bearing segments from an untrusted referrer value.
  *
- * The referrer is untrusted and can carry sensitive credentials in its query
- * string or fragment (e.g. `?token=`, `#session=`); only the scheme/host/path
- * portion is browse-worthy. Everything from the first `?` or `#` (whichever
- * comes first) is dropped before the value is escaped and emitted (threat model
- * T-52).
+ * The referrer can carry sensitive credentials in three places; all are dropped
+ * before the value is escaped and emitted (threat model T-52):
+ * - its query string (`?token=`) and fragment (`#session=`): everything from the
+ *   first `?` or `#` (whichever comes first) is removed;
+ * - its authority userinfo (`user:pass@host`): when the value contains `://`,
+ *   the authority runs from just after `://` to the first `/`, `?` or `#` (or
+ *   end of string). If that authority contains an `@`, everything from just
+ *   after `://` through the LAST `@` in the authority is dropped, so
+ *   `https://a:b@c@host/p` becomes `https://host/p`. An `@` outside the
+ *   authority (e.g. in the path) is left untouched.
+ *
+ * A value without `://` has no parsable authority, so only its query/fragment is
+ * stripped. The scan is linear in the input length and uses no regex.
  *
  * @param referrer Sanitized referrer value (already control-stripped and
  * length-bounded upstream).
- * @return @p referrer truncated before its first `?` or `#`, or unchanged when
- * it contains neither.
+ * @return @p referrer with query, fragment and authority userinfo removed; equal
+ * to @p referrer when it contains none of those segments.
  */
-std::string strip_referrer_query(const std::string& referrer)
+std::string sanitize_referrer(const std::string& referrer)
 {
-    const std::size_t cut = referrer.find_first_of("?#");
-    if (cut == std::string::npos) {
-        return referrer;
+    // Drop the query string and fragment first.
+    std::string value = referrer;
+    const std::size_t cut = value.find_first_of("?#");
+    if (cut != std::string::npos) {
+        value.resize(cut);
     }
-    return referrer.substr(0, cut);
+
+    // Strip authority userinfo only when there is a parsable scheme separator.
+    const std::size_t scheme_sep = value.find("://");
+    if (scheme_sep == std::string::npos) {
+        return value;
+    }
+    const std::size_t authority_begin = scheme_sep + 3;
+    std::size_t authority_end = value.find_first_of("/?#", authority_begin);
+    if (authority_end == std::string::npos) {
+        authority_end = value.size();
+    }
+    const std::size_t last_at =
+        value.rfind('@', authority_end == 0 ? 0 : authority_end - 1);
+    if (last_at == std::string::npos || last_at < authority_begin) {
+        return value;
+    }
+    return value.substr(0, authority_begin) + value.substr(last_at + 1);
 }
 
 /**
  * @brief Serializes one click event as the flat `click_events` row object.
  *
  * Keys equal the fixed column names; every string cell is `jsonString`-escaped
- * and `referrer` has its query/fragment stripped first. The only client
+ * and `referrer` has its query/fragment and authority userinfo stripped first.
+ * The only client
  * identifier emitted is `client_id_hash` (contract C6). `status_code` is a bare
  * integer.
  *
@@ -121,7 +148,7 @@ std::string serialize_click_row(const analytics::ClickEvent& event)
     os << ",\"link_id\":" << jsonString(event.link_id);
     os << ",\"domain\":" << jsonString(event.domain);
     os << ",\"status_code\":" << event.status_code;
-    os << ",\"referrer\":" << jsonString(strip_referrer_query(event.referrer));
+    os << ",\"referrer\":" << jsonString(sanitize_referrer(event.referrer));
     os << ",\"user_agent\":" << jsonString(event.user_agent);
     os << ",\"client_id_hash\":" << jsonString(event.client_id_hash);
     os << '}';

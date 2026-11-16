@@ -417,6 +417,54 @@ BOOST_AUTO_TEST_CASE(referrer_query_string_stripped)
     BOOST_TEST(row.find("frag") == std::string::npos);
 }
 
+// Type: unit (referrer authority userinfo is stripped, T-52).
+// Scenario: several referrers whose authority carries userinfo credentials are
+//   serialized; the emitted referrer keeps only scheme/host/path, the username
+//   and password never appear, and an `@` in the path (not the authority) is
+//   left untouched. A no-scheme value and the empty string are also checked.
+// Boundaries: userinfo runs from just after `://` through the LAST `@` in the
+//   authority (first `/`, `?`, `#` or end); values without `://` only lose their
+//   query/fragment.
+// On failure first check: did sanitize_referrer mis-locate the authority end or
+//   pick the wrong `@`, or did it stop running?
+BOOST_AUTO_TEST_CASE(referrer_authority_userinfo_stripped)
+{
+    struct Case
+    {
+        std::string input;
+        std::string expected;
+    };
+    const std::vector<Case> cases = {
+        {"https://user:pass@ref.example.com/path?token=x#f",
+         "https://ref.example.com/path"},
+        {"https://user@host", "https://host"},
+        {"https://a:b@c@host/p", "https://host/p"},
+        {"https://host/p@x", "https://host/p@x"},
+        {"no-scheme/path@user?token=x#f", "no-scheme/path@user"},
+        {"", ""}};
+
+    for (const Case& c : cases) {
+        InMemoryClickEventRepository repo;
+        ClickEvent event = make_event("e1", 100, "alpha");
+        event.referrer = c.input;
+        repo.InsertBatch({event});
+        ClickEventsTableSource source(repo);
+
+        const Result<TableRowsPage> page = source.rows(TableQuery {});
+        BOOST_REQUIRE(page.ok());
+        const std::string& row = page.value->rows_json[0];
+
+        BOOST_TEST(row.find("\"referrer\":\"" + c.expected + "\"")
+                       != std::string::npos,
+                   "referrer not sanitized for input: " << c.input);
+        // The credential substrings must never survive into the row.
+        BOOST_TEST(row.find("user:pass") == std::string::npos,
+                   "userinfo leaked for input: " << c.input);
+        BOOST_TEST(row.find("token=x") == std::string::npos,
+                   "query token leaked for input: " << c.input);
+    }
+}
+
 // Type: unit (hostile free text stays valid JSON, T-52).
 // Scenario: an event whose referrer and user_agent carry quotes, a backslash, a
 //   newline and a script tag is serialized; the raw newline/quote do not
