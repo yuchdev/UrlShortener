@@ -385,3 +385,59 @@ C1-C11 changed, Depends on/Blocks headers unchanged:
   "fix the test, never the helper" / "skip with a named reason" instructions so a
   single-backend failure from a backend SQL defect is fixed in the backend, never
   masked by weakening or skipping a case.
+
+**2026-11-16 (threat-model amendments, pre-implementation 04.0 REST and CLI adapters).**
+Applied the three spec gaps and the follow-up from
+[the 04.0 threat model](/docs/security/0006-04.0-rest-and-cli-adapters-threat-model.md)
+(PASS_WITH_FOLLOWUP) and the 2026-11-16 user decisions as additive spec amendments;
+no decision D1-D16 or contract C1-C11 reversed. Amended specs:
+
+- **04.0/07** (`07-rest-list-links-route.md`, T-71 HIGH): defined "authenticated"
+  for 0006 entirely by the config gate + `command_api_caller`: gate off -> 404 (no
+  caller; strictly stronger than 401, so no `401` is ever emitted in 0006); gate on
+  -> Admin only for role `admin` + loopback peer, else User (both "authenticated");
+  `status=all|deleted` require write/admin, enforced by a permission-raising
+  `permission_for` hook on the `link.list` descriptor
+  (`src/commands/link_list_command.cpp`, listed under 07's Files affected) so the
+  same rule holds over `POST /api/v1/commands` and `cmd link.list`; a `User` with
+  `status=all|deleted` -> `403 not_authorized` (canonical). Documented the T-60
+  interaction (other resource routes stay unauthenticated Admin until 0002) and
+  fixed the test cases that let a non-loopback `User` list `status=all`.
+- **04.0/03** (`03-rest-read-routes-via-registry.md`, T-76 MEDIUM): fixed
+  10,000-bucket cap in the shared `LegacyLinkStatsReader::read`
+  (`src/app/legacy_adapters.cpp`) before any allocation; over-cap -> `invalid_field`
+  with the fixed detail token **`range_too_large`** (no echoed range), **not**
+  promoted to a REST code (consistent with subtask 02 / T-62's two-token set), so
+  REST returns `400 invalid_request` and `link.stats` returns `400 invalid_field`,
+  message `range_too_large`; at-cap accepted / cap+1 rejected for hour/day/week with
+  REST+command parity. One intentional, user-approved C3 exception (only abusive
+  over-cap spans change).
+- **04.0/04** (`04-rest-create-via-registry.md`, T-75 MEDIUM; user decision
+  2026-11-16 - **always on by default**): `POST /api/v1/links` (+ compat `short-urls`)
+  throttle creation via `IRateLimiter` keyed on the client peer address (never a
+  header). A **dedicated in-memory create limiter is constructed unconditionally at
+  startup** (safe defaults **30 creates / 60 s / client address**); when
+  `StorageConfig.rate_limit.enabled && backend == "redis"` the Redis limiter is used
+  **instead**. Selected via a new `LinkBackendHandle::createRateLimiter()`. Limit/window
+  from new `ServerConfig` fields **`link_create_rate_limit` (default 30, `0` = disabled)**
+  and **`link_create_rate_window_seconds` (default 60)**, CLI flags
+  **`--link-create-rate-limit`** / **`--link-create-rate-window-seconds`**. Over-limit ->
+  **`429 rate_limited`** (transport-level, like 415/404, not a `CommandErrorCode`, no
+  01.0/02 table change); limiter failure is fail-open; redirect and CLI not throttled.
+  `createLinkFromRequest` gains a `const RouteContext&` parameter. **Subtask 04 also
+  delivers the behavior-neutral `RouteContext::peer` plumbing** (formerly 09 step 0) so
+  the throttle has a client address and no 04 -> 09 -> 06 -> 04 cycle arises.
+- **04.0/09** (`09-rest-post-commands-endpoint.md`, T-68 + T-75): the handler builds a
+  **full** `envelope_limits` (keeps `max_depth = 8`, `max_command_len = 64`) overriding
+  only `max_bytes`/`max_id_len`, with the member (256) / key (128) caps enforced by
+  `parse_request`'s `scan_limits` (noted that these are not `envelope_limits` fields,
+  unlike the threat-model shorthand); `link.create` over the generic endpoint is
+  throttled identically to 04.0/04 (same `createRateLimiter()`, same config) with
+  `dry_run` counting like a real create. Step 0 (peer plumbing) is reworded to
+  **verify** the plumbing that subtask 04 delivers, performing it only if 04 has not.
+- **New wire tokens:** `rate_limited` (REST transport-level, HTTP 429) and
+  `range_too_large` (stats over-cap detail token). Neither is a `CommandErrorCode`.
+- **Not amended:** 04.0/08 (T-64 defaults off/`user`, loopback matrix) and the T-72
+  carry already match the threat model; no contradiction found. The README Subtasks
+  table is unchanged - subtask 04 absorbing the peer plumbing adds no new subtask-graph
+  edge (04 already precedes 06/07/09), so no cycle and no table change.
