@@ -45,7 +45,7 @@ factory mean subtask 13 and `03.0/18` (`build_command_runtime`) respectively.
 | # | Document | Status | Depends on | Blocks |
 |---|----------|--------|------------|--------|
 | 01 | [Args object builder](01-args-object-builder.md) | ✅ Complete | 01.0/01 | 02, 03, 04, 05, 06, 07, 11, 14 |
-| 02 | [REST command bridge](02-rest-command-bridge.md) | ⬜ Not started | 01, 01.0/02, 01.0/07, 03.0/18 | 03, 04, 05, 06, 07, 09, 05.0/11 |
+| 02 | [REST command bridge](02-rest-command-bridge.md) | ✅ Complete | 01, 01.0/02, 01.0/07, 03.0/18 | 03, 04, 05, 06, 07, 09, 05.0/11 |
 | 03 | [REST read routes through the registry](03-rest-read-routes-via-registry.md) | ⬜ Not started | 01, 02, 03.0/08, 03.0/11 | 06 |
 | 04 | [REST create through the registry](04-rest-create-via-registry.md) | ⬜ Not started | 01, 02, 03.0/11 | 06 |
 | 05 | [REST PATCH through the registry](05-rest-patch-via-registry.md) | ⬜ Not started | 01, 02, 03.0/09, 03.0/11 | 06 |
