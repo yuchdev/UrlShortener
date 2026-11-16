@@ -51,7 +51,7 @@ Two halves that can run in parallel:
 | 13 | [Lister for the default (legacy) store](13-legacy-link-lister.md) | ✅ Complete | 12 | 18 |
 | 14 | [`link.list` command](14-link-list-command.md) | ✅ Complete | 11, 12, 01.0/05, 01.0/06, 01.0/07 | 18, 04.0/07, 05.0/10, 06.0/12, 06.0/17 |
 | 15 | [`ITableSource` port, `db.tables`, `db.rows`](15-table-source-port-and-db-commands.md) | ✅ Complete | 01.0/05, 01.0/06, 01.0/07 | 16, 05.0/21, 06.0/14, 06.0/17 |
-| 16 | [Links and click-events table sources](16-links-and-click-events-table-sources.md) | ⬜ Not started | 03, 04, 12, 15 | 18, 06.0/14 |
+| 16 | [Links and click-events table sources](16-links-and-click-events-table-sources.md) | ✅ Complete | 03, 04, 12, 15 | 18, 06.0/14 |
 | 17 | [`system.info` command](17-system-info-command.md) | ⬜ Not started | 01.0/05, 01.0/06, 01.0/07, 02.0/10 | 18, 06.0/17 |
 | 18 | [Register browse commands and security regression tests](18-register-browse-commands-and-security-tests.md) | ⬜ Not started | 11, 13, 14, 16, 17, 01.0/09, 01.0/10, 02.0/12 | 04.0/02, 04.0/07, 04.0/09, 04.0/13, 04.0/15, 05.0/20, 06.0/19, Task 07.0 |
 
