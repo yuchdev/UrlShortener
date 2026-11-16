@@ -509,6 +509,8 @@ ParseResult CliParser::parse(int argc, char* argv[]) const
 
     std::string shortener_allow_private_targets_str;
     std::string analytics_enabled_str;
+    std::string command_api_enabled_str;
+    std::string command_api_role_str;
 
     // ---- Build options_description ----
     po::options_description general("General options");
@@ -699,6 +701,22 @@ ParseResult CliParser::parse(int argc, char* argv[]) const
         "(default: 60)."
     );
 
+    po::options_description command_api_opts("Command API options");
+    command_api_opts.add_options()(
+        "command-api-enabled",
+        po::value<std::string>(&command_api_enabled_str)->value_name("BOOL"),
+        "Enable the opt-in generic command API and gated /api/v1 routes; "
+        "off by default. Not read from the environment (true/false, "
+        "default: false)."
+    )(
+        "command-api-role",
+        po::value<std::string>(&command_api_role_str)->value_name("ROLE"),
+        "Role for gated command-API callers: user (read-only) or admin. "
+        "admin is honoured only when the TCP peer is loopback; behind a "
+        "same-host reverse proxy every request is loopback, so keep user. "
+        "X-Forwarded-For is not honoured (default: user)."
+    );
+
     // Positional: bare integer argument sets http-port.
     po::options_description positional_hidden;
     positional_hidden.add_options()(
@@ -718,6 +736,7 @@ ParseResult CliParser::parse(int argc, char* argv[]) const
         .add(storage_opts)
         .add(analytics_opts)
         .add(request_opts)
+        .add(command_api_opts)
         .add(positional_hidden);
 
     po::options_description visible;
@@ -727,7 +746,8 @@ ParseResult CliParser::parse(int argc, char* argv[]) const
         .add(shortener_opts)
         .add(storage_opts)
         .add(analytics_opts)
-        .add(request_opts);
+        .add(request_opts)
+        .add(command_api_opts);
 
     // ---- Parse ----
     po::variables_map vm;
@@ -822,6 +842,25 @@ ParseResult CliParser::parse(int argc, char* argv[]) const
 
     if (!analytics_enabled_str.empty()) {
         cfg.analytics_enabled = parseBool(analytics_enabled_str);
+    }
+
+    // Command API gate (milestone 0006 Task 04.0 subtask 08). Neither flag is
+    // read from the environment: a secure-by-default switch must be an explicit
+    // argument. --command-api-enabled uses the shared BOOL grammar; invalid
+    // tokens surface as std::invalid_argument from parseBool.
+    if (!command_api_enabled_str.empty()) {
+        cfg.command_api_enabled = parseBool(command_api_enabled_str);
+    }
+    // --command-api-role accepts exactly "user" or "admin" (case-sensitive);
+    // vm.count (not emptiness) is the "was provided" sentinel so an explicit
+    // empty value is rejected rather than silently kept as the "user" default.
+    if (vm.count("command-api-role")) {
+        if (command_api_role_str != "user"
+            && command_api_role_str != "admin") {
+            throw std::invalid_argument(
+                "--command-api-role must be user or admin");
+        }
+        cfg.command_api_role = command_api_role_str;
     }
 
     // The flag overrides any URL_SHORTENER_STORAGE_CONFIG env value above.

@@ -354,6 +354,7 @@ set(URL_SHORTENER_SOURCES
       tests/unit/cli/03_cli_success_output.cpp
       tests/unit/cli/04_cli_exit_codes.cpp
       tests/unit/cli/05_cli_storage_config_flag.cpp
+      tests/unit/cli/11_cli_parser_command_api_flags.cpp
   )
 
   set(ANALYTICS_INTEGRATION_SOURCES

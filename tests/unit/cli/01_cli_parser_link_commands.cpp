@@ -1043,6 +1043,19 @@ Request limits:
                                         Window length in seconds for 
                                         --link-create-rate-limit; must be > 0 
                                         (default: 60).
+
+Command API options:
+  --command-api-enabled BOOL            Enable the opt-in generic command API 
+                                        and gated /api/v1 routes; off by 
+                                        default. Not read from the environment 
+                                        (true/false, default: false).
+  --command-api-role ROLE               Role for gated command-API callers: 
+                                        user (read-only) or admin. admin is 
+                                        honoured only when the TCP peer is 
+                                        loopback; behind a same-host reverse 
+                                        proxy every request is loopback, so 
+                                        keep user. X-Forwarded-For is not 
+                                        honoured (default: user).
 )HELPGOLD";
 }  // namespace
 
