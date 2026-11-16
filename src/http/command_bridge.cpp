@@ -1,3 +1,4 @@
+#include <chrono>
 #include <memory>
 #include <string>
 #include <utility>
@@ -9,6 +10,9 @@
 #include <url_shortener/core/config.hpp>
 #include <url_shortener/http/command_bridge.hpp>
 #include <url_shortener/http/request_handlers.hpp>
+#include <url_shortener/storage/errors/rate_limit_error.hpp>
+#include <url_shortener/storage/i_rate_limiter.hpp>
+#include <url_shortener/storage/models/rate_limit_decision.hpp>
 
 namespace url_shortener
 {
@@ -81,6 +85,55 @@ std::shared_ptr<::IRateLimiter> create_rate_limiter()
     // process is serving-without-runtime the create command itself already
     // fails closed in execute_resource_command.
     return request_runtime()->create_rate_limiter;
+}
+
+std::optional<BeastResponse> apply_create_throttle(const BeastRequest& req,
+                                                   const ::ServerConfig& config,
+                                                   const bool is_tls,
+                                                   const RouteContext& context)
+{
+    // Skip when no limiter is wired (the unit-test fallback runtime) or the
+    // throttle is disabled (limit 0). Keyed on the TCP peer address only, never
+    // a header.
+    const auto limiter = create_rate_limiter();
+    if (!limiter || config.link_create_rate_limit <= 0) {
+        return std::nullopt;
+    }
+
+    // Peerless requests (remote_endpoint error, non-socket dispatch) share one
+    // fixed fallback bucket ("peer:unknown") rather than bypassing the throttle
+    // - fail-closed to a shared bucket so an attacker cannot escape the throttle
+    // by suppressing the peer. The "link_create:" prefix namespaces the key so
+    // it cannot collide with other IRateLimiter users of a shared Redis backend.
+    const std::string throttle_key = "link_create:"
+        + (context.peer.has_value() ? context.peer->to_string()
+                                    : std::string("peer:unknown"));
+    RateLimitError rl_error = RateLimitError::none;
+    const RateLimitDecision decision = limiter->Allow(
+        throttle_key,
+        config.link_create_rate_limit,
+        std::chrono::seconds(config.link_create_rate_window_seconds),
+        &rl_error);
+    if (!decision.allowed && rl_error == RateLimitError::none) {
+        // Over limit: peer-free counter only (no log flooding, no PII).
+        metricsRegistry().create_throttle_rejected_total.fetch_add(1);
+        return url_shortener::makeApiErrorResponse(
+            req, config, is_tls, 429, "rate_limited", "Too many requests");
+    }
+    if (rl_error != RateLimitError::none) {
+        // Limiter failure -> fail open (Redis-down convention). Count every
+        // occurrence and warn only on the first so a sustained limiter outage is
+        // visible without per-request flooding. Never log the peer, the key, or
+        // the body (client PII, threat model T-70/T-84).
+        if (metricsRegistry().create_throttle_fail_open_total.fetch_add(1)
+            == 0)
+        {
+            logStructured("WARN",
+                          "create throttle fail-open: rate limiter unavailable",
+                          {{"component", "url_shortener"}});
+        }
+    }
+    return std::nullopt;
 }
 
 std::optional<commands::CommandResponse> rest_policy_refusal(
@@ -222,6 +275,39 @@ commands::CommandResponse execute_resource_command(
                                     std::move(args_json),
                                     std::move(request_id),
                                     caller);
+}
+
+commands::CommandResponse execute_command_envelope(
+    const ::ServerConfig& config,
+    const commands::CommandRequest& request,
+    const commands::CallerContext& caller)
+{
+    (void)config;
+    // Fail closed while serving (security finding 04.0/03): see the explicit-
+    // caller execute_resource_command overload. If the process has latched
+    // "serving" yet no process runtime was installed, request_runtime()'s
+    // lazily-built fallback may hold a dangling store borrow, so refuse with a
+    // value-free `internal` error (rendered as 500) instead of executing.
+    if (app::LinkBackend::serving()
+        && composition::process_command_runtime() == nullptr)
+    {
+        return commands::make_failure(
+            request.id,
+            commands::make_error(commands::CommandErrorCode::internal,
+                                 "internal error"));
+    }
+    const std::shared_ptr<composition::CommandRuntime> runtime =
+        request_runtime();
+    // Transport policy: refuse manage_users for every role/peer before execute
+    // (threat model T-61); the descriptor's handler is never entered.
+    if (std::optional<commands::CommandResponse> refusal =
+            rest_policy_refusal(*runtime->registry, request.command, request.id))
+    {
+        return std::move(*refusal);
+    }
+    // options (dry_run/async) are forwarded verbatim: this is the one execute
+    // path that preserves them. Authorization happens inside execute (C7).
+    return runtime->registry->execute(caller, request);
 }
 
 bool command_api_enabled(const ::ServerConfig& config)

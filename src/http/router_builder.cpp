@@ -1,5 +1,6 @@
 #include <url_shortener/http/router_builder.hpp>
 
+#include <url_shortener/http/handlers/command_handlers.hpp>
 #include <url_shortener/http/handlers/compatibility_handlers.hpp>
 #include <url_shortener/http/handlers/fallback_handlers.hpp>
 #include <url_shortener/http/handlers/link_handlers.hpp>
@@ -56,6 +57,8 @@ Router RouterBuilder::buildApplicationRouter()
     router.add(bhttp::verb::patch, "/api/v1/links/{slug}", "api_links", handlePatchLink);
     router.add(bhttp::verb::delete_, "/api/v1/links/{slug}", "api_links", handleDeleteLink);
     router.add(bhttp::verb::post, "/api/v1/links", "api_links", handleCreateLink);
+
+    router.add(bhttp::verb::post, "/api/v1/commands", "api_commands", handleExecuteCommand);
 
     router.add(bhttp::verb::post, "/api/v1/short-urls", "api_links", handleCompatCreateLink);
     router.add(bhttp::verb::get, "/api/v1/short-urls/{slug}", "api_links", handleCompatGetLinkBySlug);

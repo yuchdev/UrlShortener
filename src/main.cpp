@@ -9,6 +9,7 @@
 #include <memory>
 #include <stdexcept>
 #include <string>
+#include <vector>
 #include <string_view>
 
 #include <boost/asio.hpp>
@@ -154,6 +155,26 @@ int main(int argc, char* argv[])
         logger.info("startup_begin");
         if (backend.active()) {
             logger.info("storage_backend", {{"summary", backend.summary()}});
+        }
+        // Non-secret visibility of the opt-in command API gate (subtask 08/09):
+        // never logs peers, tokens or DSNs. When enabled with role admin, warn
+        // that admin is granted to loopback peers only - and that behind a
+        // same-host reverse proxy every request is loopback, so such deployments
+        // should keep role user (threat model T-64/T-65).
+        {
+            const std::vector<url_shortener::observability::LogField> fields = {
+                {"enabled", config.command_api_enabled ? "true" : "false"},
+                {"role", config.command_api_role}};
+            if (config.command_api_enabled
+                && config.command_api_role == "admin") {
+                logger.warn("command_api: admin role grants admin to loopback "
+                            "peers only; behind a same-host reverse proxy every "
+                            "request is loopback, so keep role user there",
+                            fields);
+            }
+            else {
+                logger.info("command_api", fields);
+            }
         }
         net::io_context io_context;
         HttpServer server(io_context, config);

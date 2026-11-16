@@ -57,6 +57,7 @@ set(URL_SHORTENER_H
         ${CMAKE_CURRENT_SOURCE_DIR}/include/url_shortener/http/query_params.hpp
         ${CMAKE_CURRENT_SOURCE_DIR}/include/url_shortener/http/handlers/observability_handlers.hpp
         ${CMAKE_CURRENT_SOURCE_DIR}/include/url_shortener/http/handlers/link_handlers.hpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/include/url_shortener/http/handlers/command_handlers.hpp
         ${CMAKE_CURRENT_SOURCE_DIR}/include/url_shortener/http/handlers/compatibility_handlers.hpp
         ${CMAKE_CURRENT_SOURCE_DIR}/include/url_shortener/http/handlers/redirect_handlers.hpp
         ${CMAKE_CURRENT_SOURCE_DIR}/include/url_shortener/http/handlers/fallback_handlers.hpp
@@ -120,6 +121,7 @@ set(URL_SHORTENER_SOURCES
       tests/unit/http/20_rest_lifecycle_via_registry.cpp
       tests/unit/http/21_query_params.cpp
       tests/unit/http/22_rest_list_links_route.cpp
+      tests/unit/http/23_rest_commands_endpoint.cpp
       tests/unit/http/24_command_api_caller.cpp
       tests/unit/http/30_redirect_through_backend.cpp
       tests/unit/http/31_link_handlers_through_backend.cpp
@@ -482,6 +484,7 @@ set(URL_SHORTENER_SOURCES
       ${CMAKE_CURRENT_SOURCE_DIR}/src/http/query_params.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/http/handlers/observability_handlers.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/http/handlers/link_handlers.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/http/handlers/command_handlers.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/http/handlers/compatibility_handlers.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/http/handlers/redirect_handlers.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/http/handlers/fallback_handlers.cpp

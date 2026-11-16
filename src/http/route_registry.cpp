@@ -15,6 +15,8 @@ namespace {
 // the registry free of dispatch/business coupling in this slice.
 constexpr char shortener_api_prefix[] = "/api/v1/links";
 constexpr char shortener_api_compat_prefix[] = "/api/v1/short-urls";
+constexpr char shortener_api_commands_prefix[] = "/api/v1/commands";
+constexpr char shortener_api_jobs_prefix[] = "/api/v1/jobs";
 constexpr char short_redirect_prefix[] = "/r/";
 
 bool startsWith(const std::string& value, const std::string& prefix)
@@ -29,6 +31,10 @@ std::string tagFor(const std::string& label, const std::string& path)
     }
     if (startsWith(path, shortener_api_compat_prefix)) {
         return "Compatibility";
+    }
+    if (startsWith(path, shortener_api_commands_prefix)
+        || startsWith(path, shortener_api_jobs_prefix)) {
+        return "Commands";
     }
     if (startsWith(path, shortener_api_prefix)) {
         return "Links";
@@ -114,6 +120,10 @@ std::string requestBodyFor(const std::string& method, const std::string& path)
     if (method == "POST" && path == "/api/v1/short-urls") {
         return "Compatibility JSON object containing url and optional code fields.";
     }
+    if (method == "POST" && path == "/api/v1/commands") {
+        return "Command request envelope: an object with a command name, an "
+               "args object, optional options (dry_run/async) and id.";
+    }
     if (method == "PATCH" && path == "/api/v1/links/{slug}") {
         return "JSON object containing mutable link fields to update; null clears "
                "nullable fields where supported.";
@@ -143,6 +153,12 @@ std::vector<RouteResponseDoc> responsesFor(
     }
     if (method == "POST" && path == "/api/v1/short-urls") {
         return {{201, "Compatibility link created."}, {400, "Invalid request."}};
+    }
+    if (method == "POST" && path == "/api/v1/commands") {
+        return {{200, "Command executed; response envelope returned."},
+                {400, "Invalid request envelope."},
+                {404, "Command API disabled or unknown command."},
+                {415, "Content-Type must be application/json."}};
     }
     if (path == "/r/{slug}" || path == "/{slug}") {
         return {{301, "Permanent redirect."}, {302, "Temporary redirect."}, {404, "Link not found."}, {410, "Link inactive."}};
@@ -204,6 +220,10 @@ std::string routeLabelForTarget(const std::string& target)
     if (startsWith(target, short_redirect_prefix)) {
         return "redirect_prefixed";
     }
+    if (startsWith(target, shortener_api_commands_prefix)
+        || startsWith(target, shortener_api_jobs_prefix)) {
+        return "api_commands";
+    }
     if (startsWith(target, shortener_api_prefix)
         || startsWith(target, shortener_api_compat_prefix)) {
         return "api_links";
@@ -252,6 +272,12 @@ const std::vector<RouteDescriptor>& registeredRoutes()
          "Disable a link so it stops redirecting."),
         route("POST", "/api/v1/links/{slug}/restore", "api_links",
          "Restore a soft-deleted link."),
+
+        // Generic command API (/api/v1/commands), gated by
+        // --command-api-enabled.
+        route("POST", "/api/v1/commands", "api_commands",
+         "Execute one command request envelope and return its response "
+         "envelope (gated by --command-api-enabled)."),
 
         // Compatibility API (/api/v1/short-urls).
         route("POST", "/api/v1/short-urls", "api_links",

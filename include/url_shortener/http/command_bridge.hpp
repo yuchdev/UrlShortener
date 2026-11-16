@@ -90,6 +90,49 @@ std::shared_ptr<composition::CommandRuntime> request_runtime();
 std::shared_ptr<::IRateLimiter> create_rate_limiter();
 
 /**
+ * @brief Applies the per-peer create throttle (threat model T-75) shared by
+ * every REST path that runs `link.create`, and renders a `429` when the limit
+ * is exceeded.
+ *
+ * The single implementation of the create throttle, called by both
+ * `POST /api/v1/links` (`createLinkFromRequest`) and `POST /api/v1/commands`
+ * (`handleExecuteCommand`) so the two paths share one limiter, one key scheme,
+ * one limit/window, and identical fail-open and peerless semantics. It must be
+ * invoked *before* `link.create` is executed — including for a `dry_run`
+ * create, which runs the full SSRF/validator work and so counts like a real
+ * create.
+ *
+ * Behavior: skipped (returns `std::nullopt`) when no limiter is wired on the
+ * shared runtime (@ref create_rate_limiter is null) or when
+ * `config.link_create_rate_limit == 0`. Otherwise it calls
+ * `IRateLimiter::Allow` with the key `"link_create:" + <peer>` — where `<peer>`
+ * is `context.peer->to_string()` or the fixed shared bucket `"peer:unknown"`
+ * when the peer is absent (fail-closed to one bucket so the throttle cannot be
+ * escaped by suppressing the peer; never an `X-Forwarded-For`/`Forwarded`
+ * header, never logged, threat model T-70/T-84). An over-limit decision
+ * (not allowed, no limiter error) increments `create_throttle_rejected_total`
+ * and returns the fixed `429 rate_limited "Too many requests"` response. A
+ * limiter failure (an error set) is fail-open: it increments
+ * `create_throttle_fail_open_total`, warns once, and returns `std::nullopt`
+ * so the create proceeds.
+ *
+ * @param req Incoming request; mirrored into the `429` response envelope.
+ * @param config Server configuration supplying `link_create_rate_limit` and
+ * `link_create_rate_window_seconds`.
+ * @param is_tls `true` on HTTPS connections; gates HSTS/`nosniff` on the `429`.
+ * @param context Route context; only `context.peer` is read, as the throttle
+ * key (never a header; never logged).
+ * @return A `429 rate_limited` Beast response when the request is over the
+ * per-peer limit; `std::nullopt` when the throttle is disabled, not wired,
+ * fails open, or the request is within the limit (the caller then proceeds to
+ * build and execute `link.create`).
+ */
+std::optional<BeastResponse> apply_create_throttle(const BeastRequest& req,
+                                                   const ::ServerConfig& config,
+                                                   bool is_tls,
+                                                   const RouteContext& context);
+
+/**
  * @brief REST transport policy applied by every REST entry point before
  * `execute`: refuse any command whose descriptor requires `manage_users`.
  *
@@ -254,6 +297,50 @@ commands::CommandResponse execute_resource_command(
     std::string_view command,
     std::string args_json,
     std::string request_id,
+    const commands::CallerContext& caller);
+
+/**
+ * @brief Executes one already-parsed request envelope against the shared
+ * runtime, preserving its `options` (the generic `POST /api/v1/commands`
+ * path, subtask 09).
+ *
+ * The envelope analog of @ref execute_resource_command: unlike that overload —
+ * which rebuilds a request with empty `options` and so cannot carry
+ * `dry_run`/`async` — this takes the full @ref commands::CommandRequest parsed
+ * from the wire envelope and forwards it verbatim, so `options.dry_run` reaches
+ * `execute` (a `dry_run` on a non-dry-run command therefore surfaces as
+ * `unsupported`). It applies the same two transport guards as the resource
+ * overload, in the same order: the fail-closed-while-serving guard (security
+ * finding 04.0/03 — when the process has latched `app::LinkBackend::serving()`
+ * yet no process runtime is installed, it returns a value-free `internal`
+ * failure rather than execute against @ref request_runtime's fallback whose
+ * link service borrows `app::LinkBackend::store()` by reference), then
+ * @ref rest_policy_refusal (refuse `manage_users` for every role/peer before
+ * `execute`, threat model T-61). Authorization of every command it lets through
+ * happens inside `execute` (contract C7); @p caller supplies only the
+ * `control_set`.
+ *
+ * The create throttle (threat model T-75) is **not** applied here: it is a
+ * transport gate that renders a `429` HTTP response (not a
+ * @ref commands::CommandResponse), so the caller applies
+ * @ref apply_create_throttle before this call. For the only throttled command
+ * (`link.create`, never a `manage_users` command) that ordering is
+ * indistinguishable from applying the refusal first.
+ *
+ * @param config Server configuration; retained for signature symmetry with the
+ * resource overloads and to key the fail-closed guard. The runtime is
+ * process-wide and config-bound at startup, so it is not otherwise read here.
+ * @param request The parsed, envelope-validated request to execute; its
+ * `options`, `command`, `args_json` and `id` are forwarded verbatim.
+ * @param caller The authenticated caller (@ref command_api_caller); its
+ * `control_set` is the sole authorization input.
+ * @return The execution response; a `manage_users` policy refusal echoing
+ * `request.id`; or a value-free `internal` failure when the process is serving
+ * with no process runtime installed (the fail-closed case).
+ */
+commands::CommandResponse execute_command_envelope(
+    const ::ServerConfig& config,
+    const commands::CommandRequest& request,
     const commands::CallerContext& caller);
 
 /**
