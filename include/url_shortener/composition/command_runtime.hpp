@@ -148,5 +148,70 @@ CommandRuntime build_command_runtime(const ServerConfig& server,
                                      const app::LinkBackendHandle& backend,
                                      const CommandRuntimeOptions& options = {});
 
+/**
+ * @brief Publishes the one process-wide @ref CommandRuntime every transport
+ * executes against, taking shared ownership of @p runtime for as long as it
+ * stays installed.
+ *
+ * The runtime is built exactly once at startup (`main`, after
+ * `app::InitLinkBackend` installs the active store and before any
+ * request-serving thread or CLI dispatch exists) from the active
+ * @ref app::LinkBackendHandle, so every transport shares one registry over the
+ * one installed store — no transport rebuilds a runtime per request, and no
+ * transport reads an empty legacy store while CRUD goes to a configured
+ * backend (the split-brain this holder exists to prevent).
+ *
+ * ## Lifetime and thread-safety contract (read before calling)
+ * - @ref process_command_runtime is **lock-free** on the read path: it returns
+ *   an owning `std::shared_ptr` copy via an atomic load, so a concurrent
+ *   @ref reset_process_command_runtime can never tear the runtime out from
+ *   under an in-flight reader (the returned copy keeps it alive). It is safe to
+ *   call from every request-handling thread.
+ * - @ref install_process_command_runtime is **startup only** and asserts
+ *   `!app::LinkBackend::serving()` in debug builds: install once, before the
+ *   first request-serving thread (the same serving latch
+ *   @ref app::LinkBackend uses). Installing twice replaces the previous runtime.
+ * - @ref reset_process_command_runtime is **teardown only** and must run before
+ *   the @ref app::LinkBackendHandle the runtime borrows from is destroyed: the
+ *   runtime's link service references `app::LinkBackend::store()` and its lister
+ *   holds the active metadata repository, so dropping the runtime first keeps
+ *   that borrow well-ordered. It is memory-safe to call while readers run (they
+ *   hold their own `shared_ptr`), but callers must still observe the
+ *   store-teardown ordering above.
+ *
+ * @param runtime The runtime to install; shared ownership is retained by the
+ * holder until the next install/reset. A null @p runtime is equivalent to
+ * @ref reset_process_command_runtime.
+ */
+void install_process_command_runtime(std::shared_ptr<CommandRuntime> runtime);
+
+/**
+ * @brief Returns the installed process-wide @ref CommandRuntime, or a null
+ * `std::shared_ptr` when none has been installed.
+ *
+ * Lock-free owning read (one atomic load of a `std::shared_ptr`): the returned
+ * copy keeps the runtime alive for the caller's use even if
+ * @ref reset_process_command_runtime runs concurrently. Safe to call from every
+ * request-handling thread. A null return is the signal to a transport that no
+ * process runtime was published (unit tests, tools), in which case the caller
+ * falls back to its own lazily-built default.
+ * @return A `shared_ptr` to the installed runtime, or `nullptr` when none is
+ * installed.
+ */
+std::shared_ptr<CommandRuntime> process_command_runtime();
+
+/**
+ * @brief Drops the holder's ownership of the installed runtime, restoring the
+ * "none installed" state.
+ *
+ * Teardown and tests only. Must run before the @ref app::LinkBackendHandle the
+ * runtime borrows from is torn down (see the ordering note on
+ * @ref install_process_command_runtime): `main` resets the runtime, then calls
+ * `app::LinkBackend::shutdown()`, then lets the handle destruct. A no-op when
+ * nothing is installed. Atomic store, so it never races a concurrent
+ * @ref process_command_runtime read.
+ */
+void reset_process_command_runtime();
+
 }  // namespace composition
 }  // namespace url_shortener

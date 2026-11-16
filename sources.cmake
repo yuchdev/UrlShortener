@@ -524,6 +524,7 @@ set(URL_SHORTENER_SOURCES
       ${CMAKE_CURRENT_SOURCE_DIR}/src/app/link_backend.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/composition/link_command_service_factory.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/composition/command_runtime.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/composition/process_command_runtime.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/config/storage_config.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/composition/storage_factory.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/composition/link_backend_bootstrap.cpp

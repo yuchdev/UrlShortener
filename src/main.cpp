@@ -6,6 +6,7 @@
 #include <functional>
 #include <cstdlib>
 #include <iostream>
+#include <memory>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -15,6 +16,7 @@
 #include <url_shortener/app/link_backend.hpp>
 #include <url_shortener/cli/cli_parser.hpp>
 #include <url_shortener/cli/link_command_dispatch.hpp>
+#include <url_shortener/composition/command_runtime.hpp>
 #include <url_shortener/composition/link_backend_bootstrap.hpp>
 #include <url_shortener/observability/logger_factory.hpp>
 #include <url_shortener/url_shortener.hpp>
@@ -31,21 +33,24 @@ constexpr std::string_view uri_filename = "uri.txt";
  * run the CLI or the server, and handle shutdown signals.
  *
  * Startup order (server mode): parse args -> `--help` -> InitLinkBackend
- * (installs the one store) -> LinkBackend::mark_serving() -> logging ->
+ * (installs the one store) -> install the process-wide command runtime (built
+ * from the active handle) -> LinkBackend::mark_serving() -> logging ->
  * io_context + HttpServer -> uri.txt -> server.run() -> io_context.run().
- * Startup order (CLI mode): parse args -> `--help` -> InitLinkBackend ->
- * LinkBackend::mark_serving() -> DispatchLinkCommand -> backend.flush().
- * InitLinkBackend therefore runs before HttpServer is constructed and before
- * DispatchLinkCommand, so redirect handlers, REST handlers and the CLI all see
- * the same installed store (plan.md C11).
+ * Startup order (CLI mode): parse args -> `--help` -> InitLinkBackend -> install
+ * the process-wide command runtime -> LinkBackend::mark_serving() ->
+ * DispatchLinkCommand -> backend.flush(). InitLinkBackend therefore runs before
+ * the runtime is built and before HttpServer/DispatchLinkCommand, so redirect
+ * handlers, REST handlers and the CLI all see the same installed store and the
+ * one command registry over it (plan.md C11).
  *
- * Shutdown order (every exit path): LinkBackend::shutdown() runs first (via the
- * `backend_cleanup` guard, or during stack unwinding on an exception) - it
- * stops the installed store's background flusher and resets the holder on this
- * thread while the logger is still alive - and only then does the `backend`
- * handle destruct, releasing the store before its adapters and clock. A
- * `RepositoryLinkStore` is thus never flushed or destroyed during static
- * destruction (carried requirement 5).
+ * Shutdown order (every exit path, driven by guard destruction order): the
+ * `runtime_cleanup` guard resets the process-wide command runtime first (it
+ * borrows the store/repository), then the `backend_cleanup` guard runs
+ * LinkBackend::shutdown() - stopping the installed store's background flusher
+ * and resetting the holder on this thread while the logger is still alive - and
+ * only then does the `backend` handle destruct, releasing the store before its
+ * adapters and clock. A `RepositoryLinkStore` is thus never flushed or destroyed
+ * during static destruction (carried requirement 5).
  *
  * @param argc Number of CLI arguments.
  * @param argv CLI argument vector.
@@ -81,6 +86,19 @@ int main(int argc, char* argv[])
                 url_shortener::app::LinkBackend::shutdown();
             }
         } backend_cleanup;
+        // RAII cleanup for the process-wide command runtime. Declared AFTER
+        // backend_cleanup so it destructs FIRST: the runtime's link service
+        // references LinkBackend::store() and its lister holds the active
+        // metadata repository, so drop the runtime (reset_process_command_runtime)
+        // before LinkBackend::shutdown() retires the store and before `backend`
+        // destructs its adapters. A no-op when nothing was installed.
+        struct process_runtime_cleanup
+        {
+            ~process_runtime_cleanup()
+            {
+                url_shortener::composition::reset_process_command_runtime();
+            }
+        } runtime_cleanup;
         try {
             backend = url_shortener::app::InitLinkBackend(parsed.config);
         }
@@ -100,6 +118,19 @@ int main(int argc, char* argv[])
             return url_shortener::cli::ExitCodeForAppError(
                 url_shortener::app::AppErrorCode::storage_failure);
         }
+
+        // Build and publish the one process-wide command runtime from the
+        // ACTIVE backend handle, before mark_serving() (install asserts
+        // !serving) and before any CLI dispatch or HttpServer can serve a
+        // command. Every transport (REST now, CLI `cmd` in subtask 13) then
+        // shares this one registry over the one installed store, so link.list /
+        // db.rows read exactly what link CRUD writes — no split brain under
+        // --storage-config. `parsed.config` outlives the runtime: runtime_cleanup
+        // resets it on every exit path before `parsed` destructs.
+        url_shortener::composition::install_process_command_runtime(
+            std::make_shared<url_shortener::composition::CommandRuntime>(
+                url_shortener::composition::build_command_runtime(
+                    parsed.config, backend)));
 
         // Latch "serving" before any request-handling thread can exist (before
         // CLI dispatch and before HttpServer is constructed), so install()/

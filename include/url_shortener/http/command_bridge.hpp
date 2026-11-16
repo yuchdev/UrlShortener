@@ -1,5 +1,6 @@
 #pragma once
 
+#include <memory>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -43,33 +44,29 @@ namespace http
 commands::CallerContext resource_route_caller();
 
 /**
- * @brief Builds the per-request command runtime a resource route executes
- * against.
+ * @brief Returns the one command runtime a resource route executes against,
+ * shared across every request rather than rebuilt per request.
  *
- * The runtime is built fresh for every request rather than cached across
- * requests: `makeCommandService`-style wiring captures the request's
- * `const ServerConfig&`, and the unit tests dispatch with different
- * `ServerConfig` objects (e.g. `shortener_allow_private_targets`), so a runtime
- * frozen around one config would change behavior (contract C3). This is the
- * management plane, not the redirect hot path (contract C10), so the per-request
- * cost of one ~15-descriptor registry is acceptable; caching per `HttpServer`
- * is a later optimization. The runtime wires `composition::build_command_runtime`
- * over the process-wide holders (`app::LinkBackend::store()`, the global click
- * repository and the published system-info snapshot) using an inactive
- * `app::LinkBackendHandle`, so link CRUD reaches the installed store exactly as
- * the resource routes do today; the process-wide `JobRunner` a later task
- * installs is shared, so per-request runtimes never lose jobs.
+ * Prefers the process-wide runtime `main` installs once at startup via
+ * `composition::install_process_command_runtime` (built from the **active**
+ * `app::LinkBackendHandle`, so `link.list` / `db.rows links` read the same
+ * store link CRUD writes to — no split brain under `--storage-config`). When no
+ * process runtime is installed (unit tests, tools that never run `main`'s
+ * startup wiring), it returns a single fallback runtime built lazily on first
+ * use over the legacy process-wide holders (an inactive handle: the
+ * `LegacyLinkLister` over the global `linkRepository()` and the link service
+ * over `app::LinkBackend::store()`), with a fixed default `ServerConfig`. Both
+ * branches return an owning `std::shared_ptr`, so the runtime stays alive for
+ * the caller's use even if teardown resets the holder concurrently; and both
+ * are built at most once, never per request (contract C10 keeps this off the
+ * redirect hot path; this is the management plane).
  *
- * @param config Server configuration the built runtime's link service borrows by
- * reference; it must outlive the returned runtime (the call site holds the
- * request's `ServerConfig`, which satisfies this).
- * @return A @ref composition::CommandRuntime owning the registry and every
- * object its handlers reference.
- * @throws std::runtime_error only on a startup-class wiring failure (propagated
- * from @ref composition::build_command_runtime); expected conditions never
- * throw.
+ * @return An owning `std::shared_ptr` to the shared runtime; never null.
+ * @throws std::runtime_error only on a startup-class wiring failure while
+ * building the fallback runtime (propagated from
+ * @ref composition::build_command_runtime); expected conditions never throw.
  */
-composition::CommandRuntime make_request_runtime(const ::ServerConfig& config);
+std::shared_ptr<composition::CommandRuntime> request_runtime();
 
 /**
  * @brief REST transport policy applied by every REST entry point before
@@ -181,12 +178,13 @@ commands::CommandResponse execute_resource_command(
 /**
  * @brief Runs one command for a resource route, as the legacy Admin caller.
  *
- * Builds the per-request runtime (@ref make_request_runtime) and delegates to
- * the explicit-registry overload with @ref resource_route_caller. The runtime
- * lives only for the call.
+ * Obtains the shared runtime (@ref request_runtime) and delegates to the
+ * explicit-registry overload with @ref resource_route_caller.
  *
- * @param config Server configuration; borrowed by the per-request runtime for
- * the duration of the call.
+ * @param config Server configuration; retained for signature symmetry with the
+ * REST handlers (subtasks 07/09). The runtime is process-wide and config-bound
+ * at startup, so this argument is no longer read here; in production it equals
+ * the config the installed runtime was built from.
  * @param command The command name to run.
  * @param args_json The exact `args` object JSON text; moved into the request.
  * @param request_id Correlation id echoed in the response; moved into the
@@ -202,11 +200,13 @@ commands::CommandResponse execute_resource_command(const ::ServerConfig& config,
  * @brief Runs one command for a resource route, with an explicit caller.
  *
  * As the three-argument overload, but with a caller the gated routes supply
- * (subtask 08). Builds the per-request runtime and delegates to the
- * explicit-registry overload.
+ * (subtask 08). Obtains the shared runtime (@ref request_runtime) and delegates
+ * to the explicit-registry overload.
  *
- * @param config Server configuration; borrowed by the per-request runtime for
- * the duration of the call.
+ * @param config Server configuration; retained for signature symmetry with the
+ * REST handlers (subtasks 07/09). The runtime is process-wide and config-bound
+ * at startup, so this argument is no longer read here; in production it equals
+ * the config the installed runtime was built from.
  * @param command The command name to run.
  * @param args_json The exact `args` object JSON text; moved into the request.
  * @param request_id Correlation id echoed in the response; moved into the

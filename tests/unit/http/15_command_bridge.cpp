@@ -1,6 +1,9 @@
 #define BOOST_TEST_MODULE CommandBridge
 #include <boost/test/unit_test.hpp>
 
+#include <cstdlib>
+#include <filesystem>
+#include <fstream>
 #include <memory>
 #include <optional>
 #include <string>
@@ -13,18 +16,27 @@
 #include <url_shortener/commands/command_registry.hpp>
 #include <url_shortener/commands/envelope.hpp>
 #include <url_shortener/commands/error_codes.hpp>
+#include <url_shortener/composition/command_runtime.hpp>
+#include <url_shortener/composition/link_backend_bootstrap.hpp>
 #include <url_shortener/core/config.hpp>
 #include <url_shortener/http/command_bridge.hpp>
 #include <url_shortener/security/control_set.hpp>
 
+#ifdef _WIN32
+#    include <process.h>
+#else
+#    include <unistd.h>
+#endif
+
 namespace bhttp = boost::beast::http;
 
 namespace commands = url_shortener::commands;
+namespace composition = url_shortener::composition;
 using url_shortener::http::BeastRequest;
 using url_shortener::http::BeastResponse;
 using url_shortener::http::execute_resource_command;
 using url_shortener::http::legacy_error_code;
-using url_shortener::http::make_request_runtime;
+using url_shortener::http::request_runtime;
 using url_shortener::http::resource_response;
 using url_shortener::http::resource_route_caller;
 using url_shortener::http::rest_policy_refusal;
@@ -57,6 +69,28 @@ ServerConfig test_config()
 bool body_has(const BeastResponse& res, const std::string& needle)
 {
     return res.body().find(needle) != std::string::npos;
+}
+
+/// A unique temp path (pid + per-call counter) so overlapping ctest runs of
+/// this executable never collide on the SQLite file or its YAML.
+std::filesystem::path unique_temp_path(const std::string& suffix)
+{
+    static int counter = 0;
+#ifdef _WIN32
+    const long pid = static_cast<long>(_getpid());
+#else
+    const long pid = static_cast<long>(::getpid());
+#endif
+    return std::filesystem::temp_directory_path()
+        / ("urlsh_bridge15_" + std::to_string(pid) + "_"
+           + std::to_string(++counter) + suffix);
+}
+
+/// Writes @p content to @p path, truncating any existing file.
+void write_file(const std::filesystem::path& path, const std::string& content)
+{
+    std::ofstream out(path, std::ios::binary | std::ios::trunc);
+    out << content;
 }
 
 /// Records what a stub command handler observed, so a test can assert the
@@ -312,6 +346,7 @@ BOOST_AUTO_TEST_CASE(manage_users_is_refused_before_execute)
 BOOST_AUTO_TEST_CASE(real_runtime_link_get_missing_slug_is_not_found)
 {
     url_shortener::app::LinkBackend::reset();
+    composition::reset_process_command_runtime();
     const auto req = make_request();
     const auto config = test_config();
 
@@ -333,6 +368,7 @@ BOOST_AUTO_TEST_CASE(real_runtime_link_get_missing_slug_is_not_found)
 BOOST_AUTO_TEST_CASE(explicit_user_caller_is_denied_write_by_execute)
 {
     url_shortener::app::LinkBackend::reset();
+    composition::reset_process_command_runtime();
     const auto req = make_request();
     const auto config = test_config();
 
@@ -372,17 +408,91 @@ BOOST_AUTO_TEST_CASE(resource_route_caller_principal_is_non_identifying)
                == std::string::npos);
 }
 
-// Type: unit (per-request runtime construction).
-// Scenario: make_request_runtime returns a non-null product registry wired over
-//   the process-wide holders, usable without any prior backend install.
-// Boundaries: the runtime is built per request on the management plane (C3). On
+// Type: unit (shared default runtime construction).
+// Scenario: request_runtime returns a non-null product registry wired over the
+//   legacy process-wide holders when no process runtime is installed, usable
+//   without any prior backend install.
+// Boundaries: the fallback default is built over an inactive handle (C3). On
 //   failure first check: did build_command_runtime stop populating the registry
 //   or start requiring an active backend?
-BOOST_AUTO_TEST_CASE(make_request_runtime_builds_a_populated_registry)
+BOOST_AUTO_TEST_CASE(request_runtime_builds_a_populated_registry)
 {
     url_shortener::app::LinkBackend::reset();
-    const auto config = test_config();
-    const auto runtime = make_request_runtime(config);
-    BOOST_REQUIRE(runtime.registry != nullptr);
-    BOOST_TEST(runtime.registry->find("link.get") != nullptr);
+    composition::reset_process_command_runtime();
+    const auto runtime = request_runtime();
+    BOOST_REQUIRE(runtime != nullptr);
+    BOOST_REQUIRE(runtime->registry != nullptr);
+    BOOST_TEST(runtime->registry->find("link.get") != nullptr);
+}
+
+// Type: unit (runtime reuse / no per-request rebuild).
+// Scenario: two request_runtime() calls with no process runtime installed
+//   return the same CommandRuntime instance (pointer equality) — the fallback
+//   is built once, not per call.
+// Boundaries: the management plane shares one runtime (the fix for the
+//   per-request rebuild that caused split brain). On failure first check: did
+//   default_request_runtime stop caching the function-local static?
+BOOST_AUTO_TEST_CASE(request_runtime_is_reused_across_calls)
+{
+    url_shortener::app::LinkBackend::reset();
+    composition::reset_process_command_runtime();
+    const auto first = request_runtime();
+    const auto second = request_runtime();
+    BOOST_REQUIRE(first != nullptr);
+    BOOST_REQUIRE(second != nullptr);
+    BOOST_TEST(first.get() == second.get());
+}
+
+// Type: unit (no split brain under an active persistent backend, the core fix).
+// Scenario: with a SQLite-backed handle installed as the process runtime, a link
+//   created through the bridge (link.create -> LinkBackend::store()) is visible
+//   to link.list through the same process runtime — both read/write the one
+//   installed store, not an empty legacy store.
+// Boundaries: before the fix the bridge built a per-request runtime over an
+//   inactive handle, so link.list read the empty global linkRepository() while
+//   CRUD went to the SQLite store (split brain). On failure first check: did the
+//   bridge stop using process_command_runtime, or did the active handle stop
+//   selecting the RepositoryLinkLister?
+BOOST_AUTO_TEST_CASE(process_runtime_link_list_sees_link_created_through_backend)
+{
+    const auto db = unique_temp_path(".db");
+    const auto yaml = unique_temp_path(".yaml");
+    std::filesystem::remove(db);
+    write_file(yaml,
+               "metadata:\n  backend: sqlite\n  sqlite_path: " + db.string()
+                   + "\n");
+
+    ServerConfig server;
+    server.storage_config_path = yaml.string();
+
+    url_shortener::app::LinkBackend::reset();
+    composition::reset_process_command_runtime();
+
+    auto handle = url_shortener::app::InitLinkBackend(server);
+    BOOST_REQUIRE(handle.active());
+    BOOST_REQUIRE(handle.repository() != nullptr);
+
+    composition::install_process_command_runtime(
+        std::make_shared<composition::CommandRuntime>(
+            composition::build_command_runtime(server, handle)));
+
+    const std::string slug = "bridge-sqlite-slug";
+    const commands::CommandResponse created = execute_resource_command(
+        server,
+        "link.create",
+        R"({"target_url":"https://example.net/x","slug":")" + slug + R"("})",
+        "rid-create");
+    BOOST_REQUIRE(created.ok);
+
+    const commands::CommandResponse listed = execute_resource_command(
+        server, "link.list", R"({"status":"all","limit":500})", "rid-list");
+    BOOST_REQUIRE(listed.ok);
+    BOOST_TEST(listed.result_json.find(slug) != std::string::npos);
+
+    // Teardown: drop the runtime before the handle it borrows from, then restore
+    // the process-wide defaults for any following case / executable.
+    composition::reset_process_command_runtime();
+    url_shortener::app::LinkBackend::reset();
+    std::filesystem::remove(db);
+    std::filesystem::remove(yaml);
 }
