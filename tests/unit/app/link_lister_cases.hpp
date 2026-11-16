@@ -65,13 +65,14 @@ inline std::vector<url_shortener::Link> seed_links()
     using url_shortener::Link;
 
     // A timestamp far in the real past (2001-09-09) so the expired link is
-    // expired regardless of when the test runs; and in the future (2036) so
-    // the future-expiry link stays active. The future value is kept below
-    // INT32_MAX seconds because the SQLite backend reads INTEGER columns as a
-    // 32-bit int (sqlite_session_factory GetOptLL), so a larger epoch would
-    // overflow on read.
+    // expired regardless of when the test runs; and in the far future
+    // (2100-01-01) so the future-expiry link stays active. The future value is
+    // deliberately past 2038-01-19 (> INT32_MAX seconds): the SQLite backend
+    // now round-trips 64-bit epoch columns (sqlite_session_factory GetOptLL
+    // reads them as long long), so this also guards that Y2038 fix through the
+    // repository lister path.
     const std::string past_expiry = lister_case_timestamp(1000000000LL);
-    const std::string future_expiry = lister_case_timestamp(2100000000LL);
+    const std::string future_expiry = lister_case_timestamp(4102444800LL);
 
     std::vector<Link> links;
 

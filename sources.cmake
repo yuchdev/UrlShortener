@@ -205,6 +205,7 @@ set(URL_SHORTENER_SOURCES
       tests/unit/storage/sqlite/12_error_mapping_generic_failure.cpp
       tests/unit/storage/sqlite/13_session_factory_builds_sqlite_session.cpp
       tests/unit/storage/sqlite/14_sql_repository_with_sqlite_backend.cpp
+      tests/unit/storage/sqlite/15_large_timestamp_roundtrip.cpp
   )
 
   set(SQLITE_INTEGRATION_SOURCES
