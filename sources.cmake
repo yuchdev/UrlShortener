@@ -111,6 +111,7 @@ set(URL_SHORTENER_SOURCES
       tests/unit/http/12_prefixed_redirect_handler.cpp
       tests/unit/http/13_root_redirect_handler.cpp
       tests/unit/http/14_fallback_handler.cpp
+      tests/unit/http/15_command_bridge.cpp
       tests/unit/http/30_redirect_through_backend.cpp
       tests/unit/http/31_link_handlers_through_backend.cpp
   )
@@ -472,6 +473,7 @@ set(URL_SHORTENER_SOURCES
       ${CMAKE_CURRENT_SOURCE_DIR}/src/http/handlers/compatibility_handlers.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/http/handlers/redirect_handlers.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/http/handlers/fallback_handlers.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/http/command_bridge.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/core/link_service.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/storage/list_links_eval.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/storage/inmemory/in_memory_metadata_repository.cpp
