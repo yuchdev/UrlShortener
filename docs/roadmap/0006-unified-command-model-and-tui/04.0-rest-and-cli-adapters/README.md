@@ -50,7 +50,7 @@ factory mean subtask 13 and `03.0/18` (`build_command_runtime`) respectively.
 | 04 | [REST create through the registry](04-rest-create-via-registry.md) | ✅ Complete | 01, 02, 03.0/11 | 06 |
 | 05 | [REST PATCH through the registry](05-rest-patch-via-registry.md) | ✅ Complete | 01, 02, 03.0/09, 03.0/11 | 06 |
 | 06 | [REST delete and lifecycle through the registry, handler cleanup](06-rest-delete-and-lifecycle-via-registry.md) | ✅ Complete | 01, 02, 03, 04, 05, 03.0/10 | 07, 09 |
-| 07 | [GET /api/v1/links route (gated)](07-rest-list-links-route.md) | ⬜ Not started | 01, 02, 06, 08, 03.0/14, 03.0/18 | 10 |
+| 07 | [GET /api/v1/links route (gated)](07-rest-list-links-route.md) | ✅ Complete | 01, 02, 06, 08, 03.0/14, 03.0/18 | 10 |
 | 08 | [Command API configuration gate](08-command-api-config-gate.md) | ⬜ Not started | 01.0/06 | 07, 09, 10, 05.0/11 |
 | 09 | [POST /api/v1/commands](09-rest-post-commands-endpoint.md) | ⬜ Not started | 02, 06, 08, 01.0/03, 01.0/04, 01.0/07, 03.0/18 | 10, 05.0/11, 07.0/08 |
 | 10 | [GET /api/v1/commands and API reference regeneration](10-rest-get-commands-and-api-docs.md) | ⬜ Not started | 07, 08, 09, 01.0/10 | 07.0/17, 08.0/09 |
