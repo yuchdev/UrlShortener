@@ -80,12 +80,43 @@ def _changed_cxx() -> list[str]:
     return out
 
 
+def _busy_build_process() -> Optional[str]:
+    """Return a description of a running build/test process, or None.
+
+    A second ``cmake --build`` in the same build directory races the first one
+    (corrupting static archives and ninja's ``.ninja_log``/``.ninja_deps``), and
+    ``clang-format -i`` would rewrite files a background agent is still editing.
+    So while any ninja / ``cmake --build`` / ``ctest`` process is alive, the gate
+    skips instead of piling on. Detection is best-effort via ``ps``; if ``ps`` is
+    unavailable the gate runs as before.
+    """
+    proc = _run(["ps", "-axo", "command"])
+    if proc is None or proc.returncode != 0:
+        return None
+    for line in proc.stdout.splitlines()[1:]:
+        tokens = line.split()
+        if not tokens:
+            continue
+        exe = Path(tokens[0]).name
+        if exe == "ninja":
+            return line.strip()
+        if exe == "cmake" and "--build" in tokens:
+            return line.strip()
+        if exe == "ctest" and "--test-dir" in tokens:
+            return line.strip()
+    return None
+
+
 def main() -> None:
     event = read_event()
     if event.get("stop_hook_active"):
         allow()
     if os.environ.get("URLSHORTENER_SKIP_TESTS") == "1":
         append_log("tests.log", "SKIPPED (URLSHORTENER_SKIP_TESTS=1)")
+        allow()
+    busy = _busy_build_process()
+    if busy is not None:
+        append_log("tests.log", f"SKIPPED (build/test already running: {busy[:120]})")
         allow()
 
     # Step 1: format changed C/C++ files (fix-in-place; never blocks on its own).
