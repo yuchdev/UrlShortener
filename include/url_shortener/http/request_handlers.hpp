@@ -5,8 +5,10 @@
 #include <functional>
 #include <map>
 #include <mutex>
+#include <optional>
 #include <string>
 
+#include <boost/asio/ip/address.hpp>
 #include <boost/asio/ssl/context.hpp>
 #include <boost/beast/http.hpp>
 #include <url_shortener/core/config.hpp>
@@ -160,6 +162,11 @@ makeRedirectResponse(
  *        already set by the calling session.
  * @param config Server-wide runtime configuration.
  * @param is_tls `true` on HTTPS connections.
+ * @param peer   TCP peer (client) address of the connection, forwarded to
+ *        `Router::dispatch` and onto `RouteContext::peer`. Defaulted to
+ *        `std::nullopt` so every existing call site (tests, tools) is
+ *        behavior-neutral: an absent peer means "no peer" to the gates that
+ *        read it. Never logged (client PII, threat model T-70).
  * @return The response produced by the matched route handler, or a router
  *         error response (400/404) when no route matches.
  */
@@ -167,7 +174,8 @@ boost::beast::http::response<boost::beast::http::string_body>
 handleShortenerRequest(
     const boost::beast::http::request<boost::beast::http::string_body>& req,
     const ServerConfig& config,
-    const bool is_tls);
+    const bool is_tls,
+    std::optional<boost::asio::ip::address> peer = std::nullopt);
 
 /**
  * @brief Implements the legacy URI-store fallback.

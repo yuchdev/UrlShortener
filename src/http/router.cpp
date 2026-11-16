@@ -119,7 +119,8 @@ void Router::add(
 BeastResponse Router::dispatch(
     const BeastRequest& req,
     const ::ServerConfig& config,
-    const bool is_tls) const
+    const bool is_tls,
+    std::optional<boost::asio::ip::address> peer) const
 {
     bool path_matched = false;
     std::size_t best_specificity = 0;
@@ -155,6 +156,11 @@ BeastResponse Router::dispatch(
             continue;
         }
         context.route_label = route.route_label;
+        // Behavior-neutral peer plumbing (threat model T-70): the client
+        // address rides on the dispatched RouteContext so a gated handler
+        // (the create throttle) can key on it. Redirect handlers ignore it
+        // (contract C10); it is never logged (client PII).
+        context.peer = peer;
         return route.handler(req, config, is_tls, context);
     }
 

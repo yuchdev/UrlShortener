@@ -113,6 +113,7 @@ set(URL_SHORTENER_SOURCES
       tests/unit/http/14_fallback_handler.cpp
       tests/unit/http/15_command_bridge.cpp
       tests/unit/http/16_rest_read_routes_via_registry.cpp
+      tests/unit/http/17_rest_create_via_registry.cpp
       tests/unit/http/30_redirect_through_backend.cpp
       tests/unit/http/31_link_handlers_through_backend.cpp
   )

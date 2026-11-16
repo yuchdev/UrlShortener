@@ -11,12 +11,12 @@ BeastResponse handleCompatCreateLink(
     const bool is_tls,
     const RouteContext& context)
 {
-    (void)context;
     return createLinkFromRequest(
         req,
         config,
         is_tls,
-        CreateSlugFieldMode::slug_or_code);
+        CreateSlugFieldMode::slug_or_code,
+        context);
 }
 
 BeastResponse handleCompatGetLinkBySlug(

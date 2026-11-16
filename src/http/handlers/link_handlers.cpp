@@ -1,5 +1,7 @@
 #include <algorithm>
 #include <chrono>
+#include <map>
+#include <memory>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -15,6 +17,9 @@
 #include <url_shortener/http/command_bridge.hpp>
 #include <url_shortener/http/handlers/link_handlers.hpp>
 #include <url_shortener/http/request_handlers.hpp>
+#include <url_shortener/storage/errors/rate_limit_error.hpp>
+#include <url_shortener/storage/i_rate_limiter.hpp>
+#include <url_shortener/storage/models/rate_limit_decision.hpp>
 
 #include "url_shortener/storage/memory/in_memory_click_event_repository.hpp"
 
@@ -254,8 +259,14 @@ BeastResponse handleLifecycleAction(const BeastRequest& req,
 BeastResponse createLinkFromRequest(const BeastRequest& req,
                                     const ::ServerConfig& config,
                                     const bool is_tls,
-                                    const CreateSlugFieldMode slug_mode)
+                                    const CreateSlugFieldMode slug_mode,
+                                    const RouteContext& context)
 {
+    // --- REST shape validation (public contract C3: codes and their ORDER are
+    // locked; the quirky extractJson* scanners are reused unchanged). Each
+    // check captures a local instead of a DTO field; the args are rebuilt from
+    // only these known keys afterwards, so unknown top-level keys are ignored.
+
     auto raw_url = url_shortener::extractJsonStringField(req.body(), "url");
     if (!raw_url.has_value()) {
         raw_url =
@@ -266,23 +277,19 @@ BeastResponse createLinkFromRequest(const BeastRequest& req,
             req, config, is_tls, 400, "invalid_url", "url is required");
     }
 
-    app::CreateLinkCommand command;
-    command.target_url = *raw_url;
-    command.slug = url_shortener::extractJsonStringField(req.body(), "slug");
-    if (!command.slug.has_value()
-        && slug_mode == CreateSlugFieldMode::slug_or_code)
-    {
-        command.slug =
-            url_shortener::extractJsonStringField(req.body(), "code");
+    auto slug = url_shortener::extractJsonStringField(req.body(), "slug");
+    if (!slug.has_value() && slug_mode == CreateSlugFieldMode::slug_or_code) {
+        slug = url_shortener::extractJsonStringField(req.body(), "code");
     }
 
-    if (const auto redirect_type_raw =
+    std::optional<std::string> redirect_type_raw;
+    if (const auto raw =
             url_shortener::extractJsonStringField(req.body(), "redirect_type");
-        redirect_type_raw.has_value())
+        raw.has_value())
     {
-        const auto parsed =
-            url_shortener::parseRedirectType(*redirect_type_raw);
-        if (!parsed.has_value()) {
+        // Only "temporary"/"permanent" validate; the raw value is passed on
+        // verbatim (the registry enum arg accepts exactly these two strings).
+        if (!url_shortener::parseRedirectType(*raw).has_value()) {
             return url_shortener::makeApiErrorResponse(
                 req,
                 config,
@@ -291,14 +298,15 @@ BeastResponse createLinkFromRequest(const BeastRequest& req,
                 "invalid_redirect_type",
                 "redirect_type must be temporary or permanent");
         }
-        command.redirect_type = *parsed;
+        redirect_type_raw = *raw;
     }
 
-    if (const auto expires_at_raw =
+    std::optional<std::string> expires_at_raw;
+    if (const auto raw =
             url_shortener::extractJsonStringField(req.body(), "expires_at");
-        expires_at_raw.has_value())
+        raw.has_value())
     {
-        if (!url_shortener::parseRfc3339Zulu(*expires_at_raw).has_value()) {
+        if (!url_shortener::parseRfc3339Zulu(*raw).has_value()) {
             return url_shortener::makeApiErrorResponse(
                 req,
                 config,
@@ -307,11 +315,12 @@ BeastResponse createLinkFromRequest(const BeastRequest& req,
                 "invalid_expires_at",
                 "expires_at must be RFC3339 UTC");
         }
-        command.expires_at = *expires_at_raw;
+        expires_at_raw = *raw;
     }
 
+    std::optional<bool> enabled_raw;
     if (url_shortener::hasJsonField(req.body(), "enabled")) {
-        const auto enabled_raw =
+        enabled_raw =
             url_shortener::extractJsonBoolField(req.body(), "enabled");
         if (!enabled_raw.has_value()) {
             return url_shortener::makeApiErrorResponse(
@@ -322,13 +331,12 @@ BeastResponse createLinkFromRequest(const BeastRequest& req,
                 "invalid_enabled",
                 "enabled must be boolean");
         }
-        command.enabled = *enabled_raw;
     }
 
+    std::optional<std::vector<std::string>> tags;
     if (url_shortener::hasJsonField(req.body(), "tags")) {
-        const auto raw_tags =
-            url_shortener::extractJsonStringArrayField(req.body(), "tags");
-        if (!raw_tags.has_value()) {
+        tags = url_shortener::extractJsonStringArrayField(req.body(), "tags");
+        if (!tags.has_value()) {
             return url_shortener::makeApiErrorResponse(
                 req,
                 config,
@@ -337,14 +345,13 @@ BeastResponse createLinkFromRequest(const BeastRequest& req,
                 "invalid_tags",
                 "tags must be string array");
         }
-        command.tags = *raw_tags;
     }
 
+    std::optional<std::unordered_map<std::string, std::string>> metadata;
     if (url_shortener::hasJsonField(req.body(), "metadata")) {
-        const auto raw_metadata =
-            url_shortener::extractJsonFlatObjectStringField(req.body(),
-                                                            "metadata");
-        if (!raw_metadata.has_value()) {
+        metadata = url_shortener::extractJsonFlatObjectStringField(req.body(),
+                                                                   "metadata");
+        if (!metadata.has_value()) {
             return url_shortener::makeApiErrorResponse(
                 req,
                 config,
@@ -353,18 +360,24 @@ BeastResponse createLinkFromRequest(const BeastRequest& req,
                 "invalid_metadata",
                 "metadata must be flat object with limits");
         }
-        command.metadata = *raw_metadata;
     }
 
+    bool campaign_present = false;
+    bool campaign_is_null = false;
+    std::string campaign_object_text;
     if (url_shortener::hasJsonField(req.body(), "campaign")) {
+        campaign_present = true;
         const auto raw_campaign =
             url_shortener::extractJsonValueToken(req.body(), "campaign");
         if (raw_campaign.has_value() && *raw_campaign == "null") {
-            command.campaign.reset();
+            campaign_is_null = true;
         }
         else {
-            command.campaign = extractCampaign(req.body());
-            if (!command.campaign.has_value()) {
+            // Shape-validate exactly as before (non-object -> 400), then
+            // rebuild the object from only the six known members that are
+            // present, so unknown inner keys are ignored (parity) and never
+            // reach the registry's object validator.
+            if (!extractCampaign(req.body()).has_value()) {
                 return url_shortener::makeApiErrorResponse(
                     req,
                     config,
@@ -373,6 +386,21 @@ BeastResponse createLinkFromRequest(const BeastRequest& req,
                     "invalid_campaign",
                     "campaign must be valid object");
             }
+            commands::args_builder campaign_args;
+            if (raw_campaign.has_value()) {
+                static constexpr const char* k_campaign_fields[] = {
+                    "name", "source", "medium", "term", "content", "id"};
+                for (const char* field : k_campaign_fields) {
+                    if (const auto value =
+                            url_shortener::extractJsonStringField(*raw_campaign,
+                                                                  field);
+                        value.has_value())
+                    {
+                        campaign_args.add_string(field, *value);
+                    }
+                }
+            }
+            campaign_object_text = campaign_args.str();
         }
     }
 
@@ -386,19 +414,71 @@ BeastResponse createLinkFromRequest(const BeastRequest& req,
             "deleted_at is server-managed");
     }
 
-    const auto command_service = makeCommandService(config);
-    const auto result = command_service.service->CreateLink(command);
-    if (!result.ok()) {
-        return appErrorResponse(req, config, is_tls, result.error);
+    // --- Create throttle (threat model T-75), applied first in the tail,
+    // before building args and before execute. Keyed on the TCP peer address
+    // only (never a header). Skipped when no limiter is wired, the request
+    // carries no peer, or the limit is disabled (0). An over-limit decision
+    // (!allowed AND no error) is a 429; a limiter failure (error set) is
+    // fail-open and falls through to the create.
+    if (const auto limiter = create_rate_limiter(); limiter && context.peer
+        && config.link_create_rate_limit > 0)
+    {
+        RateLimitError rl_error = RateLimitError::none;
+        const RateLimitDecision decision = limiter->Allow(
+            context.peer->to_string(),
+            config.link_create_rate_limit,
+            std::chrono::seconds(config.link_create_rate_window_seconds),
+            &rl_error);
+        if (!decision.allowed && rl_error == RateLimitError::none) {
+            return url_shortener::makeApiErrorResponse(
+                req, config, is_tls, 429, "rate_limited", "Too many requests");
+        }
     }
 
-    return url_shortener::makeResponse(
+    // --- Build the link.create args from the validated locals and run it
+    // through the command bridge as the legacy Admin caller (threat model
+    // T-60). target_url is the canonical arg; the `url` alias lives only here.
+    commands::args_builder args;
+    args.add_string("target_url", *raw_url);
+    if (slug.has_value()) {
+        args.add_string("slug", *slug);
+    }
+    if (redirect_type_raw.has_value()) {
+        args.add_string("redirect_type", *redirect_type_raw);
+    }
+    if (expires_at_raw.has_value()) {
+        args.add_string("expires_at", *expires_at_raw);
+    }
+    if (enabled_raw.has_value()) {
+        args.add_bool("enabled", *enabled_raw);
+    }
+    if (tags.has_value()) {
+        args.add_string_list("tags", *tags);
+    }
+    if (metadata.has_value()) {
+        args.add_string_map(
+            "metadata",
+            std::map<std::string, std::string>(metadata->begin(),
+                                               metadata->end()));
+    }
+    if (campaign_present) {
+        if (campaign_is_null) {
+            args.add_null("campaign");
+        }
+        else {
+            // campaign_object_text is produced by a second args_builder, so it
+            // is a single valid JSON object (add_raw's contract).
+            args.add_raw("campaign", campaign_object_text);
+        }
+    }
+
+    return resource_response(
         req,
         config,
         is_tls,
-        201,
-        app::serializeLinkViewJson(*result.value),
-        "application/json");
+        execute_resource_command(
+            config, "link.create", args.str(), requestIdFromRequest(req)),
+        201);
 }
 
 BeastResponse handleCreateLink(const BeastRequest& req,
@@ -406,9 +486,8 @@ BeastResponse handleCreateLink(const BeastRequest& req,
                                const bool is_tls,
                                const RouteContext& context)
 {
-    (void)context;
     return createLinkFromRequest(
-        req, config, is_tls, CreateSlugFieldMode::slug_only);
+        req, config, is_tls, CreateSlugFieldMode::slug_only, context);
 }
 
 BeastResponse handleGetLinkById(const BeastRequest& req,

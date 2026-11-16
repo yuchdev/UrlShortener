@@ -9,6 +9,7 @@
 #include <boost/asio/strand.hpp>
 #include <openssl/ssl.h>
 #include <chrono>
+#include <optional>
 
 namespace url_shortener {
 
@@ -64,7 +65,17 @@ void PlainSession::onRead(const beast::error_code& ec, std::size_t)
         res_ = makeRedirectResponse(req_, config_);
     }
     else {
-        res_ = handleShortenerRequest(req_, config_, false);
+        // Read the TCP peer address for the create throttle (threat model
+        // T-75). On any remote_endpoint error pass std::nullopt (fail-closed:
+        // no throttle key, never a guessed address). The address is never
+        // logged (client PII, threat model T-70/T-84).
+        beast::error_code peer_ec;
+        const auto endpoint = socket_.socket().remote_endpoint(peer_ec);
+        std::optional<net::ip::address> peer;
+        if (!peer_ec) {
+            peer = endpoint.address();
+        }
+        res_ = handleShortenerRequest(req_, config_, false, peer);
     }
 
     metricsRegistry().inflight_requests.fetch_sub(1);
@@ -153,7 +164,17 @@ void TlsSession::onRead(const beast::error_code& ec, std::size_t)
         res_ = makeApiErrorResponse(req_, config_, true, 413, "payload_too_large", "request body too large");
     }
     else {
-        res_ = handleShortenerRequest(req_, config_, true);
+        // Read the TCP peer address off the lowest (TCP) layer for the create
+        // throttle (threat model T-75); remote_endpoint error -> std::nullopt
+        // (fail-closed). Never logged (client PII, threat model T-70/T-84).
+        beast::error_code peer_ec;
+        const auto endpoint =
+            beast::get_lowest_layer(stream_).socket().remote_endpoint(peer_ec);
+        std::optional<net::ip::address> peer;
+        if (!peer_ec) {
+            peer = endpoint.address();
+        }
+        res_ = handleShortenerRequest(req_, config_, true, peer);
     }
 
     metricsRegistry().inflight_requests.fetch_sub(1);

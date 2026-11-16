@@ -9,6 +9,11 @@
 // in the global namespace (see `core/config.hpp`).
 struct ServerConfig;
 
+// The create-throttle rate-limiter port lives in the global namespace (see
+// `storage/i_rate_limiter.hpp`); forward-declared so this seam header stays
+// free of storage definitions.
+class IRateLimiter;
+
 namespace url_shortener
 {
 namespace app
@@ -98,6 +103,17 @@ struct CommandRuntime
     ///< `db.rows`, `system.info`, `command.list`). Declared last so it is
     ///< destroyed first, before any object its handlers reference.
     std::shared_ptr<commands::CommandRegistry> registry;
+
+    ///< The selected create-throttle limiter (threat model T-75), copied from
+    ///< `app::LinkBackendHandle::createRateLimiter()` at build time: the
+    ///< process-wide, config-bound limiter the REST create adapter keys on the
+    ///< client peer address. Not referenced by any registry handler (the
+    ///< throttle is a transport gate applied before `execute`, never a command
+    ///< result), so its position among the members is immaterial to teardown.
+    ///< Null when the runtime was built from a handle with no limiter wired (a
+    ///< default-constructed handle, e.g. the bridge's unit-test fallback), in
+    ///< which case the create adapter skips the throttle (fail-open).
+    std::shared_ptr<IRateLimiter> create_rate_limiter;
 
     // Task 05.0 subtask 20 adds: std::shared_ptr<commands::JobRunner>
     // job_runner (process-wide, shared) and the job/pair commands + jobs table.

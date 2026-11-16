@@ -173,6 +173,34 @@ public:
     std::shared_ptr<::IMetadataRepository> repository() const;
 
     /**
+     * @brief Returns the selected create-throttle rate limiter (threat model
+     * T-75), used by `POST /api/v1/links` / `POST /api/v1/short-urls` to bound
+     * link-creation bursts per client peer address.
+     *
+     * `InitLinkBackend` **always constructs** a dedicated in-memory create
+     * limiter (over this handle's clock) so the throttle is on out of the box
+     * with no configuration. When the storage config enables a Redis rate
+     * limiter (`StorageConfig.rate_limit.enabled && backend == "redis"`) the
+     * configured Redis limiter (`StorageAdapters::rate_limiter`) is returned
+     * **instead**, so a multi-process deployment shares one window; any other
+     * `rate_limit` state (disabled, or `backend == "inmemory"`) keeps the
+     * dedicated in-memory create limiter. The selection is fixed at
+     * `InitLinkBackend` time and never changes for the handle's lifetime.
+     *
+     * Ownership: shares ownership via `std::shared_ptr`, so a caller that keeps
+     * the returned pointer keeps the limiter alive; the handle still owns the
+     * limiter's clock for its own lifetime (member order keeps the clock alive
+     * beyond the limiter).
+     *
+     * @return The selected create limiter for any handle produced by
+     * `InitLinkBackend` (never null); a null `std::shared_ptr` only for a
+     * default-constructed or moved-from handle (which never went through
+     * `InitLinkBackend`), where callers treat a null limiter as "throttle not
+     * wired" and skip it (fail-open).
+     */
+    std::shared_ptr<::IRateLimiter> createRateLimiter() const;
+
+    /**
      * @brief Returns the resolved per-backend settings.
      * @return The settings for an active handle; default-constructed
      * (empty names, zero durations) for an inactive handle.
@@ -210,7 +238,8 @@ private:
                       std::shared_ptr<IClock> clock,
                       std::shared_ptr<RepositoryLinkStore> store,
                       LinkBackendSettings settings,
-                      std::string summary);
+                      std::string summary,
+                      std::shared_ptr<::IRateLimiter> create_rate_limiter);
 
     friend LinkBackendHandle InitLinkBackend(const ServerConfig& config);
 
@@ -234,6 +263,15 @@ private:
 
     ///< Redacted one-line storage summary for `summary()`.
     std::string m_summary_;
+
+    ///< The selected create-throttle limiter (threat model T-75) returned by
+    ///< @ref createRateLimiter. Either the dedicated in-memory create limiter
+    ///< (default), which borrows `m_clock_` by reference, or the configured
+    ///< Redis limiter aliased from `m_adapters_.rate_limiter`. Declared after
+    ///< `m_clock_` (and the adapters) so it is destroyed before them: an
+    ///< in-memory create limiter must never outlive the clock it borrows.
+    ///< Null only on a default-constructed/moved-from handle.
+    std::shared_ptr<::IRateLimiter> m_create_rate_limiter_;
 };
 
 /**
@@ -336,6 +374,32 @@ namespace detail
  * (real flusher start).
  */
 void set_start_flusher_hook_for_testing(std::function<void()> hook);
+
+/**
+ * @brief Pure selection rule behind `LinkBackendHandle::createRateLimiter`
+ * (threat model T-75), exposed so the Redis-vs-in-memory choice is unit-testable
+ * with stub limiters without standing up a real Redis backend.
+ *
+ * Returns @p configured_rate_limiter when the storage config selects a Redis
+ * rate limiter (`config.rate_limit.enabled && config.rate_limit.backend ==
+ * "redis"`) **and** that limiter is non-null; otherwise returns
+ * @p default_in_memory (the dedicated in-memory create limiter). Any other
+ * `rate_limit` state (disabled, or `backend == "inmemory"`) keeps the in-memory
+ * default. No I/O; a deterministic pure function.
+ *
+ * @param config The validated storage configuration whose `rate_limit` section
+ * drives the choice.
+ * @param configured_rate_limiter The `StorageAdapters::rate_limiter` built from
+ * the config (the Redis limiter when `rate_limit` is enabled with that backend;
+ * may be null when `rate_limit` is disabled).
+ * @param default_in_memory The dedicated in-memory create limiter constructed
+ * unconditionally by `InitLinkBackend`.
+ * @return The limiter to expose via `createRateLimiter`.
+ */
+std::shared_ptr<::IRateLimiter> select_create_rate_limiter(
+    const StorageConfig& config,
+    std::shared_ptr<::IRateLimiter> configured_rate_limiter,
+    std::shared_ptr<::IRateLimiter> default_in_memory);
 
 }  // namespace detail
 

@@ -16,9 +16,11 @@
 #include <cctype>
 #include <filesystem>
 #include <iomanip>
+#include <optional>
 #include <random>
 #include <sstream>
 #include <string>
+#include <utility>
 #include <vector>
 #include <mutex>
 #include <map>
@@ -465,9 +467,10 @@ bhttp::response<bhttp::string_body> handleApplicationRequest(
 bhttp::response<bhttp::string_body> handleShortenerRequest(
     const bhttp::request<bhttp::string_body>& req,
     const ServerConfig& config,
-    const bool is_tls)
+    const bool is_tls,
+    std::optional<boost::asio::ip::address> peer)
 {
-    return applicationRouter().dispatch(req, config, is_tls);
+    return applicationRouter().dispatch(req, config, is_tls, std::move(peer));
 }
 
 } // namespace url_shortener

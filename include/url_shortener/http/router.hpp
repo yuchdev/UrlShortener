@@ -1,8 +1,10 @@
 #pragma once
 
+#include <optional>
 #include <string>
 #include <vector>
 
+#include <boost/asio/ip/address.hpp>
 #include <boost/beast/http.hpp>
 #include <url_shortener/http/handler_types.hpp>
 
@@ -73,12 +75,22 @@ public:
     /// @param req    Incoming request; `target()` is used for path matching.
     /// @param config Forwarded unchanged to the matched handler.
     /// @param is_tls Forwarded unchanged to the matched handler.
+    /// @param peer   TCP peer (client) address of the connection, copied
+    ///        onto the dispatched `RouteContext::peer`. Defaulted to
+    ///        `std::nullopt` so existing call sites (tests, the legacy
+    ///        session path) are behavior-neutral: a defaulted/absent peer
+    ///        means "no peer" to every gate that reads it (fail-closed
+    ///        locality, no throttle key). Never logged (client PII,
+    ///        threat model T-70). Ignored by the redirect handlers
+    ///        (contract C10).
     /// @return The response produced by the matched handler; a 400
     ///         error response if the path matched but the HTTP method did
     ///         not; a 404 error response if no path pattern matched.
-    BeastResponse dispatch(const BeastRequest& req,
-                           const ::ServerConfig& config,
-                           bool is_tls) const;
+    BeastResponse dispatch(
+        const BeastRequest& req,
+        const ::ServerConfig& config,
+        bool is_tls,
+        std::optional<boost::asio::ip::address> peer = std::nullopt) const;
 
     /// @brief Returns a snapshot of registered route metadata.
     /// @return A copy of all route entries (method, pattern, label),

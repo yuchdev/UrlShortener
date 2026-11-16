@@ -19,32 +19,47 @@ enum class CreateSlugFieldMode
     slug_or_code
 };
 
-/// @brief Parses the request body JSON and creates a new short link via
-/// `LinkCommandService`, accepting `slug` and optionally `code` as the
-/// short-code field depending on `slug_mode`.
+/// @brief Parses the request body JSON, applies the create throttle, and
+/// creates a new short link through the `link.create` command registry,
+/// accepting `slug` and optionally `code` as the short-code field depending on
+/// `slug_mode`.
 ///
 /// Shared by both the canonical (`handleCreateLink`) and compatibility
-/// (`handleCompatCreateLink`) create endpoints.
+/// (`handleCompatCreateLink`) create endpoints. The per-field 400 shape
+/// validation and its order are the public REST contract and run unchanged;
+/// only the DTO construction and service call are replaced by an `args_builder`
+/// plus the command bridge (milestone 0006 contract C1/C3). After the per-field
+/// checks and before building/executing the command, the create throttle
+/// (threat model T-75) is applied: when a limiter is wired, `context.peer` is
+/// present, and `config.link_create_rate_limit > 0`, an over-limit request
+/// returns `429 rate_limited` without creating anything. A limiter failure is
+/// fail-open (the create proceeds); an absent peer skips the throttle.
 /// @param req       Incoming request; body must be JSON with at least a
 ///        `url` (or `target_url`) field.
-/// @param config    Server-wide runtime configuration.
+/// @param config    Server-wide runtime configuration; supplies the create
+///        throttle limit/window.
 /// @param is_tls    `true` on HTTPS connections.
 /// @param slug_mode Controls whether the legacy `code` field is accepted
 ///        in addition to `slug`.
+/// @param context   Route context; only `context.peer` is read, as the create
+///        throttle key (never a header; never logged, threat model T-70/T-75).
 /// @return 201 with the JSON link view on success; 400 for missing/invalid
 ///         fields (url, slug, redirect_type, expires_at, enabled, tags,
 ///         metadata, campaign); 409 if the slug is reserved or already
-///         in use; 500 on repository failure.
+///         in use; 429 `rate_limited` when the per-peer create limit is
+///         exceeded; 500 on repository failure.
 BeastResponse createLinkFromRequest(const BeastRequest& req,
                                     const ::ServerConfig& config,
                                     bool is_tls,
-                                    CreateSlugFieldMode slug_mode);
+                                    CreateSlugFieldMode slug_mode,
+                                    const RouteContext& context);
 
 /// @brief Handles `POST /api/v1/links`; creates a new short link.
 /// @param req     Incoming request with JSON body.
 /// @param config  Server-wide runtime configuration.
 /// @param is_tls  `true` on HTTPS connections.
-/// @param context Route context; not used by this handler.
+/// @param context Route context; forwarded to `createLinkFromRequest` for the
+///        create throttle peer key.
 /// @return See `createLinkFromRequest` with `CreateSlugFieldMode::slug_only`.
 BeastResponse handleCreateLink(const BeastRequest& req,
                                const ::ServerConfig& config,

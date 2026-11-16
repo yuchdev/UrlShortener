@@ -70,6 +70,19 @@ std::shared_ptr<composition::CommandRuntime> request_runtime()
     return default_request_runtime();
 }
 
+std::shared_ptr<::IRateLimiter> create_rate_limiter()
+{
+    // The limiter rides on the one shared runtime (process-wide in production,
+    // the lazily-built fallback in tests), so the create adapter reaches the
+    // same limiter main wired at startup. A null field (the fallback runtime,
+    // built from a handle with no limiter) means "throttle not wired" -> the
+    // adapter skips it (fail-open). No fail-closed-while-serving special case
+    // is needed here: a null limiter only suppresses the throttle, and when the
+    // process is serving-without-runtime the create command itself already
+    // fails closed in execute_resource_command.
+    return request_runtime()->create_rate_limiter;
+}
+
 std::optional<commands::CommandResponse> rest_policy_refusal(
     const commands::CommandRegistry& registry,
     std::string_view command,

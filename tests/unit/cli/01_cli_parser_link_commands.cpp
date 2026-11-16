@@ -1035,6 +1035,14 @@ Request limits:
                                         (default: 65536).
   --max-request-target-length N (=2048) Maximum request target (URL path) 
                                         length (default: 2048).
+  --link-create-rate-limit N (=30)      Max link creations per client address 
+                                        per window; keyed on the TCP peer 
+                                        address only, never a header (default: 
+                                        30; 0 disables the throttle).
+  --link-create-rate-window-seconds SECONDS (=60)
+                                        Window length in seconds for 
+                                        --link-create-rate-limit; must be > 0 
+                                        (default: 60).
 )HELPGOLD";
 }  // namespace
 

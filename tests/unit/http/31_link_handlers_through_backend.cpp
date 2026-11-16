@@ -306,10 +306,17 @@ Link makeLink(const std::string& slug)
  */
 void installRuntimeOverCurrentBackend()
 {
+    // The installed runtime's link service borrows its ServerConfig by
+    // reference and must outlive the runtime (see build_command_runtime's
+    // contract); a temporary testConfig() would dangle (UB) and corrupt
+    // config-derived fields such as short_url once any command — now including
+    // create — projects a link through the service. Use a process-lifetime
+    // config, mirroring production where `main`'s config outlives the runtime.
+    static const ServerConfig s_runtime_config = testConfig();
     composition::install_process_command_runtime(
         std::make_shared<composition::CommandRuntime>(
             composition::build_command_runtime(
-                testConfig(), url_shortener::app::LinkBackendHandle {})));
+                s_runtime_config, url_shortener::app::LinkBackendHandle {})));
 }
 
 }  // namespace

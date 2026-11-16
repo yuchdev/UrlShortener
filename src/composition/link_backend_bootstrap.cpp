@@ -17,6 +17,7 @@
 #include "url_shortener/app/link_backend.hpp"
 #include "url_shortener/app/system_info.hpp"
 #include "url_shortener/storage/errors/repo_error.hpp"
+#include "url_shortener/storage/inmemory/in_memory_rate_limiter.hpp"
 
 namespace url_shortener
 {
@@ -201,16 +202,19 @@ std::string summarize_storage_config(const StorageConfig& config)
         + " rate_limit=" + rate_limit;
 }
 
-LinkBackendHandle::LinkBackendHandle(StorageAdapters adapters,
-                                     std::shared_ptr<IClock> clock,
-                                     std::shared_ptr<RepositoryLinkStore> store,
-                                     LinkBackendSettings settings,
-                                     std::string summary)
+LinkBackendHandle::LinkBackendHandle(
+    StorageAdapters adapters,
+    std::shared_ptr<IClock> clock,
+    std::shared_ptr<RepositoryLinkStore> store,
+    LinkBackendSettings settings,
+    std::string summary,
+    std::shared_ptr<::IRateLimiter> create_rate_limiter)
     : m_adapters_(std::move(adapters))
     , m_clock_(std::move(clock))
     , m_store_(std::move(store))
     , m_settings_(std::move(settings))
     , m_summary_(std::move(summary))
+    , m_create_rate_limiter_(std::move(create_rate_limiter))
 {
 }
 
@@ -220,6 +224,7 @@ LinkBackendHandle::LinkBackendHandle(LinkBackendHandle&& other) noexcept
     , m_store_(std::move(other.m_store_))
     , m_settings_(std::move(other.m_settings_))
     , m_summary_(std::move(other.m_summary_))
+    , m_create_rate_limiter_(std::move(other.m_create_rate_limiter_))
 {
     other.m_store_.reset();
 }
@@ -240,6 +245,7 @@ LinkBackendHandle& LinkBackendHandle::operator=(
     m_store_ = std::move(other.m_store_);
     m_settings_ = std::move(other.m_settings_);
     m_summary_ = std::move(other.m_summary_);
+    m_create_rate_limiter_ = std::move(other.m_create_rate_limiter_);
     other.m_store_.reset();
     return *this;
 }
@@ -263,6 +269,11 @@ std::shared_ptr<::IMetadataRepository> LinkBackendHandle::repository() const
     // whose metadata is null (the legacy in-memory default has no record-based
     // repository).
     return m_adapters_.metadata;
+}
+
+std::shared_ptr<::IRateLimiter> LinkBackendHandle::createRateLimiter() const
+{
+    return m_create_rate_limiter_;
 }
 
 const LinkBackendSettings& LinkBackendHandle::settings() const
@@ -294,7 +305,16 @@ LinkBackendHandle InitLinkBackend(const ServerConfig& config)
     //    any config value (threat model T-53, milestone contract C6).
     if (!config.storage_config_path) {
         set_process_system_info(make_system_info(StorageConfig {}, config));
-        return LinkBackendHandle {};
+        // The create throttle is on by default even on the legacy in-memory
+        // path (threat model T-75): construct a dedicated in-memory create
+        // limiter over a system clock the handle owns. The handle stays
+        // inactive (no store/adapters) so redirect/CRUD behavior is byte-for-
+        // byte today's default (C3/C4); only createRateLimiter() is populated.
+        LinkBackendHandle handle;
+        handle.m_clock_ = std::make_shared<SystemClock>();
+        handle.m_create_rate_limiter_ =
+            std::make_shared<InMemoryRateLimiter>(*handle.m_clock_);
+        return handle;
     }
 
     // 2. Parse + validate; all failures map to fixed, secret-free
@@ -401,11 +421,24 @@ LinkBackendHandle InitLinkBackend(const ServerConfig& config)
         throw;
     }
 
+    // Create throttle (threat model T-75): always build a dedicated in-memory
+    // create limiter over the store's clock, then select the limiter
+    // createRateLimiter() exposes — the configured Redis limiter when the
+    // config selects it (shared window across processes), else the in-memory
+    // default. The limiter borrows *clock by reference; clock is moved into the
+    // handle below (shared_ptr move keeps the pointed-to clock alive).
+    auto in_memory_create_limiter =
+        std::make_shared<InMemoryRateLimiter>(*clock);
+    std::shared_ptr<::IRateLimiter> create_rate_limiter =
+        detail::select_create_rate_limiter(
+            cfg, adapters.rate_limiter, std::move(in_memory_create_limiter));
+
     return LinkBackendHandle {std::move(adapters),
                               std::move(clock),
                               std::move(store),
                               std::move(settings),
-                              summarize_storage_config(cfg)};
+                              summarize_storage_config(cfg),
+                              std::move(create_rate_limiter)};
 }
 
 namespace detail
@@ -414,6 +447,19 @@ namespace detail
 void set_start_flusher_hook_for_testing(std::function<void()> hook)
 {
     start_flusher_hook() = std::move(hook);
+}
+
+std::shared_ptr<::IRateLimiter> select_create_rate_limiter(
+    const StorageConfig& config,
+    std::shared_ptr<::IRateLimiter> configured_rate_limiter,
+    std::shared_ptr<::IRateLimiter> default_in_memory)
+{
+    if (config.rate_limit.enabled && config.rate_limit.backend == "redis"
+        && configured_rate_limiter)
+    {
+        return configured_rate_limiter;
+    }
+    return default_in_memory;
 }
 
 }  // namespace detail

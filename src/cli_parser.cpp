@@ -4,6 +4,7 @@
  */
 #include <url_shortener/cli/cli_parser.hpp>
 
+#include <cstdint>
 #include <cstdlib>
 #include <limits>
 #include <sstream>
@@ -681,6 +682,21 @@ ParseResult CliParser::parse(int argc, char* argv[]) const
             ->value_name("N")
             ->default_value(cfg.max_request_target_length),
         "Maximum request target (URL path) length (default: 2048)."
+    )(
+        "link-create-rate-limit",
+        po::value<std::uint64_t>(&cfg.link_create_rate_limit)
+            ->value_name("N")
+            ->default_value(cfg.link_create_rate_limit),
+        "Max link creations per client address per window; keyed on the TCP "
+        "peer address only, never a header (default: 30; 0 disables the "
+        "throttle)."
+    )(
+        "link-create-rate-window-seconds",
+        po::value<std::uint32_t>(&cfg.link_create_rate_window_seconds)
+            ->value_name("SECONDS")
+            ->default_value(cfg.link_create_rate_window_seconds),
+        "Window length in seconds for --link-create-rate-limit; must be > 0 "
+        "(default: 60)."
     );
 
     // Positional: bare integer argument sets http-port.
@@ -816,6 +832,14 @@ ParseResult CliParser::parse(int argc, char* argv[]) const
                 "Empty value for --storage-config flag.");
         }
         cfg.storage_config_path = path;
+    }
+
+    // The create throttle window must be a positive number of seconds; a zero
+    // window is an invalid fixed-window policy (the limiter would deny every
+    // call). The limit itself may be 0 (the documented disable switch).
+    if (cfg.link_create_rate_window_seconds == 0) {
+        throw std::invalid_argument(
+            "--link-create-rate-window-seconds must be greater than 0.");
     }
 
     return result;

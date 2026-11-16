@@ -69,6 +69,25 @@ commands::CallerContext resource_route_caller();
 std::shared_ptr<composition::CommandRuntime> request_runtime();
 
 /**
+ * @brief Returns the process-wide create-throttle rate limiter (threat model
+ * T-75) the REST create adapter keys on the client peer address, or null when
+ * no limiter is wired.
+ *
+ * Reads the `create_rate_limiter` carried on the shared runtime
+ * (@ref request_runtime): in production the limiter `main` selected at startup
+ * (the dedicated in-memory default, or the configured Redis limiter), shared by
+ * every create request without a new process singleton. A null result (the
+ * bridge's unit-test fallback runtime, which is built from a handle with no
+ * limiter) is the signal to the adapter that the throttle is not wired and must
+ * be skipped — fail-open, behavior-neutral for callers that never ran `main`'s
+ * startup wiring.
+ *
+ * @return An owning `std::shared_ptr` to the selected create limiter, or null
+ * when none is wired on the shared runtime.
+ */
+std::shared_ptr<::IRateLimiter> create_rate_limiter();
+
+/**
  * @brief REST transport policy applied by every REST entry point before
  * `execute`: refuse any command whose descriptor requires `manage_users`.
  *

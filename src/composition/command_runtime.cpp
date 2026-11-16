@@ -108,6 +108,14 @@ CommandRuntime build_command_runtime(const ServerConfig& server,
     commands::register_builtin_commands(*runtime.registry);
     runtime.registry->set_audit_sink(runtime.audit_sink);
 
+    // 7. The selected create-throttle limiter (threat model T-75): the
+    //    in-memory default or the configured Redis limiter, chosen by the
+    //    handle. Carried on the process-wide runtime so the REST create adapter
+    //    reaches the same limiter `main` wired at startup, without a new
+    //    process singleton. Null for a handle with no limiter wired (the
+    //    bridge's unit-test fallback), where the adapter skips the throttle.
+    runtime.create_rate_limiter = backend.createRateLimiter();
+
     return runtime;
 }
 
