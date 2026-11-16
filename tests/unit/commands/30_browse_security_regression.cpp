@@ -10,6 +10,7 @@
 #include "url_shortener/analytics/click_event.hpp"
 #include "url_shortener/app/link_backend.hpp"
 #include "url_shortener/app/system_info.hpp"
+#include "url_shortener/commands/audit.hpp"
 #include "url_shortener/commands/command_registry.hpp"
 #include "url_shortener/commands/envelope.hpp"
 #include "url_shortener/commands/error_codes.hpp"
@@ -31,13 +32,16 @@ using url_shortener::app::LinkBackend;
 using url_shortener::app::LinkBackendHandle;
 using url_shortener::app::make_system_info;
 using url_shortener::app::set_process_system_info;
+using url_shortener::commands::AuditRecord;
 using url_shortener::commands::CallerContext;
 using url_shortener::commands::CommandErrorCode;
 using url_shortener::commands::CommandRegistry;
 using url_shortener::commands::CommandRequest;
 using url_shortener::commands::CommandResponse;
+using url_shortener::commands::IAuditSink;
 using url_shortener::composition::build_command_runtime;
 using url_shortener::composition::CommandRuntime;
+using url_shortener::composition::CommandRuntimeOptions;
 
 namespace
 {
@@ -89,6 +93,30 @@ CommandRuntime fresh_runtime(const ServerConfig& server,
                              const LinkBackendHandle& backend)
 {
     return build_command_runtime(server, backend);
+}
+
+// An audit sink that records every record it receives, so a test can inspect
+// exactly which fields reach the audit line.
+class RecordingAuditSink : public IAuditSink
+{
+public:
+    std::vector<AuditRecord> records;
+    void record(const AuditRecord& record) noexcept override
+    {
+        records.push_back(record);
+    }
+};
+
+// Every field of AuditRecord (see include/url_shortener/commands/audit.hpp),
+// collected for marker inspection: principal, transport, command, target and
+// outcome. If a field is ever added to AuditRecord it must be added here too.
+std::vector<std::string> audit_fields_of(const AuditRecord& record)
+{
+    return {record.principal,
+            record.transport,
+            record.command,
+            record.target,
+            record.outcome};
 }
 
 }  // namespace
@@ -411,4 +439,85 @@ BOOST_AUTO_TEST_CASE(read_only_user_denied_every_write_store_unchanged)
 
     // No mutation occurred, so the full listing is byte-identical.
     BOOST_TEST(after.result_json == before.result_json);
+}
+
+// Type: unit (no argument value ever reaches the audit line, C6/T-14/T-15).
+// Scenario: with a recording sink, link.create runs with a distinctive target
+//   URL, metadata value, tag and campaign name plus an explicit slug; the one
+//   emitted record has target == slug and no AuditRecord field carries any
+//   argument marker. A failing create (private target -> invalid_url) and a
+//   dry_run create are also exercised: still no marker in any field of any
+//   emitted record.
+// Boundaries: the audit record deliberately carries no argument values (only
+//   principal/transport/command/target/outcome); the target is the validated
+//   slug, which is not treated as a marker here.
+// On failure first check: did the registry start copying an argument value into
+//   an AuditRecord field, or did a new field get added without sanitization?
+BOOST_AUTO_TEST_CASE(audit_record_carries_no_argument_values)
+{
+    LinkBackend::reset();
+    ServerConfig server;
+    LinkBackendHandle backend;
+
+    CommandRuntimeOptions options;
+    auto sink = std::make_shared<RecordingAuditSink>();
+    options.audit_sink = sink;
+    const CommandRuntime runtime =
+        build_command_runtime(server, backend, options);
+    CommandRegistry& registry = *runtime.registry;
+
+    // Distinctive markers carried only as ARGUMENT VALUES. None is ever used as
+    // a slug, since the slug legitimately becomes the audit target.
+    const std::vector<std::string> markers = {
+        "audit-marker",    // target host
+        "secret-path",     // target path
+        "MDVALUEMARKER",   // metadata value
+        "TAGMARKER",       // tag
+        "CAMPAIGNMARKER",  // campaign name
+    };
+
+    // 1) Successful create: exactly one record, target == slug, no marker.
+    const std::string ok_slug = "audit-arg-slug-30";
+    const CommandResponse created = registry.execute(
+        caller(ControlSet::Admin),
+        request(
+            "link.create",
+            R"({"target_url":"https://audit-marker.example.com/secret-path",)"
+            R"("slug":")"
+                + ok_slug
+                + R"(","tags":["TAGMARKER"],"metadata":{"mk":"MDVALUEMARKER"},)"
+                  R"("campaign":{"name":"CAMPAIGNMARKER"}})"));
+    BOOST_REQUIRE(created.ok);
+    BOOST_REQUIRE_EQUAL(sink->records.size(), 1u);
+    BOOST_TEST(sink->records[0].command == "link.create");
+    BOOST_TEST(sink->records[0].outcome == "ok");
+    BOOST_TEST(sink->records[0].target == ok_slug);
+
+    // 2) Failing create (private target -> invalid_url): still no marker.
+    registry.execute(
+        caller(ControlSet::Admin),
+        request("link.create",
+                R"({"target_url":"http://127.0.0.1/secret-path",)"
+                R"("slug":"audit-fail-slug-30",)"
+                R"("metadata":{"mk":"MDVALUEMARKER"}})"));
+
+    // 3) dry_run create: still no marker.
+    registry.execute(
+        caller(ControlSet::Admin),
+        dry_run_request(
+            "link.create",
+            R"({"target_url":"https://audit-marker.example.com/secret-path",)"
+            R"("slug":"audit-dry-slug-30","tags":["TAGMARKER"]})"));
+
+    // No AuditRecord field of ANY emitted record carries an argument value.
+    BOOST_TEST(!sink->records.empty());
+    for (const AuditRecord& record : sink->records) {
+        for (const std::string& value : audit_fields_of(record)) {
+            for (const std::string& marker : markers) {
+                BOOST_TEST(
+                    value.find(marker) == std::string::npos,
+                    "argument value leaked into audit field: " << marker);
+            }
+        }
+    }
 }

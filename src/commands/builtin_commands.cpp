@@ -1,10 +1,10 @@
+#include <optional>
 #include <string>
 #include <string_view>
 #include <utility>
 #include <vector>
 
 #include <url_shortener/app/app_error.hpp>
-#include <url_shortener/app/legacy_adapters.hpp>
 #include <url_shortener/app/link_command_service.hpp>
 #include <url_shortener/app/link_lister.hpp>
 #include <url_shortener/app/system_info.hpp>
@@ -67,20 +67,158 @@ public:
 };
 
 /**
+ * @brief Never-executed placeholder @ref app::ILinkStore for the documented
+ * registry (@ref register_documented_commands).
+ *
+ * The documented link descriptors exist only so the catalog generator and the
+ * drift test can read their metadata; that path never calls
+ * @ref CommandRegistry::execute (threat model T-19/T-58). Binding the live link
+ * descriptors to a store over the process-global `linkRepository()` would let an
+ * accidental `execute()` on the documented registry mutate the real store, so
+ * every method here performs no I/O and fails closed instead: writes
+ * (@ref create, @ref update) report a fixed `internal` error, lookups
+ * (@ref findBySlug, @ref findById) return @c std::nullopt, @ref slugExists
+ * returns @c false, and @ref invalidateCache is a no-op. It must therefore never
+ * be executed; the failures only surface the invariant violation.
+ */
+class DocPlaceholderLinkStore final : public app::ILinkStore
+{
+public:
+    /**
+     * @brief Fails closed with a fixed `internal` error; never invoked on the
+     * docs path and writes nothing.
+     * @param link Ignored.
+     * @param[out] error If non-null, receives @ref app::AppErrorCode::internal
+     * with the fixed `"documentation placeholder"` detail; left untouched when
+     * null.
+     * @return Always `false`.
+     */
+    bool create(const Link& link, app::AppError* error = nullptr) override
+    {
+        (void)link;
+        fail(error);
+        return false;
+    }
+
+    /**
+     * @brief Returns @c std::nullopt; never invoked on the docs path and reads
+     * nothing.
+     * @param slug Ignored.
+     * @return Always @c std::nullopt.
+     */
+    std::optional<Link> findBySlug(const std::string& slug) const override
+    {
+        (void)slug;
+        return std::nullopt;
+    }
+
+    /**
+     * @brief Returns @c std::nullopt; never invoked on the docs path and reads
+     * nothing.
+     * @param id Ignored.
+     * @return Always @c std::nullopt.
+     */
+    std::optional<Link> findById(const std::string& id) const override
+    {
+        (void)id;
+        return std::nullopt;
+    }
+
+    /**
+     * @brief Returns @c false; never invoked on the docs path and reads nothing.
+     * @param slug Ignored.
+     * @return Always @c false (no slug is ever reported as present).
+     */
+    bool slugExists(const std::string& slug) const override
+    {
+        (void)slug;
+        return false;
+    }
+
+    /**
+     * @brief No-op; never invoked on the docs path and caches nothing.
+     * @param slug Ignored.
+     */
+    void invalidateCache(const std::string& slug) override { (void)slug; }
+
+    /**
+     * @brief Fails closed with a fixed `internal` error; never invoked on the
+     * docs path and writes nothing.
+     * @param link Ignored.
+     * @param[out] error If non-null, receives @ref app::AppErrorCode::internal
+     * with the fixed `"documentation placeholder"` detail; left untouched when
+     * null.
+     * @return Always `false`.
+     */
+    bool update(const Link& link, app::AppError* error = nullptr) override
+    {
+        (void)link;
+        fail(error);
+        return false;
+    }
+
+private:
+    /**
+     * @brief Writes the fixed `internal` placeholder error to @p error when it
+     * is non-null.
+     * @param[out] error Optional out-param to populate; left untouched when
+     * null.
+     */
+    static void fail(app::AppError* error)
+    {
+        if (error != nullptr) {
+            *error = app::AppError {app::AppErrorCode::internal,
+                                    "documentation placeholder"};
+        }
+    }
+};
+
+/**
+ * @brief Never-executed placeholder @ref app::ILinkStatsReader for the
+ * documented registry (@ref register_documented_commands).
+ *
+ * Mirrors @ref DocPlaceholderLinkStore: the documented `link.stats` descriptor
+ * is metadata-only and never executed (T-19/T-58), so @ref read performs no I/O
+ * and fails closed with a fixed `internal` error rather than touching the
+ * process-global analytics store. It must never be executed.
+ */
+class DocPlaceholderLinkStatsReader final : public app::ILinkStatsReader
+{
+public:
+    /**
+     * @brief Returns a fixed `internal` error; never invoked on the docs path.
+     * @param query Ignored.
+     * @return A failed @ref app::Result with code
+     * @ref app::AppErrorCode::internal.
+     */
+    app::Result<app::LinkStatsView> read(
+        const app::GetLinkStatsQuery& query) const override
+    {
+        (void)query;
+        app::Result<app::LinkStatsView> result;
+        result.error = app::AppError {app::AppErrorCode::internal,
+                                      "documentation placeholder"};
+        return result;
+    }
+};
+
+/**
  * @brief The process-lifetime placeholder link service the documented link
  * descriptors bind to.
  *
- * Built over a @ref app::LegacyLinkStore / @ref app::LegacyLinkStatsReader and
- * a default `ServerConfig`; all three are inert on construction (they delegate
- * to globals only when a method runs, which never happens on the docs path).
- * The statics live for the program lifetime so any registry
- * @ref register_documented_commands populates can reference them safely.
+ * Built over a @ref DocPlaceholderLinkStore / @ref DocPlaceholderLinkStatsReader
+ * and a default `ServerConfig`: every port method is inert and fails closed, so
+ * even an accidental `execute()` on the documented registry does no I/O and
+ * cannot reach the process-global `linkRepository()` or analytics store (threat
+ * model T-19/T-58). The statics live for the program lifetime so any registry
+ * @ref register_documented_commands populates can reference them safely. This
+ * service must never be executed.
  * @return A reference to the shared placeholder service.
  */
 app::LinkCommandService& doc_link_service()
 {
-    static app::LegacyLinkStore store;
-    static app::LegacyLinkStatsReader stats;
+    static DocPlaceholderLinkStore store;
+    static DocPlaceholderLinkStatsReader stats;
     static const ServerConfig config;
     static app::LinkCommandService service(store, stats, config);
     return service;

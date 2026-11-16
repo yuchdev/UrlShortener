@@ -33,6 +33,7 @@
 #include "url_shortener/composition/link_backend_bootstrap.hpp"
 #include "url_shortener/config/storage_config.hpp"
 #include "url_shortener/core/config.hpp"
+#include "url_shortener/storage/link_repository.hpp"
 #include "url_shortener/storage/memory/in_memory_click_event_repository.hpp"
 
 namespace url_shortener
@@ -508,6 +509,46 @@ BOOST_AUTO_TEST_CASE(catalog_rendering_invokes_no_handler)
     register_documented_commands(documented);
     BOOST_TEST(documented.list().size() == 14u);
     BOOST_TEST(!render_catalog_markdown(documented).empty());
+}
+
+// Type: unit (the documented registry is inert even if executed, T-19/T-58).
+// Scenario: the documented registry is metadata-only, but should anything ever
+//   call execute on it, its link descriptors are bound to an inert placeholder
+//   store (not a live LegacyLinkStore over linkRepository()). Executing
+//   link.create (as Admin) fails internal with the fixed "documentation
+//   placeholder" detail and writes nothing; link.get fails closed (not_found)
+//   and reads nothing. The process-global linkRepository() never sees the slug.
+// Boundaries: every placeholder-store method performs no I/O and fails closed,
+//   so an accidental execute cannot mutate the real store.
+// On failure first check: did doc_link_service start binding to a live store,
+//   or did a placeholder method start touching linkRepository()?
+BOOST_AUTO_TEST_CASE(documented_registry_execute_is_inert_and_touches_no_store)
+{
+    const std::string slug = "doc-exec-slug-29";
+    // Pre-state: the global repository does not know the slug.
+    BOOST_REQUIRE(!url_shortener::linkRepository().slugExists(slug, nullptr));
+
+    CommandRegistry documented;
+    register_documented_commands(documented);
+
+    const CommandResponse created = documented.execute(
+        caller(ControlSet::Admin),
+        request("link.create",
+                R"({"target_url":"https://example.com/doc","slug":")" + slug
+                    + R"("})"));
+    BOOST_TEST(!created.ok);
+    BOOST_TEST((created.error.code == CommandErrorCode::internal));
+    BOOST_TEST(created.error.message == "documentation placeholder");
+
+    // link.get fails closed through the placeholder store's std::nullopt lookup.
+    const CommandResponse got = documented.execute(
+        caller(ControlSet::Admin),
+        request("link.get", R"({"slug":")" + slug + R"("})"));
+    BOOST_TEST(!got.ok);
+    BOOST_TEST((got.error.code == CommandErrorCode::not_found));
+
+    // The placeholder store did no I/O: the real global store is untouched.
+    BOOST_TEST(!url_shortener::linkRepository().slugExists(slug, nullptr));
 }
 
 // Type: unit (SQLite-backed runtime persists across a second runtime, 02.0).
