@@ -53,7 +53,7 @@ factory mean subtask 13 and `03.0/18` (`build_command_runtime`) respectively.
 | 07 | [GET /api/v1/links route (gated)](07-rest-list-links-route.md) | ✅ Complete | 01, 02, 06, 08, 03.0/14, 03.0/18 | 10 |
 | 08 | [Command API configuration gate](08-command-api-config-gate.md) | ✅ Complete | 01.0/06 | 07, 09, 10, 05.0/11 |
 | 09 | [POST /api/v1/commands](09-rest-post-commands-endpoint.md) | ✅ Complete | 02, 06, 08, 01.0/03, 01.0/04, 01.0/07, 03.0/18 | 10, 05.0/11, 07.0/08 |
-| 10 | [GET /api/v1/commands and API reference regeneration](10-rest-get-commands-and-api-docs.md) | ⬜ Not started | 07, 08, 09, 01.0/10 | 07.0/17, 08.0/09 |
+| 10 | [GET /api/v1/commands and API reference regeneration](10-rest-get-commands-and-api-docs.md) | ✅ Complete | 07, 08, 09, 01.0/10 | 07.0/17, 08.0/09 |
 | 11 | [CLI `--arg` coercion](11-cli-arg-coercion.md) | ⬜ Not started | 01, 01.0/05 | 13 |
 | 12 | [`cmd` parsing](12-cli-cmd-parsing.md) | ⬜ Not started | 01.0/03, 02.0/10 | 13 |
 | 13 | [`cmd` dispatch](13-cli-cmd-dispatch.md) | ⬜ Not started | 11, 12, 01.0/04, 01.0/07, 01.0/11, 03.0/18 | 15 |
