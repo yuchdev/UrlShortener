@@ -179,6 +179,27 @@ struct ServerConfig
     ///< `link_create_rate_limit == 0` (throttle disabled).
     std::uint32_t link_create_rate_window_seconds = 60;
 
+    ///< Enables the opt-in generic command API surface and the gated
+    ///< `GET /api/v1/links` list route (milestone 0006 Task 04.0 subtask 08).
+    ///< **Off by default**: this server has no authentication in front of its
+    ///< REST routes, so all of the new HTTP surface that can enumerate links or
+    ///< run arbitrary registered commands stays disabled until Milestone 0002
+    ///< supplies real sessions (threat model T-64). When `false`, a gated route
+    ///< answers exactly like an unmatched route, so no caller — authenticated
+    ///< or not — can reach it. The default is security-load-bearing; changing
+    ///< it requires a security-auditor sign-off. Not read from the environment.
+    bool command_api_enabled = false;
+
+    ///< Role the gated command-API callers run as: `"user"` (read-only,
+    ///< default) or `"admin"`. `"admin"` is honoured **only** when the request's
+    ///< TCP peer is loopback (`is_loopback_peer`); for every other case — role
+    ///< `"user"`, or role `"admin"` from a non-loopback or absent peer — the
+    ///< caller runs as `User` (fail-closed, threat model T-64/T-65). Behind a
+    ///< same-host reverse proxy every peer is loopback, so keep `"user"` there;
+    ///< `X-Forwarded-For` is never honoured. Not a secret and not read from the
+    ///< environment; the only accepted values are `"user"` and `"admin"`.
+    std::string command_api_role = "user";
+
     ///< Path of the storage configuration YAML selecting the
     ///< metadata/cache/analytics/rate_limit backends; `std::nullopt`
     ///< (no `--storage-config` flag and no

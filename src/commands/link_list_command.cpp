@@ -233,6 +233,35 @@ app::LinkListQuery decode_query(const ArgsView& args)
 }
 
 /**
+ * @brief Raise-only permission hook for `link.list`: `status=all|deleted`
+ * require write/admin (threat model T-71).
+ *
+ * A `User` caller may list only non-deleted links; the bulk enumeration of
+ * disabled and soft-deleted links is the new exposure the 2026-11-16 user
+ * decision closes, so this hook raises the descriptor's `read` base to `write`
+ * when the validated `status` argument is `all` or `deleted`. It is the single
+ * enforcement point shared by `GET /api/v1/links`, `POST /api/v1/commands`
+ * (link.list) and `cmd link.list`: `execute` denies a `User` caller with
+ * `not_authorized` before the lister runs, so the store is never enumerated for
+ * deleted/disabled rows. The hook only **raises** (01.0 T-09): every other
+ * status keeps the `read` base. It is pure and never throws; `status` has
+ * already been enum-validated, so an out-of-set value can never reach it.
+ *
+ * @param args The validated argument view.
+ * @return `Permission::write` when `status` is `all` or `deleted`;
+ * `Permission::read` otherwise (including when `status` is absent).
+ */
+Permission list_permission_for(const ArgsView& args)
+{
+    if (const std::optional<std::string> status = args.get_string("status")) {
+        if (*status == "all" || *status == "deleted") {
+            return Permission::write;
+        }
+    }
+    return Permission::read;
+}
+
+/**
  * @brief Handler for `link.list`: decode the query, list, serialize the page.
  *
  * Builds the `app::LinkListQuery` via @ref decode_query, calls
@@ -278,6 +307,9 @@ CommandDescriptor make_link_list_descriptor(app::ILinkLister& lister)
     descriptor.summary = "List short links with filtering, sorting and paging.";
     descriptor.args = make_link_list_args();
     descriptor.permission = Permission::read;
+    // status=all|deleted raise the base read permission to write (T-71); the
+    // single enforcement point shared by REST, POST /commands and cmd.
+    descriptor.permission_for = list_permission_for;
     descriptor.kind = ExecutionKind::sync;
     descriptor.mutating = false;
     descriptor.supports_dry_run = false;

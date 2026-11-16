@@ -5,6 +5,8 @@
 #include <string>
 #include <string_view>
 
+#include <boost/asio/ip/address.hpp>
+
 #include <url_shortener/commands/command_descriptor.hpp>
 #include <url_shortener/commands/command_registry.hpp>
 #include <url_shortener/commands/envelope.hpp>
@@ -253,6 +255,79 @@ commands::CommandResponse execute_resource_command(
     std::string args_json,
     std::string request_id,
     const commands::CallerContext& caller);
+
+/**
+ * @brief Whether the opt-in command API surface is enabled (milestone 0006
+ * Task 04.0 subtask 08).
+ *
+ * The one gate check every gated route performs first. When it returns `false`,
+ * the route answers exactly like an unmatched route, so no caller reaches the
+ * underlying command (threat model T-64). A thin accessor over
+ * `config.command_api_enabled`, kept in the bridge so the config header does not
+ * depend on the security/control types.
+ *
+ * @param config Server configuration whose `command_api_enabled` flag is read.
+ * @return `true` when the command API surface is enabled; `false` (the secure
+ * default) otherwise.
+ */
+bool command_api_enabled(const ::ServerConfig& config);
+
+/**
+ * @brief Maps the configured command-API role to a `ControlSet`, before the
+ * peer-locality check.
+ *
+ * Pure mapping of the role string to a role: `"admin"` yields
+ * `ControlSet::Admin`, every other value (including the default `"user"`)
+ * yields `ControlSet::User`. This is the role the caller *would* run as if the
+ * peer check also passed; @ref command_api_caller combines it with the peer
+ * locality to produce the effective caller.
+ *
+ * @param config Server configuration whose `command_api_role` string is read.
+ * @return `ControlSet::Admin` when `config.command_api_role == "admin"`;
+ * `ControlSet::User` for any other value.
+ */
+ControlSet command_api_control_set(const ::ServerConfig& config);
+
+/**
+ * @brief Whether a peer address is loopback and therefore locally trusted.
+ *
+ * `true` for the IPv4 loopback block `127.0.0.0/8`, the IPv6 loopback `::1`, and
+ * IPv4-mapped IPv6 loopback (`::ffff:127.0.0.0/8`). Every acceptor currently
+ * binds `tcp::v4()` (verified in `http_server.cpp`), so peers are always IPv4
+ * today; the IPv6 branches are kept (cheap, unit-tested) so a future dual-stack
+ * listener does not silently grant or lose the loopback-only admin escalation.
+ * The listeners bind all interfaces, so this peer check — not a bind-address
+ * restriction — is the sole locality guard (threat model T-64).
+ *
+ * @param peer The connection's resolved TCP peer address.
+ * @return `true` when @p peer is an IPv4/IPv6/IPv4-mapped loopback address;
+ * `false` for every routable address.
+ */
+bool is_loopback_peer(const boost::asio::ip::address& peer);
+
+/**
+ * @brief Builds the caller every gated route executes as (the only auth
+ * mechanism in milestone 0006, subtask 08).
+ *
+ * Fixed, non-identifying `principal` (`"command-api"`) and `transport`
+ * (`"rest"`) labels that never carry the peer IP, a token, or any request value
+ * (threat model T-84). The effective `control_set` is `Admin` **only** when the
+ * configured role is `"admin"` **and** @p peer is present and loopback
+ * (@ref is_loopback_peer); every other case — role `"user"`, a non-loopback
+ * peer, or an absent peer (`std::nullopt`, treated as non-loopback) — yields
+ * `User`. This fail-closed combination is the stand-in for authentication until
+ * Milestone 0002 (threat model T-64/T-70).
+ *
+ * @param config Server configuration supplying the configured role.
+ * @param peer The connection's TCP peer address, or `std::nullopt` when no live
+ * socket is available (unit tests, tools) or `remote_endpoint()` failed; an
+ * absent peer is treated as non-loopback (`User`).
+ * @return A @ref commands::CallerContext with the fixed labels and the
+ * fail-closed effective role.
+ */
+commands::CallerContext command_api_caller(
+    const ::ServerConfig& config,
+    const std::optional<boost::asio::ip::address>& peer);
 
 }  // namespace http
 }  // namespace url_shortener

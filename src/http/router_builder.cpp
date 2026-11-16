@@ -43,6 +43,7 @@ Router RouterBuilder::buildApplicationRouter()
     router.add(bhttp::verb::get, "/readyz", "readyz", handleReadyz);
     router.add(bhttp::verb::get, "/metrics", "metrics", handleMetrics);
 
+    router.add(bhttp::verb::get, "/api/v1/links", "api_links", handleListLinks);
     router.add(bhttp::verb::get, "/api/v1/links/id/{id}", "api_links", handleGetLinkById);
     router.add(bhttp::verb::get, "/api/v1/links/{slug}/preview", "api_links", handlePreviewLink);
     router.add(bhttp::verb::get, "/api/v1/links/{slug}/qr", "api_links", handlePlaceholderFeature);

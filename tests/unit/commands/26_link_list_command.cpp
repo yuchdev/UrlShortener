@@ -75,14 +75,25 @@ struct Harness
     }
 };
 
-// A read-only User caller: link.list requires only Permission::read, so this
-// role must be allowed.
+// A read-only User caller: link.list's base permission is read, so this role
+// may list any non-deleted status (active/disabled/expired).
 CallerContext user_caller()
 {
     CallerContext caller;
     caller.principal = "test-user";
     caller.transport = "test";
     caller.control_set = ControlSet::User;
+    return caller;
+}
+
+// An Admin caller: required for status=all|deleted, which the permission hook
+// raises to write (threat model T-71).
+CallerContext admin_caller()
+{
+    CallerContext caller;
+    caller.principal = "test-admin";
+    caller.transport = "test";
+    caller.control_set = ControlSet::Admin;
     return caller;
 }
 
@@ -150,7 +161,7 @@ BOOST_AUTO_TEST_CASE(every_arg_decoded_to_its_field)
     Harness h;
 
     const CommandResponse response = h.run(
-        user_caller(),
+        admin_caller(),
         request(R"({"status":"all","q":"foo","tag":"red","campaign":"spring",)"
                 R"("sort":"slug","order":"asc","offset":3,"limit":7})"));
 
@@ -185,8 +196,10 @@ BOOST_AUTO_TEST_CASE(status_enumerators_decode_including_expired)
         BOOST_TEST((h.lister.last_query.status == list_status::expired));
     }
     {
+        // status=deleted requires write/admin (T-71), so use an Admin caller
+        // here; the User-denied path is covered by its own case below.
         Harness h;
-        h.run(user_caller(), request(R"({"status":"deleted"})"));
+        h.run(admin_caller(), request(R"({"status":"deleted"})"));
         BOOST_TEST((h.lister.last_query.status == list_status::deleted));
     }
 }
@@ -491,11 +504,77 @@ BOOST_AUTO_TEST_CASE(empty_page_is_valid_json)
                == R"({"items":[],"offset":0,"limit":50,"total":0})");
 }
 
+// Type: unit (read-only caller allowed for non-deleted statuses).
+// Scenario: a ControlSet::User caller may run link.list with the default and
+//   every non-deleted status (active/disabled/expired).
+// Boundaries: the base permission is read; the hook raises only all/deleted.
+// On failure first check: did the hook start raising a non-deleted status, or
+//   did the base permission rise above read?
+BOOST_AUTO_TEST_CASE(user_role_allowed_for_non_deleted_statuses)
+{
+    const std::vector<std::string> statuses = {"{}",
+                                               R"({"status":"active"})",
+                                               R"({"status":"disabled"})",
+                                               R"({"status":"expired"})"};
+    for (const std::string& status : statuses) {
+        Harness h;
+        const CommandResponse response = h.run(user_caller(), request(status));
+        BOOST_TEST(response.ok, status);
+        BOOST_TEST(h.lister.call_count == 1, status);
+    }
+}
+
+// Type: unit (status=all|deleted require write/admin, T-71).
+// Scenario: a ControlSet::User caller requesting status=all or status=deleted is
+//   denied with not_authorized and the lister is never called (no enumeration of
+//   deleted/disabled rows).
+// Boundaries: the permission hook raises read to write for exactly these two
+//   statuses, enforced in execute before the handler runs.
+// On failure first check: did the hook stop raising for all/deleted, or did the
+//   denial happen after the lister?
+BOOST_AUTO_TEST_CASE(user_denied_status_all_and_deleted_without_calling_lister)
+{
+    for (const std::string& status :
+         {R"({"status":"all"})", R"({"status":"deleted"})"}) {
+        Harness h;
+        const CommandResponse response = h.run(user_caller(), request(status));
+        BOOST_TEST(!response.ok, status);
+        BOOST_TEST((response.error.code == CommandErrorCode::not_authorized),
+                   status);
+        BOOST_TEST(h.lister.call_count == 0, status);
+    }
+}
+
+// Type: unit (admin may use every status, T-71).
+// Scenario: an Admin caller runs status=all and status=deleted successfully and
+//   the lister receives the matching query.
+// Boundaries: write/admin satisfies the raised permission.
+// On failure first check: did the hook raise above write, or did Admin lose
+//   write capability?
+BOOST_AUTO_TEST_CASE(admin_allowed_status_all_and_deleted)
+{
+    {
+        Harness h;
+        const CommandResponse response =
+            h.run(admin_caller(), request(R"({"status":"all"})"));
+        BOOST_TEST(response.ok);
+        BOOST_TEST((h.lister.last_query.status == list_status::all));
+    }
+    {
+        Harness h;
+        const CommandResponse response =
+            h.run(admin_caller(), request(R"({"status":"deleted"})"));
+        BOOST_TEST(response.ok);
+        BOOST_TEST((h.lister.last_query.status == list_status::deleted));
+    }
+}
+
 // Type: unit (read-only caller allowed).
-// Scenario: a ControlSet::User caller is permitted to run link.list (read
-//   permission).
-// Boundaries: the descriptor permission is read; a User is never denied.
-// On failure first check: did the descriptor permission rise above read?
+// Scenario: a ControlSet::User caller is permitted to run link.list with the
+//   default (active) status.
+// Boundaries: the base descriptor permission is read; a User is never denied for
+//   the default status.
+// On failure first check: did the base descriptor permission rise above read?
 BOOST_AUTO_TEST_CASE(user_role_allowed)
 {
     Harness h;

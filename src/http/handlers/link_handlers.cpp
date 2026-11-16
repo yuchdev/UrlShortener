@@ -15,6 +15,7 @@
 #include <url_shortener/http/analytics_stats_handler.hpp>
 #include <url_shortener/http/command_bridge.hpp>
 #include <url_shortener/http/handlers/link_handlers.hpp>
+#include <url_shortener/http/query_params.hpp>
 #include <url_shortener/http/request_handlers.hpp>
 #include <url_shortener/storage/errors/rate_limit_error.hpp>
 #include <url_shortener/storage/i_rate_limiter.hpp>
@@ -41,6 +42,72 @@ std::string pathValue(const RouteContext& context, const std::string& name)
 {
     const auto value = pathParam(context, name);
     return value.has_value() ? *value : std::string {};
+}
+
+/**
+ * @brief Whether a query-parameter name matches the args-object name grammar
+ * `[a-z][a-z0-9_]*`.
+ *
+ * `commands::args_builder::add_string` throws `std::invalid_argument` on a name
+ * outside this grammar, so the list handler validates every forwarded name here
+ * first and turns a bad name into a `400` rather than letting it reach (and
+ * throw inside) the builder. A name that matches the grammar but is not a
+ * `link.list` argument is still forwarded, so the registry reports it as
+ * `<name>: unknown`.
+ *
+ * @param name Decoded query-parameter name.
+ * @return `true` when @p name is non-empty, starts with `a-z`, and otherwise
+ * contains only `a-z`, `0-9` or `_`; `false` otherwise.
+ */
+bool is_valid_arg_name(const std::string& name)
+{
+    if (name.empty() || name.front() < 'a' || name.front() > 'z') {
+        return false;
+    }
+    for (const char c : name) {
+        const bool ok = (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9')
+            || c == '_';
+        if (!ok) {
+            return false;
+        }
+    }
+    return true;
+}
+
+/**
+ * @brief Canonicalizes an all-digits query value into a JSON integer token, or
+ * reports that it is not a plain integer.
+ *
+ * `link.list`'s integer arguments (`offset`, `limit`) are emitted as JSON number
+ * tokens via `args_builder::add_raw`, which inserts the token verbatim and never
+ * validates it. To keep that token always valid JSON (JSON forbids leading zeros
+ * and there is no octal/ambiguous parse), this accepts only a `^[0-9]+$` value
+ * of at most 18 digits (so it always fits `long long`) and strips its leading
+ * zeros, keeping a single `0` for an all-zero input. So `007` -> `7`, `00` ->
+ * `0` (interpreted as decimal, never octal). Anything else — a sign, non-digit,
+ * empty, or 19+ digits — returns `std::nullopt`, and the caller forwards the raw
+ * value as a JSON **string** instead, so the registry rejects it as
+ * `<arg>: wrong_type`.
+ *
+ * @param value Decoded parameter value.
+ * @return The canonical decimal integer token (no leading zeros) when @p value
+ * is 1..18 ASCII digits; `std::nullopt` otherwise.
+ */
+std::optional<std::string> canonical_integer_token(const std::string& value)
+{
+    if (value.empty() || value.size() > 18) {
+        return std::nullopt;
+    }
+    for (const char c : value) {
+        if (c < '0' || c > '9') {
+            return std::nullopt;
+        }
+    }
+    const std::size_t first = value.find_first_not_of('0');
+    if (first == std::string::npos) {
+        return std::string("0");
+    }
+    return value.substr(first);
 }
 
 std::string getQueryParam(const std::string& query_string,
@@ -475,6 +542,79 @@ BeastResponse handleCreateLink(const BeastRequest& req,
 {
     return createLinkFromRequest(
         req, config, is_tls, CreateSlugFieldMode::slug_only, context);
+}
+
+BeastResponse handleListLinks(const BeastRequest& req,
+                              const ::ServerConfig& config,
+                              const bool is_tls,
+                              const RouteContext& context)
+{
+    // Gate (user decision 2026-11-16, threat model T-71): when the command API
+    // is disabled (the secure default), answer exactly like today's
+    // GET /api/v1/links so no caller reaches link.list and no enumeration
+    // oracle exists. POST /api/v1/links shares this path, so today's router
+    // returns 400 invalid_method "Only POST is supported"; reproduce it
+    // byte-for-byte via the same makeApiErrorResponse the router's error
+    // handler uses. The store is never read on this branch.
+    if (!command_api_enabled(config)) {
+        return url_shortener::makeApiErrorResponse(
+            req, config, is_tls, 400, "invalid_method",
+            "Only POST is supported");
+    }
+
+    // Parse the query string (percent-decoded, repeated keys preserved). A
+    // malformed query -> 400 invalid_request with a fixed, value-free message.
+    std::vector<query_param> params;
+    std::string parse_error;
+    if (!parse_query_string(context.query_string, &params, &parse_error)) {
+        return url_shortener::makeApiErrorResponse(
+            req, config, is_tls, 400, "invalid_request",
+            "malformed query string");
+    }
+
+    // Build the link.list args from the query (contract C1: the handler builds
+    // args only; the filter semantics live in link.list / the lister). Each
+    // name is validated against the args-object grammar before add_string (the
+    // builder throws on a bad or duplicate name), and duplicates are a 400.
+    // Integer args (offset, limit) that are plain base-10 integers are emitted
+    // as JSON number tokens; everything else — including unknown names — is a
+    // string, so the registry reports <arg>: wrong_type / <name>: unknown. The
+    // endpoint is strict by design.
+    commands::args_builder args;
+    for (const query_param& param : params) {
+        if (!is_valid_arg_name(param.name)) {
+            return url_shortener::makeApiErrorResponse(
+                req, config, is_tls, 400, "invalid_request",
+                "invalid parameter name");
+        }
+        if (args.has(param.name)) {
+            return url_shortener::makeApiErrorResponse(
+                req, config, is_tls, 400, "invalid_request",
+                param.name + ": duplicate");
+        }
+        if (param.name == "offset" || param.name == "limit") {
+            if (const auto token = canonical_integer_token(param.value)) {
+                args.add_raw(param.name, *token);
+                continue;
+            }
+        }
+        args.add_string(param.name, param.value);
+    }
+
+    // Execute as the gated caller (subtask 08): status is forwarded verbatim,
+    // and the write/admin requirement for status=all|deleted is enforced inside
+    // execute by the link.list permission hook, surfacing here as a 403
+    // not_authorized envelope for a User caller (the bridge maps the codes).
+    return resource_response(
+        req,
+        config,
+        is_tls,
+        execute_resource_command(config,
+                                 "link.list",
+                                 args.str(),
+                                 requestIdFromRequest(req),
+                                 command_api_caller(config, context.peer)),
+        200);
 }
 
 BeastResponse handleGetLinkById(const BeastRequest& req,

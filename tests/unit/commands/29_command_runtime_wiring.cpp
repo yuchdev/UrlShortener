@@ -328,8 +328,9 @@ BOOST_AUTO_TEST_CASE(create_list_get_lifecycle_flow)
         request("link.delete", R"({"slug":")" + slug + R"("})"));
     BOOST_TEST(deleted.ok);
 
+    // status=deleted requires write/admin (threat model T-71).
     const CommandResponse listed_deleted = registry.execute(
-        caller(ControlSet::User),
+        caller(ControlSet::Admin),
         request("link.list", R"({"status":"deleted","limit":500})"));
     BOOST_TEST(listed_deleted.ok);
     BOOST_TEST(contains(listed_deleted.result_json, slug));
@@ -370,8 +371,9 @@ BOOST_AUTO_TEST_CASE(db_tables_counts_match_browse_totals)
     url_shortener::analyticsClickRepository().InsertBatch({event, event2},
                                                           nullptr);
 
+    // status=all requires write/admin (threat model T-71).
     const CommandResponse listed = registry.execute(
-        caller(ControlSet::User),
+        caller(ControlSet::Admin),
         request("link.list", R"({"status":"all","limit":500})"));
     BOOST_REQUIRE(listed.ok);
     const std::size_t link_total = parse_total(listed.result_json);

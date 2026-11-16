@@ -66,6 +66,39 @@ BeastResponse handleCreateLink(const BeastRequest& req,
                                bool is_tls,
                                const RouteContext& context);
 
+/// @brief Handles `GET /api/v1/links`; lists links with filtering, sorting and
+/// paging through the `link.list` command (milestone 0006 Task 04.0 subtask
+/// 07).
+///
+/// The only gated REST resource route: when the command API is disabled
+/// (`command_api_enabled(config) == false`, the default) it answers exactly
+/// like today's unmatched `GET /api/v1/links`, so no caller reaches
+/// `link.list` and no enumeration oracle exists (user decision 2026-11-16,
+/// threat model T-71). When enabled it runs `link.list` as the gated caller
+/// (`command_api_caller(config, context.peer)`): a `User` caller may list only
+/// non-deleted links, while `status=all`/`status=deleted` require write/admin
+/// and are rejected with `403 not_authorized` for a `User` (enforced by the
+/// `link.list` descriptor's permission hook, not here). The query string is the
+/// command's `args`: `status`, `q`, `tag`, `campaign`, `sort`, `order`,
+/// `offset`, `limit`. Hostile input (malformed `%`, duplicate names, unknown
+/// names, out-of-range or wrong-typed values) yields `400 invalid_request`,
+/// never a crash or 500. The redirect fast path is untouched (contract C10).
+/// @param req     Incoming request; supplies the HTTP version and request id.
+/// @param config  Server-wide runtime configuration; `command_api_enabled` and
+///        `command_api_role` select the gate behaviour and caller role.
+/// @param is_tls  `true` on HTTPS connections.
+/// @param context Route context; `query_string` carries the filters and `peer`
+///        is the gate's locality input (loopback -> admin honoured).
+/// @return 400 `invalid_method` (gate off, byte-equal to today's response);
+///         200 with the `{"items":[...],"offset":N,"limit":N,"total":N}` page
+///         on success; 400 `invalid_request` for a malformed query or a bad
+///         parameter; 403 `not_authorized` when a non-admin caller requests
+///         `status=all`/`deleted`.
+BeastResponse handleListLinks(const BeastRequest& req,
+                              const ::ServerConfig& config,
+                              bool is_tls,
+                              const RouteContext& context);
+
 /// @brief Handles `GET /api/v1/links/id/{id}`; retrieves a link by its
 /// stable opaque identifier.
 /// @param req     Incoming request.

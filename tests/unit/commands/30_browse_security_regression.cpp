@@ -335,8 +335,10 @@ BOOST_AUTO_TEST_CASE(link_list_items_expose_no_owner_or_attributes)
             "link.create",
             R"({"target_url":"https://example.com/o","slug":"owner-slug-30"})"));
 
+    // status=all requires write/admin (threat model T-71); this case checks the
+    // item projection, so it lists as Admin.
     const CommandResponse listed = runtime.registry->execute(
-        caller(ControlSet::User),
+        caller(ControlSet::Admin),
         request("link.list", R"({"status":"all","limit":500})"));
     BOOST_REQUIRE(listed.ok);
     BOOST_TEST(contains(listed.result_json, "owner-slug-30"));
@@ -402,8 +404,10 @@ BOOST_AUTO_TEST_CASE(read_only_user_denied_every_write_store_unchanged)
                             + slug + R"("})"))
             .ok);
 
+    // The full-store snapshot (status=all) requires write/admin (T-71); it is a
+    // read-back to prove the writes below did not mutate, so it runs as Admin.
     const CommandResponse before = registry.execute(
-        caller(ControlSet::User),
+        caller(ControlSet::Admin),
         request("link.list", R"({"status":"all","limit":500})"));
     BOOST_REQUIRE(before.ok);
 
@@ -433,7 +437,7 @@ BOOST_AUTO_TEST_CASE(read_only_user_denied_every_write_store_unchanged)
     }
 
     const CommandResponse after = registry.execute(
-        caller(ControlSet::User),
+        caller(ControlSet::Admin),
         request("link.list", R"({"status":"all","limit":500})"));
     BOOST_REQUIRE(after.ok);
 

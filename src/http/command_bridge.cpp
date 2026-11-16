@@ -224,5 +224,64 @@ commands::CommandResponse execute_resource_command(
                                     caller);
 }
 
+bool command_api_enabled(const ::ServerConfig& config)
+{
+    return config.command_api_enabled;
+}
+
+ControlSet command_api_control_set(const ::ServerConfig& config)
+{
+    // Case-sensitive: only the exact token "admin" selects Admin; every other
+    // value (including the default "user") is the least-privilege role.
+    return config.command_api_role == "admin" ? ControlSet::Admin
+                                              : ControlSet::User;
+}
+
+bool is_loopback_peer(const boost::asio::ip::address& peer)
+{
+    if (peer.is_v4()) {
+        // 127.0.0.0/8: the whole loopback block, not just 127.0.0.1.
+        return (peer.to_v4().to_uint() & 0xFF000000u) == 0x7F000000u;
+    }
+    if (peer.is_v6()) {
+        const boost::asio::ip::address_v6 v6 = peer.to_v6();
+        if (v6.is_loopback()) {
+            return true;  // ::1
+        }
+        // IPv4-mapped IPv6 (::ffff:a.b.c.d): bytes 0..9 zero, 10..11 == 0xff,
+        // 12..15 the embedded IPv4. Decode by bytes to avoid the deprecated
+        // address_v6::is_v4_mapped()/v4_mapped_t API, then re-check 127/8.
+        const boost::asio::ip::address_v6::bytes_type b = v6.to_bytes();
+        const bool v4_mapped = b[0] == 0 && b[1] == 0 && b[2] == 0 && b[3] == 0
+            && b[4] == 0 && b[5] == 0 && b[6] == 0 && b[7] == 0 && b[8] == 0
+            && b[9] == 0 && b[10] == 0xff && b[11] == 0xff;
+        if (v4_mapped) {
+            return b[12] == 127;  // embedded 127.0.0.0/8
+        }
+    }
+    return false;
+}
+
+commands::CallerContext command_api_caller(
+    const ::ServerConfig& config,
+    const std::optional<boost::asio::ip::address>& peer)
+{
+    commands::CallerContext caller;
+    // Fixed, non-identifying labels: never a peer IP, token, or request value
+    // (threat model T-84).
+    caller.principal = "command-api";
+    caller.transport = "rest";
+    // Fail closed: Admin only when the configured role is admin AND the peer is
+    // present and loopback. An absent peer (std::nullopt) is non-loopback, so a
+    // request with no resolvable peer always runs as User (threat model
+    // T-64/T-70).
+    const bool loopback = peer.has_value() && is_loopback_peer(*peer);
+    caller.control_set =
+        (command_api_control_set(config) == ControlSet::Admin && loopback)
+        ? ControlSet::Admin
+        : ControlSet::User;
+    return caller;
+}
+
 }  // namespace http
 }  // namespace url_shortener

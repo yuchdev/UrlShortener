@@ -88,6 +88,20 @@ std::vector<RouteParameterDoc> queryParametersFor(const std::string& path)
             {"bucket", "Aggregate bucket size: hour, day, or week.", false},
         };
     }
+    if (path == "/api/v1/links") {
+        return {
+            {"status", "Lifecycle filter: all, active, disabled, expired, or "
+                       "deleted (default active). all and deleted require "
+                       "write/admin.", false},
+            {"q", "Case-insensitive substring filter on slug or target URL.", false},
+            {"tag", "Exact-match tag filter.", false},
+            {"campaign", "Exact-match campaign name filter.", false},
+            {"sort", "Sort field: created_at (default), slug, or updated_at.", false},
+            {"order", "Sort direction: desc (default) or asc.", false},
+            {"offset", "Zero-based index of the first link to return.", false},
+            {"limit", "Maximum number of links to return (1..500, default 50).", false},
+        };
+    }
     return {};
 }
 
@@ -120,6 +134,9 @@ std::vector<RouteResponseDoc> responsesFor(
 {
     if (placeholder) {
         return {{501, "Feature placeholder is not enabled."}};
+    }
+    if (method == "GET" && path == "/api/v1/links") {
+        return {{200, "Links listed."}, {400, "Invalid request."}};
     }
     if (method == "POST" && path == "/api/v1/links") {
         return {{201, "Link created."}, {400, "Invalid request."}};
@@ -209,6 +226,8 @@ const std::vector<RouteDescriptor>& registeredRoutes()
          "Prometheus-style metrics exposition endpoint."),
 
         // Link management API (/api/v1/links).
+        route("GET", "/api/v1/links", "api_links",
+         "List links with filtering, sorting and paging."),
         route("POST", "/api/v1/links", "api_links",
          "Create a short link from a target URL and optional attributes."),
         route("GET", "/api/v1/links/id/{id}", "api_links",
