@@ -42,9 +42,9 @@ namespace
  * Used for the CLI-adapter input rejections that never reach the registry
  * (oversized stdin, non-object `args`, a bad `--arg`): they are reported on
  * @p err with the fixed `cmd failed: <code>: <message>` shape and exit code 2,
- * in both default and `--raw` modes. @p code and @p message are fixed vocabulary
- * from the dispatcher only; no argument value, `--json` body or stdin content is
- * ever passed here (threat model T-77/T-78/T-79).
+ * in both default and `--raw` modes. @p code and @p message are fixed
+ * vocabulary from the dispatcher only; no argument value, `--json` body or
+ * stdin content is ever passed here (threat model T-77/T-78/T-79).
  *
  * @param err Stream the diagnostic is written to.
  * @param code Fixed error-code token (`invalid_envelope`/`invalid_field`).

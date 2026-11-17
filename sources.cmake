@@ -2,6 +2,7 @@ set(URL_SHORTENER_CPP
         ${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/cli_parser.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/cli/link_command_args.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cli/app_exit_code.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/cli/link_command_dispatch.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/cli/link_args_json.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/cli/arg_coercion.cpp
@@ -68,6 +69,7 @@ set(URL_SHORTENER_H
         ${CMAKE_CURRENT_SOURCE_DIR}/include/url_shortener/http/handlers/fallback_handlers.hpp
         ${CMAKE_CURRENT_SOURCE_DIR}/include/url_shortener/cli/cli_parser.hpp
         ${CMAKE_CURRENT_SOURCE_DIR}/include/url_shortener/cli/link_command_args.hpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/include/url_shortener/cli/app_exit_code.hpp
         ${CMAKE_CURRENT_SOURCE_DIR}/include/url_shortener/cli/link_command_dispatch.hpp
         ${CMAKE_CURRENT_SOURCE_DIR}/include/url_shortener/cli/cmd_dispatch.hpp
         ${CMAKE_CURRENT_SOURCE_DIR}/include/url_shortener/cli/command_runtime_acquire.hpp
@@ -373,6 +375,7 @@ set(URL_SHORTENER_SOURCES
       tests/unit/cli/09_link_args_json.cpp
       tests/unit/cli/10_link_dispatch_via_registry.cpp
       tests/unit/cli/11_cli_parser_command_api_flags.cpp
+      tests/unit/cli/12_dispatch_null_runtime.cpp
   )
 
   set(ANALYTICS_INTEGRATION_SOURCES
@@ -486,6 +489,7 @@ set(URL_SHORTENER_SOURCES
       ${CMAKE_CURRENT_SOURCE_DIR}/src/commands/browse_commands.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/cli_parser.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/cli/link_command_args.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/cli/app_exit_code.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/cli/link_command_dispatch.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/cli/link_args_json.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/cli/arg_coercion.cpp

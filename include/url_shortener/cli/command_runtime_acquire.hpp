@@ -15,6 +15,7 @@
  */
 #pragma once
 
+#include <functional>
 #include <memory>
 
 /// Top-level server configuration (defined in url_shortener/core/config.hpp).
@@ -48,6 +49,36 @@ namespace cli
  */
 std::shared_ptr<composition::CommandRuntime> acquire_command_runtime(
     const ServerConfig& config);
+
+namespace detail
+{
+
+/**
+ * @brief Test-only seam replacing the fallback runtime build inside
+ * @ref acquire_command_runtime.
+ *
+ * When a non-null @p builder is set and no process-wide runtime is installed,
+ * @ref acquire_command_runtime invokes @p builder (inside its `try` block)
+ * instead of `composition::build_command_runtime`. A builder that throws or
+ * returns `nullptr` therefore drives the dispatchers' null-runtime branch
+ * (`cmd`/`link <verb>` -> value-free `... failed: internal`, empty stdout, the
+ * `internal` exit code) without needing the real `build_command_runtime` to
+ * fail, which no `ServerConfig` can force. The hook is null in production (the
+ * real fallback build runs).
+ *
+ * Not thread-safe and process-wide: set and clear it only from a
+ * single-threaded test around one dispatch call, and always clear it afterwards
+ * (pass `nullptr`) so it never leaks into another test.
+ *
+ * @param builder Replacement fallback build, or `nullptr` to restore the
+ * default (the real `build_command_runtime` over an inactive backend handle).
+ */
+void set_fallback_runtime_builder_for_testing(
+    std::function<std::shared_ptr<composition::CommandRuntime>(
+        const ServerConfig&)>
+        builder);
+
+}  // namespace detail
 
 }  // namespace cli
 }  // namespace url_shortener

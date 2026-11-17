@@ -117,15 +117,6 @@ std::string args_json_for(const LinkCliCommand& command)
 }
 }  // namespace
 
-int ExitCodeForAppError(app::AppErrorCode code)
-{
-    // The single exit-code table lives in the commands layer (01.0/02); this is
-    // its one CLI-side reader. `from_app_error` maps the app code to its command
-    // code and `error_info_for(...).exit_code` yields the process exit code, so
-    // there is no second mapping to drift from the registry's.
-    return commands::error_info_for(commands::from_app_error(code)).exit_code;
-}
-
 int DispatchLinkCommand(const LinkCliCommand& command,
                         const ServerConfig& config)
 {
@@ -149,7 +140,11 @@ int DispatchLinkCommand(const LinkCliCommand& command,
         acquire_command_runtime(config);
     if (!runtime) {
         std::cerr << verb << " failed: internal\n";
-        return ExitCodeForAppError(app::AppErrorCode::internal);
+        // Same exit code the shared table assigns `internal` (01.0/02), read
+        // straight from the commands table so this unit stays free of the
+        // application error enum (Task 04.0 exit criterion 2).
+        return commands::error_info_for(commands::CommandErrorCode::internal)
+            .exit_code;
     }
 
     // Convert the parsed DTO to the descriptor's `args` object and execute it as

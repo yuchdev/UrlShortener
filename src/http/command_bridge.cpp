@@ -42,10 +42,11 @@ namespace
  * @ref app::LinkBackendHandle, so `build_command_runtime` selects the
  * `LegacyLinkLister` over the global `linkRepository()` and binds the link
  * service to `app::LinkBackend::store()`), using a fixed default `ServerConfig`
- * that lives for the whole process. The function-local statics make the one-time
- * build thread-safe (C++11 static init) and never per request; the
- * `ServerConfig` static is declared before the runtime static so it is destroyed
- * after it, satisfying the service's "config outlives the runtime" contract.
+ * that lives for the whole process. The function-local statics make the
+ * one-time build thread-safe (C++11 static init) and never per request; the
+ * `ServerConfig` static is declared before the runtime static so it is
+ * destroyed after it, satisfying the service's "config outlives the runtime"
+ * contract.
  * @return The single shared fallback runtime; never null.
  */
 std::shared_ptr<composition::CommandRuntime> default_request_runtime()
@@ -102,9 +103,10 @@ std::optional<BeastResponse> apply_create_throttle(const BeastRequest& req,
 
     // Peerless requests (remote_endpoint error, non-socket dispatch) share one
     // fixed fallback bucket ("peer:unknown") rather than bypassing the throttle
-    // - fail-closed to a shared bucket so an attacker cannot escape the throttle
-    // by suppressing the peer. The "link_create:" prefix namespaces the key so
-    // it cannot collide with other IRateLimiter users of a shared Redis backend.
+    // - fail-closed to a shared bucket so an attacker cannot escape the
+    // throttle by suppressing the peer. The "link_create:" prefix namespaces
+    // the key so it cannot collide with other IRateLimiter users of a shared
+    // Redis backend.
     const std::string throttle_key = "link_create:"
         + (context.peer.has_value() ? context.peer->to_string()
                                     : std::string("peer:unknown"));
@@ -122,9 +124,9 @@ std::optional<BeastResponse> apply_create_throttle(const BeastRequest& req,
     }
     if (rl_error != RateLimitError::none) {
         // Limiter failure -> fail open (Redis-down convention). Count every
-        // occurrence and warn only on the first so a sustained limiter outage is
-        // visible without per-request flooding. Never log the peer, the key, or
-        // the body (client PII, threat model T-70/T-84).
+        // occurrence and warn only on the first so a sustained limiter outage
+        // is visible without per-request flooding. Never log the peer, the key,
+        // or the body (client PII, threat model T-70/T-84).
         if (metricsRegistry().create_throttle_fail_open_total.fetch_add(1)
             == 0)
         {
@@ -193,9 +195,9 @@ BeastResponse resource_response(const BeastRequest& req,
                                            "application/json");
     }
     // Status and code come from the 01.0/02 legacy columns (which copy
-    // statusForAppError/codeForAppError), and the message is the command/service
-    // layer's fixed, value-free text, so the envelope is byte-identical to
-    // today's (contract C3/C6).
+    // statusForAppError/codeForAppError), and the message is the
+    // command/service layer's fixed, value-free text, so the envelope is
+    // byte-identical to today's (contract C3/C6).
     const commands::error_info& info =
         commands::error_info_for(response.error.code);
     return url_shortener::makeApiErrorResponse(req,

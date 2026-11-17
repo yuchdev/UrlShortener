@@ -10,7 +10,11 @@
  */
 #pragma once
 
-#include <url_shortener/app/app_error.hpp>
+// Re-exported so callers that include only this header (`src/main.cpp`,
+// `tests/unit/cli/04_cli_exit_codes.cpp`) still reach `ExitCodeForAppError`.
+// The bridge lives in its own TU so `link_command_dispatch.cpp` need never name
+// `app::AppErrorCode` (Task 04.0 exit criterion 2).
+#include <url_shortener/cli/app_exit_code.hpp>
 
 /// Top-level server configuration (defined in url_shortener/core/config.hpp).
 struct ServerConfig;
@@ -21,22 +25,6 @@ struct LinkCliCommand;
 
 namespace url_shortener::cli
 {
-/**
- * @brief Map an application error code to the CLI process exit code.
- *
- * A one-line reader of the single shared error table (01.0/02): it maps @p code
- * to its @ref url_shortener::commands::CommandErrorCode via `from_app_error` and
- * returns that row's `exit_code`. There is no second exit-code mapping in the
- * CLI, so a `link <verb>` failure and the equivalent `cmd` failure always share
- * one exit code, and a script can branch on `$?` alone. See
- * `commands::all_error_infos()` for the authoritative code-to-exit-code table.
- *
- * @param code Application error code carried by a failed service @c Result.
- * @return Non-negative process exit code from the shared table (0 only for
- * @c none).
- */
-int ExitCodeForAppError(app::AppErrorCode code);
-
 /**
  * @brief Execute a parsed `link <verb>` command in one-shot CLI mode.
  *

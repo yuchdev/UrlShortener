@@ -10,7 +10,9 @@
 #include <url_shortener/cli/command_runtime_acquire.hpp>
 
 #include <exception>
+#include <functional>
 #include <memory>
+#include <utility>
 
 #include <url_shortener/composition/command_runtime.hpp>
 #include <url_shortener/composition/link_backend_bootstrap.hpp>
@@ -18,6 +20,25 @@
 
 namespace url_shortener::cli
 {
+namespace
+{
+
+/// Type of the test-only fallback-build override (see
+/// @ref detail::set_fallback_runtime_builder_for_testing).
+using fallback_builder_t =
+    std::function<std::shared_ptr<composition::CommandRuntime>(
+        const ServerConfig&)>;
+
+/// The process-wide storage slot for the test override. Null in production, so
+/// the real `build_command_runtime` fallback runs. Not thread-safe; tests set
+/// and clear it from a single thread.
+fallback_builder_t& fallback_builder_slot()
+{
+    static fallback_builder_t slot;
+    return slot;
+}
+
+}  // namespace
 
 std::shared_ptr<composition::CommandRuntime> acquire_command_runtime(
     const ServerConfig& config)
@@ -28,6 +49,12 @@ std::shared_ptr<composition::CommandRuntime> acquire_command_runtime(
         return installed;
     }
     try {
+        // Test seam: a configured override stands in for the real fallback
+        // build so a test can exercise the null-runtime branch. Null in
+        // production, where the real build runs.
+        if (const fallback_builder_t& builder = fallback_builder_slot()) {
+            return builder(config);
+        }
         return std::make_shared<composition::CommandRuntime>(
             composition::build_command_runtime(config,
                                                app::LinkBackendHandle {}));
@@ -36,5 +63,15 @@ std::shared_ptr<composition::CommandRuntime> acquire_command_runtime(
         return nullptr;
     }
 }
+
+namespace detail
+{
+
+void set_fallback_runtime_builder_for_testing(fallback_builder_t builder)
+{
+    fallback_builder_slot() = std::move(builder);
+}
+
+}  // namespace detail
 
 }  // namespace url_shortener::cli
