@@ -325,6 +325,47 @@ Result<LinkView> LinkCommandService::RestoreLink(
     return {toView(*link), {}};
 }
 
+Result<LinkView> LinkCommandService::ReplaceLinkTarget(
+    const ReplaceLinkTargetCommand& command) const
+{
+    // Single validation path: the replacement target is normalized and
+    // SSRF-checked exactly as CreateLink does, so an overwrite can never
+    // store an unvalidated or disallowed URL (same message as CreateLink).
+    const auto normalized_url = normalizeTargetUrl(command.target_url, config_);
+    if (!normalized_url.has_value()) {
+        return {std::nullopt,
+                error(AppErrorCode::invalid_url,
+                      "url must be an absolute http/https URL")};
+    }
+
+    auto link = store_.findBySlug(command.slug);
+    if (!link.has_value()) {
+        return {std::nullopt, error(AppErrorCode::not_found, "Link not found")};
+    }
+    // A soft-deleted link still occupies its slug; overwrite never resurrects
+    // or silently edits a deleted record. The message is value-free (no slug).
+    if (link->deleted_at.has_value()) {
+        return {std::nullopt,
+                error(AppErrorCode::slug_conflict,
+                      "slug belongs to a deleted link; restore it first")};
+    }
+
+    // Only the target and the mutation timestamp change; every other field is
+    // preserved verbatim.
+    link->target_url = *normalized_url;
+    link->updated_at = currentTimestamp();
+    // store_.update invalidates any cached copy of the slug per the ILinkStore
+    // contract; no separate invalidateCache call is added here.
+    if (AppError update_error; !store_.update(*link, &update_error)) {
+        return {std::nullopt,
+                update_error.code == AppErrorCode::none
+                    ? error(AppErrorCode::storage_failure,
+                            "failed to persist link update")
+                    : update_error};
+    }
+    return {toView(*link), {}};
+}
+
 Result<LinkView> LinkCommandService::PreviewLink(
     const GetLinkQuery& query) const
 {

@@ -158,6 +158,28 @@ struct RestoreLinkCommand
 };
 
 /**
+ * @brief Command to replace only the target URL of an existing link.
+ *
+ * The sole application-layer path that changes a stored `target_url`:
+ * `UpdateLinkCommand` (PATCH) deliberately has no target field. Backs
+ * `link.import` with `on_conflict=overwrite`. The replacement URL is
+ * validated and normalized through the same `normalizeTargetUrl` /
+ * private-target (SSRF) check as `CreateLinkCommand::target_url`, so an
+ * overwrite can never store an unvalidated or disallowed URL.
+ */
+struct ReplaceLinkTargetCommand
+{
+    ///< Slug of the existing, non-deleted link whose target is replaced
+    ///< (required).
+    std::string slug;
+
+    ///< New destination URL, un-normalized; validated and normalized by
+    ///< `LinkCommandService::ReplaceLinkTarget` exactly as `CreateLink`
+    ///< validates `CreateLinkCommand::target_url`.
+    std::string target_url;
+};
+
+/**
  * @brief Query parameters for retrieving aggregate click-event
  * statistics for a single link.
  */
@@ -636,6 +658,35 @@ public:
      * `storage_failure` if the repository write failed.
      */
     Result<LinkView> RestoreLink(const RestoreLinkCommand& command) const;
+
+    /**
+     * @brief Replace the target URL of an existing, non-deleted link.
+     *
+     * The only application-layer method that changes a stored `target_url`
+     * (`UpdateLink`/PATCH carries no target field). The replacement URL goes
+     * through the same `normalizeTargetUrl` normalization and private-target
+     * (SSRF) check as `CreateLink`, so an invalid or disallowed URL is never
+     * stored. Only `target_url` and `updated_at` change; `id`, `created_at`,
+     * `enabled`, `tags`, `metadata`, `campaign`, `expires_at` and
+     * `redirect_type` are preserved. The write goes through
+     * `ILinkStore::update`, which also invalidates any cached copy of the
+     * slug (cache-aside contract); no second invalidation path is added here.
+     *
+     * Backs `link.import` with `on_conflict=overwrite`. Because the overwrite
+     * is destructive it is audited at the enclosing job level (one audit line
+     * carrying the job id, no per-row values) rather than per call.
+     *
+     * @param command Slug of the link to retarget and the un-normalized new
+     * target URL.
+     * @return `Result<LinkView>` with the retargeted view on success; on
+     * failure: `invalid_url` if `target_url` is not a valid absolute
+     * HTTP/HTTPS URL or targets a disallowed private host; `not_found` if no
+     * link has the slug; `slug_conflict` if the slug belongs to a soft-deleted
+     * link (restore it first — overwrite never resurrects or silently edits a
+     * deleted record); `storage_failure` if the repository write failed.
+     */
+    Result<LinkView> ReplaceLinkTarget(
+        const ReplaceLinkTargetCommand& command) const;
 
     /**
      * @brief Look up a link for preview without mutating it.

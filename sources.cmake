@@ -361,6 +361,7 @@ set(URL_SHORTENER_SOURCES
       tests/unit/app/46_links_table_source.cpp
       tests/unit/app/47_click_events_table_source.cpp
       tests/unit/app/48_system_info.cpp
+      tests/unit/app/60_link_command_service_replace_target.cpp
   )
 
   set(CLI_UNIT_SOURCES
@@ -473,6 +474,7 @@ set(URL_SHORTENER_SOURCES
       tests/unit/commands/55_pair_line_parser.cpp
       tests/unit/commands/56_pair_file_access.cpp
       tests/unit/commands/57_link_import_command.cpp
+      tests/unit/commands/58_link_import_overwrite.cpp
       tests/unit/commands/60_transport_factory.cpp
       tests/unit/commands/61_ndjson_line_reader.cpp
       tests/unit/commands/62_ndjson_session.cpp

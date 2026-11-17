@@ -41,9 +41,10 @@ constexpr std::size_t k_import_path_max_length = 4096;
 /**
  * @brief Conflict policy requested by the import's `on_conflict` argument.
  *
- * Mirrors the catalog enum. `overwrite` is parsed so the factory can reject it
- * with a fixed `unsupported` until subtask 09 implements it; only `skip` and
- * `fail` are honored by the body.
+ * Mirrors the catalog enum. All three values are honored by the body; the
+ * factory still refuses `overwrite` for a REST caller (overwrite is not
+ * offered over REST — a transport rule, distinct from the capability-based
+ * `path` refusal).
  */
 enum class ImportConflict
 {
@@ -54,8 +55,10 @@ enum class ImportConflict
     ///< keeping the counts so far.
     fail,
 
-    ///< Replace the target of an existing link; not implemented here (subtask
-    ///< 09), rejected `unsupported` by the factory.
+    ///< Replace the target URL of the existing link via
+    ///< `LinkCommandService::ReplaceLinkTarget` and count the row as
+    ///< `overwritten` (subtask 09); refused `unsupported` by the factory only
+    ///< for a REST caller.
     overwrite
 };
 
@@ -139,8 +142,9 @@ struct ImportPlan
     ///< Wire format every line is parsed as.
     PairFormat format;
 
-    ///< Conflict policy applied to an existing slug (`skip` or `fail`;
-    ///< `overwrite` is rejected before a plan is built).
+    ///< Conflict policy applied to an existing slug (`skip`, `fail` or
+    ///< `overwrite`; a REST caller's `overwrite` is rejected before a plan is
+    ///< built).
     ImportConflict on_conflict;
 
     ///< `true` when the body validates each row without persisting (dry-run);
@@ -186,14 +190,20 @@ struct ImportPlan
  */
 struct ImportCounters
 {
-    ///< Non-blank data rows processed (`created + skipped + failed`).
+    ///< Non-blank data rows processed
+    ///< (`created + skipped + overwritten + failed`).
     std::uint64_t total = 0;
 
-    ///< Rows that produced a link (or would, in dry-run).
+    ///< Rows that produced a new link (or would, in dry-run).
     std::uint64_t created = 0;
 
     ///< Rows skipped on a slug conflict under `on_conflict=skip`.
     std::uint64_t skipped = 0;
+
+    ///< Rows whose existing link's target was replaced under
+    ///< `on_conflict=overwrite` (or would be, in dry-run). Counted separately
+    ///< from `created`, never folded into it.
+    std::uint64_t overwritten = 0;
 
     ///< Rows that failed validation/decoding (a per-row error was recorded).
     std::uint64_t failed = 0;
@@ -203,8 +213,10 @@ struct ImportCounters
  * @brief Serializes the import counters and error list into the catalog result
  * object.
  *
- * Produces `{"total":n,"created":n,"skipped":n,"failed":n,"errors":[...],`
- * `"errors_omitted":n,"dry_run":bool}`. The error array is bounded by
+ * Produces `{"total":n,"created":n,"skipped":n,"overwritten":n,"failed":n,`
+ * `"errors":[...],"errors_omitted":n,"dry_run":bool}`. The `overwritten` field
+ * is an additive v1 field (plan C2); the wire version is unchanged. The error
+ * array is bounded by
  * @ref kMaxReportedImportErrors with the overflow counted in `errors_omitted`
  * (threat model T-109), and every entry carries a line number and fixed code
  * only (plan C6).
@@ -221,6 +233,7 @@ std::string build_result_json(const ImportCounters& counters,
     std::ostringstream os;
     os << "{\"total\":" << counters.total << ",\"created\":" << counters.created
        << ",\"skipped\":" << counters.skipped
+       << ",\"overwritten\":" << counters.overwritten
        << ",\"failed\":" << counters.failed
        << ",\"errors\":" << errors.to_json()
        << ",\"errors_omitted\":" << errors.omitted()
@@ -264,6 +277,63 @@ bool build_row_command(const ParsedRow& row,
 }
 
 /**
+ * @brief Applies `on_conflict=overwrite` to one row whose slug already exists,
+ * updating @p counters (and @p errors on failure) in place.
+ *
+ * For a dry-run this is non-mutating (threat model T-91): the replacement
+ * target was already validated by `ValidateCreateLink` (a conflict means the
+ * URL passed and only the slug collided), so the candidate is counted under
+ * `overwritten` without calling `ReplaceLinkTarget` — nothing is written. For a
+ * real run it routes the replacement through the single destructive-overwrite
+ * service method `LinkCommandService::ReplaceLinkTarget` (threat model T-100):
+ * the same normalize/SSRF path as create, cache-invalidating, value-free on
+ * error. A generated slug can never collide, so a real conflict always carries
+ * an explicit slug; the absent-slug case is guarded defensively as `failed`.
+ *
+ * @param plan The import plan; only `dry_run` and `service` are read.
+ * @param command The decoded create command for the conflicting row (its
+ * `slug` and `target_url` drive the replacement).
+ * @param line_number 1-based physical line of the row, for the error list.
+ * @param[in,out] counters Tallies incremented in place (`overwritten` on
+ * success, `failed` on a replace failure).
+ * @param[in,out] errors Per-line error list; a fixed, value-free code is added
+ * on a replace failure (plan C6).
+ */
+void apply_overwrite(const ImportPlan& plan,
+                     const app::CreateLinkCommand& command,
+                     std::size_t line_number,
+                     ImportCounters& counters,
+                     ImportErrorList& errors)
+{
+    if (plan.dry_run) {
+        ++counters.overwritten;
+        return;
+    }
+
+    if (!command.slug.has_value()) {
+        ++counters.failed;
+        errors.add(line_number, "internal");
+        return;
+    }
+
+    app::ReplaceLinkTargetCommand replace;
+    replace.slug = *command.slug;
+    replace.target_url = command.target_url;
+
+    const app::Result<app::LinkView> result =
+        plan.service->ReplaceLinkTarget(replace);
+    if (result.ok()) {
+        ++counters.overwritten;
+    }
+    else {
+        ++counters.failed;
+        errors.add(line_number,
+                   std::string(
+                       error_info_for(from_app_error(result.error.code)).name));
+    }
+}
+
+/**
  * @brief Runs an import plan to completion on the given job context.
  *
  * The one import body, shared by the real (worker-thread) and dry-run
@@ -275,7 +345,10 @@ bool build_row_command(const ParsedRow& row,
  * command; and routes it through `CreateLink` (or `ValidateCreateLink` in
  * dry-run) as the single validation/SSRF/slug/conflict path (contract C1). A
  * repeated slug within one dry-run file is detected via an in-file slug set so
- * it reports `slug_conflict` exactly as a real run would.
+ * it reports `slug_conflict` exactly as a real run would. On a slug conflict
+ * under `on_conflict=overwrite`, @ref apply_overwrite replaces the existing
+ * link's target (counting the row `overwritten`), via `ReplaceLinkTarget` on a
+ * real run or non-mutatingly in dry-run (threat model T-91/T-100).
  *
  * @param plan The self-contained import inputs; its source is consumed.
  * @param ctx The job context for cancellation and progress.
@@ -405,13 +478,18 @@ JobOutcome run_import(ImportPlan& plan, IJobContext& ctx)
             ++counters.created;
         }
         else if (is_conflict) {
-            if (plan.on_conflict == ImportConflict::skip) {
-                ++counters.skipped;
-            }
-            else {
-                // on_conflict=fail: stop, keeping the counts so far.
-                return fail_job(CommandErrorCode::slug_conflict,
-                                "import stopped on conflict");
+            switch (plan.on_conflict) {
+                case ImportConflict::skip:
+                    ++counters.skipped;
+                    break;
+                case ImportConflict::fail:
+                    // on_conflict=fail: stop, keeping the counts so far.
+                    return fail_job(CommandErrorCode::slug_conflict,
+                                    "import stopped on conflict");
+                case ImportConflict::overwrite:
+                    apply_overwrite(plan, command, line_number, counters,
+                                    errors);
+                    break;
             }
         }
         else {
@@ -472,8 +550,10 @@ std::vector<ArgSpec> make_link_import_args()
  * opens the source and returns a self-contained body, or a failure.
  *
  * Fails fast and queues nothing on error. Checks, in order: exactly one of
- * `data`/`path`; `overwrite` is unsupported here (subtask 09); a `path` is
- * refused by the file-path capability alone (`allow_paths == false` ->
+ * `data`/`path`; `on_conflict=overwrite` is refused `unsupported` for a REST
+ * caller only (a transport rule — overwrite is not offered over REST); a
+ * `path` is refused by the file-path capability alone (`allow_paths == false`
+ * ->
  * `unsupported`, threat model T-95, independent of transport name); then opens
  * the bounded source (inline/file), mapping any @ref PathError. On success it
  * deep-copies every input into an @ref ImportPlan held via `std::shared_ptr`, so
@@ -506,7 +586,12 @@ std::variant<JobBody, CommandError> import_factory(const PairCommandDeps& deps,
 
     const ImportConflict on_conflict =
         parse_conflict(args.get_string("on_conflict").value_or("skip"));
-    if (on_conflict == ImportConflict::overwrite) {
+    // Overwrite is destructive and is not offered over REST: a transport rule
+    // (catalog 3.3), deliberately distinct from the capability-based `path`
+    // refusal above. Local-operator transports (`cli`/`tui`/`stdio`) run it.
+    if (on_conflict == ImportConflict::overwrite
+        && context.caller.transport == "rest")
+    {
         return make_error(CommandErrorCode::unsupported,
                           "on_conflict overwrite not supported");
     }
