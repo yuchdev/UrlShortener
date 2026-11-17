@@ -89,13 +89,11 @@ BOOST_AUTO_TEST_CASE(csv_header_skipped_only_when_first)
 {
     {
         PairLineParser parser(PairFormat::csv);
-        BOOST_TEST((parser.parse("full_url,slug", 1).kind ==
-                    RowKind::skipped));
+        BOOST_TEST((parser.parse("full_url,slug", 1).kind == RowKind::skipped));
     }
     {
         PairLineParser parser(PairFormat::csv);
-        BOOST_TEST((parser.parse("FULL_URL,SLUG", 1).kind ==
-                    RowKind::skipped));
+        BOOST_TEST((parser.parse("FULL_URL,SLUG", 1).kind == RowKind::skipped));
     }
     {
         PairLineParser parser(PairFormat::csv);
@@ -105,8 +103,7 @@ BOOST_AUTO_TEST_CASE(csv_header_skipped_only_when_first)
         // Blank lines before the header do not consume the first-line slot.
         PairLineParser parser(PairFormat::csv);
         BOOST_TEST((parser.parse("   ", 1).kind == RowKind::skipped));
-        BOOST_TEST((parser.parse("full_url,slug", 2).kind ==
-                    RowKind::skipped));
+        BOOST_TEST((parser.parse("full_url,slug", 2).kind == RowKind::skipped));
     }
 }
 
@@ -118,8 +115,8 @@ BOOST_AUTO_TEST_CASE(csv_header_skipped_only_when_first)
 BOOST_AUTO_TEST_CASE(csv_header_looking_line_later_is_data)
 {
     PairLineParser parser(PairFormat::csv);
-    BOOST_TEST((parser.parse("https://a.example/x,abc", 1).kind ==
-                RowKind::pair));
+    BOOST_TEST(
+        (parser.parse("https://a.example/x,abc", 1).kind == RowKind::pair));
     const ParsedRow later = parser.parse("full_url,slug", 2);
     BOOST_TEST((later.kind == RowKind::pair));
     BOOST_TEST(later.full_url == "full_url");
@@ -213,8 +210,10 @@ BOOST_AUTO_TEST_CASE(csv_bom_and_crlf_stripped)
 {
     {
         PairLineParser parser(PairFormat::csv);
-        const ParsedRow row =
-            parser.parse("\xEF\xBB\xBF" "https://a.example/x,abc\r", 1);
+        const ParsedRow row = parser.parse(
+            "\xEF\xBB\xBF"
+            "https://a.example/x,abc\r",
+            1);
         BOOST_TEST((row.kind == RowKind::pair));
         BOOST_TEST(row.full_url == "https://a.example/x");
         BOOST_REQUIRE(row.slug.has_value());
@@ -222,7 +221,10 @@ BOOST_AUTO_TEST_CASE(csv_bom_and_crlf_stripped)
     }
     {
         // A BOM on a non-first line is NOT stripped and becomes field data.
-        const ParsedRow row = csv_line("\xEF\xBB\xBF" "u", 2);
+        const ParsedRow row = csv_line(
+            "\xEF\xBB\xBF"
+            "u",
+            2);
         BOOST_TEST((row.kind == RowKind::pair));
         BOOST_TEST(row.full_url == "\xEF\xBB\xBF" "u");
     }
@@ -332,23 +334,22 @@ BOOST_AUTO_TEST_CASE(ndjson_blank_and_trim)
 // ---------------------------------------------------------------------------
 
 // Type: unit (boundary).
-// Scenario: the error cap retains the first kMaxReportedImportErrors entries and
-// counts the rest as omitted.
-// Boundaries: 0, 100, 101, 1000 adds -> sizes 0/100/100/100, omitted 0/0/1/900.
-// On failure first check: the m_items.size() < cap guard and omitted counter.
+// Scenario: the error cap retains the first kMaxReportedImportErrors entries
+// and counts the rest as omitted. Boundaries: 0, 100, 101, 1000 adds -> sizes
+// 0/100/100/100, omitted 0/0/1/900. On failure first check: the m_items.size()
+// < cap guard and omitted counter.
 BOOST_AUTO_TEST_CASE(error_list_cap_boundaries)
 {
     const std::array<std::size_t, 4> adds = {0, 100, 101, 1000};
-    const std::array<std::size_t, 4> expected_size = {
-        0, kMaxReportedImportErrors, kMaxReportedImportErrors,
-        kMaxReportedImportErrors};
+    const std::array<std::size_t, 4> expected_size = {0,
+                                                      kMaxReportedImportErrors,
+                                                      kMaxReportedImportErrors,
+                                                      kMaxReportedImportErrors};
     const std::array<std::size_t, 4> expected_omitted = {0, 0, 1, 900};
 
-    for (std::size_t c = 0; c < adds.size(); ++c)
-    {
+    for (std::size_t c = 0; c < adds.size(); ++c) {
         ImportErrorList errors;
-        for (std::size_t i = 0; i < adds[c]; ++i)
-        {
+        for (std::size_t i = 0; i < adds[c]; ++i) {
             errors.add(i + 1, "invalid_field");
         }
         BOOST_TEST(errors.items().size() == expected_size[c]);
@@ -378,8 +379,8 @@ BOOST_AUTO_TEST_CASE(error_list_to_json)
     {
         ImportErrorList errors;
         errors.add(1, "a\"b\\c");
-        BOOST_TEST(errors.to_json() ==
-                   "[{\"line\":1,\"code\":\"a\\\"b\\\\c\"}]");
+        BOOST_TEST(errors.to_json()
+                   == "[{\"line\":1,\"code\":\"a\\\"b\\\\c\"}]");
     }
 }
 
@@ -410,12 +411,11 @@ BOOST_AUTO_TEST_CASE(fuzz_malformed_lines_never_pair)
         std::string_view(",,"),
         std::string_view("\"\",slug"),
         std::string_view("  ,  "),
-        std::string_view("\"a\0", 3),    // embedded NUL inside unterminated quote
+        std::string_view("\"a\0", 3),  // embedded NUL inside unterminated quote
         std::string_view("\"\xFF\xFE"),  // invalid UTF-8, unterminated quote
-        std::string_view("x,y,\xFF"),    // 3 cols + invalid UTF-8
+        std::string_view("x,y,\xFF"),  // 3 cols + invalid UTF-8
     };
-    for (const std::string_view bad : csv_bad)
-    {
+    for (const std::string_view bad : csv_bad) {
         const ParsedRow row = csv_line(bad);
         BOOST_TEST((row.kind != RowKind::pair));
     }
@@ -437,10 +437,10 @@ BOOST_AUTO_TEST_CASE(fuzz_malformed_lines_never_pair)
         std::string_view("{\"a\":1}\t\t x"),
         std::string_view("{\"a\":\0", 6),  // embedded NUL, object never closes
         std::string_view("{\xFF\xFE"),
-        std::string_view("\xEF\xBB\xBF{\"a\":1}"),  // BOM not stripped on line 2
+        std::string_view(
+            "\xEF\xBB\xBF{\"a\":1}"),  // BOM not stripped on line 2
     };
-    for (const std::string_view bad : ndjson_bad)
-    {
+    for (const std::string_view bad : ndjson_bad) {
         const ParsedRow row = ndjson_line(bad, 2);
         BOOST_TEST((row.kind != RowKind::pair));
     }
@@ -451,7 +451,8 @@ BOOST_AUTO_TEST_CASE(fuzz_malformed_lines_never_pair)
 // very long) never throw and parse in bounded memory (output no larger than the
 // input line) regardless of content or format.
 // Boundaries: deterministic LCG byte stream; lengths up to kMaxImportLineBytes.
-// On failure first check: an unbounded accumulation in a tokenizer state branch.
+// On failure first check: an unbounded accumulation in a tokenizer state
+// branch.
 BOOST_AUTO_TEST_CASE(fuzz_random_bytes_no_throw_bounded)
 {
     std::uint64_t state = 0x9e3779b97f4a7c15ULL;
@@ -461,27 +462,51 @@ BOOST_AUTO_TEST_CASE(fuzz_random_bytes_no_throw_bounded)
         return static_cast<char>((state >> 33) & 0xFFU);
     };
 
-    for (int iter = 0; iter < 400; ++iter)
-    {
+    for (int iter = 0; iter < 400; ++iter) {
         const std::size_t len = static_cast<std::size_t>(iter) * 41U % 20000U;
         std::string line;
         line.reserve(len);
-        for (std::size_t i = 0; i < len; ++i)
-        {
+        for (std::size_t i = 0; i < len; ++i) {
             line.push_back(next_byte());
         }
 
         PairLineParser csv(PairFormat::csv);
-        const ParsedRow a =
-            csv.parse(line, static_cast<std::size_t>(iter) + 1);
+        const ParsedRow a = csv.parse(line, static_cast<std::size_t>(iter) + 1);
         // Output never exceeds input: bounded memory, no amplification.
         BOOST_TEST(a.full_url.size() <= line.size());
         BOOST_TEST(a.args_json.size() <= line.size());
 
         PairLineParser nd(PairFormat::ndjson);
-        const ParsedRow b =
-            nd.parse(line, static_cast<std::size_t>(iter) + 1);
+        const ParsedRow b = nd.parse(line, static_cast<std::size_t>(iter) + 1);
         BOOST_TEST(b.args_json.size() <= line.size());
         BOOST_TEST(b.full_url.empty());
     }
+}
+
+// Type: unit (defensive resource bound, threat model T-97; subtask 07
+// carry-forward).
+// Scenario: a line longer than kMaxImportLineBytes is rejected as an error row
+// by the parser itself (independent of the reader's cap), with a value-free
+// code and no field populated.
+// Boundaries: exactly kMaxImportLineBytes is still parsed; +1 is an error.
+// On failure first check: did the defensive length guard at the top of parse()
+// get removed or compare with the wrong operator?
+BOOST_AUTO_TEST_CASE(line_over_cap_is_error_row)
+{
+    const std::string at_cap(kMaxImportLineBytes, 'a');
+    const ParsedRow ok = csv_line(at_cap);
+    BOOST_TEST((ok.kind == RowKind::pair));
+    BOOST_TEST(ok.full_url == at_cap);
+
+    const std::string over_cap(kMaxImportLineBytes + 1, 'a');
+    const ParsedRow csv_row = csv_line(over_cap);
+    BOOST_TEST((csv_row.kind == RowKind::error));
+    BOOST_TEST(csv_row.error_code == "invalid_field");
+    BOOST_TEST(csv_row.full_url.empty());
+
+    const std::string over_json = "{" + std::string(kMaxImportLineBytes, 'a');
+    const ParsedRow nd_row = ndjson_line(over_json);
+    BOOST_TEST((nd_row.kind == RowKind::error));
+    BOOST_TEST(nd_row.error_code == "invalid_field");
+    BOOST_TEST(nd_row.args_json.empty());
 }

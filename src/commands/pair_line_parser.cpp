@@ -1,7 +1,6 @@
-#include <url_shortener/commands/pair_line_parser.hpp>
-
 #include <string>
 
+#include <url_shortener/commands/pair_line_parser.hpp>
 #include <url_shortener/core/utils.hpp>
 
 namespace url_shortener::commands
@@ -25,8 +24,8 @@ constexpr std::string_view k_utf8_bom = "\xEF\xBB\xBF";
  */
 bool is_space(char c)
 {
-    return c == ' ' || c == '\t' || c == '\r' || c == '\n' || c == '\f' ||
-           c == '\v';
+    return c == ' ' || c == '\t' || c == '\r' || c == '\n' || c == '\f'
+        || c == '\v';
 }
 
 /**
@@ -41,12 +40,10 @@ std::string_view trim_view(std::string_view text)
 {
     std::size_t begin = 0;
     std::size_t end = text.size();
-    while (begin < end && is_space(text[begin]))
-    {
+    while (begin < end && is_space(text[begin])) {
         ++begin;
     }
-    while (end > begin && is_space(text[end - 1]))
-    {
+    while (end > begin && is_space(text[end - 1])) {
         --end;
     }
     return text.substr(begin, end - begin);
@@ -65,31 +62,27 @@ bool is_csv_header(std::string_view line)
 
     auto equals_ci = [](std::string_view a, std::string_view b)
     {
-        if (a.size() != b.size())
-        {
+        if (a.size() != b.size()) {
             return false;
         }
-        for (std::size_t i = 0; i < a.size(); ++i)
-        {
+        for (std::size_t i = 0; i < a.size(); ++i) {
             char lhs = a[i];
             char rhs = b[i];
-            if (lhs >= 'A' && lhs <= 'Z')
-            {
+            if (lhs >= 'A' && lhs <= 'Z') {
                 lhs = static_cast<char>(lhs - 'A' + 'a');
             }
-            if (rhs >= 'A' && rhs <= 'Z')
-            {
+            if (rhs >= 'A' && rhs <= 'Z') {
                 rhs = static_cast<char>(rhs - 'A' + 'a');
             }
-            if (lhs != rhs)
-            {
+            if (lhs != rhs) {
                 return false;
             }
         }
         return true;
     };
 
-    return equals_ci(trimmed, "full_url,slug") || equals_ci(trimmed, "full_url");
+    return equals_ci(trimmed, "full_url,slug")
+        || equals_ci(trimmed, "full_url");
 }
 
 /**
@@ -103,8 +96,7 @@ bool is_csv_header(std::string_view line)
 void rstrip_inplace(std::string& field)
 {
     std::size_t end = field.size();
-    while (end > 0 && (field[end - 1] == ' ' || field[end - 1] == '\t'))
-    {
+    while (end > 0 && (field[end - 1] == ' ' || field[end - 1] == '\t')) {
         --end;
     }
     field.resize(end);
@@ -141,94 +133,81 @@ bool tokenize_csv(std::string_view line, std::vector<std::string>& fields)
     std::string current;
     CsvState state = CsvState::field_start;
 
-    for (std::size_t i = 0; i < line.size(); ++i)
-    {
+    for (std::size_t i = 0; i < line.size(); ++i) {
         const char c = line[i];
-        switch (state)
-        {
-        case CsvState::field_start:
-            if (c == ' ' || c == '\t')
-            {
-                break;  // trim leading whitespace outside quotes
-            }
-            if (c == '"')
-            {
-                state = CsvState::quoted;
-                break;
-            }
-            if (c == ',')
-            {
-                fields.emplace_back();  // empty field, advance
-                break;
-            }
-            current.push_back(c);
-            state = CsvState::unquoted;
-            break;
-
-        case CsvState::unquoted:
-            if (c == ',')
-            {
-                rstrip_inplace(current);
-                fields.push_back(std::move(current));
-                current.clear();
-                state = CsvState::field_start;
-                break;
-            }
-            if (c == '"')
-            {
-                return false;  // quote in the middle of an unquoted field
-            }
-            current.push_back(c);
-            break;
-
-        case CsvState::quoted:
-            if (c == '"')
-            {
-                if (i + 1 < line.size() && line[i + 1] == '"')
-                {
-                    current.push_back('"');  // "" escaped quote
-                    ++i;
+        switch (state) {
+            case CsvState::field_start:
+                if (c == ' ' || c == '\t') {
+                    break;  // trim leading whitespace outside quotes
                 }
-                else
-                {
-                    state = CsvState::after_quote;
+                if (c == '"') {
+                    state = CsvState::quoted;
+                    break;
                 }
+                if (c == ',') {
+                    fields.emplace_back();  // empty field, advance
+                    break;
+                }
+                current.push_back(c);
+                state = CsvState::unquoted;
                 break;
-            }
-            current.push_back(c);  // comma/newline-free data, verbatim
-            break;
 
-        case CsvState::after_quote:
-            if (c == ' ' || c == '\t')
-            {
-                break;  // trim trailing whitespace outside quotes
-            }
-            if (c == ',')
-            {
-                fields.push_back(std::move(current));
-                current.clear();
-                state = CsvState::field_start;
+            case CsvState::unquoted:
+                if (c == ',') {
+                    rstrip_inplace(current);
+                    fields.push_back(std::move(current));
+                    current.clear();
+                    state = CsvState::field_start;
+                    break;
+                }
+                if (c == '"') {
+                    return false;  // quote in the middle of an unquoted field
+                }
+                current.push_back(c);
                 break;
-            }
-            return false;  // stray data after a closing quote
+
+            case CsvState::quoted:
+                if (c == '"') {
+                    if (i + 1 < line.size() && line[i + 1] == '"') {
+                        current.push_back('"');  // "" escaped quote
+                        ++i;
+                    }
+                    else {
+                        state = CsvState::after_quote;
+                    }
+                    break;
+                }
+                current.push_back(c);  // comma/newline-free data, verbatim
+                break;
+
+            case CsvState::after_quote:
+                if (c == ' ' || c == '\t') {
+                    break;  // trim trailing whitespace outside quotes
+                }
+                if (c == ',') {
+                    fields.push_back(std::move(current));
+                    current.clear();
+                    state = CsvState::field_start;
+                    break;
+                }
+                return false;  // stray data after a closing quote
         }
     }
 
-    switch (state)
-    {
-    case CsvState::field_start:
-        fields.emplace_back();  // trailing comma or sole empty field
-        return true;
-    case CsvState::unquoted:
-        rstrip_inplace(current);
-        fields.push_back(std::move(current));
-        return true;
-    case CsvState::after_quote:
-        fields.push_back(std::move(current));
-        return true;
-    case CsvState::quoted:
-    default:
-        return false;  // unterminated quote (also an embedded newline)
+    switch (state) {
+        case CsvState::field_start:
+            fields.emplace_back();  // trailing comma or sole empty field
+            return true;
+        case CsvState::unquoted:
+            rstrip_inplace(current);
+            fields.push_back(std::move(current));
+            return true;
+        case CsvState::after_quote:
+            fields.push_back(std::move(current));
+            return true;
+        case CsvState::quoted:
+        default:
+            return false;  // unterminated quote (also an embedded newline)
     }
 }
 
@@ -244,43 +223,39 @@ bool tokenize_csv(std::string_view line, std::vector<std::string>& fields)
  */
 std::size_t find_object_end(std::string_view text)
 {
-    int depth = 0;
+    std::size_t depth = 0;
     bool in_string = false;
     bool escaped = false;
 
-    for (std::size_t i = 0; i < text.size(); ++i)
-    {
+    for (std::size_t i = 0; i < text.size(); ++i) {
         const char c = text[i];
-        if (in_string)
-        {
-            if (escaped)
-            {
+        if (in_string) {
+            if (escaped) {
                 escaped = false;
             }
-            else if (c == '\\')
-            {
+            else if (c == '\\') {
                 escaped = true;
             }
-            else if (c == '"')
-            {
+            else if (c == '"') {
                 in_string = false;
             }
             continue;
         }
 
-        if (c == '"')
-        {
+        if (c == '"') {
             in_string = true;
         }
-        else if (c == '{')
-        {
+        else if (c == '{') {
             ++depth;
         }
-        else if (c == '}')
-        {
+        else if (c == '}') {
+            if (depth == 0) {
+                // A '}' before any '{' cannot belong to a top-level object;
+                // guard the unsigned decrement against wrap-around.
+                return std::string_view::npos;
+            }
             --depth;
-            if (depth == 0)
-            {
+            if (depth == 0) {
                 return i;
             }
         }
@@ -291,51 +266,56 @@ std::size_t find_object_end(std::string_view text)
 
 }  // namespace
 
-PairLineParser::PairLineParser(PairFormat format) : m_format(format) {}
+PairLineParser::PairLineParser(PairFormat format)
+    : m_format(format)
+{
+}
 
 ParsedRow PairLineParser::parse(std::string_view line, std::size_t line_number)
 {
     ParsedRow row;
     row.line = line_number;
 
+    // Defensive cap (threat model T-97): the reader (subtask 07) already bounds
+    // line length, but reject an over-long line here too so this parser is safe
+    // even when fed directly. Value-free: code only, never the offending bytes.
+    if (line.size() > kMaxImportLineBytes) {
+        row.kind = RowKind::error;
+        row.error_code = k_invalid_field;
+        return row;
+    }
+
     // Strip a UTF-8 BOM on the first physical line only.
-    if (line_number == 1 && line.size() >= k_utf8_bom.size() &&
-        line.substr(0, k_utf8_bom.size()) == k_utf8_bom)
+    if (line_number == 1 && line.size() >= k_utf8_bom.size()
+        && line.substr(0, k_utf8_bom.size()) == k_utf8_bom)
     {
         line.remove_prefix(k_utf8_bom.size());
     }
 
     // Strip a single trailing CR so CRLF streams parse like LF streams.
-    if (!line.empty() && line.back() == '\r')
-    {
+    if (!line.empty() && line.back() == '\r') {
         line.remove_suffix(1);
     }
 
-    if (m_format == PairFormat::ndjson)
-    {
+    if (m_format == PairFormat::ndjson) {
         const std::string_view trimmed = trim_view(line);
-        if (trimmed.empty())
-        {
+        if (trimmed.empty()) {
             row.kind = RowKind::skipped;
             return row;
         }
-        if (trimmed.front() != '{')
-        {
+        if (trimmed.front() != '{') {
             row.kind = RowKind::error;
             row.error_code = k_invalid_field;
             return row;
         }
         const std::size_t end = find_object_end(trimmed);
-        if (end == std::string_view::npos)
-        {
+        if (end == std::string_view::npos) {
             row.kind = RowKind::error;  // truncated / unterminated object
             row.error_code = k_invalid_field;
             return row;
         }
-        for (std::size_t i = end + 1; i < trimmed.size(); ++i)
-        {
-            if (!is_space(trimmed[i]))
-            {
+        for (std::size_t i = end + 1; i < trimmed.size(); ++i) {
+            if (!is_space(trimmed[i])) {
                 row.kind = RowKind::error;  // trailing garbage (e.g. }{...})
                 row.error_code = k_invalid_field;
                 return row;
@@ -347,33 +327,28 @@ ParsedRow PairLineParser::parse(std::string_view line, std::size_t line_number)
     }
 
     // CSV.
-    if (trim_view(line).empty())
-    {
+    if (trim_view(line).empty()) {
         row.kind = RowKind::skipped;
         return row;
     }
 
     // The header is recognized only as the first non-blank line.
-    if (!m_seen_first_data_line)
-    {
+    if (!m_seen_first_data_line) {
         m_seen_first_data_line = true;
-        if (is_csv_header(line))
-        {
+        if (is_csv_header(line)) {
             row.kind = RowKind::skipped;
             return row;
         }
     }
 
     std::vector<std::string> fields;
-    if (!tokenize_csv(line, fields) || fields.empty() || fields.size() > 2)
-    {
+    if (!tokenize_csv(line, fields) || fields.empty() || fields.size() > 2) {
         row.kind = RowKind::error;
         row.error_code = k_invalid_field;
         return row;
     }
 
-    if (fields[0].empty())
-    {
+    if (fields[0].empty()) {
         row.kind = RowKind::error;  // first column required, non-empty
         row.error_code = k_invalid_field;
         return row;
@@ -381,8 +356,7 @@ ParsedRow PairLineParser::parse(std::string_view line, std::size_t line_number)
 
     row.kind = RowKind::pair;
     row.full_url = std::move(fields[0]);
-    if (fields.size() == 2 && !fields[1].empty())
-    {
+    if (fields.size() == 2 && !fields[1].empty()) {
         row.slug = std::move(fields[1]);
     }
     return row;
@@ -390,18 +364,16 @@ ParsedRow PairLineParser::parse(std::string_view line, std::size_t line_number)
 
 void ImportErrorList::add(std::size_t line, std::string code)
 {
-    if (m_items.size() < kMaxReportedImportErrors)
-    {
+    if (m_items.size() < kMaxReportedImportErrors) {
         m_items.emplace_back(line, std::move(code));
     }
-    else
-    {
+    else {
         ++m_omitted;
     }
 }
 
-const std::vector<std::pair<std::size_t, std::string>>&
-ImportErrorList::items() const noexcept
+const std::vector<std::pair<std::size_t, std::string>>& ImportErrorList::items()
+    const noexcept
 {
     return m_items;
 }
@@ -414,10 +386,8 @@ std::size_t ImportErrorList::omitted() const noexcept
 std::string ImportErrorList::to_json() const
 {
     std::string out = "[";
-    for (std::size_t i = 0; i < m_items.size(); ++i)
-    {
-        if (i != 0)
-        {
+    for (std::size_t i = 0; i < m_items.size(); ++i) {
+        if (i != 0) {
             out.push_back(',');
         }
         out += "{\"line\":";

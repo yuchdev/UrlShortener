@@ -150,17 +150,19 @@ public:
      * throws.
      *
      * @param line The raw bytes of one physical line, without its terminating
-     * newline. Treated as untrusted; never logged. Any length is accepted (the
-     * reader enforces @ref kMaxImportLineBytes).
+     * newline. Treated as untrusted; never logged. The reader (subtask 07)
+     * enforces @ref kMaxImportLineBytes, and as a defensive second check a line
+     * longer than that is classified as an error row here as well.
      * @param line_number The 1-based physical line number, copied into
      * @ref ParsedRow::line and used only for error reporting.
      * @return A @ref ParsedRow whose @ref ParsedRow::kind is: @ref
      * RowKind::skipped for a blank/whitespace-only line or the leading CSV
      * header; @ref RowKind::pair for a usable row; or @ref RowKind::error with
      * @ref ParsedRow::error_code set to `"invalid_field"` for a malformed line
-     * (CSV: a quote in the middle of an unquoted field, an unterminated quote,
-     * more than two columns, or an empty first column; NDJSON: text that is not
-     * exactly one `{...}` object with no trailing non-whitespace).
+     * (a line longer than @ref kMaxImportLineBytes; CSV: a quote in the middle
+     * of an unquoted field, an unterminated quote, more than two columns, or an
+     * empty first column; NDJSON: text that is not exactly one `{...}` object
+     * with no trailing non-whitespace).
      */
     ParsedRow parse(std::string_view line, std::size_t line_number);
 
@@ -206,8 +208,8 @@ public:
      * kMaxReportedImportErrors of them; valid while this list is alive and
      * unmodified.
      */
-    const std::vector<std::pair<std::size_t, std::string>>&
-    items() const noexcept;
+    const std::vector<std::pair<std::size_t, std::string>>& items()
+        const noexcept;
 
     /**
      * @brief The number of errors dropped because the cap was already reached.
