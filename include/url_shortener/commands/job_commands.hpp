@@ -55,6 +55,31 @@ class JobRunner;
 void register_job_commands(CommandRegistry& registry, JobRunner& runner);
 
 /**
+ * @brief How much of a @ref JobRecord @ref serialize_job_json emits.
+ *
+ * The two levels differ in exactly one field, `result`: `full` is the complete
+ * catalog object a single-record fetch returns, `summary` is the deliberately
+ * `result`-free projection the `job.list` page uses (2026-11-18 user decision,
+ * threat model T-109). Every other field is identical across the two levels, so
+ * a list item and a `job.get` of the same job agree on id/command/state/
+ * progress/error/timestamps and differ only by the (potentially large) result
+ * body.
+ */
+enum class JobDetail
+{
+    ///< Omit `result`. Used for each `job.list` item so a page of up to the
+    ///< retained-job cap cannot inline one export result (up to ~1 MiB each)
+    ///< per row and amplify into a multi-hundred-MiB list response (T-109).
+    ///< Clients fetch a job's body separately with `job.get`.
+    summary,
+
+    ///< Emit the full catalog object including `result` when present (and
+    ///< well-formed, see below). Used by `job.get` and `job.cancel`, which
+    ///< return exactly one record.
+    full
+};
+
+/**
  * @brief Serializes one @ref JobRecord to its public catalog job object
  * (catalog 3.4).
  *
@@ -63,23 +88,39 @@ void register_job_commands(CommandRegistry& registry, JobRunner& runner);
  * `{"id","command","state","progress":{"done","total"}[,"result":<raw>]`
  * `[,"error":{"code","message"}],"created_at"[,"started_at"][,"finished_at"]}`.
  *
- * Field presence is state-driven: `result` appears only when the record carries
- * a `result_json` (embedded **verbatim** as a nested object -- it is opaque
- * pre-serialized text the producing handler is trusted to have made valid JSON,
- * contract C9); `error` appears for a `failed` job (its stored
- * `{code, message}`) and for a `cancelled` job (fixed `{"job_cancelled",
- * "job cancelled"}`, which `job.get` surfaces with HTTP 200, catalog error
- * table); `started_at` appears once the job has left `queued`; `finished_at`
- * appears once the job is terminal. Timestamps use `formatTimestamp`
- * (RFC 3339 UTC).
+ * Field presence is state-driven: `result` appears only at @ref JobDetail::full
+ * and only when the record carries a `result_json`; `error` appears for a
+ * `failed` job (its stored `{code, message}`) and for a `cancelled` job (fixed
+ * `{"job_cancelled", "job cancelled"}`, which `job.get` surfaces with HTTP 200,
+ * catalog error table); `started_at` appears once the job has left `queued`;
+ * `finished_at` appears once the job is terminal. Timestamps use
+ * `formatTimestamp` (RFC 3339 UTC).
+ *
+ * `result` projection (threat model T-109): at @ref JobDetail::summary the
+ * `result` field is **always omitted** regardless of whether the record carries
+ * one, so the `job.list` page stays bounded. At @ref JobDetail::full it is
+ * embedded **verbatim** as a nested value.
+ *
+ * Trust invariant on `result_json` (contract C9): `result_json` must be
+ * well-formed JSON produced by an in-process builder/serializer (e.g. a
+ * `link.import`/`link.export` handler), **never** raw caller text. Because it
+ * is embedded without re-escaping, a malformed value would corrupt the whole
+ * job object. A job `result` is always a JSON object (catalog 3.4), so as a
+ * cheap backstop the full path re-scans it with `scan_object` at
+ * @ref k_result_scan_limits; if it is not a well-formed JSON object within
+ * those limits, `result` is omitted rather than emitting broken JSON.
  *
  * Security (contract C6, threat model T-93/T-94): the record's `args_digest` is
  * never serialized and no argument value is emitted; every string is escaped
  * through `url_shortener::jsonString`. The id is a correlation handle only.
  *
  * @param record The job record to serialize; read, not retained.
+ * @param detail Whether to emit the full object (`result` included when present
+ * and well-formed) or the `result`-free summary for a list item; defaults to
+ * @ref JobDetail::full so single-record callers need not pass it.
  * @return One well-formed JSON object as text.
  */
-std::string serialize_job_json(const JobRecord& record);
+std::string serialize_job_json(const JobRecord& record,
+                               JobDetail detail = JobDetail::full);
 
 }  // namespace url_shortener::commands

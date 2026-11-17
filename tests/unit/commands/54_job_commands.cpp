@@ -29,6 +29,7 @@ using url_shortener::commands::CommandRequest;
 using url_shortener::commands::CommandResponse;
 using url_shortener::commands::IJobContext;
 using url_shortener::commands::JobBody;
+using url_shortener::commands::JobDetail;
 using url_shortener::commands::JobFailure;
 using url_shortener::commands::JobOutcome;
 using url_shortener::commands::JobProgress;
@@ -258,6 +259,63 @@ BOOST_AUTO_TEST_CASE(serialize_cancelled_emits_job_cancelled_and_partial)
     BOOST_TEST(json.find(R"("finished_at":)") != std::string::npos);
 }
 
+// Type: unit (summary detail omits result / T-109).
+// Scenario: a succeeded record with a result serialized at JobDetail::summary
+//   drops the result key while keeping every other field (state, progress,
+//   finished_at), whereas the default (full) detail keeps result.
+// Boundaries: summary is the result-free projection used for job.list items.
+// On failure first check: did serialize_job_json stop gating result on
+//   JobDetail::full, re-introducing the T-109 list-amplification risk?
+BOOST_AUTO_TEST_CASE(serialize_summary_omits_result_but_full_keeps_it)
+{
+    JobRecord record = make_record(JobState::succeeded);
+    record.started_at = std::chrono::system_clock::time_point {} + 1s;
+    record.finished_at = std::chrono::system_clock::time_point {} + 2s;
+    record.result_json = R"({"rows":9})";
+
+    const std::string summary =
+        serialize_job_json(record, JobDetail::summary);
+    const std::string full = serialize_job_json(record, JobDetail::full);
+
+    // Summary: no result, but the rest of the shape is intact.
+    BOOST_TEST(summary.find(R"("result":)") == std::string::npos);
+    BOOST_TEST(summary.find(R"("state":"succeeded")") != std::string::npos);
+    BOOST_TEST(summary.find(R"("progress":{"done":3,"total":10})")
+               != std::string::npos);
+    BOOST_TEST(summary.find(R"("finished_at":)") != std::string::npos);
+
+    // Full keeps the same result the summary dropped.
+    BOOST_TEST(full.find(R"("result":{"rows":9})") != std::string::npos);
+}
+
+// Type: unit (invalid-input: malformed result_json fallback / C9 backstop).
+// Scenario: a record whose result_json is not well-formed JSON is serialized at
+//   full detail; the serializer omits result entirely rather than embed broken
+//   text, while keeping the rest of the object, and a well-formed value is still
+//   embedded.
+// Boundaries: the C9 trust-invariant backstop degrades to omission on failure.
+// On failure first check: did serialize_job_json stop validating result_json
+//   before embedding it (job_result_json_is_wellformed), letting malformed text
+//   corrupt the whole job object?
+BOOST_AUTO_TEST_CASE(serialize_full_omits_malformed_result)
+{
+    JobRecord record = make_record(JobState::succeeded);
+    record.finished_at = std::chrono::system_clock::time_point {} + 2s;
+
+    // Not well-formed JSON (missing value): must be dropped, not embedded.
+    record.result_json = R"({"broken":})";
+    const std::string dropped = serialize_job_json(record, JobDetail::full);
+    BOOST_TEST(dropped.find(R"("result":)") == std::string::npos);
+    BOOST_TEST(dropped.find(R"("broken")") == std::string::npos);
+    BOOST_TEST(dropped.find(R"("state":"succeeded")") != std::string::npos);
+    BOOST_TEST(dropped.find(R"("finished_at":)") != std::string::npos);
+
+    // A well-formed value on the same path is still embedded verbatim.
+    record.result_json = R"({"ok":true})";
+    const std::string kept = serialize_job_json(record, JobDetail::full);
+    BOOST_TEST(kept.find(R"("result":{"ok":true})") != std::string::npos);
+}
+
 // Type: unit (job.get unknown id -> not_found).
 // Scenario: job.get for an id the runner never issued -> not_found with the
 //   fixed message, and the id is never echoed.
@@ -365,6 +423,48 @@ BOOST_AUTO_TEST_CASE(job_list_default_filter_and_offset_beyond_total)
     runner->wait_for_terminal(id1, 10s);
     runner->wait_for_terminal(id2, 10s);
     runner->wait_for_terminal(id3, 10s);
+}
+
+// Type: unit (job.list omits result that job.get returns / T-109).
+// Scenario: for the same succeeded job that produced a result, the job.list
+//   page carries no result key for its item while job.get returns the full
+//   result body; both agree on id and state.
+// Boundaries: list items are result-free summaries; single fetch is full.
+// On failure first check: did handle_job_list stop requesting JobDetail::summary
+//   (so a retained-job page could amplify ~1 MiB results per row, T-109)?
+BOOST_AUTO_TEST_CASE(job_list_omits_result_that_job_get_returns)
+{
+    ManualClock clock = make_clock();
+    auto runner = std::make_shared<JobRunner>(clock, JobRunnerOptions {1, 4, 16});
+    CommandRegistry registry;
+    register_job_commands(registry, *runner);
+    const CallerContext caller = caller_with(ControlSet::User);
+
+    // Let the single job run to success; its body returns {"done":1}.
+    Gate gate;
+    gate.open->set_value();
+    const std::string id = submit_gated(*runner, gate);
+    const std::optional<JobRecord> done = runner->wait_for_terminal(id, 10s);
+    BOOST_REQUIRE(done.has_value());
+    BOOST_REQUIRE((done->state == JobState::succeeded));
+
+    // job.list: the item for this succeeded job carries no result at all.
+    const CommandResponse list_resp =
+        registry.execute(caller, request_for("job.list"));
+    BOOST_TEST(list_resp.ok == true);
+    BOOST_TEST(list_resp.result_json.find(R"("id":")" + id + R"(")")
+               != std::string::npos);
+    BOOST_TEST(list_resp.result_json.find(R"("state":"succeeded")")
+               != std::string::npos);
+    BOOST_TEST(list_resp.result_json.find(R"("result":)")
+               == std::string::npos);
+
+    // job.get of the same id returns the full result body.
+    const CommandResponse get_resp = registry.execute(
+        caller, request_for("job.get", R"({"id":")" + id + R"("})"));
+    BOOST_TEST(get_resp.ok == true);
+    BOOST_TEST(get_resp.result_json.find(R"("result":{"done":1})")
+               != std::string::npos);
 }
 
 // Type: unit (job.list invalid bounds and unknown state -> invalid_field).

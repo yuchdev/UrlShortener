@@ -345,12 +345,18 @@ section 2, decision log D16) raises the required permission to `write` when
 | Command | Perm | Args | Result |
 |---|---|---|---|
 | `job.get` | `read` | `id` | `{ id, command, state, progress{done,total}, result?, error?, created_at, started_at?, finished_at? }` (`started_at` set when the job leaves `queued`) |
-| `job.list` | `read` | `state?`, `limit?`, `offset?` | `{ items:[job...], total }` |
+| `job.list` | `read` | `state?`, `limit?`, `offset?` | `{ items:[job...], total }` — each item excludes `result` (T-109) |
 | `job.cancel` | `write` | `id` | job object; cancelling a finished job is a no-op returning its final state |
 
 States: `queued`, `running`, `succeeded`, `failed`, `cancelled`. Unknown id: `not_found`.
 Jobs carry no owner in V1 (single local operator, or one REST role); when
 Milestone 0002 adds users, `job.*` must filter by principal.
+
+A `job.list` item carries `id`, `command`, `state`, `progress`, `error?`,
+`created_at`, `started_at?` and `finished_at?` but **never** `result`: with up
+to 256 retained jobs each able to hold a ~1 MiB inline export result, including
+`result` in every item would let one list build a ~256 MiB response (T-109,
+2026-11-18 user decision). Fetch a job's `result` with `job.get {id}`.
 
 ### 3.5 System and introspection
 

@@ -14,6 +14,7 @@
 #include <url_shortener/commands/error_codes.hpp>
 #include <url_shortener/commands/job_runner.hpp>
 #include <url_shortener/commands/job_types.hpp>
+#include <url_shortener/commands/json_scan.hpp>
 #include <url_shortener/core/utils.hpp>
 
 namespace url_shortener::commands
@@ -35,6 +36,43 @@ constexpr long long k_job_list_max_limit = 500;
 /// (`link_list_max_offset`). Bounds the deep-skip a single request can request;
 /// a larger value is rejected `out_of_range` -> `invalid_field` by the registry.
 constexpr long long k_job_list_max_offset = 1000000;
+
+/**
+ * @brief Tests whether @p result_json is a well-formed JSON object within the
+ * result scan limits.
+ *
+ * This is the runtime backstop for @ref serialize_job_json's trust invariant
+ * (contract C9): `result_json` is opaque pre-serialized text an in-process
+ * handler is trusted to have built as valid JSON, but because it is embedded
+ * verbatim a malformed value would corrupt the whole job object. A job `result`
+ * is always a JSON object (catalog 3.4: `link.import`/`link.export` build
+ * `{...}`), so the value is scanned **directly** with @ref scan_object -- which
+ * fully validates the object's top-level members (e.g. it rejects `{"broken":}`
+ * with a missing value) -- rather than wrapped in a `{"r":<value>}` probe,
+ * which would only brace-match the value as opaque raw text and miss such
+ * internal corruption. @ref k_result_scan_limits (1 MiB / depth 16 / 4096
+ * members) is reused so a legitimate inline-export result at the ~1 MiB cap is
+ * accepted, not rejected as `too_large` by the stricter request limits.
+ *
+ * Chosen over a bare `assert`: an abort-on-malformed assert could not coexist
+ * with a defined fallback (the caller must still never emit broken JSON in a
+ * release build, and the fallback itself must be testable), whereas this cheap
+ * O(n) scan both catches the bug and degrades safely by omitting `result`. It
+ * runs only on the full-detail path (`job.get`/`job.cancel`, one record), never
+ * per item in a `job.list` page, so it adds no cost to the bounded-work list
+ * surface.
+ *
+ * @param result_json The opaque result text to validate; treated as a value to
+ * embed, never re-escaped.
+ * @return `true` when @p result_json is one well-formed JSON object within
+ * @ref k_result_scan_limits; `false` otherwise (malformed, not an object, or
+ * over the limits), meaning the caller must omit `result`.
+ */
+bool job_result_json_is_wellformed(const std::string& result_json)
+{
+    const scan_result scan = scan_object(result_json, k_result_scan_limits);
+    return scan.ok;
+}
 
 /**
  * @brief Builds the required `id` string @ref ArgSpec shared by `job.get` and
@@ -131,7 +169,12 @@ CommandResult handle_job_get(JobRunner& runner, const ArgsView& args)
  * bounds enforced by the registry so the casts to `std::size_t` cannot narrow a
  * negative or over-large value), and calls @ref JobRunner::list. The page is
  * serialized as `{"items":[job...],"total":n}` where each item is
- * @ref serialize_job_json.
+ * @ref serialize_job_json at @ref JobDetail::summary -- the list item carries
+ * id/command/state/progress/error/timestamps but **never** `result`
+ * (2026-11-18 user decision, threat model T-109: a page of up to the retained-
+ * job cap could otherwise inline one export result each, up to ~1 MiB, and
+ * amplify into a multi-hundred-MiB response). Clients fetch a job's body with
+ * `job.get`.
  *
  * @param runner The process-wide job runner to read.
  * @param args The validated argument view.
@@ -165,7 +208,8 @@ CommandResult handle_job_list(JobRunner& runner, const ArgsView& args)
         if (i != 0) {
             os << ',';
         }
-        os << serialize_job_json(page.items[i]);
+        // Summary detail: list items omit `result` (T-109); see above.
+        os << serialize_job_json(page.items[i], JobDetail::summary);
     }
     os << "],\"total\":" << page.total << '}';
 
@@ -287,7 +331,7 @@ CommandDescriptor make_job_cancel_descriptor(JobRunner& runner)
 
 }  // namespace
 
-std::string serialize_job_json(const JobRecord& record)
+std::string serialize_job_json(const JobRecord& record, JobDetail detail)
 {
     std::ostringstream os;
     os << '{';
@@ -298,9 +342,17 @@ std::string serialize_job_json(const JobRecord& record)
     os << ",\"progress\":{\"done\":" << record.progress.done
        << ",\"total\":" << record.progress.total << '}';
 
-    // `result` is opaque pre-serialized object text (contract C9): embed it
-    // verbatim, present only when the record carries one.
-    if (record.result_json.has_value()) {
+    // `result` is opaque pre-serialized object text (contract C9), embedded
+    // verbatim. It is emitted only on the full-detail path and only when both
+    // present and well-formed:
+    //   - T-109: `job.list` items use JobDetail::summary and MUST omit it so a
+    //     page of retained jobs cannot amplify ~1 MiB export results per row
+    //     into a multi-hundred-MiB response (2026-11-18 user decision).
+    //   - C9 backstop: a malformed value would be embedded unescaped and
+    //     corrupt the whole object, so a failing well-formedness check omits
+    //     `result` rather than emit broken JSON (never aborts, see helper).
+    if (detail == JobDetail::full && record.result_json.has_value() &&
+        job_result_json_is_wellformed(*record.result_json)) {
         os << ",\"result\":" << *record.result_json;
     }
 
