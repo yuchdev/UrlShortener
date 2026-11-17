@@ -115,10 +115,9 @@ BOOST_AUTO_TEST_CASE(name_matching_is_case_sensitive)
     BOOST_CHECK(make_transport_adapter("Stdio", options, in, out) == nullptr);
 }
 
-// TDD starting point for subtask 15: "stdio" is a known name but its concrete
-// StdioAdapter is not built yet, so the factory still returns nullptr. Subtask
-// 15 flips this expectation to a non-null adapter whose name() == "stdio".
-BOOST_AUTO_TEST_CASE(stdio_not_yet_available_returns_null)
+// Subtask 15: "stdio" now constructs a concrete StdioAdapter whose name() is
+// "stdio". The factory remains the single adapter-selection point.
+BOOST_AUTO_TEST_CASE(stdio_returns_adapter)
 {
     std::istringstream in;
     std::ostringstream out;
@@ -126,5 +125,6 @@ BOOST_AUTO_TEST_CASE(stdio_not_yet_available_returns_null)
 
     auto adapter = make_transport_adapter("stdio", options, in, out);
 
-    BOOST_CHECK(adapter == nullptr);
+    BOOST_REQUIRE(adapter != nullptr);
+    BOOST_CHECK_EQUAL(adapter->name(), std::string_view("stdio"));
 }
