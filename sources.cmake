@@ -135,6 +135,7 @@ set(URL_SHORTENER_SOURCES
       tests/unit/http/23_rest_commands_endpoint.cpp
       tests/unit/http/24_command_api_caller.cpp
       tests/unit/http/25_rest_get_commands_endpoint.cpp
+      tests/unit/http/40_jobs_routes.cpp
       tests/unit/http/30_redirect_through_backend.cpp
       tests/unit/http/31_link_handlers_through_backend.cpp
   )

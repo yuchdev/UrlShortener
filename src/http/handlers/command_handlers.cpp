@@ -1,4 +1,5 @@
 #include <cctype>
+#include <cstddef>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -122,6 +123,44 @@ bool is_valid_arg_name(const std::string& name)
         }
     }
     return true;
+}
+
+/**
+ * @brief Canonicalizes an all-digits query value into a JSON integer token, or
+ * reports that it is not a plain integer.
+ *
+ * `job.list`'s integer arguments (`offset`, `limit`) are emitted as JSON number
+ * tokens via `args_builder::add_raw`, which inserts the token verbatim and never
+ * validates it. To keep that token always valid JSON (JSON forbids leading zeros
+ * and there is no octal/ambiguous parse), this accepts only a `^[0-9]+$` value
+ * of at most 18 digits (so it always fits `long long`) and strips its leading
+ * zeros, keeping a single `0` for an all-zero input. So `007` -> `7`, `00` ->
+ * `0` (interpreted as decimal, never octal). Anything else — a sign, non-digit,
+ * empty, or 19+ digits — returns `std::nullopt`, and the caller forwards the raw
+ * value as a JSON **string** instead, so the registry rejects it as
+ * `<arg>: wrong_type`. Mirrors the identically-named helper in
+ * `link_handlers.cpp` (duplicated rather than shared to keep the handler files
+ * decoupled in this slice).
+ *
+ * @param value Decoded parameter value.
+ * @return The canonical decimal integer token (no leading zeros) when @p value
+ * is 1..18 ASCII digits; `std::nullopt` otherwise.
+ */
+std::optional<std::string> canonical_integer_token(const std::string& value)
+{
+    if (value.empty() || value.size() > 18) {
+        return std::nullopt;
+    }
+    for (const char c : value) {
+        if (c < '0' || c > '9') {
+            return std::nullopt;
+        }
+    }
+    const std::size_t first = value.find_first_not_of('0');
+    if (first == std::string::npos) {
+        return std::string("0");
+    }
+    return value.substr(first);
 }
 
 }  // namespace
@@ -260,6 +299,146 @@ BeastResponse handleListCommands(const BeastRequest& req,
         is_tls,
         execute_resource_command(config,
                                  "command.list",
+                                 args.str(),
+                                 requestIdFromRequest(req),
+                                 command_api_caller(config, context.peer)),
+        200);
+}
+
+BeastResponse handleListJobs(const BeastRequest& req,
+                             const ::ServerConfig& config,
+                             const bool is_tls,
+                             const RouteContext& context)
+{
+    // 1. Gate (threat model T-64): when the command API is disabled (the secure
+    // default), answer byte-for-byte like an unmatched /api/v1/* route - 404
+    // not_found "Route not found", the router's own not-found reply (and what
+    // the /{path} fallback returns for a reserved /api/ path). The runner is
+    // never read and the query is never parsed on this branch.
+    if (!command_api_enabled(config)) {
+        return url_shortener::makeApiErrorResponse(
+            req, config, is_tls, 404, "not_found", "Route not found");
+    }
+
+    // 2. Parse the query string (percent-decoded, repeated keys preserved). A
+    // malformed query -> 400 invalid_request with a fixed, value-free message
+    // (threat model T-73).
+    std::vector<query_param> params;
+    std::string parse_error;
+    if (!parse_query_string(context.query_string, &params, &parse_error)) {
+        return url_shortener::makeApiErrorResponse(
+            req, config, is_tls, 400, "invalid_request",
+            "malformed query string");
+    }
+
+    // Build the job.list args from the query (contract C1: the handler only
+    // assembles args via args_builder; the filter/paging semantics live in
+    // job.list). Each name is validated against the args grammar first (the
+    // builder throws on a bad name) and a duplicate is a 400. offset/limit that
+    // are plain base-10 integers are emitted as JSON number tokens; everything
+    // else - including unknown names and a bad state - is a string, so the
+    // registry rejects it (<name>: unknown / <arg>: wrong_type /
+    // state: not_in_enum / out-of-range bound) as 400 invalid_request.
+    commands::args_builder args;
+    for (const query_param& param : params) {
+        if (!is_valid_arg_name(param.name)) {
+            return url_shortener::makeApiErrorResponse(
+                req, config, is_tls, 400, "invalid_request",
+                "invalid parameter name");
+        }
+        if (args.has(param.name)) {
+            return url_shortener::makeApiErrorResponse(
+                req, config, is_tls, 400, "invalid_request",
+                param.name + ": duplicate");
+        }
+        if (param.name == "offset" || param.name == "limit") {
+            if (const auto token = canonical_integer_token(param.value)) {
+                args.add_raw(param.name, *token);
+                continue;
+            }
+        }
+        args.add_string(param.name, param.value);
+    }
+
+    // 3/4. Execute job.list as the gated caller (subtask 08) and render
+    // resource-style: the result verbatim at 200 (the result-free summary page,
+    // threat model T-109), or the legacy error envelope. job.list is a read
+    // command, so a User caller may list (threat model T-92: jobs carry no
+    // owner in V1; ids are correlation handles only, T-93).
+    return resource_response(
+        req,
+        config,
+        is_tls,
+        execute_resource_command(config,
+                                 "job.list",
+                                 args.str(),
+                                 requestIdFromRequest(req),
+                                 command_api_caller(config, context.peer)),
+        200);
+}
+
+BeastResponse handleGetJob(const BeastRequest& req,
+                           const ::ServerConfig& config,
+                           const bool is_tls,
+                           const RouteContext& context)
+{
+    // 1. Gate (threat model T-64): gate off answers byte-for-byte like an
+    // unmatched /api/v1/* route (404 not_found "Route not found"); the runner
+    // is never read.
+    if (!command_api_enabled(config)) {
+        return url_shortener::makeApiErrorResponse(
+            req, config, is_tls, 404, "not_found", "Route not found");
+    }
+
+    // 2/3. Forward the path id as the sole job.get arg and execute as the gated
+    // caller (subtask 08). job.get is a read command, so a User caller may read
+    // (threat model T-92/T-93). resource_response renders the outcome: the full
+    // job object verbatim at 200 (a cancelled job reads 200 with a nested
+    // error.code job_cancelled, catalog error table), an unknown id as 404
+    // not_found, the raw path id is never echoed (contract C6).
+    commands::args_builder args;
+    args.add_string("id", pathParam(context, "id").value_or(std::string {}));
+    return resource_response(
+        req,
+        config,
+        is_tls,
+        execute_resource_command(config,
+                                 "job.get",
+                                 args.str(),
+                                 requestIdFromRequest(req),
+                                 command_api_caller(config, context.peer)),
+        200);
+}
+
+BeastResponse handleCancelJob(const BeastRequest& req,
+                              const ::ServerConfig& config,
+                              const bool is_tls,
+                              const RouteContext& context)
+{
+    // 1. Gate (threat model T-64): gate off answers byte-for-byte like an
+    // unmatched /api/v1/* route (404 not_found "Route not found"); the runner
+    // is never touched.
+    if (!command_api_enabled(config)) {
+        return url_shortener::makeApiErrorResponse(
+            req, config, is_tls, 404, "not_found", "Route not found");
+    }
+
+    // 2/3. Forward the path id as the sole job.cancel arg and execute as the
+    // gated caller (subtask 08). The request body is never read (an empty body
+    // is accepted). job.cancel is a write/mutating command, so execute denies a
+    // User caller not_authorized before the handler (contract C7, threat model
+    // T-92): cancel runs only as a loopback admin, and a User or a
+    // non-loopback/absent peer under role admin gets 403 with the job left
+    // running. The resource-route Admin caller is never used here (decision
+    // D4). resource_response maps not_found -> 404 and not_authorized -> 403.
+    commands::args_builder args;
+    args.add_string("id", pathParam(context, "id").value_or(std::string {}));
+    return resource_response(
+        req,
+        config,
+        is_tls,
+        execute_resource_command(config,
+                                 "job.cancel",
                                  args.str(),
                                  requestIdFromRequest(req),
                                  command_api_caller(config, context.peer)),

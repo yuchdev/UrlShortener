@@ -24,6 +24,9 @@ IDs, compatibility markers, placeholders, and documentation grouping.
 | POST | `/api/v1/links/{slug}/restore` | `post_api_v1_links_slug_restore` | Links | - | - | - | Restore a soft-deleted link. |
 | GET | `/api/v1/commands` | `get_api_v1_commands` | Commands | - | - | - | List the registered commands and their argument schemas (gated by --command-api-enabled). |
 | POST | `/api/v1/commands` | `post_api_v1_commands` | Commands | - | Command request envelope: an object with a command name, an args object, optional options (dry_run/async) and id. | - | Execute one command request envelope and return its response envelope (gated by --command-api-enabled). |
+| GET | `/api/v1/jobs` | `get_api_v1_jobs` | Commands | `state`, `offset`, `limit` | - | - | List job records with state filter and paging (gated by --command-api-enabled). |
+| GET | `/api/v1/jobs/{id}` | `get_api_v1_jobs_id` | Commands | - | - | - | Fetch one job record by id (gated by --command-api-enabled). |
+| POST | `/api/v1/jobs/{id}/cancel` | `post_api_v1_jobs_id_cancel` | Commands | - | - | - | Request cancellation of a job by id (gated by --command-api-enabled). |
 | POST | `/api/v1/short-urls` | `post_api_v1_short_urls` | Compatibility | - | Compatibility JSON object containing url and optional code fields. | compatibility alias | Compatibility alias for creating a short link. |
 | GET | `/api/v1/short-urls/{slug}` | `get_api_v1_short_urls_slug` | Compatibility | - | - | compatibility alias | Compatibility alias for fetching a link by slug. |
 | GET | `/r/{slug}` | `get_r_slug` | Redirects | - | - | - | Prefixed redirect to a link's target URL. |

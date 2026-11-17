@@ -61,6 +61,10 @@ Router RouterBuilder::buildApplicationRouter()
     router.add(bhttp::verb::get, "/api/v1/commands", "api_commands", handleListCommands);
     router.add(bhttp::verb::post, "/api/v1/commands", "api_commands", handleExecuteCommand);
 
+    router.add(bhttp::verb::get, "/api/v1/jobs", "api_commands", handleListJobs);
+    router.add(bhttp::verb::get, "/api/v1/jobs/{id}", "api_commands", handleGetJob);
+    router.add(bhttp::verb::post, "/api/v1/jobs/{id}/cancel", "api_commands", handleCancelJob);
+
     router.add(bhttp::verb::post, "/api/v1/short-urls", "api_links", handleCompatCreateLink);
     router.add(bhttp::verb::get, "/api/v1/short-urls/{slug}", "api_links", handleCompatGetLinkBySlug);
 

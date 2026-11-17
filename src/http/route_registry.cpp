@@ -95,6 +95,19 @@ std::vector<RouteParameterDoc> queryParametersFor(const std::string& method,
             {"bucket", "Aggregate bucket size: hour, day, or week.", false},
         };
     }
+    // The job list filters belong to GET /api/v1/jobs only (the sibling job
+    // routes take a path id or no parameter), mirroring the link.list paging
+    // convention they share.
+    if (method == "GET" && path == "/api/v1/jobs") {
+        return {
+            {"state", "Lifecycle filter: queued, running, succeeded, failed, "
+                      "or cancelled (lists all states when omitted).", false},
+            {"offset", "Zero-based index of the first job to return "
+                       "(0..1000000, default 0).", false},
+            {"limit", "Maximum number of jobs to return (1..500, default 50).",
+             false},
+        };
+    }
     // The list filters belong to GET /api/v1/links only; POST /api/v1/links
     // (create) shares the path but takes no query parameters, so it must not
     // inherit these (keeps its generated row byte-identical, contract C3).
@@ -169,6 +182,20 @@ std::vector<RouteResponseDoc> responsesFor(
                 {400, "Invalid request envelope."},
                 {404, "Command API disabled or unknown command."},
                 {415, "Content-Type must be application/json."}};
+    }
+    if (method == "GET" && path == "/api/v1/jobs") {
+        return {{200, "Jobs listed."},
+                {400, "Malformed or invalid query parameter."},
+                {404, "Command API disabled."}};
+    }
+    if (method == "GET" && path == "/api/v1/jobs/{id}") {
+        return {{200, "Job record returned."},
+                {404, "Command API disabled or unknown job."}};
+    }
+    if (method == "POST" && path == "/api/v1/jobs/{id}/cancel") {
+        return {{200, "Cancellation requested; job record returned."},
+                {403, "Not authorized."},
+                {404, "Command API disabled or unknown job."}};
     }
     if (path == "/r/{slug}" || path == "/{slug}") {
         return {{301, "Permanent redirect."}, {302, "Temporary redirect."}, {404, "Link not found."}, {410, "Link inactive."}};
@@ -293,6 +320,17 @@ const std::vector<RouteDescriptor>& registeredRoutes()
         route("POST", "/api/v1/commands", "api_commands",
          "Execute one command request envelope and return its response "
          "envelope (gated by --command-api-enabled)."),
+
+        // Job inspection API (/api/v1/jobs), gated by --command-api-enabled;
+        // thin projections onto job.list / job.get / job.cancel.
+        route("GET", "/api/v1/jobs", "api_commands",
+         "List job records with state filter and paging (gated by "
+         "--command-api-enabled)."),
+        route("GET", "/api/v1/jobs/{id}", "api_commands",
+         "Fetch one job record by id (gated by --command-api-enabled)."),
+        route("POST", "/api/v1/jobs/{id}/cancel", "api_commands",
+         "Request cancellation of a job by id (gated by "
+         "--command-api-enabled)."),
 
         // Compatibility API (/api/v1/short-urls).
         route("POST", "/api/v1/short-urls", "api_links",
