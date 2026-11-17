@@ -235,6 +235,35 @@ public:
                  std::size_t limit) const;
 
     /**
+     * @brief Returns a newest-first page of @ref JobSummary metadata, optionally
+     * filtered by state, without copying any record's `result_json` (delegates
+     * to @ref JobStore::list_summaries).
+     *
+     * The resource-safe listing for the paging/browse surfaces (`job.list`
+     * items, the `jobs` `db.*` table): a single such request can touch every
+     * retained record, so it must not copy each record's up-to-~1 MiB
+     * `result_json` under the store mutex (CWE-400 / CWE-770, threat model
+     * T-109). Only the eight small @ref JobSummary metadata fields are copied.
+     *
+     * Locking: this is a thin forward that takes **no** runner lock; it calls
+     * straight into the store, which takes only its own (innermost) mutex. The
+     * documented lock order -- @ref m_mutex before the store mutex, never the
+     * reverse -- is therefore trivially preserved.
+     *
+     * @param filter If set, only records in this state are returned;
+     * `std::nullopt` lists all states.
+     * @param offset Number of newest matching records to skip.
+     * @param limit Maximum number of summaries to return; `0` yields an empty
+     * page with the correct `total`.
+     * @return A @ref JobSummaryPage with the clamped, newest-first slice
+     * (metadata only, no `result_json`/`args_digest`) and the full match count,
+     * matching @ref list's `total` and item order for the same arguments.
+     */
+    JobSummaryPage list_summaries(std::optional<JobState> filter,
+                                  std::size_t offset,
+                                  std::size_t limit) const;
+
+    /**
      * @brief Requests cancellation of a job, with semantics by current state
      * (threat model T-90).
      *

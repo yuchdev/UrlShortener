@@ -168,4 +168,84 @@ struct JobPage
     std::size_t total = 0;
 };
 
+/**
+ * @brief The lightweight, metadata-only projection of a @ref JobRecord returned
+ * by @ref JobStore::list_summaries for the list/browse surfaces.
+ *
+ * Carries exactly the eight metadata fields the paging callers read (`job.list`
+ * items and the `jobs` `db.*` table) and deliberately **omits** the two heavy or
+ * sensitive @ref JobRecord fields: the (up to ~1 MiB) opaque `result_json` and
+ * the `args_digest`. This exists for resource safety (CWE-400 / CWE-770, threat
+ * model T-109): a single list/browse request can touch every retained record
+ * (up to the retention cap, 256 by default), so copying each record's
+ * `result_json` under the store mutex could transiently copy hundreds of MiB and
+ * stall workers on the lock. Copying only this struct keeps the locked copy
+ * bounded to small scalar/short-string fields.
+ *
+ * The absence of `result_json` is a compile-time guarantee this projection can
+ * never amplify a page into a multi-hundred-MiB response; `args_digest` is
+ * dropped because no list/browse column exposes it (contract C6, threat model
+ * T-93/T-94). `failure` is retained because `job.list`'s item shape emits a
+ * short, value-free `error {code, message}` for a failed/cancelled job; the
+ * `jobs` table reads only its `code`.
+ */
+struct JobSummary
+{
+    ///< Sequential correlation handle (`"j-<n>"`); copied verbatim from the
+    ///< record. A lookup handle only, never an authorization capability (threat
+    ///< model T-93).
+    std::string id;
+
+    ///< Dotted command name that produced the job (e.g. `"link.import"`); a
+    ///< validated name, never raw caller input.
+    std::string command;
+
+    ///< Current lifecycle state; `queued` on a freshly created record.
+    JobState state = JobState::queued;
+
+    ///< Latest progress counters reported by the body; `{0, 0}` until the body
+    ///< first reports progress.
+    JobProgress progress;
+
+    ///< Failure detail (short, value-free `{code, message}`); present only when
+    ///< @ref state is `failed`, `std::nullopt` otherwise. Never carries an
+    ///< argument value (contract C6). Deliberately *not* `result_json`, which is
+    ///< never projected into a summary (threat model T-109).
+    std::optional<JobFailure> failure;
+
+    ///< Wall-clock instant the record was created; also the newest-first sort
+    ///< key of the page.
+    std::chrono::system_clock::time_point created_at;
+
+    ///< Wall-clock instant the job first entered `running`; `std::nullopt`
+    ///< while still `queued` or if cancelled before it ran.
+    std::optional<std::chrono::system_clock::time_point> started_at;
+
+    ///< Wall-clock instant the job reached a terminal state; `std::nullopt`
+    ///< while non-terminal.
+    std::optional<std::chrono::system_clock::time_point> finished_at;
+};
+
+/**
+ * @brief One page of @ref JobSummary records returned by
+ * @ref JobStore::list_summaries.
+ *
+ * The metadata-only counterpart of @ref JobPage: `items` is the clamped,
+ * newest-first slice requested by `offset`/`limit` and `total` is the full count
+ * matching the filter before the slice. Identical paging semantics to
+ * @ref JobPage, so a caller can switch from `list` to `list_summaries` without
+ * changing its paging logic, but each item omits `result_json`/`args_digest`
+ * (threat model T-109).
+ */
+struct JobSummaryPage
+{
+    ///< The requested slice of matching summaries, newest first; empty when the
+    ///< requested `limit` is `0` or `offset` is at/beyond @ref total.
+    std::vector<JobSummary> items;
+
+    ///< Total number of records matching the list filter before `offset`/
+    ///< `limit` were applied.
+    std::size_t total = 0;
+};
+
 }  // namespace url_shortener::commands

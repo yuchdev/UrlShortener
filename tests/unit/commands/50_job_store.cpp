@@ -6,6 +6,7 @@
 #include <stdexcept>
 #include <string>
 #include <thread>
+#include <type_traits>
 #include <vector>
 
 #include <boost/test/unit_test.hpp>
@@ -21,11 +22,31 @@ using url_shortener::commands::JobProgress;
 using url_shortener::commands::JobRecord;
 using url_shortener::commands::JobState;
 using url_shortener::commands::JobStore;
+using url_shortener::commands::JobSummary;
+using url_shortener::commands::JobSummaryPage;
 using url_shortener::commands::parse_job_state;
 using url_shortener::commands::to_string;
 
 namespace
 {
+
+// Compile-time guarantee (threat model T-109 / CWE-400): a JobSummary must never
+// carry the heavy result_json payload, while the full JobRecord still does.
+// A member-detection idiom turns "the summary grew a result field" into a build
+// failure rather than a silent re-introduction of the copy cost.
+template <typename T, typename = void>
+struct has_result_json : std::false_type
+{
+};
+template <typename T>
+struct has_result_json<T, std::void_t<decltype(std::declval<T&>().result_json)>>
+    : std::true_type
+{
+};
+static_assert(!has_result_json<JobSummary>::value,
+              "JobSummary must not carry result_json (threat model T-109)");
+static_assert(has_result_json<JobRecord>::value,
+              "JobRecord is expected to carry result_json");
 
 // A clock frozen at the epoch; tests advance it between transitions to prove
 // each timestamp is read from the injected IClock, not from the wall clock.
@@ -311,6 +332,105 @@ BOOST_AUTO_TEST_CASE(list_filter_order_and_offset_limit_boundaries)
     JobPage beyond = store.list(std::nullopt, 10, 100);
     BOOST_TEST(beyond.items.empty());
     BOOST_TEST(beyond.total == 3u);
+}
+
+// Type: unit (resource safety, threat model T-109 / CWE-400).
+// Scenario: for the same filter/offset/limit arguments, list_summaries reports
+// the identical total, item count, order, ids, states, commands, progress,
+// timestamps and failure codes as list(), across the all-states view, a state
+// filter and an offset/limit window -- but each summary is a metadata-only
+// projection (no result_json, enforced at compile time above).
+// Boundaries: all-states, a running-only filter, and an offset=1/limit=1 window.
+// On failure first check: did the two loops drift (one filters/orders/windows
+// differently), or did summarize() drop/duplicate a metadata field?
+BOOST_AUTO_TEST_CASE(list_summaries_matches_list_metadata_and_order)
+{
+    ManualClock clock = make_clock();
+    JobStore store(clock, 256);
+
+    // j-1 succeeded with a result, j-2 running, j-3 failed with a failure.
+    JobRecord a = store.create("link.import", "diga");  // j-1
+    store.mark_running(a.id);
+    clock.advance(std::chrono::seconds(1));
+    store.finish(a.id, JobState::succeeded, std::string("{\"rows\":9}"),
+                 std::nullopt);
+
+    JobRecord b = store.create("link.export", "digb");  // j-2
+    store.mark_running(b.id);
+
+    JobRecord c = store.create("link.import", "digc");  // j-3
+    store.mark_running(c.id);
+    clock.advance(std::chrono::seconds(1));
+    store.finish(c.id, JobState::failed, std::nullopt,
+                 JobFailure{"invalid_field", "row 7 rejected"});
+
+    // Asserts list() and list_summaries() agree item-for-item on every metadata
+    // field for one set of arguments.
+    const auto same = [&store](std::optional<JobState> filter,
+                               std::size_t offset, std::size_t limit) {
+        const JobPage full = store.list(filter, offset, limit);
+        const JobSummaryPage summ = store.list_summaries(filter, offset, limit);
+
+        BOOST_TEST(summ.total == full.total);
+        BOOST_REQUIRE(summ.items.size() == full.items.size());
+        for (std::size_t i = 0; i < full.items.size(); ++i) {
+            const JobRecord& r = full.items[i];
+            const JobSummary& s = summ.items[i];
+            BOOST_TEST(s.id == r.id);
+            BOOST_TEST(s.command == r.command);
+            BOOST_TEST((s.state == r.state));
+            BOOST_TEST(s.progress.done == r.progress.done);
+            BOOST_TEST(s.progress.total == r.progress.total);
+            BOOST_TEST((s.created_at == r.created_at));
+            BOOST_TEST((s.started_at == r.started_at));
+            BOOST_TEST((s.finished_at == r.finished_at));
+            BOOST_TEST(s.failure.has_value() == r.failure.has_value());
+            if (s.failure.has_value() && r.failure.has_value()) {
+                BOOST_TEST(s.failure->code == r.failure->code);
+                BOOST_TEST(s.failure->message == r.failure->message);
+            }
+        }
+    };
+
+    same(std::nullopt, 0, 100);         // all states, newest first
+    same(JobState::running, 0, 100);    // state filter
+    same(std::nullopt, 1, 1);           // offset/limit window
+}
+
+// Type: unit (resource safety, threat model T-109 / CWE-400).
+// Scenario: a store holding records with ~1 MiB result_json each still yields
+// summaries with the right ids/states and the correct total; the summary type
+// has no result field (compile-time, see has_result_json above), so this listing
+// never copies the payloads under the store mutex.
+// Boundaries: large inline result bodies; the summary is a fixed-shape metadata
+// struct regardless of payload size.
+// On failure first check: did JobSummary gain a payload field (static_assert),
+// or did summarize() stop populating the metadata it must carry?
+BOOST_AUTO_TEST_CASE(list_summaries_omits_large_result_payload)
+{
+    ManualClock clock = make_clock();
+    JobStore store(clock, 256);
+
+    const std::string big(1024u * 1024u, 'x');  // ~1 MiB payload per record
+    std::vector<std::string> ids;
+    for (int i = 0; i < 4; ++i) {
+        JobRecord job = store.create("link.export", "digest");
+        ids.push_back(job.id);
+        store.mark_running(job.id);
+        store.finish(job.id, JobState::succeeded,
+                     std::string("{\"blob\":\"") + big + "\"}", std::nullopt);
+    }
+
+    const JobSummaryPage page = store.list_summaries(std::nullopt, 0, 100);
+    BOOST_TEST(page.total == 4u);
+    BOOST_REQUIRE(page.items.size() == 4u);
+    // Newest first: j-4, j-3, j-2, j-1.
+    BOOST_TEST(page.items[0].id == ids[3]);
+    BOOST_TEST(page.items[3].id == ids[0]);
+    for (const JobSummary& summary : page.items) {
+        BOOST_TEST((summary.state == JobState::succeeded));
+        BOOST_TEST(summary.command == "link.export");
+    }
 }
 
 // Type: unit.

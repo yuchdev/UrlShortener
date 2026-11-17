@@ -38,6 +38,7 @@ using url_shortener::commands::JobRunner;
 using url_shortener::commands::JobRunnerOptions;
 using url_shortener::commands::JobState;
 using url_shortener::commands::JobSubmitResult;
+using url_shortener::commands::JobSummary;
 using url_shortener::commands::Permission;
 using url_shortener::commands::register_builtin_commands;
 using url_shortener::commands::register_job_commands;
@@ -286,6 +287,42 @@ BOOST_AUTO_TEST_CASE(serialize_summary_omits_result_but_full_keeps_it)
 
     // Full keeps the same result the summary dropped.
     BOOST_TEST(full.find(R"("result":{"rows":9})") != std::string::npos);
+}
+
+// Type: unit (JobSummary overload equals the record summary / T-109).
+// Scenario: for a failed job with every optional field set, the metadata-only
+//   serialize_job_json(JobSummary) emits byte-for-byte the same object the
+//   record overload emits at JobDetail::summary -- same id/command/state/
+//   progress/error/timestamps, no result -- so the resource-safe list path and
+//   the legacy summary path cannot diverge.
+// Boundaries: a terminal job carrying failure, started_at and finished_at
+//   exercises every tail branch; the summary structurally has no result_json.
+// On failure first check: did the shared head/tail helpers drift between the two
+//   serializers (a list item must agree with a job.get on every non-result
+//   field)?
+BOOST_AUTO_TEST_CASE(serialize_summary_overload_equals_record_summary)
+{
+    JobRecord record = make_record(JobState::failed);
+    record.started_at = std::chrono::system_clock::time_point {} + 1s;
+    record.finished_at = std::chrono::system_clock::time_point {} + 2s;
+    record.failure = JobFailure {"invalid_field", "row 3 rejected"};
+    // A result that the summary path must never emit (and never copies).
+    record.result_json = R"({"rows":9})";
+
+    JobSummary summary;
+    summary.id = record.id;
+    summary.command = record.command;
+    summary.state = record.state;
+    summary.progress = record.progress;
+    summary.failure = record.failure;
+    summary.created_at = record.created_at;
+    summary.started_at = record.started_at;
+    summary.finished_at = record.finished_at;
+
+    BOOST_TEST(serialize_job_json(summary)
+               == serialize_job_json(record, JobDetail::summary));
+    BOOST_TEST(serialize_job_json(summary).find(R"("result":)")
+               == std::string::npos);
 }
 
 // Type: unit (invalid-input: malformed result_json fallback / C9 backstop).

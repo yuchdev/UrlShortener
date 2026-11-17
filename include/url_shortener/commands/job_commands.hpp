@@ -123,4 +123,28 @@ enum class JobDetail
 std::string serialize_job_json(const JobRecord& record,
                                JobDetail detail = JobDetail::full);
 
+/**
+ * @brief Serializes one @ref JobSummary to the `result`-free `job.list` item
+ * object, without ever having copied a `result_json`.
+ *
+ * Emits byte-for-byte the same object the record overload produces at
+ * @ref JobDetail::summary -- `{"id","command","state","progress":{...}`
+ * `[,"error":{...}],"created_at"[,"started_at"][,"finished_at"]}` -- but takes a
+ * @ref JobSummary, which structurally has no `result_json`. This is the listing
+ * path used by `job.list` (and mirrored by the `jobs` `db.*` table): it lets the
+ * store copy only the small metadata fields under its lock, so a page of up to
+ * the retained-job cap can never copy or amplify one ~1 MiB result per row
+ * (CWE-400 / CWE-770, threat model T-109). `job.get`/`job.cancel` keep the
+ * single-record @ref JobRecord overload at @ref JobDetail::full.
+ *
+ * Security (contract C6, threat model T-93/T-94): no argument value is emitted
+ * and every string is escaped through `url_shortener::jsonString`; a
+ * @ref JobSummary carries neither `args_digest` nor `result_json` to begin with.
+ *
+ * @param summary The job summary to serialize; read, not retained.
+ * @return One well-formed JSON object as text, identical to the record
+ * overload's @ref JobDetail::summary output for the same job.
+ */
+std::string serialize_job_json(const JobSummary& summary);
+
 }  // namespace url_shortener::commands

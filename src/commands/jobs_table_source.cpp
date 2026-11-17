@@ -7,10 +7,14 @@
  * only `id, command, state, done, total, error_code, created_at, finished_at`
  * are ever emitted. A reviewer can see from this file alone that no job
  * argument, `args_digest`, `result_json` or failure *message* can be returned --
- * those @ref JobRecord fields are never read. Every cell value is
- * `jsonString`-escaped and no Beast, SOCI or driver header appears in the
- * matching public header (`core/utils.hpp`, which pulls in Beast, is included
- * only from this `.cpp`).
+ * the source reads the metadata-only @ref url_shortener::commands::JobSummary
+ * (via `JobRunner::list_summaries`), which structurally carries neither
+ * `args_digest` nor `result_json`. Reading summaries rather than whole records
+ * also means a `db.rows table=jobs` request never copies a record's up-to-~1 MiB
+ * `result_json` under the store mutex (threat model T-109 / CWE-400). Every cell
+ * value is `jsonString`-escaped and no Beast, SOCI or driver header appears in
+ * the matching public header (`core/utils.hpp`, which pulls in Beast, is
+ * included only from this `.cpp`).
  */
 #include <url_shortener/commands/jobs_table_source.hpp>
 
@@ -79,19 +83,20 @@ std::string to_lower_ascii(std::string value)
 }
 
 /**
- * @brief Tests whether a record matches a case-insensitive free-text filter on
- * its `id` or `command`.
+ * @brief Tests whether a job summary matches a case-insensitive free-text filter
+ * on its `id` or `command`.
  *
  * Mirrors the two searchable columns (`id`, `command`); no other field is ever
  * consulted, so a `q` can never probe `args`, `args_digest`, `result_json` or a
- * failure message (threat model T-94).
+ * failure message (threat model T-94). The @ref JobSummary input carries no
+ * `args_digest`/`result_json` to begin with (threat model T-109).
  *
- * @param record The job record to test.
+ * @param record The job summary to test.
  * @param needle_lower The already lower-cased search term.
  * @return `true` when @p needle_lower is a substring of either the lower-cased
  * `id` or the lower-cased `command`.
  */
-bool matches_query(const JobRecord& record, const std::string& needle_lower)
+bool matches_query(const JobSummary& record, const std::string& needle_lower)
 {
     if (to_lower_ascii(record.id).find(needle_lower) != std::string::npos) {
         return true;
@@ -103,11 +108,11 @@ bool matches_query(const JobRecord& record, const std::string& needle_lower)
 /**
  * @brief Finish-time sort key: an absent `finished_at` sorts before any real
  * instant.
- * @param record The job record whose finish time is the key.
+ * @param record The job summary whose finish time is the key.
  * @return `record.finished_at` when present, otherwise
  * `system_clock::time_point::min()` (a non-terminal job orders first ascending).
  */
-std::chrono::system_clock::time_point finished_key(const JobRecord& record)
+std::chrono::system_clock::time_point finished_key(const JobSummary& record)
 {
     if (record.finished_at.has_value()) {
         return *record.finished_at;
@@ -124,13 +129,13 @@ std::chrono::system_clock::time_point finished_key(const JobRecord& record)
  * by an unintended field (threat model T-51).
  *
  * @param column The admissible sort column name.
- * @param a Left record.
- * @param b Right record.
+ * @param a Left summary.
+ * @param b Right summary.
  * @return `true` when @p a orders strictly before @p b ascending by @p column.
  */
 bool less_by_column(const std::string& column,
-                    const JobRecord& a,
-                    const JobRecord& b)
+                    const JobSummary& a,
+                    const JobSummary& b)
 {
     if (column == "id") {
         return a.id < b.id;
@@ -148,18 +153,20 @@ bool less_by_column(const std::string& column,
 }
 
 /**
- * @brief Serializes one job record as the flat `jobs` row object.
+ * @brief Serializes one job summary as the flat `jobs` row object.
  *
  * Keys equal the fixed column names and every string cell is `jsonString`-
  * escaped. The only failure detail emitted is the error *code*; the failure
  * *message*, `args`, `args_digest` and `result_json` are never read (threat
- * model T-94, contract C6). An absent `error_code`/`finished_at` is emitted as
- * an empty string.
+ * model T-94, contract C6). The @ref JobSummary input structurally has no
+ * `args_digest`/`result_json`, so they cannot leak here even accidentally
+ * (threat model T-109). An absent `error_code`/`finished_at` is emitted as an
+ * empty string.
  *
- * @param record The job record to serialize.
+ * @param record The job summary to serialize.
  * @return The single-line JSON object for this row.
  */
-std::string serialize_job_row(const JobRecord& record)
+std::string serialize_job_row(const JobSummary& record)
 {
     std::ostringstream os;
     os << '{';
@@ -199,9 +206,10 @@ std::string serialize_job_row(const JobRecord& record)
  * never projected. `writable()` is `false` (there is no typed write command for
  * jobs and no write path through `db.*`).
  *
- * Thread-safety follows the backing @ref JobRunner, whose `list` takes a
- * snapshot under its own lock; the source holds no mutable state after
- * construction.
+ * Thread-safety follows the backing @ref JobRunner, whose `list_summaries` takes
+ * a metadata-only snapshot under the store's own lock (never copying any
+ * `result_json`, threat model T-109 / CWE-400); the source holds no mutable
+ * state after construction.
  */
 class JobsTableSource final : public app::ITableSource
 {
@@ -261,14 +269,16 @@ public:
 
     /**
      * @brief The total number of retained job records.
-     * @return `Result<std::size_t>` holding `runner.list(nullopt, 0, 1).total`
-     * (all retained records, including active jobs); always `ok` -- the runner's
-     * in-memory list never fails.
+     * @return `Result<std::size_t>` holding
+     * `runner.list_summaries(nullopt, 0, 1).total` (all retained records,
+     * including active jobs); always `ok` -- the runner's in-memory list never
+     * fails. Uses the metadata-only listing so counting copies no `result_json`
+     * under the store lock (threat model T-109 / CWE-400).
      */
     Result<std::size_t> row_count() const override
     {
         Result<std::size_t> result;
-        result.value = m_runner_.list(std::nullopt, 0, 1).total;
+        result.value = m_runner_.list_summaries(std::nullopt, 0, 1).total;
         return result;
     }
 
@@ -289,19 +299,24 @@ public:
      */
     Result<TableRowsPage> rows(const TableQuery& query) const override
     {
-        // Snapshot ALL retained records in one locked JobRunner::list call.
-        // SIZE_MAX as the limit returns every record (newest first); active
-        // jobs are preserved, so this count can exceed max_retained_jobs.
-        JobPage snapshot = m_runner_.list(
+        // Snapshot ALL retained records in one locked
+        // JobRunner::list_summaries call. SIZE_MAX as the limit returns every
+        // record (newest first); active jobs are preserved, so this count can
+        // exceed max_retained_jobs. Using the metadata-only listing means the
+        // store copies only the small JobSummary fields under its lock and never
+        // the up-to-~1 MiB result_json per record (threat model T-109 /
+        // CWE-400): browsing jobs can no longer transiently copy hundreds of MiB
+        // or stall workers on the store mutex.
+        JobSummaryPage snapshot = m_runner_.list_summaries(
             std::nullopt, 0, std::numeric_limits<std::size_t>::max());
-        std::vector<JobRecord> records = std::move(snapshot.items);
+        std::vector<JobSummary> records = std::move(snapshot.items);
 
         // Filter by the free-text q over id/command (case-insensitive).
         if (query.q.has_value() && !query.q->empty()) {
             const std::string needle = to_lower_ascii(*query.q);
-            std::vector<JobRecord> filtered;
+            std::vector<JobSummary> filtered;
             filtered.reserve(records.size());
-            for (JobRecord& record : records) {
+            for (JobSummary& record : records) {
                 if (matches_query(record, needle)) {
                     filtered.push_back(std::move(record));
                 }
@@ -316,7 +331,7 @@ public:
             const bool descending = query.descending;
             std::stable_sort(
                 records.begin(), records.end(),
-                [&column, descending](const JobRecord& a, const JobRecord& b)
+                [&column, descending](const JobSummary& a, const JobSummary& b)
                 {
                     return descending ? less_by_column(column, b, a)
                                       : less_by_column(column, a, b);

@@ -55,6 +55,24 @@ JobRecord* find_locked(std::deque<JobRecord>& records, const std::string& id)
     return nullptr;
 }
 
+// Copies only the eight metadata fields of @p record into a @ref JobSummary.
+// Deliberately never touches `result_json` (up to ~1 MiB) or `args_digest`
+// (threat model T-109): the whole point of list_summaries is that this copy
+// stays bounded to small scalar/short-string fields under the store mutex.
+JobSummary summarize(const JobRecord& record)
+{
+    JobSummary summary;
+    summary.id = record.id;
+    summary.command = record.command;
+    summary.state = record.state;
+    summary.progress = record.progress;
+    summary.failure = record.failure;
+    summary.created_at = record.created_at;
+    summary.started_at = record.started_at;
+    summary.finished_at = record.finished_at;
+    return summary;
+}
+
 }  // namespace
 
 JobStore::JobStore(const IClock& clock, std::size_t max_retained)
@@ -184,6 +202,42 @@ JobPage JobStore::list(std::optional<JobState> filter, std::size_t offset,
         if (page.items.size() < limit)
         {
             page.items.push_back(*it);
+        }
+    }
+
+    return page;
+}
+
+JobSummaryPage JobStore::list_summaries(std::optional<JobState> filter,
+                                        std::size_t offset,
+                                        std::size_t limit) const
+{
+    std::lock_guard<std::mutex> lock(m_mutex);
+
+    JobSummaryPage page;
+
+    // Identical window/filter/order logic to list() (newest first, total counts
+    // the full match set, both clamps fall out naturally), but each emitted item
+    // is a metadata-only JobSummary: summarize() copies only the eight small
+    // fields under the lock and never the up-to-~1 MiB result_json (threat model
+    // T-109 / CWE-400). Keeping the two loops in lock-step is covered by the
+    // behavioural-equality tests in 50_job_store.cpp.
+    for (auto it = m_records.rbegin(); it != m_records.rend(); ++it)
+    {
+        if (filter.has_value() && it->state != *filter)
+        {
+            continue;
+        }
+
+        const std::size_t index = page.total;
+        ++page.total;
+        if (index < offset)
+        {
+            continue;
+        }
+        if (page.items.size() < limit)
+        {
+            page.items.push_back(summarize(*it));
         }
     }
 

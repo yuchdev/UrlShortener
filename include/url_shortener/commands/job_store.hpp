@@ -155,6 +155,41 @@ public:
                  std::size_t limit) const;
 
     /**
+     * @brief Returns a newest-first page of @ref JobSummary metadata, optionally
+     * filtered by state, without copying any record's `result_json`.
+     *
+     * The metadata-only counterpart of @ref list with identical filter/paging
+     * semantics, provided for resource safety (CWE-400 / CWE-770, threat model
+     * T-109): the list/browse callers read only eight small metadata fields, so
+     * copying each matched record's whole @ref JobRecord -- including the up-to-
+     * ~1 MiB opaque `result_json`, for up to the retention cap of records -- under
+     * the store mutex could transiently copy hundreds of MiB and stall workers on
+     * the lock. This method copies only the @ref JobSummary fields under the lock
+     * (never `result_json` or `args_digest`), so the locked copy stays bounded to
+     * small scalar/short-string fields regardless of result size.
+     *
+     * Locking: takes **only** this store's own mutex (the innermost lock). A
+     * @ref JobRunner caller that forwards to this method holds no lock of its own
+     * while doing so, preserving the single documented lock order (the runner's
+     * `m_mutex` before the store mutex, never the reverse).
+     *
+     * @param filter If set, only records in this state are considered;
+     * `std::nullopt` lists all states.
+     * @param offset Number of matching records to skip from the newest end; an
+     * offset at or beyond the match count yields an empty `items` with the
+     * correct `total`.
+     * @param limit Maximum number of summaries to return; `0` yields an empty
+     * `items` (with the correct `total`).
+     * @return A @ref JobSummaryPage whose `items` is the clamped, newest-first
+     * slice (metadata only, no `result_json`/`args_digest`) and whose `total` is
+     * the full count matching @p filter before slicing -- the same `total` and
+     * item order @ref list would report for the same arguments.
+     */
+    JobSummaryPage list_summaries(std::optional<JobState> filter,
+                                  std::size_t offset,
+                                  std::size_t limit) const;
+
+    /**
      * @brief Returns the number of active (`queued` + `running`) records.
      *
      * @return The count of non-terminal records currently in the table; used by

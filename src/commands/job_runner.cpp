@@ -185,6 +185,17 @@ JobPage JobRunner::list(std::optional<JobState> filter,
     return m_store.list(filter, offset, limit);
 }
 
+JobSummaryPage JobRunner::list_summaries(std::optional<JobState> filter,
+                                         std::size_t offset,
+                                         std::size_t limit) const
+{
+    // Thin forward: no runner lock is taken here, so the store's own (innermost)
+    // mutex is the only lock involved and the m_mutex -> store order (T-89) is
+    // trivially preserved. list_summaries copies metadata only, never the up-to-
+    // ~1 MiB result_json, under that store mutex (threat model T-109).
+    return m_store.list_summaries(filter, offset, limit);
+}
+
 std::optional<JobRecord> JobRunner::cancel(const std::string& id)
 {
     {

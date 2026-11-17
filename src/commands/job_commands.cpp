@@ -1,5 +1,6 @@
 #include <url_shortener/commands/job_commands.hpp>
 
+#include <chrono>
 #include <cstddef>
 #include <optional>
 #include <sstream>
@@ -167,14 +168,15 @@ CommandResult handle_job_get(JobRunner& runner, const ArgsView& args)
  * ArgSpec has already rejected any unknown token; a defensive `nullopt` is
  * mapped to `invalid_field`), reads the validated `limit`/`offset` (their
  * bounds enforced by the registry so the casts to `std::size_t` cannot narrow a
- * negative or over-large value), and calls @ref JobRunner::list. The page is
- * serialized as `{"items":[job...],"total":n}` where each item is
- * @ref serialize_job_json at @ref JobDetail::summary -- the list item carries
+ * negative or over-large value), and calls @ref JobRunner::list_summaries. The
+ * page is serialized as `{"items":[job...],"total":n}` where each item is the
+ * @ref JobSummary overload of @ref serialize_job_json -- the list item carries
  * id/command/state/progress/error/timestamps but **never** `result`
- * (2026-11-18 user decision, threat model T-109: a page of up to the retained-
- * job cap could otherwise inline one export result each, up to ~1 MiB, and
- * amplify into a multi-hundred-MiB response). Clients fetch a job's body with
- * `job.get`.
+ * (2026-11-18 user decision, threat model T-109 / CWE-400: a page of up to the
+ * retained-job cap could otherwise inline one export result each, up to ~1 MiB,
+ * and amplify into a multi-hundred-MiB response). The metadata-only
+ * `list_summaries` additionally ensures the store never even *copies* those
+ * result bodies under its mutex. Clients fetch a job's body with `job.get`.
  *
  * @param runner The process-wide job runner to read.
  * @param args The validated argument view.
@@ -200,7 +202,7 @@ CommandResult handle_job_list(JobRunner& runner, const ArgsView& args)
     const std::size_t limit = static_cast<std::size_t>(
         args.get_int("limit").value_or(k_job_list_default_limit));
 
-    const JobPage page = runner.list(filter, offset, limit);
+    const JobSummaryPage page = runner.list_summaries(filter, offset, limit);
 
     std::ostringstream os;
     os << "{\"items\":[";
@@ -208,8 +210,9 @@ CommandResult handle_job_list(JobRunner& runner, const ArgsView& args)
         if (i != 0) {
             os << ',';
         }
-        // Summary detail: list items omit `result` (T-109); see above.
-        os << serialize_job_json(page.items[i], JobDetail::summary);
+        // Metadata-only summaries: list items omit `result` and the store never
+        // copied one under its lock (T-109 / CWE-400); see above.
+        os << serialize_job_json(page.items[i]);
     }
     os << "],\"total\":" << page.total << '}';
 
@@ -329,25 +332,106 @@ CommandDescriptor make_job_cancel_descriptor(JobRunner& runner)
     return descriptor;
 }
 
+/// Optional wall-clock instant, as carried by both @ref JobRecord and
+/// @ref JobSummary.
+using opt_time_point =
+    std::optional<std::chrono::system_clock::time_point>;
+
+/**
+ * @brief Writes the leading metadata fields `"id","command","state",
+ * "progress":{...}` (no surrounding braces, no `result`) shared by the full
+ * record and the summary projection.
+ *
+ * Factored out so the @ref JobRecord and @ref JobSummary serializers emit these
+ * common fields identically and cannot drift (a list item and a `job.get` of the
+ * same job must agree on every non-`result` field).
+ *
+ * @param os Stream to append to; receives the four fields with no leading
+ * comma (the object's `'{'` is written by the caller immediately before).
+ * @param id Job id; `jsonString`-escaped.
+ * @param command Dotted command name; `jsonString`-escaped.
+ * @param state Lifecycle state, rendered via @ref to_string.
+ * @param progress Progress counters emitted as `{"done":n,"total":m}`.
+ */
+void serialize_job_head(std::ostringstream& os,
+                        const std::string& id,
+                        const std::string& command,
+                        JobState state,
+                        const JobProgress& progress)
+{
+    os << "\"id\":" << jsonString(id);
+    os << ",\"command\":" << jsonString(command);
+    os << ",\"state\":" << jsonString(std::string(to_string(state)));
+    os << ",\"progress\":{\"done\":" << progress.done
+       << ",\"total\":" << progress.total << '}';
+}
+
+/**
+ * @brief Writes the trailing fields `[,"error":{...}],"created_at"
+ * [,"started_at"][,"finished_at"]` (no surrounding braces, no `result`) shared
+ * by the full record and the summary projection.
+ *
+ * `error` is present for `failed` (its stored `{code, message}`) and for
+ * `cancelled` (the fixed `{job_cancelled, "job cancelled"}`, surfaced by
+ * `job.get` with HTTP 200, catalog error table); neither carries an argument
+ * value (contract C6). Timestamps use `formatTimestamp` (RFC 3339 UTC) and the
+ * two optional ones appear only when present.
+ *
+ * @param os Stream to append to; every field is written with a leading comma
+ * (the head has already written at least `progress`).
+ * @param state Lifecycle state deciding whether/which `error` is emitted.
+ * @param failure Stored failure detail; read only when @p state is `failed`
+ * (falls back to `{internal, "job failed"}` if somehow absent).
+ * @param created_at Creation instant; always emitted.
+ * @param started_at Running-start instant; emitted only when present.
+ * @param finished_at Terminal instant; emitted only when present.
+ */
+void serialize_job_tail(std::ostringstream& os,
+                        JobState state,
+                        const std::optional<JobFailure>& failure,
+                        const std::chrono::system_clock::time_point& created_at,
+                        const opt_time_point& started_at,
+                        const opt_time_point& finished_at)
+{
+    if (state == JobState::failed) {
+        const std::string code =
+            failure.has_value() ? failure->code : "internal";
+        const std::string message =
+            failure.has_value() ? failure->message : "job failed";
+        os << ",\"error\":{\"code\":" << jsonString(code)
+           << ",\"message\":" << jsonString(message) << '}';
+    } else if (state == JobState::cancelled) {
+        os << ",\"error\":{\"code\":\"job_cancelled\","
+           << "\"message\":\"job cancelled\"}";
+    }
+
+    os << ",\"created_at\":" << jsonString(formatTimestamp(created_at));
+    if (started_at.has_value()) {
+        os << ",\"started_at\":"
+           << jsonString(formatTimestamp(*started_at));
+    }
+    if (finished_at.has_value()) {
+        os << ",\"finished_at\":"
+           << jsonString(formatTimestamp(*finished_at));
+    }
+}
+
 }  // namespace
 
 std::string serialize_job_json(const JobRecord& record, JobDetail detail)
 {
     std::ostringstream os;
     os << '{';
-    os << "\"id\":" << jsonString(record.id);
-    os << ",\"command\":" << jsonString(record.command);
-    os << ",\"state\":"
-       << jsonString(std::string(to_string(record.state)));
-    os << ",\"progress\":{\"done\":" << record.progress.done
-       << ",\"total\":" << record.progress.total << '}';
+    serialize_job_head(os, record.id, record.command, record.state,
+                       record.progress);
 
     // `result` is opaque pre-serialized object text (contract C9), embedded
     // verbatim. It is emitted only on the full-detail path and only when both
     // present and well-formed:
-    //   - T-109: `job.list` items use JobDetail::summary and MUST omit it so a
-    //     page of retained jobs cannot amplify ~1 MiB export results per row
-    //     into a multi-hundred-MiB response (2026-11-18 user decision).
+    //   - T-109: `job.list` items use the JobSummary overload (and this record
+    //     overload at JobDetail::summary) and MUST omit it so a page of retained
+    //     jobs cannot amplify ~1 MiB export results per row into a multi-hundred-
+    //     MiB response (2026-11-18 user decision).
     //   - C9 backstop: a malformed value would be embedded unescaped and
     //     corrupt the whole object, so a failing well-formedness check omits
     //     `result` rather than emit broken JSON (never aborts, see helper).
@@ -356,32 +440,24 @@ std::string serialize_job_json(const JobRecord& record, JobDetail detail)
         os << ",\"result\":" << *record.result_json;
     }
 
-    // `error` is present for `failed` (its stored detail) and for `cancelled`
-    // (fixed `job_cancelled`, surfaced by job.get with HTTP 200, catalog error
-    // table). Neither carries an argument value (contract C6).
-    if (record.state == JobState::failed) {
-        const std::string code =
-            record.failure.has_value() ? record.failure->code : "internal";
-        const std::string message =
-            record.failure.has_value() ? record.failure->message : "job failed";
-        os << ",\"error\":{\"code\":" << jsonString(code)
-           << ",\"message\":" << jsonString(message) << '}';
-    } else if (record.state == JobState::cancelled) {
-        os << ",\"error\":{\"code\":\"job_cancelled\","
-           << "\"message\":\"job cancelled\"}";
-    }
+    serialize_job_tail(os, record.state, record.failure, record.created_at,
+                       record.started_at, record.finished_at);
+    os << '}';
+    return os.str();
+}
 
-    os << ",\"created_at\":"
-       << jsonString(formatTimestamp(record.created_at));
-    if (record.started_at.has_value()) {
-        os << ",\"started_at\":"
-           << jsonString(formatTimestamp(*record.started_at));
-    }
-    if (record.finished_at.has_value()) {
-        os << ",\"finished_at\":"
-           << jsonString(formatTimestamp(*record.finished_at));
-    }
-
+std::string serialize_job_json(const JobSummary& summary)
+{
+    // Byte-for-byte the record overload at JobDetail::summary, minus `result`:
+    // a JobSummary structurally has no result_json, so the listing path never
+    // copied one (threat model T-109 / CWE-400). The shared head/tail helpers
+    // guarantee the non-result fields match the single-record serializer.
+    std::ostringstream os;
+    os << '{';
+    serialize_job_head(os, summary.id, summary.command, summary.state,
+                       summary.progress);
+    serialize_job_tail(os, summary.state, summary.failure, summary.created_at,
+                       summary.started_at, summary.finished_at);
     os << '}';
     return os.str();
 }
