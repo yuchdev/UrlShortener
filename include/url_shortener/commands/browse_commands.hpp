@@ -154,4 +154,26 @@ CommandDescriptor make_db_tables_descriptor(app::TableCatalog& catalog);
  */
 CommandDescriptor make_db_rows_descriptor(app::TableCatalog& catalog);
 
+/**
+ * @brief Raise-only permission for a status-filtered link enumeration:
+ * `status=all|deleted` require `write`/admin, every other status stays `read`
+ * (threat model T-71).
+ *
+ * The single shared rule behind both `link.list` (`make_link_list_descriptor`)
+ * and `link.export` (`make_link_export_descriptor`), so the two enforcement
+ * points can never drift: a `User` may enumerate `active`/`disabled`/`expired`
+ * links but the bulk enumeration of `all` or soft-`deleted` links is a write
+ * exposure (user rulings 2026-11-16/17). The function only ever **raises** to
+ * `write`; it never lowers a caller's base permission (01.0 T-09). It is pure
+ * and never throws; `status` has already been enum-validated by the registry, so
+ * an out-of-set value can never reach it, and an absent `status` reads as the
+ * descriptor default (`active`) and keeps `read`.
+ *
+ * @param args The validated argument view; only its optional `status` string is
+ * read.
+ * @return `Permission::write` when `status` is exactly `all` or `deleted`;
+ * `Permission::read` otherwise (including when `status` is absent).
+ */
+Permission link_status_permission(const ArgsView& args);
+
 }  // namespace url_shortener::commands

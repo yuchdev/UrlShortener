@@ -19,6 +19,7 @@
 
 #include "commands_test_fakes.hpp"
 #include "url_shortener/commands/arg_spec.hpp"
+#include "url_shortener/commands/audit.hpp"
 #include "url_shortener/commands/command_registry.hpp"
 #include "url_shortener/commands/envelope.hpp"
 #include "url_shortener/commands/error_codes.hpp"
@@ -40,6 +41,7 @@ using url_shortener::isValidSlug;
 using url_shortener::jsonString;
 using url_shortener::RedirectType;
 using url_shortener::commands::ArgsView;
+using url_shortener::commands::AuditRecord;
 using url_shortener::commands::CallerContext;
 using url_shortener::commands::CommandErrorCode;
 using url_shortener::commands::CommandError;
@@ -48,6 +50,7 @@ using url_shortener::commands::CommandRequest;
 using url_shortener::commands::CommandResponse;
 using url_shortener::commands::format_csv_row;
 using url_shortener::commands::format_ndjson_row;
+using url_shortener::commands::IAuditSink;
 using url_shortener::commands::JobRecord;
 using url_shortener::commands::JobRunner;
 using url_shortener::commands::JobRunnerOptions;
@@ -148,6 +151,20 @@ app::LinkView make_view(const std::string& slug, const std::string& target)
     return view;
 }
 
+// Records every AuditRecord the registry emits, in emission order, so a test
+// can assert a permission-denied export produced no `job_accepted` line
+// (threat model T-108). Installed on the registry via a non-owning aliasing
+// shared_ptr held by the Harness.
+struct CapturingAuditSink : public IAuditSink
+{
+    std::vector<AuditRecord> records;
+
+    void record(const AuditRecord& record) noexcept override
+    {
+        records.push_back(record);
+    }
+};
+
 // Owns the fakes, service, runner and a registry wired with link, job and pair
 // commands. `source` is bound as the export page source only when non-null, so a
 // null source reproduces the "export unavailable" composition.
@@ -160,6 +177,7 @@ struct Harness
     std::shared_ptr<app::LinkCommandService> service;
     std::shared_ptr<JobRunner> runner;
     std::shared_ptr<FakePageSource> source;
+    std::shared_ptr<CapturingAuditSink> audit;
     CommandRegistry registry;
 
     explicit Harness(std::shared_ptr<FakePageSource> src,
@@ -170,9 +188,11 @@ struct Harness
         , runner(std::make_shared<JobRunner>(clock,
                                              JobRunnerOptions {workers, 64, 256}))
         , source(std::move(src))
+        , audit(std::make_shared<CapturingAuditSink>())
     {
         service =
             std::make_shared<app::LinkCommandService>(store, reader, config);
+        registry.set_audit_sink(audit);
         registry.set_job_submitter(runner);
         register_link_commands(registry, *service);
         register_job_commands(registry, *runner);
@@ -225,6 +245,22 @@ JobResult run_job(Harness& harness, const CommandRequest& request,
         out.fail_code = record->failure->code;
     }
     return out;
+}
+
+// Counts the `job_accepted` audit records captured so far. A permission-denied
+// export must leave this at zero: `execute` denies before the job factory runs,
+// so no acceptance is audited (threat model T-108). `link.export` is a
+// non-mutating command, so it emits no audit line at all; this directly proves a
+// denied export produced none, rather than inferring it from the job-store count.
+std::size_t count_job_accepted(const CapturingAuditSink& sink)
+{
+    std::size_t count = 0;
+    for (const AuditRecord& record : sink.records) {
+        if (record.outcome == "job_accepted") {
+            ++count;
+        }
+    }
+    return count;
 }
 
 // Extracts a non-negative integer field value from well-formed result JSON.
@@ -727,8 +763,58 @@ BOOST_AUTO_TEST_CASE(read_only_caller_inline_ok_path_denied)
     BOOST_TEST(!std::filesystem::exists(target));
     // Only the earlier inline job exists; the denied path export created none.
     BOOST_TEST(harness.runner->list(std::nullopt, 0, 100).total == 1u);
+    // The denial is audited as nothing: no `job_accepted` line was emitted for
+    // the refused export (T-108), proven directly through the sink.
+    BOOST_TEST(count_job_accepted(*harness.audit) == 0u);
 
     std::filesystem::remove_all(dir);
+}
+
+// Type: unit (status=all|deleted bulk enumeration needs write, T-71 / C7).
+// Scenario: a ControlSet::User is denied link.export with status in {all,
+//   deleted} with not_authorized before the factory runs (no job, no audit),
+//   but is allowed status in {active, disabled, expired}; an Admin may export
+//   status=deleted.
+// Boundaries: link.export's permission_for mirrors link.list via the shared
+//   link_status_permission helper, so the two can never drift.
+// On failure first check: did export's permission_for stop raising for
+//   status=all|deleted, or start denying the User-readable statuses?
+BOOST_AUTO_TEST_CASE(status_all_or_deleted_export_requires_write)
+{
+    auto source = std::make_shared<FakePageSource>();
+    source->links = {make_view("aaa", "http://example.com/0")};
+    Harness harness(source);
+
+    // A User is denied the bulk enumeration of all/deleted links before any job
+    // is created, and the denial emits no job_accepted audit line (T-108).
+    for (const char* status : {"all", "deleted"}) {
+        const CommandResponse denied = harness.registry.execute(
+            make_caller(ControlSet::User, "test"),
+            export_request(std::string("{\"format\":\"csv\",\"status\":\"")
+                           + status + "\"}"));
+        BOOST_TEST(denied.ok == false);
+        BOOST_TEST((denied.error.code == CommandErrorCode::not_authorized));
+        BOOST_TEST(!denied.job.has_value());
+    }
+    // No job was accepted for either denied status, and nothing was audited.
+    BOOST_TEST(harness.runner->list(std::nullopt, 0, 100).total == 0u);
+    BOOST_TEST(count_job_accepted(*harness.audit) == 0u);
+
+    // The User-readable statuses stay `read`, so the User may export them.
+    for (const char* status : {"active", "disabled", "expired"}) {
+        const JobResult result = run_job(
+            harness,
+            export_request(std::string("{\"format\":\"csv\",\"status\":\"")
+                           + status + "\"}"),
+            make_caller(ControlSet::User, "test"));
+        BOOST_TEST((result.state == JobState::succeeded));
+    }
+
+    // An Admin is above the raised write bar, so status=deleted is allowed.
+    const JobResult admin_deleted = run_job(
+        harness, export_request("{\"format\":\"csv\",\"status\":\"deleted\"}"),
+        admin_caller());
+    BOOST_TEST((admin_deleted.state == JobState::succeeded));
 }
 
 // Type: unit (export unavailable when no page source is bound).

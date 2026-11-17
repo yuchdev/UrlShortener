@@ -12,6 +12,7 @@
 #include <url_shortener/app/app_error.hpp>
 #include <url_shortener/app/link_command_service.hpp>
 #include <url_shortener/commands/arg_spec.hpp>
+#include <url_shortener/commands/browse_commands.hpp>
 #include <url_shortener/commands/command_descriptor.hpp>
 #include <url_shortener/commands/command_registry.hpp>
 #include <url_shortener/commands/error_codes.hpp>
@@ -1053,11 +1054,21 @@ CommandDescriptor make_link_export_descriptor(PairCommandDeps deps)
     descriptor.summary = "Export filtered links as CSV or NDJSON pairs.";
     descriptor.args = make_link_export_args();
     // Base permission is read; the hook raises it to write when a `path`
-    // argument directs the export to a file (decision log D16). `command.list`
-    // reports the base `read`.
+    // argument directs the export to a file (decision log D16) OR when the
+    // status filter enumerates `all`/`deleted` links (threat model T-71). The
+    // status rule reuses the shared `link_status_permission` helper so
+    // link.export and link.list can never drift on which statuses a `User` may
+    // bulk-read. `command.list` reports the base `read`.
     descriptor.permission = Permission::read;
     descriptor.permission_for = [](const ArgsView& args)
-    { return args.has("path") ? Permission::write : Permission::read; };
+    {
+        if (args.has("path")
+            || link_status_permission(args) == Permission::write)
+        {
+            return Permission::write;
+        }
+        return Permission::read;
+    };
     descriptor.kind = ExecutionKind::job;
     descriptor.mutating = false;
     descriptor.supports_dry_run = false;
