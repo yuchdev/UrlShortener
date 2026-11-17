@@ -467,6 +467,7 @@ set(URL_SHORTENER_SOURCES
       tests/unit/commands/50_job_store.cpp
       tests/unit/commands/51_job_runner_pool.cpp
       tests/unit/commands/52_job_runner_shutdown.cpp
+      tests/unit/commands/53_registry_job_dispatch.cpp
       tests/unit/commands/55_pair_line_parser.cpp
   )
 
