@@ -465,6 +465,7 @@ set(URL_SHORTENER_SOURCES
       tests/unit/commands/30_browse_security_regression.cpp
       tests/unit/commands/40_args_builder.cpp
       tests/unit/commands/50_job_store.cpp
+      tests/unit/commands/51_job_runner_pool.cpp
   )
 
   set(COMMON_CPP_SOURCES
@@ -489,6 +490,7 @@ set(URL_SHORTENER_SOURCES
       ${CMAKE_CURRENT_SOURCE_DIR}/src/commands/link_commands.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/commands/browse_commands.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/commands/job_store.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/commands/job_runner.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/cli_parser.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/cli/link_command_args.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/cli/app_exit_code.cpp
