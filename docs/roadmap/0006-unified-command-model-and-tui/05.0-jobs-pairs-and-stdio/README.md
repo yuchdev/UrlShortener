@@ -40,7 +40,7 @@ Decisions made in this task: `JobRunner` does not reuse `AnalyticsWorker`/`Bound
 
 | # | Document | Status | Depends on | Blocks |
 |---|----------|--------|------------|--------|
-| 01 | [Job types and JobStore](01-job-types-and-store.md) | ⬜ Not started | none | 02, 05 |
+| 01 | [Job types and JobStore](01-job-types-and-store.md) | ✅ Complete | none | 02, 05 |
 | 02 | [JobRunner worker pool, queue, cancel](02-job-runner-worker-pool.md) | ⬜ Not started | 01, 01.0/08 | 03, 04, 05, 21 |
 | 03 | [JobRunner wait, drain, shutdown](03-job-runner-wait-and-shutdown.md) | ⬜ Not started | 02 | 15, 20 |
 | 04 | [Registry job dispatch](04-registry-job-dispatch.md) | ⬜ Not started | 02, 01.0/06, 01.0/07, 01.0/08 | 05, 08, 10, 20 |
