@@ -475,6 +475,7 @@ set(URL_SHORTENER_SOURCES
       tests/unit/commands/56_pair_file_access.cpp
       tests/unit/commands/57_link_import_command.cpp
       tests/unit/commands/58_link_import_overwrite.cpp
+      tests/unit/commands/59_link_export_command.cpp
       tests/unit/commands/60_transport_factory.cpp
       tests/unit/commands/61_ndjson_line_reader.cpp
       tests/unit/commands/62_ndjson_session.cpp
@@ -508,6 +509,7 @@ set(URL_SHORTENER_SOURCES
       ${CMAKE_CURRENT_SOURCE_DIR}/src/commands/job_commands.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/commands/pair_line_parser.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/commands/pair_file_access.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/commands/pair_formatter.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/commands/pair_commands.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/commands/ndjson_line_reader.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/commands/ndjson_session.cpp

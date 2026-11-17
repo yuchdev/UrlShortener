@@ -20,6 +20,20 @@ namespace url_shortener::commands
 {
 
 /**
+ * @brief Upper bound, in bytes, on a single record's retained `result_json`
+ * that every @ref JobStore::finish caller must respect (threat model T-109).
+ *
+ * The store retains `result_json` verbatim and unbounded, so each job body is
+ * responsible for bounding its own result before calling `finish`. The largest
+ * producer is `link.export`, which caps its inline payload at
+ * `kMaxInlineExportBytes` (1 MiB) and JSON-escapes it into the result; this
+ * bound leaves generous headroom for that escaping and the surrounding wrapper
+ * so it never false-positives, while still catching a gross violation (a body
+ * that forgot to cap). Enforced only as a debug assertion in `finish`.
+ */
+inline constexpr std::size_t kMaxJobResultBytes = 8ull * 1024 * 1024;
+
+/**
  * @brief Thread-safe in-memory table of @ref JobRecord with id allocation,
  * legal state transitions and bounded retention of finished jobs.
  *
@@ -117,7 +131,12 @@ public:
      * @ref is_terminal. A non-terminal value is a programming error (`assert`
      * in debug) and yields `false`.
      * @param result_json Optional opaque result text to retain on the record
-     * (typically set for `succeeded`); moved in.
+     * (typically set for `succeeded`); moved in. The store keeps it verbatim
+     * and unbounded, so the caller must bound it: a body must enforce its own
+     * per-record size invariant (at most @ref kMaxJobResultBytes,
+     * debug-asserted here) before calling `finish`. `link.export` discharges
+     * this by capping its inline payload at `kMaxInlineExportBytes` (threat
+     * model T-109).
      * @param failure Optional failure detail to retain (typically set for
      * `failed`); moved in.
      * @return `true` if the job existed, was `queued` or `running`, and
@@ -125,7 +144,8 @@ public:
      * unknown, the job is already terminal, or @p terminal is not terminal, in
      * which case the record is left unchanged.
      */
-    bool finish(const std::string& id, JobState terminal,
+    bool finish(const std::string& id,
+                JobState terminal,
                 std::optional<std::string> result_json,
                 std::optional<JobFailure> failure);
 
@@ -151,27 +171,29 @@ public:
      * @return A @ref JobPage whose `items` is the clamped, newest-first slice
      * and whose `total` is the full count matching @p filter before slicing.
      */
-    JobPage list(std::optional<JobState> filter, std::size_t offset,
+    JobPage list(std::optional<JobState> filter,
+                 std::size_t offset,
                  std::size_t limit) const;
 
     /**
-     * @brief Returns a newest-first page of @ref JobSummary metadata, optionally
-     * filtered by state, without copying any record's `result_json`.
+     * @brief Returns a newest-first page of @ref JobSummary metadata,
+     * optionally filtered by state, without copying any record's `result_json`.
      *
      * The metadata-only counterpart of @ref list with identical filter/paging
      * semantics, provided for resource safety (CWE-400 / CWE-770, threat model
      * T-109): the list/browse callers read only eight small metadata fields, so
-     * copying each matched record's whole @ref JobRecord -- including the up-to-
-     * ~1 MiB opaque `result_json`, for up to the retention cap of records -- under
-     * the store mutex could transiently copy hundreds of MiB and stall workers on
-     * the lock. This method copies only the @ref JobSummary fields under the lock
-     * (never `result_json` or `args_digest`), so the locked copy stays bounded to
-     * small scalar/short-string fields regardless of result size.
+     * copying each matched record's whole @ref JobRecord -- including the
+     * up-to- ~1 MiB opaque `result_json`, for up to the retention cap of
+     * records -- under the store mutex could transiently copy hundreds of MiB
+     * and stall workers on the lock. This method copies only the @ref
+     * JobSummary fields under the lock (never `result_json` or `args_digest`),
+     * so the locked copy stays bounded to small scalar/short-string fields
+     * regardless of result size.
      *
      * Locking: takes **only** this store's own mutex (the innermost lock). A
-     * @ref JobRunner caller that forwards to this method holds no lock of its own
-     * while doing so, preserving the single documented lock order (the runner's
-     * `m_mutex` before the store mutex, never the reverse).
+     * @ref JobRunner caller that forwards to this method holds no lock of its
+     * own while doing so, preserving the single documented lock order (the
+     * runner's `m_mutex` before the store mutex, never the reverse).
      *
      * @param filter If set, only records in this state are considered;
      * `std::nullopt` lists all states.
@@ -181,9 +203,9 @@ public:
      * @param limit Maximum number of summaries to return; `0` yields an empty
      * `items` (with the correct `total`).
      * @return A @ref JobSummaryPage whose `items` is the clamped, newest-first
-     * slice (metadata only, no `result_json`/`args_digest`) and whose `total` is
-     * the full count matching @p filter before slicing -- the same `total` and
-     * item order @ref list would report for the same arguments.
+     * slice (metadata only, no `result_json`/`args_digest`) and whose `total`
+     * is the full count matching @p filter before slicing -- the same `total`
+     * and item order @ref list would report for the same arguments.
      */
     JobSummaryPage list_summaries(std::optional<JobState> filter,
                                   std::size_t offset,
