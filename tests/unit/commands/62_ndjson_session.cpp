@@ -1,6 +1,9 @@
 #define BOOST_TEST_MODULE CommandsNdjsonSessionTest
+#include <chrono>
 #include <cstddef>
+#include <cstdint>
 #include <memory>
+#include <random>
 #include <sstream>
 #include <stdexcept>
 #include <streambuf>
@@ -670,4 +673,115 @@ BOOST_AUTO_TEST_CASE(ten_thousand_requests_preserve_order)
     BOOST_REQUIRE(lines.size() == static_cast<std::size_t>(count));
     BOOST_TEST(parse_response(lines.front()).response->id == "c-0");
     BOOST_TEST(parse_response(lines.back()).response->id == "c-9999");
+}
+
+// Type: unit (seeded randomized property, success criterion 2).
+// Scenario: for several N and fixed seeds (plus one time-based seed), a random
+//   mix of valid (with/without id), malformed, over-long, NUL-byte and blank
+//   lines is driven through a session. Exactly one response is emitted per
+//   non-blank content line, in input order; every response line is a single
+//   valid envelope with no raw CR/LF; a valid client id is echoed while every
+//   other content line takes the next session-local srv-<n>; the session ends
+//   at eof.
+// Boundaries: the one-response-per-content-line invariant across input shapes
+//   and across N = {0, 1, 100, 2000}.
+// On failure first check: the seed and N printed in the failing context exactly
+//   reproduce the offending input.
+
+BOOST_AUTO_TEST_CASE(randomized_property_one_response_per_content_line)
+{
+    // The category of one generated input line.
+    enum class line_kind
+    {
+        valid_with_id,
+        valid_no_id,
+        malformed,
+        too_long,
+        nul,
+        blank
+    };
+
+    const std::size_t max_line_bytes = 256;
+    const char* const malformed_samples[] = {
+        "not json", "{", R"({"v":1,)", "[1,2,3", "}", R"({"id":})"};
+    const char* const blank_samples[] = {"", "   ", "\t", "  \t "};
+
+    std::vector<std::uint32_t> seeds = {1u, 2u, 42u, 1337u, 2024u};
+    seeds.push_back(static_cast<std::uint32_t>(
+        std::chrono::steady_clock::now().time_since_epoch().count()));
+    const std::vector<std::size_t> sizes = {0u, 1u, 100u, 2000u};
+
+    std::string seed_list;
+    for (const std::uint32_t seed : seeds) {
+        seed_list += std::to_string(seed) + " ";
+    }
+    BOOST_TEST_MESSAGE("randomized property seeds: " << seed_list);
+
+    CommandRegistry registry;
+    add_test_commands(registry);
+    const CallerContext caller = admin_caller();
+
+    for (const std::uint32_t seed : seeds) {
+        for (const std::size_t n : sizes) {
+            BOOST_TEST_CONTEXT("seed=" << seed << " N=" << n)
+            {
+                std::mt19937 rng(seed);
+                std::uniform_int_distribution<int> pick(0, 5);
+
+                std::string input;
+                std::vector<std::string> expected_ids;
+                std::size_t srv = 0;
+                std::size_t next_k = 0;
+
+                for (std::size_t i = 0; i < n; ++i) {
+                    switch (static_cast<line_kind>(pick(rng))) {
+                    case line_kind::valid_with_id: {
+                        const std::string id = "c-" + std::to_string(next_k++);
+                        input += R"({"v":1,"id":")" + id
+                                 + R"(","command":"test.echo"})";
+                        expected_ids.push_back(id);
+                        break;
+                    }
+                    case line_kind::valid_no_id:
+                        input += R"({"v":1,"command":"test.echo"})";
+                        expected_ids.push_back("srv-" + std::to_string(++srv));
+                        break;
+                    case line_kind::malformed:
+                        input += malformed_samples[rng() % 6];
+                        expected_ids.push_back("srv-" + std::to_string(++srv));
+                        break;
+                    case line_kind::too_long:
+                        input += std::string(max_line_bytes + 32, 'x');
+                        expected_ids.push_back("srv-" + std::to_string(++srv));
+                        break;
+                    case line_kind::nul:
+                        input += std::string("ab\0cd", 5);
+                        expected_ids.push_back("srv-" + std::to_string(++srv));
+                        break;
+                    case line_kind::blank:
+                        input += blank_samples[rng() % 4];
+                        break;  // whitespace-only: skipped, no response
+                    }
+                    input += '\n';
+                }
+
+                const session_run run =
+                    run_session(registry, caller, input, max_line_bytes);
+
+                BOOST_TEST((run.end == session_end::eof));
+                BOOST_TEST(run.responses == expected_ids.size());
+                BOOST_TEST(run.output.find('\r') == std::string::npos);
+
+                const std::vector<std::string> lines = lines_of(run.output);
+                BOOST_REQUIRE(lines.size() == expected_ids.size());
+                for (std::size_t i = 0; i < lines.size(); ++i) {
+                    BOOST_TEST(lines[i].find('\n') == std::string::npos);
+                    const parse_response_result parsed =
+                        parse_response(lines[i]);
+                    BOOST_REQUIRE(parsed.response.has_value());
+                    BOOST_TEST(parsed.response->id == expected_ids[i]);
+                }
+            }
+        }
+    }
 }
