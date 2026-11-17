@@ -9,7 +9,7 @@ Tracks progress against [plan.md](/docs/roadmap/0006-unified-command-model-and-t
 | 01.0 | Command model core | ✅ Complete (13/13 subtasks) | 14 (`commands__01`-`14`) |
 | 02.0 | Storage path unification | ✅ Complete (16/16 subtasks, incl. added 02.0/16) | 15 targets (`app__19`-`24`, `metadata__09`, `inmemory__16`, `storage__15` x2, http `30`/`31`, `cli__05`, `cli_03`/`17`/`18`, `e2e_12`) |
 | 03.0 | Link and browse commands | ✅ Complete (18/18 subtasks) | 23 targets (`commands__20`-`30`, `app__40`-`48`, `core 09`, `memory__17`, `analytics__16`, storage list-events SQLite/Postgres, contract `10`-`12`) |
-| 04.0 | REST and CLI adapters | 🔶 In progress (14/15 subtasks) | 20 (`commands__40`, http `15`-`25`; `cli__06`-`09`, `cli__11`; cli int `20`, `21`; `observability__04`; `ratelimiter__08`) |
+| 04.0 | REST and CLI adapters | ✅ Complete (15/15 subtasks) | 22 (`commands__40`, http `15`-`25`; `cli__06`-`12`; cli int `20`, `21`; `observability__04`; `ratelimiter__08`) |
 | 05.0 | Jobs, pair import/export, stdio | ⬜ Not started | 0 |
 | 06.0 | Terminal UI | ⬜ Not started | 0 |
 | 07.0 | Tests and conformance | ⬜ Not started | 0 |
@@ -204,6 +204,63 @@ Completed 2026-11-16 on branch `milestone/0006-unified-command-model-and-tui`.
 count), SQLite 32-bit INTEGER read (Y2038), T-54 storage-outage semantics
 ADR, clang-format version pinning, public `GET /api/v1/links` gating +
 100k scan (04.0/07).
+
+### Task 04.0 - REST and CLI adapters (✅)
+
+Completed 2026-11-17 on branch `milestone/0006-unified-command-model-and-tui`.
+
+**Delivered:**
+
+- Bridge: `args_builder` (escaped args assembly), REST command bridge
+  (`execute_resource_command`, `execute_command_envelope`,
+  `resource_response`, legacy error mapping), process-wide command runtime
+  (fail closed while serving without one).
+- REST routes on the registry, bodies byte-identical (C3): reads (03, with
+  the 10,000-bucket stats cap and epoch bounds), create (04), PATCH (05),
+  delete/enable/disable/restore + legacy helper removal (06).
+- Create throttle (T-75): always on, 30/60 s per TCP peer, `link_create:`
+  keys, shared `peer:unknown` bucket, fail-open with
+  `create_throttle_*` metrics, bounded in-memory limiter (eviction + 1M
+  cap); peer read only for `/api/` targets (redirect path untouched).
+- Command API (default off): `command_api_enabled`/`command_api_role` +
+  CLI flags (08); gated `GET /api/v1/links` with query parser and
+  `link.list` write-raise for `status=all|deleted`, `offset` cap 1,000,000
+  (07); `POST /api/v1/commands` (JSON-only content type, shared throttle
+  incl. `dry_run`, startup log of gate state) (09);
+  `GET /api/v1/commands` + regenerated `docs/api/README.md` + operator
+  exposure/CSRF notes in `docs/commands/README.md` (10).
+- CLI: `--arg` coercion (11), `cmd` parsing (12), `cmd` dispatch with
+  bounded stdin, `--read-only`, shared exit-code table (13), link flag ->
+  args converters with ArgSpec coverage test (14), `link <verb>` on the
+  registry with byte-identical output (15); shared
+  `acquire_command_runtime`; `ExitCodeForAppError` in its own TU.
+- Logging (user decision): real append-only `LogSink::File`
+  (0600, `O_NOFOLLOW`, fail closed with exit 2 "log file unavailable").
+
+**Tests / gate:**
+
+- New targets: commands `40`; http `15`-`25`; cli `06`-`10`, `12`;
+  cli integration `20`, `21`; `observability__04`; `ratelimiter__08`.
+  Task-close full suite (`unit|contract|integration|e2e`, serial): 353/358;
+  the 5 failures are e2e `14`-`18` on macOS (GNU `timeout` missing, 0007
+  item) and pass with a `gtimeout` shim (358/358 effective).
+- Every subtask: `/verify-subtask` + security review; findings fixed in the
+  same iteration or carried with an owner.
+- Task-close `/pr-review`: feature REQUEST_CHANGES on exit criterion 2
+  (fixed in `b411e2b`, grep now empty) -> resolved; security
+  PASS_WITH_FOLLOWUP (no CRITICAL/HIGH). Threat model with Task-close
+  disposition (T-60..T-85):
+  [docs/security/0006-04.0-rest-and-cli-adapters-threat-model.md](/docs/security/0006-04.0-rest-and-cli-adapters-threat-model.md)
+
+**Spec reconciliation:** test file numbers shifted where slots were taken
+(http 19-25, declared per subtask); 08's config/caller helpers landed early
+in 07 (`3ce5e66`), 08 consumed; spec 11 prose aligned with its own tests
+(`eae6e05`); 04's "peerless not throttled" superseded by the shared
+fallback bucket; job waiting in `cmd` deferred to 05.0/20 as specced.
+
+**Open decisions raised at close:** whether a `User` may list
+`disabled`/`expired` links (built per the 2026-11-16 decision: only
+`all|deleted` need write; the T-71 wording is stricter).
 
 ## Open risks
 
