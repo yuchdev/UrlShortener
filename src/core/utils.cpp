@@ -558,8 +558,45 @@ bool isPrivateHost(const std::string& host)
         || effective_host.rfind("fe80:", 0) == 0;
 }
 
-std::optional<std::string> normalizeTargetUrl(const std::string& input_url, const ServerConfig& config)
+bool containsUnsafeUrlControlBytes(const std::string& value)
 {
+    const std::size_t size = value.size();
+    for (std::size_t i = 0; i < size; ++i) {
+        const auto byte = static_cast<unsigned char>(value[i]);
+        // C0 controls (NUL, TAB, CR, LF, ...) and DEL.
+        if (byte <= 0x1F || byte == 0x7F) {
+            return true;
+        }
+        // U+0085 NEL, UTF-8 encoded as C2 85.
+        if (byte == 0xC2 && i + 1 < size
+            && static_cast<unsigned char>(value[i + 1]) == 0x85)
+        {
+            return true;
+        }
+        // U+2028 / U+2029 line separators, UTF-8 encoded as E2 80 A8
+        // and E2 80 A9.
+        if (byte == 0xE2 && i + 2 < size
+            && static_cast<unsigned char>(value[i + 1]) == 0x80)
+        {
+            const auto third = static_cast<unsigned char>(value[i + 2]);
+            if (third == 0xA8 || third == 0xA9) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+std::optional<std::string> normalizeTargetUrl(const std::string& input_url,
+                                              const ServerConfig& config)
+{
+    // Reject line-terminator and control bytes before any parsing so a
+    // crafted target (e.g. "http://evil\r\nSet-Cookie: x/p") can never be
+    // stored and later written raw into a redirect Location header
+    // (CWE-113 HTTP response splitting / CWE-93 CRLF injection).
+    if (containsUnsafeUrlControlBytes(input_url)) {
+        return std::nullopt;
+    }
     const std::string trimmed = trim(input_url);
     if (trimmed.empty()) {
         return std::nullopt;

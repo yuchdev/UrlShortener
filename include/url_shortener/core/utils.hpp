@@ -199,19 +199,37 @@ std::optional<std::pair<std::string, std::string>> splitUrl(
 bool isPrivateHost(const std::string& host);
 
 /**
+ * @brief Returns `true` if `value` contains any byte that must never
+ * appear in a URL destined for an HTTP header value.
+ *
+ * Rejects (CWE-113 HTTP response splitting / CWE-93 CRLF injection):
+ * every C0 control byte `0x00`–`0x1F` (including NUL `0x00`, TAB
+ * `0x09`, CR `0x0D`, LF `0x0A`), DEL `0x7F`, and the UTF-8 encodings
+ * of the Unicode line separators U+2028 (`E2 80 A8`), U+2029
+ * (`E2 80 A9`), and NEL U+0085 (`C2 85`). The scan is a single
+ * forward pass and is safe to call on the redirect fast path.
+ * @param value Raw candidate string (a target URL) to inspect.
+ * @return `true` if at least one forbidden byte/sequence is present;
+ * `false` if `value` is free of them (including when empty).
+ */
+bool containsUnsafeUrlControlBytes(const std::string& value);
+
+/**
  * @brief Normalizes and validates `input_url` as a redirect target.
  *
- * Steps: trim whitespace → parse scheme+authority via `splitUrl` →
- * require `http` or `https` scheme → reject userinfo (`@`) →
- * lowercase the hostname → strip default ports (80 for http, 443
- * for https) → reject private hosts unless
+ * Steps: reject control bytes via `containsUnsafeUrlControlBytes`
+ * (before any parsing) → trim whitespace → parse scheme+authority via
+ * `splitUrl` → require `http` or `https` scheme → reject userinfo
+ * (`@`) → lowercase the hostname → strip default ports (80 for http,
+ * 443 for https) → reject private hosts unless
  * `config.shortener_allow_private_targets` is set.
  * @param input_url Raw target URL supplied by the caller.
  * @param config Server configuration; `shortener_allow_private_targets`
  * controls whether private-host targets are permitted.
  * @return Normalized absolute URL on success; `std::nullopt` if the
- * URL is empty, not an HTTP/HTTPS URL, contains userinfo, or its
- * host is private and private targets are disabled.
+ * URL is empty, contains a forbidden control byte (C0/`0x7F`/U+2028/
+ * U+2029/U+0085) anywhere, is not an HTTP/HTTPS URL, contains
+ * userinfo, or its host is private and private targets are disabled.
  */
 std::optional<std::string> normalizeTargetUrl(const std::string& input_url,
                                               const ServerConfig& config);
