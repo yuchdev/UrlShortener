@@ -360,6 +360,7 @@ set(URL_SHORTENER_SOURCES
       tests/unit/cli/04_cli_exit_codes.cpp
       tests/unit/cli/05_cli_storage_config_flag.cpp
       tests/unit/cli/06_cli_arg_coercion.cpp
+      tests/unit/cli/07_cli_parser_cmd.cpp
       tests/unit/cli/11_cli_parser_command_api_flags.cpp
   )
 

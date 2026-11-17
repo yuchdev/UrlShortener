@@ -172,6 +172,29 @@ BOOST_AUTO_TEST_CASE(link_short_circuit_is_undisturbed)
 }
 
 /**
+ * [Unit][CLI] The generic `cmd <name>` short-circuit, like `link`, never
+ * touches the command-API gate: `cmd link.list` routes to cmd mode (engaging
+ * `ParseResult::cmd`, not server mode) and leaves the gate at its secure
+ * defaults (off / user). The gate flags belong to server mode only (the
+ * one-shot `cmd` session's role comes from `--read-only`, not these flags).
+ *
+ * If this breaks, first check:
+ *   - The `argv[1] == "cmd"` branch returns before any server-flag parsing.
+ *   - ServerConfig initialises command_api_enabled=false, role="user".
+ */
+BOOST_AUTO_TEST_CASE(cmd_short_circuit_is_undisturbed)
+{
+    ArgvBuilder args({"url_shortener", "cmd", "link.list"});
+    const ParseResult result = CliParser{}.parse(args.argc(), args.argv());
+
+    BOOST_REQUIRE(result.cmd.has_value());
+    BOOST_CHECK(!result.command.has_value());
+    BOOST_CHECK_EQUAL(result.cmd->command, std::string("link.list"));
+    BOOST_CHECK_EQUAL(result.config.command_api_enabled, false);
+    BOOST_CHECK_EQUAL(result.config.command_api_role, std::string("user"));
+}
+
+/**
  * [Unit][CLI] `--help` lists both gate flags, states the default is off, and
  * carries the loopback-only / reverse-proxy / X-Forwarded-For caveats (threat
  * model T-65 mitigation is the help text itself).

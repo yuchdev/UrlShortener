@@ -6,10 +6,13 @@
 
 #include <optional>
 #include <string>
+#include <utility>
 #include <variant>
+#include <vector>
 
 #include <url_shortener/app/link_command_service.hpp>
 #include <url_shortener/core/config.hpp>
+#include <url_shortener/observability/logging_config.hpp>
 
 /// Link-management subcommand recognized as `link <verb>` on the command line.
 ///
@@ -69,6 +72,86 @@ struct LinkCliCommand
         payload;
 };
 
+/// Logging policy of the one-shot CLI modes (`cmd`, `link <verb>`), decision
+/// log D14.
+///
+/// A one-shot invocation never starts the server's logging subsystem, so an
+/// uninitialized logger would leak its audit lines to stderr (threat model
+/// T-80). These two flags select the explicit policy @ref
+/// one_shot_logging_config turns into a `LoggingConfig`: silence by default, a
+/// file sink with `--log-file`, or a stderr sink with `--verbose`. The two
+/// flags are mutually exclusive (rejected at parse time). Shared by the `cmd`
+/// parser (subtask 12) and the `cmd`/`link` dispatchers (subtasks 13, 15).
+struct OneShotLogging
+{
+    ///< `--log-file <path>`: enable a File sink writing to this path. Empty or
+    ///< combined with @ref verbose is a parse error, so when set the path is
+    ///< non-empty. `std::nullopt` means the flag was not given.
+    std::optional<std::string> log_file;
+
+    ///< `--verbose`: enable a Stderr sink. Combined with @ref log_file is a
+    ///< parse error. `false` means the flag was not given.
+    bool verbose = false;
+};
+
+/// A recognized `cmd <name> [options]` one-shot invocation, carried verbatim.
+///
+/// This subtask (12) only turns `argv` into plain strings and booleans; nothing
+/// is executed, the registry is not consulted, and `--json`/`--arg` values are
+/// stored untouched (their length and JSON validity are checked later by the
+/// envelope/registry layer). @ref command is shape-checked against @ref
+/// is_valid_command_name only. @ref json_args and @ref arg_pairs are mutually
+/// exclusive at the source grammar (a parse error rejects using both).
+struct CmdCliCommand
+{
+    ///< The dotted command name (argv after `cmd`), shape-checked against @ref
+    ///< is_valid_command_name; never resolved against the registry here.
+    std::string command;
+
+    ///< `--json <text>` body, stored verbatim; never `"-"` (that sets @ref
+    ///< json_from_stdin) and never combined with @ref arg_pairs.
+    ///< `std::nullopt` when `--json` was not given.
+    std::optional<std::string> json_args;
+
+    ///< `true` when `--json -` requested reading the args object from stdin;
+    ///< the actual read happens in the dispatcher (subtask 13), not here.
+    bool json_from_stdin = false;
+
+    ///< `--arg <name>=<value>` operands in command-line order (first-seen order
+    ///< preserved); each stored as the raw name/value halves, unescaped and
+    ///< unvalidated. Empty when `--json` was used instead.
+    std::vector<std::pair<std::string, std::string>> arg_pairs;
+
+    ///< `--id <text>` correlation id, non-empty and at most
+    ///< `ServerConfig::request_id_max_length` bytes. `std::nullopt` when the
+    ///< flag was not given.
+    std::optional<std::string> request_id;
+
+    ///< `--raw`: print only the envelope's `result` (dispatcher behaviour).
+    bool raw = false;
+
+    ///< `--dry-run`: set `options.dry_run` on the request envelope.
+    bool dry_run = false;
+
+    ///< `--async`: set `options.async` on the request envelope.
+    bool async = false;
+
+    ///< `--no-wait`: do not wait for an asynchronous job to finish.
+    bool no_wait = false;
+
+    ///< `--read-only`: run the local session as `ControlSet::User` rather than
+    ///< the default `Admin` (ADR 0002 Authorization).
+    bool read_only = false;
+
+    ///< `cmd <name> --help`: the dispatcher prints the descriptor's help and
+    ///< executes nothing. Never set for `cmd --help` with no name (that sets
+    ///< `ParseResult::help_requested` instead).
+    bool help = false;
+
+    ///< Logging policy from `--log-file`/`--verbose` (decision log D14).
+    OneShotLogging logging;
+};
+
 /// Result returned by CliParser::parse().
 ///
 /// When help_requested is true, help_text contains the formatted usage
@@ -86,7 +169,28 @@ struct ParseResult
 
     /// Set only for `link <verb>` invocations; std::nullopt for server mode.
     std::optional<LinkCliCommand> command;
+
+    /// Set only for `cmd <name>` invocations; std::nullopt otherwise. Never
+    /// engaged at the same time as @ref command (the two top-level modes are
+    /// mutually exclusive).
+    std::optional<CmdCliCommand> cmd;
 };
+
+/**
+ * @brief Maps a one-shot logging policy to a concrete `LoggingConfig`.
+ *
+ * Realises decision log D14 for the `cmd` and `link <verb>` modes: the sink is
+ * chosen from the two mutually exclusive flags, never Stdout (which carries the
+ * command result).
+ *
+ * @param logging The parsed `--log-file`/`--verbose` policy.
+ * @return A `LoggingConfig` that is disabled when neither flag is set;
+ * `{enabled, File, file_path}` when `logging.log_file` is set; or
+ * `{enabled, Stderr}` when `logging.verbose` is set. When both are set
+ * (a state the parser rejects) the file sink takes precedence.
+ */
+url_shortener::observability::LoggingConfig one_shot_logging_config(
+    const OneShotLogging& logging);
 
 /**
  * @brief Parses command-line arguments using Boost.ProgramOptions into
@@ -98,6 +202,9 @@ struct ParseResult
  *    applying CLI flags; see `parse()` for the full list.
  *  - Recognizes a leading `link <verb>` positional as a one-shot
  *    link-management command and returns it via `ParseResult::command`,
+ *    short-circuiting all server-flag parsing.
+ *  - Recognizes a leading `cmd <name>` positional as the generic one-shot
+ *    command mode and returns it via `ParseResult::cmd`, likewise
  *    short-circuiting all server-flag parsing.
  *  - Defines and documents every supported CLI option in one place.
  *  - Validates argument values and produces clear error messages.

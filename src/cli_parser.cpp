@@ -10,11 +10,14 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <boost/program_options.hpp>
 
+#include <url_shortener/cli/arg_coercion.hpp>
 #include <url_shortener/cli/link_command_args.hpp>
+#include <url_shortener/commands/envelope.hpp>
 
 namespace po = boost::program_options;
 
@@ -399,6 +402,252 @@ LinkCliCommand parseLinkCommand(int argc, char* argv[], ServerConfig& config)
     return command;
 }
 
+/**
+ * @brief Render the static usage text for `url_shortener cmd --help`.
+ *
+ * Emitted only for `cmd --help` with no command name; `cmd <name> --help`
+ * instead sets @ref CmdCliCommand::help so the dispatcher (subtask 13) can
+ * print the descriptor's own help. Lists every accepted option and one
+ * example. No supplied value is ever interpolated.
+ *
+ * @return std::string The multi-line usage listing.
+ */
+std::string buildCmdHelpText()
+{
+    return
+        "Usage: url_shortener cmd <name> [options]\n\n"
+        "Run one registered command and print its JSON envelope, then exit.\n"
+        "The command name is a dotted identifier such as link.create.\n\n"
+        "Arguments (choose one source; --json and --arg are mutually "
+        "exclusive):\n"
+        "  --json <TEXT>        Args as a JSON object. Use --json - to read\n"
+        "                       it from stdin (keeps secrets out of argv).\n"
+        "  --arg <NAME=VALUE>   One typed argument (repeatable, order "
+        "preserved).\n\n"
+        "Options:\n"
+        "  --id <TEXT>          Correlation id echoed in the response.\n"
+        "  --raw                Print only the envelope's result field.\n"
+        "  --dry-run            Validate without applying (options.dry_run).\n"
+        "  --async              Request asynchronous execution "
+        "(options.async).\n"
+        "  --no-wait            Do not wait for an asynchronous job.\n"
+        "  --read-only          Run the local session as a read-only user.\n"
+        "  --log-file <PATH>    Write logs to a file (mutually exclusive with\n"
+        "                       --verbose). Default: logging disabled.\n"
+        "  --verbose            Write logs to stderr.\n"
+        "  --base-domain <URL>  Base domain for generated short URLs.\n"
+        "  --allow-private-targets <BOOL>\n"
+        "                       Permit private/intranet targets (true/false).\n"
+        "  --storage-config <FILE>\n"
+        "                       Storage configuration YAML. Default: "
+        "in-memory.\n"
+        "  --help, -h           Print this message (cmd <name> --help prints "
+        "the\n"
+        "                       command's own help).\n\n"
+        "Example:\n"
+        "  url_shortener cmd link.create --json '{\"target_url\":"
+        "\"https://example.com\"}'\n";
+}
+
+/**
+ * @brief Read the value token that follows a value-taking `cmd` flag.
+ *
+ * Mirrors @ref extract_storage_config_flag's rule: the value is the next token,
+ * and it is considered missing when @p flag is the last token or is immediately
+ * followed by another `--`-prefixed token. The index is advanced past the
+ * consumed value. Error messages name only the flag, never the value.
+ *
+ * @param tokens The `cmd`-scoped token list.
+ * @param i In/out index of @p flag; advanced to the consumed value on success.
+ * @param flag The flag spelling, used only in the error message.
+ * @return const std::string& The value token (borrowed from @p tokens).
+ * @throws std::invalid_argument If no value token follows @p flag.
+ */
+const std::string& cmdFlagValue(
+    const std::vector<std::string>& tokens, std::size_t& i,
+    const char* flag)
+{
+    if (i + 1 >= tokens.size() || tokens[i + 1].rfind("--", 0) == 0) {
+        throw std::invalid_argument(
+            std::string("Missing value for ") + flag + " flag.");
+    }
+    return tokens[++i];
+}
+
+/**
+ * @brief Parse a `cmd <name> [options]` invocation into a CmdCliCommand.
+ *
+ * Runs a single token loop (no Boost.ProgramOptions, like `link <verb>`): the
+ * first bare token is the command name; every other token is a known flag or an
+ * error. The global `--storage-config` flag is stripped first (recorded in @p
+ * config). Values of `--json`/`--arg` are stored verbatim and never echoed in
+ * an error message (threat model T-77). Nothing is executed and the registry is
+ * not consulted; only the name *shape* and the simple cross-flag rules are
+ * checked here.
+ *
+ * When `--help`/`-h` appears with no command name, the returned command has an
+ * empty @ref CmdCliCommand::command and @ref CmdCliCommand::help set, which the
+ * caller turns into the static usage text; otherwise a missing name is an
+ * error.
+ *
+ * @param tokens The tokens after the leading `cmd` positional (argv[2..]);
+ *        consumed in place by `--storage-config` stripping.
+ * @param config ServerConfig receiving `--base-domain`,
+ *        `--allow-private-targets` and `--storage-config`.
+ * @return CmdCliCommand The parsed one-shot command (empty name only in the
+ *         help-with-no-name case).
+ * @throws std::invalid_argument If the name is missing (without `--help`),
+ *         malformed in shape, or too long; an option is unknown or missing its
+ *         value; `--json` is repeated, empty, or combined with `--arg`; `--arg`
+ *         lacks `NAME=VALUE` or has an empty name; `--id` is empty or longer
+ *         than `config.request_id_max_length`; `--log-file` is empty or
+ *         combined with `--verbose`; or a second positional follows the name.
+ */
+CmdCliCommand parseCmdCommand(
+    std::vector<std::string>& tokens, ServerConfig& config)
+{
+    namespace cli = url_shortener::cli;
+    namespace commands = url_shortener::commands;
+
+    // Strip the global --storage-config flag (any position) before the flag
+    // loop, exactly as the `link <verb>` path does.
+    extract_storage_config_flag(tokens, config);
+
+    CmdCliCommand command;
+    bool name_set = false;
+    bool json_set = false;
+
+    for (std::size_t i = 0; i < tokens.size(); ++i) {
+        const std::string& token = tokens[i];
+
+        if (token == "--help" || token == "-h") {
+            command.help = true;
+        }
+        else if (token == "--json") {
+            if (json_set) {
+                throw std::invalid_argument("Repeated --json flag.");
+            }
+            const std::string& value = cmdFlagValue(tokens, i, "--json");
+            if (value == "-") {
+                command.json_from_stdin = true;
+            }
+            else if (value.empty()) {
+                throw std::invalid_argument("Empty value for --json flag.");
+            }
+            else {
+                command.json_args = value;
+            }
+            json_set = true;
+        }
+        else if (token == "--arg") {
+            const std::string& value = cmdFlagValue(tokens, i, "--arg");
+            cli::arg_pair pair;
+            if (!cli::split_arg_pair(value, &pair)) {
+                // split_arg_pair fails on a token without '=' (bad_pair) or
+                // with an empty name (bad_name); neither echoes the value.
+                if (value.find('=') == std::string::npos) {
+                    throw std::invalid_argument(
+                        "--arg requires NAME=VALUE.");
+                }
+                throw std::invalid_argument("--arg has an empty NAME.");
+            }
+            command.arg_pairs.emplace_back(
+                std::move(pair.name), std::move(pair.value));
+        }
+        else if (token == "--id") {
+            const std::string& value = cmdFlagValue(tokens, i, "--id");
+            if (value.empty()) {
+                throw std::invalid_argument("Empty value for --id flag.");
+            }
+            if (value.size() > config.request_id_max_length) {
+                throw std::invalid_argument("--id is too long.");
+            }
+            command.request_id = value;
+        }
+        else if (token == "--raw") {
+            command.raw = true;
+        }
+        else if (token == "--dry-run") {
+            command.dry_run = true;
+        }
+        else if (token == "--async") {
+            command.async = true;
+        }
+        else if (token == "--no-wait") {
+            command.no_wait = true;
+        }
+        else if (token == "--read-only") {
+            command.read_only = true;
+        }
+        else if (token == "--log-file") {
+            const std::string& value = cmdFlagValue(tokens, i, "--log-file");
+            if (value.empty()) {
+                throw std::invalid_argument(
+                    "Empty value for --log-file flag.");
+            }
+            command.logging.log_file = value;
+        }
+        else if (token == "--verbose") {
+            command.logging.verbose = true;
+        }
+        else if (token == "--base-domain") {
+            const std::string& value =
+                cmdFlagValue(tokens, i, "--base-domain");
+            if (value.empty()) {
+                throw std::invalid_argument(
+                    "Empty value for --base-domain flag.");
+            }
+            config.shortener_base_domain = value;
+        }
+        else if (token == "--allow-private-targets") {
+            const std::string& value =
+                cmdFlagValue(tokens, i, "--allow-private-targets");
+            config.shortener_allow_private_targets = parseBool(value);
+        }
+        else if (token.rfind("--", 0) == 0) {
+            throw std::invalid_argument("Unknown cmd option: " + token);
+        }
+        else if (!name_set) {
+            command.command = token;
+            name_set = true;
+        }
+        else {
+            throw std::invalid_argument(
+                "Unexpected positional argument after the command name.");
+        }
+    }
+
+    // Cross-flag rules.
+    if (json_set && !command.arg_pairs.empty()) {
+        throw std::invalid_argument(
+            "--json and --arg are mutually exclusive.");
+    }
+    if (command.logging.log_file.has_value() && command.logging.verbose) {
+        throw std::invalid_argument(
+            "--log-file and --verbose are mutually exclusive.");
+    }
+
+    if (!name_set) {
+        // `cmd --help` with no name defers to the caller's static usage; a
+        // bare `cmd` (or options with no name) is a usage error.
+        if (command.help) {
+            return command;
+        }
+        throw std::invalid_argument(
+            "Missing command name. Expected: cmd <name> [options].");
+    }
+
+    // Shape-only check (no registry lookup); value is not echoed.
+    if (!commands::is_valid_command_name(command.command)
+        || command.command.size() > commands::envelope_limits{}.max_command_len)
+    {
+        throw std::invalid_argument(
+            "Invalid command name. Expected a dotted name like link.create.");
+    }
+
+    return command;
+}
+
 } // namespace
 
 /**
@@ -492,6 +741,24 @@ ParseResult CliParser::parse(int argc, char* argv[]) const
             return result;
         }
         result.command = parseLinkCommand(argc, argv, result.config);
+        return result;
+    }
+
+    // Top-level `cmd <name>` one-shot mode: mirrors the `link` branch (no
+    // server-flag parsing). `cmd --help` with no name yields the static usage
+    // text; `cmd <name> --help` carries help on the command instead. `cmd` is
+    // recognized only as argv[1], so a trailing `cmd` in server mode stays a
+    // server-flag error.
+    if (argc >= 2 && std::string(argv[1]) == "cmd") {
+        std::vector<std::string> cmd_args(argv + 2, argv + argc);
+        CmdCliCommand parsed = parseCmdCommand(cmd_args, result.config);
+        if (parsed.command.empty()) {
+            // Only reachable for `cmd --help` with no name.
+            result.help_text = buildCmdHelpText();
+            result.help_requested = true;
+            return result;
+        }
+        result.cmd = std::move(parsed);
         return result;
     }
 
@@ -882,4 +1149,25 @@ ParseResult CliParser::parse(int argc, char* argv[]) const
     }
 
     return result;
+}
+
+url_shortener::observability::LoggingConfig one_shot_logging_config(
+    const OneShotLogging& logging)
+{
+    namespace obs = url_shortener::observability;
+
+    obs::LoggingConfig cfg;
+    if (logging.log_file.has_value()) {
+        cfg.enabled = true;
+        cfg.sink = obs::LogSink::File;
+        cfg.file_path = *logging.log_file;
+    }
+    else if (logging.verbose) {
+        cfg.enabled = true;
+        cfg.sink = obs::LogSink::Stderr;
+    }
+    else {
+        cfg.enabled = false;
+    }
+    return cfg;
 }
