@@ -260,7 +260,8 @@ fallback bucket; job waiting in `cmd` deferred to 05.0/20 as specced.
 
 **Open decisions raised at close:** whether a `User` may list
 `disabled`/`expired` links (built per the 2026-11-16 decision: only
-`all|deleted` need write; the T-71 wording is stricter).
+`all|deleted` need write; the T-71 wording is stricter) - user kept
+the as-built behaviour on 2026-11-17; T-71 note added to the threat model.
 
 ## Open risks
 
