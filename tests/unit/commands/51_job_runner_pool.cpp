@@ -38,7 +38,7 @@ namespace
 // and never writes it, so concurrent reads from several workers are race-free.
 ManualClock make_clock()
 {
-    return ManualClock(std::chrono::system_clock::time_point{});
+    return ManualClock(std::chrono::system_clock::time_point {});
 }
 
 // A one-shot gate: a body blocks in wait() until the test calls open(). Pure
@@ -66,32 +66,18 @@ struct Gate
     }
 };
 
-// Spins (yielding) until @p pred holds for the job's record, then returns that
-// record. Not a sleep-based wait: it returns the instant the predicate is true
-// and fails (rather than hanging) if the deadline passes, so a regression shows
-// up as a failure instead of a frozen run.
-JobRecord wait_until(const JobRunner& runner, const std::string& id,
-                     const std::function<bool(const JobRecord&)>& pred)
-{
-    const auto deadline =
-        std::chrono::steady_clock::now() + std::chrono::seconds(10);
-    for (;;)
-    {
-        std::optional<JobRecord> record = runner.get(id);
-        BOOST_REQUIRE(record.has_value());
-        if (pred(*record))
-        {
-            return *record;
-        }
-        BOOST_REQUIRE(std::chrono::steady_clock::now() < deadline);
-        std::this_thread::yield();
-    }
-}
-
+// Blocks on the runner's own JobRunner::wait_for_terminal (subtask 03) with a
+// generous ceiling, then asserts the job actually reached a terminal state.
+// Not a sleep-based wait: wait_for_terminal returns the instant the job
+// finishes (woken by the worker's finish notification), and a regression shows
+// up as a failed assertion rather than a frozen run.
 JobRecord wait_terminal(const JobRunner& runner, const std::string& id)
 {
-    return wait_until(runner, id,
-                      [](const JobRecord& r) { return is_terminal(r.state); });
+    std::optional<JobRecord> record =
+        runner.wait_for_terminal(id, std::chrono::seconds(10));
+    BOOST_REQUIRE(record.has_value());
+    BOOST_REQUIRE(is_terminal(record->state));
+    return *record;
 }
 
 }  // namespace
@@ -105,9 +91,10 @@ JobRecord wait_terminal(const JobRunner& runner, const std::string& id)
 BOOST_AUTO_TEST_CASE(submit_runs_body_and_succeeds_with_result_and_progress)
 {
     ManualClock clock = make_clock();
-    JobRunner runner(clock, JobRunnerOptions{1, 4, 256});
+    JobRunner runner(clock, JobRunnerOptions {1, 4, 256});
 
-    JobBody body = [](IJobContext& ctx) {
+    JobBody body = [](IJobContext& ctx)
+    {
         ctx.set_total(3);
         ctx.advance(3);
         JobOutcome out;
@@ -139,9 +126,10 @@ BOOST_AUTO_TEST_CASE(submit_runs_body_and_succeeds_with_result_and_progress)
 BOOST_AUTO_TEST_CASE(failed_outcome_ends_failed_with_the_code)
 {
     ManualClock clock = make_clock();
-    JobRunner runner(clock, JobRunnerOptions{1, 4, 256});
+    JobRunner runner(clock, JobRunnerOptions {1, 4, 256});
 
-    JobBody body = [](IJobContext&) {
+    JobBody body = [](IJobContext&)
+    {
         JobOutcome out;
         out.ok = false;
         out.failure = make_error(CommandErrorCode::invalid_field, "bad row");
@@ -167,12 +155,11 @@ BOOST_AUTO_TEST_CASE(failed_outcome_ends_failed_with_the_code)
 BOOST_AUTO_TEST_CASE(thrown_exception_ends_failed_internal_without_leaking_text)
 {
     ManualClock clock = make_clock();
-    JobRunner runner(clock, JobRunnerOptions{1, 4, 256});
+    JobRunner runner(clock, JobRunnerOptions {1, 4, 256});
 
     const std::string leaky_detail = "needle-path-/etc/shadow";
-    JobBody body = [leaky_detail](IJobContext&) -> JobOutcome {
-        throw std::runtime_error(leaky_detail);
-    };
+    JobBody body = [leaky_detail](IJobContext&) -> JobOutcome
+    { throw std::runtime_error(leaky_detail); };
 
     JobSubmitResult submitted =
         runner.submit("link.export", "feedfacefeedface", std::move(body));
@@ -183,8 +170,8 @@ BOOST_AUTO_TEST_CASE(thrown_exception_ends_failed_internal_without_leaking_text)
     BOOST_REQUIRE(final_record.failure.has_value());
     BOOST_TEST(final_record.failure->code == "internal");
     BOOST_TEST(final_record.failure->message == "job failed");
-    BOOST_TEST(final_record.failure->message.find("needle-path") ==
-               std::string::npos);
+    BOOST_TEST(final_record.failure->message.find("needle-path")
+               == std::string::npos);
 }
 
 // Type: unit (bounded queue / T-86).
@@ -197,11 +184,12 @@ BOOST_AUTO_TEST_CASE(thrown_exception_ends_failed_internal_without_leaking_text)
 BOOST_AUTO_TEST_CASE(full_queue_returns_busy_and_creates_no_record)
 {
     ManualClock clock = make_clock();
-    JobRunner runner(clock, JobRunnerOptions{1, 2, 256});
+    JobRunner runner(clock, JobRunnerOptions {1, 2, 256});
 
     Gate gate;
     std::promise<void> running;
-    JobBody gated = [&gate, &running](IJobContext&) {
+    JobBody gated = [&gate, &running](IJobContext&)
+    {
         running.set_value();
         gate.wait();
         JobOutcome out;
@@ -213,7 +201,8 @@ BOOST_AUTO_TEST_CASE(full_queue_returns_busy_and_creates_no_record)
     BOOST_REQUIRE(a.job.has_value());
     running.get_future().wait();  // the single worker now holds job A in-body
 
-    JobBody noop = [](IJobContext&) {
+    JobBody noop = [](IJobContext&)
+    {
         JobOutcome out;
         out.ok = true;
         return out;
@@ -243,11 +232,12 @@ BOOST_AUTO_TEST_CASE(full_queue_returns_busy_and_creates_no_record)
 BOOST_AUTO_TEST_CASE(cancel_queued_job_never_runs_body)
 {
     ManualClock clock = make_clock();
-    JobRunner runner(clock, JobRunnerOptions{1, 4, 256});
+    JobRunner runner(clock, JobRunnerOptions {1, 4, 256});
 
     Gate gate;
     std::promise<void> running;
-    JobBody gated = [&gate, &running](IJobContext&) {
+    JobBody gated = [&gate, &running](IJobContext&)
+    {
         running.set_value();
         gate.wait();
         JobOutcome out;
@@ -258,8 +248,9 @@ BOOST_AUTO_TEST_CASE(cancel_queued_job_never_runs_body)
     BOOST_REQUIRE(a.job.has_value());
     running.get_future().wait();
 
-    std::atomic<bool> invoked{false};
-    JobBody queued = [&invoked](IJobContext&) {
+    std::atomic<bool> invoked {false};
+    JobBody queued = [&invoked](IJobContext&)
+    {
         invoked.store(true);
         JobOutcome out;
         out.ok = true;
@@ -289,17 +280,16 @@ BOOST_AUTO_TEST_CASE(cancel_queued_job_never_runs_body)
 BOOST_AUTO_TEST_CASE(cancel_running_job_is_cooperative_and_keeps_partial)
 {
     ManualClock clock = make_clock();
-    JobRunner runner(clock, JobRunnerOptions{1, 4, 256});
+    JobRunner runner(clock, JobRunnerOptions {1, 4, 256});
 
     Gate finish_gate;
     std::promise<void> running;
-    std::atomic<bool> observed_cancel{false};
-    JobBody body = [&finish_gate, &running,
-                    &observed_cancel](IJobContext& ctx) {
+    std::atomic<bool> observed_cancel {false};
+    JobBody body = [&finish_gate, &running, &observed_cancel](IJobContext& ctx)
+    {
         ctx.advance(5);
         running.set_value();
-        while (!ctx.cancel_requested())
-        {
+        while (!ctx.cancel_requested()) {
             std::this_thread::yield();
         }
         observed_cancel.store(true);
@@ -336,9 +326,10 @@ BOOST_AUTO_TEST_CASE(cancel_running_job_is_cooperative_and_keeps_partial)
 BOOST_AUTO_TEST_CASE(cancel_finished_job_is_a_noop)
 {
     ManualClock clock = make_clock();
-    JobRunner runner(clock, JobRunnerOptions{1, 4, 256});
+    JobRunner runner(clock, JobRunnerOptions {1, 4, 256});
 
-    JobBody body = [](IJobContext&) {
+    JobBody body = [](IJobContext&)
+    {
         JobOutcome out;
         out.ok = true;
         out.result_json = "{\"ok\":1}";
@@ -363,7 +354,7 @@ BOOST_AUTO_TEST_CASE(cancel_finished_job_is_a_noop)
 BOOST_AUTO_TEST_CASE(cancel_unknown_id_returns_nullopt)
 {
     ManualClock clock = make_clock();
-    JobRunner runner(clock, JobRunnerOptions{1, 4, 256});
+    JobRunner runner(clock, JobRunnerOptions {1, 4, 256});
 
     BOOST_TEST(!runner.cancel("j-999").has_value());
 }
@@ -377,11 +368,12 @@ BOOST_AUTO_TEST_CASE(cancel_unknown_id_returns_nullopt)
 BOOST_AUTO_TEST_CASE(flag_ignored_body_runs_to_completion)
 {
     ManualClock clock = make_clock();
-    JobRunner runner(clock, JobRunnerOptions{1, 4, 256});
+    JobRunner runner(clock, JobRunnerOptions {1, 4, 256});
 
     Gate gate;
     std::promise<void> running;
-    JobBody body = [&gate, &running](IJobContext&) {
+    JobBody body = [&gate, &running](IJobContext&)
+    {
         running.set_value();
         gate.wait();  // never polls cancel_requested()
         JobOutcome out;
@@ -411,14 +403,16 @@ BOOST_AUTO_TEST_CASE(flag_ignored_body_runs_to_completion)
 BOOST_AUTO_TEST_CASE(two_workers_run_two_jobs_in_parallel)
 {
     ManualClock clock = make_clock();
-    JobRunner runner(clock, JobRunnerOptions{2, 4, 256});
+    JobRunner runner(clock, JobRunnerOptions {2, 4, 256});
 
     Gate gate;
     std::promise<void> running_a;
     std::promise<void> running_b;
 
-    auto make_body = [&gate](std::promise<void>& started) {
-        return [&gate, &started](IJobContext&) {
+    auto make_body = [&gate](std::promise<void>& started)
+    {
+        return [&gate, &started](IJobContext&)
+        {
             started.set_value();
             gate.wait();
             JobOutcome out;
@@ -454,11 +448,12 @@ BOOST_AUTO_TEST_CASE(two_workers_run_two_jobs_in_parallel)
 BOOST_AUTO_TEST_CASE(progress_is_visible_through_get_while_running)
 {
     ManualClock clock = make_clock();
-    JobRunner runner(clock, JobRunnerOptions{1, 4, 256});
+    JobRunner runner(clock, JobRunnerOptions {1, 4, 256});
 
     Gate gate;
     std::promise<void> running;
-    JobBody body = [&gate, &running](IJobContext& ctx) {
+    JobBody body = [&gate, &running](IJobContext& ctx)
+    {
         ctx.set_total(10);
         ctx.advance(4);
         running.set_value();
@@ -490,11 +485,11 @@ BOOST_AUTO_TEST_CASE(progress_is_visible_through_get_while_running)
 BOOST_AUTO_TEST_CASE(options_validation_rejects_zero_bounds)
 {
     ManualClock clock = make_clock();
-    BOOST_CHECK_THROW(JobRunner(clock, JobRunnerOptions{0, 4, 256}),
+    BOOST_CHECK_THROW(JobRunner(clock, JobRunnerOptions {0, 4, 256}),
                       std::invalid_argument);
-    BOOST_CHECK_THROW(JobRunner(clock, JobRunnerOptions{1, 0, 256}),
+    BOOST_CHECK_THROW(JobRunner(clock, JobRunnerOptions {1, 0, 256}),
                       std::invalid_argument);
-    BOOST_CHECK_THROW(JobRunner(clock, JobRunnerOptions{1, 4, 0}),
+    BOOST_CHECK_THROW(JobRunner(clock, JobRunnerOptions {1, 4, 0}),
                       std::invalid_argument);
 }
 
@@ -508,42 +503,39 @@ BOOST_AUTO_TEST_CASE(options_validation_rejects_zero_bounds)
 BOOST_AUTO_TEST_CASE(submit_cancel_race_stress)
 {
     ManualClock clock = make_clock();
-    JobRunner runner(clock, JobRunnerOptions{4, 64, 100000});
+    JobRunner runner(clock, JobRunnerOptions {4, 64, 100000});
 
     constexpr int k_jobs = 400;
     std::vector<std::string> ids;
     ids.reserve(k_jobs);
     std::mutex ids_mutex;
-    std::atomic<bool> submitting{true};
+    std::atomic<bool> submitting {true};
 
-    std::thread canceller([&] {
-        // Runs only while the submitter is active; it stops as soon as the
-        // submit loop clears the flag, so join() always returns.
-        while (submitting.load())
+    std::thread canceller(
+        [&]
         {
-            std::string pick;
-            {
-                std::lock_guard<std::mutex> lock(ids_mutex);
-                if (!ids.empty())
+            // Runs only while the submitter is active; it stops as soon as the
+            // submit loop clears the flag, so join() always returns.
+            while (submitting.load()) {
+                std::string pick;
                 {
-                    pick = ids.back();
+                    std::lock_guard<std::mutex> lock(ids_mutex);
+                    if (!ids.empty()) {
+                        pick = ids.back();
+                    }
                 }
+                if (!pick.empty()) {
+                    runner.cancel(pick);
+                }
+                std::this_thread::yield();
             }
-            if (!pick.empty())
-            {
-                runner.cancel(pick);
-            }
-            std::this_thread::yield();
-        }
-    });
+        });
 
-    for (int i = 0; i < k_jobs; ++i)
-    {
-        JobBody body = [](IJobContext& ctx) {
-            for (int step = 0; step < 4; ++step)
-            {
-                if (ctx.cancel_requested())
-                {
+    for (int i = 0; i < k_jobs; ++i) {
+        JobBody body = [](IJobContext& ctx)
+        {
+            for (int step = 0; step < 4; ++step) {
+                if (ctx.cancel_requested()) {
                     JobOutcome cancelled;
                     cancelled.ok = false;
                     cancelled.cancelled = true;
@@ -557,8 +549,7 @@ BOOST_AUTO_TEST_CASE(submit_cancel_race_stress)
         };
         JobSubmitResult submitted =
             runner.submit("link.import", "digestdigestdige", std::move(body));
-        if (submitted.job.has_value())
-        {
+        if (submitted.job.has_value()) {
             std::lock_guard<std::mutex> lock(ids_mutex);
             ids.push_back(submitted.job->id);
         }
@@ -572,8 +563,7 @@ BOOST_AUTO_TEST_CASE(submit_cancel_race_stress)
         std::lock_guard<std::mutex> lock(ids_mutex);
         accepted = ids;
     }
-    for (const std::string& id : accepted)
-    {
+    for (const std::string& id : accepted) {
         JobRecord record = wait_terminal(runner, id);
         BOOST_TEST(is_terminal(record.state));
     }

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <atomic>
+#include <chrono>
 #include <condition_variable>
 #include <cstddef>
 #include <cstdint>
@@ -110,7 +111,8 @@ private:
      * @param id The job id whose progress this context updates; copied in.
      * @param cancel Shared cancel flag, also held by the runner; never null.
      */
-    JobContext(JobStore& store, std::string id,
+    JobContext(JobStore& store,
+               std::string id,
                std::shared_ptr<std::atomic<bool>> cancel);
 
     ///< Record table that receives progress updates; not owned, outlives this.
@@ -153,11 +155,11 @@ private:
  * afterwards to erase the flag. A body and the logger are never invoked while
  * `m_mutex` is held.
  *
- * Subtask 02 provides `submit`/`get`/`list`/`cancel` plus a minimal
- * `shutdown()` the destructor calls so no thread leaks; the public
- * `wait_for_terminal`/`wait_idle`/`cancel_all` drain surface and the full
- * `shutdown()` semantics are subtask 03 and slot onto the same members without
- * restructuring.
+ * Subtask 02 provides `submit`/`get`/`list`/`cancel`; subtask 03 adds the
+ * blocking/lifecycle surface -- `wait_for_terminal`, `wait_idle`, `cancel_all`
+ * and the orderly `shutdown()` the destructor calls -- over the same members
+ * plus a second condition variable (@ref m_idle_cv) for waiters, with no change
+ * to the lock order.
  */
 class JobRunner final : public IJobSubmitter
 {
@@ -178,7 +180,7 @@ public:
 
     /**
      * @brief Stops the pool and joins every worker so no thread outlives the
-     * runner; delegates to the subtask-02 @ref shutdown.
+     * runner; delegates to @ref shutdown.
      */
     ~JobRunner() override;
 
@@ -206,7 +208,8 @@ public:
      * @return `{JobInfo{id, queued}, none}` on acceptance; `{nullopt, busy}`
      * when stopping or the queue is full.
      */
-    JobSubmitResult submit(std::string command, std::string args_digest,
+    JobSubmitResult submit(std::string command,
+                           std::string args_digest,
                            JobBody body) override;
 
     /**
@@ -227,7 +230,8 @@ public:
      * page with the correct `total`.
      * @return A @ref JobPage with the clamped slice and the full match count.
      */
-    JobPage list(std::optional<JobState> filter, std::size_t offset,
+    JobPage list(std::optional<JobState> filter,
+                 std::size_t offset,
                  std::size_t limit) const;
 
     /**
@@ -249,9 +253,85 @@ public:
      */
     std::optional<JobRecord> cancel(const std::string& id);
 
-    // wait_for_terminal / wait_idle / cancel_all and the full shutdown()
-    // semantics are subtask 03; they extend the members below without
-    // restructuring.
+    /**
+     * @brief Blocks until a job reaches a terminal state or @p timeout elapses.
+     *
+     * Takes @ref m_mutex and waits on @ref m_idle_cv, which a worker signals
+     * after every @ref JobStore::finish and which @ref cancel signals after
+     * cancelling a queued job, re-reading the record under the lock on each
+     * wake. Lock order is @ref m_mutex before the store mutex, never the
+     * reverse (threat model T-89); the store mutex is never held across the
+     * wait.
+     *
+     * @param id Target job id.
+     * @param timeout Maximum time to wait, measured from entry on a steady
+     * clock; a value of `0` polls once and returns immediately.
+     * @return `std::nullopt` if @p id is unknown (or the record was evicted
+     * while waiting); otherwise the record snapshot -- terminal when the job
+     * finished in time, or the latest non-terminal snapshot if @p timeout
+     * elapsed first (the caller distinguishes the two with @ref is_terminal).
+     */
+    std::optional<JobRecord> wait_for_terminal(
+        const std::string& id, std::chrono::milliseconds timeout) const;
+
+    /**
+     * @brief Blocks until no job is queued or running, or @p timeout elapses.
+     *
+     * Waits on @ref m_idle_cv for @ref JobStore::active_count to reach `0`,
+     * re-evaluated under @ref m_mutex on each wake (lock order @ref m_mutex
+     * before the store mutex, never the reverse). Used to drain outstanding
+     * work before @ref shutdown (stdio EOF, process shutdown).
+     *
+     * @param timeout Maximum time to wait, measured from entry on a steady
+     * clock; `0` polls the idle condition once without blocking.
+     * @return `true` if `queued + running == 0` was observed before @p timeout
+     * elapsed; `false` if the timeout elapsed with work still outstanding.
+     */
+    bool wait_idle(std::chrono::milliseconds timeout) const;
+
+    /**
+     * @brief Cancels every job: queued jobs are finished `cancelled` without
+     * ever running, running jobs have their cooperative cancel flag set (threat
+     * model T-88, T-90).
+     *
+     * Under @ref m_mutex it drains @ref m_queue, finishing each removed job
+     * `cancelled` through the store (lock order @ref m_mutex before the store
+     * mutex) and dropping its flag, then sets every still-live cancel flag in
+     * @ref m_flags so running cooperative bodies stop at their next checkpoint.
+     * A body that never polls the flag runs to completion (C++ cannot forcibly
+     * stop a thread); that residual risk is documented on @ref shutdown.
+     * Signals @ref m_idle_cv so a concurrent @ref wait_idle re-checks.
+     *
+     * A flag can briefly outlive its job's terminal transition (a worker calls
+     * @ref JobStore::finish off-lock and erases the flag only afterwards), so a
+     * flag whose job is already terminal is skipped and not counted.
+     *
+     * @return The number of jobs affected: queued jobs cancelled plus
+     * genuinely-running (non-terminal) jobs flagged. A second call with nothing
+     * left active returns `0` (idempotent).
+     */
+    std::size_t cancel_all();
+
+    /**
+     * @brief Rejects new work, cancels queued jobs, signals running ones and
+     * joins every worker so no thread outlives the runner (threat model T-88,
+     * T-89).
+     *
+     * Steps: (1) set @ref m_stopping under @ref m_mutex so later @ref submit
+     * calls return `busy`; (2) @ref cancel_all so queued jobs never run and
+     * running cooperative bodies are told to stop; (3) wake all workers and
+     * `join` them. The join is unconditional -- C++ has no portable timed join
+     * -- so a body that never polls @ref IJobContext::cancel_requested blocks
+     * this call until it returns on its own (documented residual risk); callers
+     * that need a bounded drain call @ref wait_idle first and act on its result
+     * before calling this.
+     *
+     * Safe under concurrent and repeated calls: only the first caller to
+     * observe @ref m_stopping as `false` performs the join; every other call
+     * (including the destructor's) returns immediately. No argument values are
+     * logged (contract C6).
+     */
+    void shutdown();
 
 private:
     /**
@@ -309,13 +389,6 @@ private:
      */
     void run_job(Pending job);
 
-    /**
-     * @brief Subtask-02 stop: sets `m_stopping`, wakes all workers and joins
-     * them. Idempotent for the serialized (destructor) call path; subtask 03
-     * replaces it with the full drain-and-shutdown semantics.
-     */
-    void shutdown();
-
     ///< Validated construction bounds; declared first so @ref m_store can read
     ///< `max_retained_jobs` from it in the initializer list.
     const JobRunnerOptions m_options;
@@ -333,6 +406,13 @@ private:
     ///< Signalled on every enqueue and on stop; workers wait on it.
     std::condition_variable m_cv;
 
+    ///< Signalled after every @ref JobStore::finish and after a queued-job
+    ///< cancel; @ref wait_for_terminal and @ref wait_idle wait on it. Distinct
+    ///< from @ref m_cv so a waiter never steals a worker's `notify_one` wakeup
+    ///< (lost-wakeup hazard). `mutable` so the `const` wait methods can wait on
+    ///< it; guarded by @ref m_mutex, the outermost lock.
+    mutable std::condition_variable m_idle_cv;
+
     ///< FIFO of queued (not yet running) jobs; bounded by
     ///< `m_options.queue_capacity`.
     std::deque<Pending> m_queue;
@@ -340,8 +420,7 @@ private:
     ///< Live cancel flags keyed by job id: present while a job is queued or
     ///< running, erased by the worker once the body returns (or on a queued
     ///< cancel). Lets @ref cancel reach a running body's flag.
-    std::unordered_map<std::string, std::shared_ptr<std::atomic<bool>>>
-        m_flags;
+    std::unordered_map<std::string, std::shared_ptr<std::atomic<bool>>> m_flags;
 
     ///< The worker threads; joined by @ref shutdown.
     std::vector<std::thread> m_workers;
