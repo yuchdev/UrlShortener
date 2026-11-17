@@ -39,6 +39,7 @@ set(URL_SHORTENER_CPP
         ${CMAKE_CURRENT_SOURCE_DIR}/src/observability/log_fields.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/observability/logger.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/observability/logger_factory.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/observability/file_sink.cpp
 )
 
 set(URL_SHORTENER_H
@@ -73,6 +74,7 @@ set(URL_SHORTENER_H
         ${CMAKE_CURRENT_SOURCE_DIR}/include/url_shortener/observability/log_fields.hpp
         ${CMAKE_CURRENT_SOURCE_DIR}/include/url_shortener/observability/logger.hpp
         ${CMAKE_CURRENT_SOURCE_DIR}/include/url_shortener/observability/logger_factory.hpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/include/url_shortener/observability/file_sink.hpp
 )
 
 set(URL_SHORTENER_SOURCES
@@ -277,6 +279,7 @@ set(URL_SHORTENER_SOURCES
       tests/unit/observability/01_repository_metrics_labels.cpp
       tests/unit/observability/02_cache_metrics_labels.cpp
       tests/unit/observability/03_startup_logging_redaction.cpp
+      tests/unit/observability/04_file_sink.cpp
       tests/unit/docs/01_configuration_examples_match_parser.cpp
   )
 
@@ -559,6 +562,7 @@ set(URL_SHORTENER_SOURCES
       ${CMAKE_CURRENT_SOURCE_DIR}/src/observability/log_fields.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/observability/logger.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/observability/logger_factory.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/observability/file_sink.cpp
   )
 
   set(ALL_UNIT_SOURCES

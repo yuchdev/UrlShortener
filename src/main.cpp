@@ -161,7 +161,16 @@ int main(int argc, char* argv[])
         }
 
         auto& config = parsed.config;
-        url_shortener::observability::LoggerFactory::Initialize({});
+        // Fail closed if logging cannot be initialized: never start the server
+        // with an audit/log sink that silently discards or misroutes output.
+        // The diagnostic is value-free (it never contains a configured path).
+        std::string log_init_error;
+        if (!url_shortener::observability::LoggerFactory::Initialize(
+                {}, &log_init_error)) {
+            std::cerr << "fatal: logging initialization failed: "
+                      << log_init_error << '\n';
+            return 1;
+        }
         auto logger = url_shortener::observability::LoggerFactory::Component("main");
         logger.info("startup_begin");
         if (backend.active()) {

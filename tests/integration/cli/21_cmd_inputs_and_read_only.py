@@ -18,19 +18,17 @@ Boundaries:
       `click_events`.
     - A successful `cmd link.create` prints no audit line on stderr (default
       logging disabled); `--verbose` routes the audit line to stderr.
+    - `--log-file <path>` writes exactly one `command_audit` line to the file
+      and leaves stdout the plain envelope and stderr empty (real File sink).
     - `cmd --help` (no command name) exits 0.
 
 On failure first check:
     - DispatchCmdCommand calls LoggerFactory::Initialize(one_shot_logging_config)
       before building the runtime (else the audit sink leaks to stderr).
+    - The File sink is implemented in src/observability/file_sink.cpp; a failed
+      open makes Initialize return false and `cmd` exit 2 without touching the
+      file.
     - The caller control_set is Admin unless `--read-only` is given.
-
-Known limitation:
-    The process logger is a minimal stub that has no File sink: `--log-file`
-    currently routes audit output to stderr rather than the file. The audit
-    *emission* contract (emitted when enabled, suppressed when disabled) is what
-    this test pins; the file-destination assertion is deferred to a logging
-    subsystem that implements a real File sink (outside subtask 13's boundary).
 """
 import json
 import os
@@ -123,9 +121,8 @@ class CmdInputsAndReadOnlyTest(CliIntegrationBase):
         self.assertNotIn("example.com", proc.stderr)
 
     def test_log_file_emits_audit_without_touching_stdout(self):
-        # Emission contract under an enabled sink: audit is produced (file when a
-        # File sink exists, else stderr with the current stub logger) and stdout
-        # stays the plain envelope. See the module "Known limitation" note.
+        # Real File sink (spec step 0 / test 21 row): the audit line lands in
+        # the file exactly once, stdout is the plain envelope, stderr is empty.
         with self.make_tmpdir() as tmpdir:
             log_path = os.path.join(tmpdir, "audit.log")
             proc = self._run(
@@ -135,17 +132,17 @@ class CmdInputsAndReadOnlyTest(CliIntegrationBase):
             )
             self.assertEqual(proc.returncode, 0, proc.stderr)
             self.assertIn('"ok":true', proc.stdout)
+            self.assertEqual(proc.stderr, "")
 
-            in_file = ""
-            if os.path.exists(log_path):
-                with open(log_path, encoding="utf-8") as handle:
-                    in_file = handle.read()
-            # The audit line is emitted somewhere once the sink is enabled.
-            self.assertTrue(
-                "command_audit" in in_file
-                or "command_audit" in proc.stderr,
-                "no audit line produced under --log-file",
-            )
+            self.assertTrue(os.path.exists(log_path))
+            with open(log_path, encoding="utf-8") as handle:
+                in_file = handle.read()
+            audit_lines = [
+                ln for ln in in_file.splitlines() if "command_audit" in ln
+            ]
+            self.assertEqual(len(audit_lines), 1, in_file)
+            # The audit line never carries an argument value (contract C6).
+            self.assertNotIn("example.com", in_file)
 
     def test_cmd_help_exits_zero(self):
         proc = self._run("cmd", "--help")

@@ -317,6 +317,25 @@ BOOST_AUTO_TEST_CASE(oversized_stdin_rejected)
     BOOST_CHECK(!contains(r.err, "xxxxxxxx"));
 }
 
+BOOST_AUTO_TEST_CASE(large_cap_tiny_stdin_is_accepted)
+{
+    // CWE-789 regression: a large configured cap must not pre-allocate the full
+    // cap for a tiny input. A small body under a ~4 GiB cap is read and
+    // accepted; the chunked reader grows only as bytes arrive.
+    ServerConfig config = makeConfig();
+    config.max_request_body_bytes = 4000000000U;  // ~4 GiB cap
+
+    CmdCliCommand command;
+    command.command = "link.create";
+    command.json_from_stdin = true;
+    const CmdResult r = run(
+        command, config,
+        "{\"target_url\":\"https://example.com/s\",\"slug\":\"cmdbigcap1\"}");
+
+    BOOST_CHECK_EQUAL(r.rc, 0);
+    BOOST_CHECK(contains(r.out, "\"slug\":\"cmdbigcap1\""));
+}
+
 BOOST_AUTO_TEST_CASE(raw_failure_empty_stdout_stderr_line)
 {
     const ServerConfig config = makeConfig();

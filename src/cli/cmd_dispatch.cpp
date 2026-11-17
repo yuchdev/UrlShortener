@@ -10,6 +10,7 @@
  */
 #include <url_shortener/cli/cmd_dispatch.hpp>
 
+#include <algorithm>
 #include <cstddef>
 #include <exception>
 #include <memory>
@@ -112,6 +113,11 @@ int print_response(const commands::CommandResponse& response, bool raw,
  * hostile unbounded pipe cannot exhaust memory (threat model T-79). A read that
  * reaches the `+ 1` byte means the input exceeds the limit and is rejected.
  *
+ * The buffer grows in fixed 64 KiB chunks toward the cap as bytes actually
+ * arrive, so a large configured cap with a tiny input allocates only what was
+ * read, not the full cap up front (CWE-789: memory sized from an untrusted
+ * limit).
+ *
  * @param in Stream to read the args object from.
  * @param config Server configuration supplying the byte cap.
  * @param out_args On a successful bounded read, set to the raw bytes read.
@@ -123,14 +129,23 @@ bool read_stdin_args(std::istream& in, const ServerConfig& config,
 {
     const std::size_t limit =
         static_cast<std::size_t>(config.max_request_body_bytes);
-    const std::size_t cap = limit + 1;
+    const std::size_t cap = limit + 1;  // reading the +1 byte means overflow.
 
-    std::string buffer(cap, '\0');
-    in.read(&buffer[0], static_cast<std::streamsize>(cap));
-    const std::size_t got = static_cast<std::size_t>(in.gcount());
-    buffer.resize(got);
+    constexpr std::size_t chunk_size = 64 * 1024;  // 64 KiB read granularity.
+    std::vector<char> chunk(chunk_size);
+    std::string buffer;
 
-    if (got > limit) {
+    while (buffer.size() < cap) {
+        const std::size_t want = std::min(chunk_size, cap - buffer.size());
+        in.read(chunk.data(), static_cast<std::streamsize>(want));
+        const std::size_t got = static_cast<std::size_t>(in.gcount());
+        buffer.append(chunk.data(), got);
+        if (got < want) {
+            break;  // EOF or short read: no more input is available.
+        }
+    }
+
+    if (buffer.size() > limit) {
         return false;
     }
     *out_args = std::move(buffer);
