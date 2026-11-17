@@ -3,6 +3,7 @@ set(URL_SHORTENER_CPP
         ${CMAKE_CURRENT_SOURCE_DIR}/src/cli_parser.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/cli/link_command_args.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/cli/link_command_dispatch.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cli/link_args_json.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/cli/arg_coercion.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/cli/cmd_dispatch.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/uri_map_singleton.cpp
@@ -367,6 +368,7 @@ set(URL_SHORTENER_SOURCES
       tests/unit/cli/06_cli_arg_coercion.cpp
       tests/unit/cli/07_cli_parser_cmd.cpp
       tests/unit/cli/08_cmd_dispatch.cpp
+      tests/unit/cli/09_link_args_json.cpp
       tests/unit/cli/11_cli_parser_command_api_flags.cpp
   )
 
@@ -482,6 +484,7 @@ set(URL_SHORTENER_SOURCES
       ${CMAKE_CURRENT_SOURCE_DIR}/src/cli_parser.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/cli/link_command_args.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/cli/link_command_dispatch.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/cli/link_args_json.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/cli/arg_coercion.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/cli/cmd_dispatch.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/uri_map_singleton.cpp
