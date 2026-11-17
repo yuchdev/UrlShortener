@@ -466,6 +466,7 @@ set(URL_SHORTENER_SOURCES
       tests/unit/commands/40_args_builder.cpp
       tests/unit/commands/50_job_store.cpp
       tests/unit/commands/51_job_runner_pool.cpp
+      tests/unit/commands/52_job_runner_shutdown.cpp
   )
 
   set(COMMON_CPP_SOURCES
