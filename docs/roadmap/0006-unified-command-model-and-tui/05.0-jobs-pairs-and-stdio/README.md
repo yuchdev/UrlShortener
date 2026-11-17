@@ -47,7 +47,7 @@ Decisions made in this task: `JobRunner` does not reuse `AnalyticsWorker`/`Bound
 | 05 | [job.get, job.list, job.cancel](05-job-commands.md) | ✅ Complete | 01, 02, 04 | 11, 20, 06.0/15, 06.0/16, 06.0/17 |
 | 06 | [Pair line parsers and error list](06-pair-line-parsers.md) | ✅ Complete | none | 07, 08 |
 | 07 | [Pair file access and path rules](07-pair-file-access.md) | ✅ Complete | 06 | 08, 10, 13 |
-| 08 | [link.import (skip/fail, dry-run)](08-link-import-command.md) | ⬜ Not started | 04, 06, 07, 03.0/05, 03.0/06, 03.0/07 | 09, 10, 20, 06.0/15, 06.0/20 |
+| 08 | [link.import (skip/fail, dry-run)](08-link-import-command.md) | ✅ Complete | 04, 06, 07, 03.0/05, 03.0/06, 03.0/07 | 09, 10, 20, 06.0/15, 06.0/20 |
 | 09 | [link.import overwrite](09-link-import-overwrite.md) | ⬜ Not started | 08 | 20 |
 | 10 | [link.export](10-link-export-command.md) | ⬜ Not started | 04, 07, 08, 03.0/01, 03.0/12, 03.0/14 | 20, 06.0/15, 06.0/20 |
 | 11 | [REST job routes](11-jobs-rest-routes.md) | ⬜ Not started | 05, 20, 04.0/02, 04.0/08, 04.0/09 | none |
