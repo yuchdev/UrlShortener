@@ -35,7 +35,7 @@ namespace
 // and never writes it, so concurrent reads from several workers are race-free.
 ManualClock make_clock()
 {
-    return ManualClock(std::chrono::system_clock::time_point{});
+    return ManualClock(std::chrono::system_clock::time_point {});
 }
 
 // A one-shot gate: a body blocks in wait() until the test calls open(). Pure
@@ -68,11 +68,11 @@ struct Gate
 // the shutdown/cancel_all tests to prove a running body observes the flag.
 JobBody make_cooperative(std::promise<void>& running, std::uint64_t partial)
 {
-    return [&running, partial](IJobContext& ctx) {
+    return [&running, partial](IJobContext& ctx)
+    {
         ctx.advance(partial);
         running.set_value();
-        while (!ctx.cancel_requested())
-        {
+        while (!ctx.cancel_requested()) {
             std::this_thread::yield();
         }
         JobOutcome out;
@@ -94,11 +94,12 @@ JobBody make_cooperative(std::promise<void>& running, std::uint64_t partial)
 BOOST_AUTO_TEST_CASE(wait_for_terminal_returns_final_record_during_wait)
 {
     ManualClock clock = make_clock();
-    JobRunner runner(clock, JobRunnerOptions{1, 4, 256});
+    JobRunner runner(clock, JobRunnerOptions {1, 4, 256});
 
     Gate gate;
     std::promise<void> running;
-    JobBody body = [&gate, &running](IJobContext&) {
+    JobBody body = [&gate, &running](IJobContext&)
+    {
         running.set_value();
         gate.wait();
         JobOutcome out;
@@ -132,11 +133,12 @@ BOOST_AUTO_TEST_CASE(wait_for_terminal_returns_final_record_during_wait)
 BOOST_AUTO_TEST_CASE(wait_for_terminal_returns_non_terminal_snapshot_on_timeout)
 {
     ManualClock clock = make_clock();
-    JobRunner runner(clock, JobRunnerOptions{1, 4, 256});
+    JobRunner runner(clock, JobRunnerOptions {1, 4, 256});
 
     Gate gate;
     std::promise<void> running;
-    JobBody body = [&gate, &running](IJobContext&) {
+    JobBody body = [&gate, &running](IJobContext&)
+    {
         running.set_value();
         gate.wait();
         JobOutcome out;
@@ -169,11 +171,10 @@ BOOST_AUTO_TEST_CASE(wait_for_terminal_returns_non_terminal_snapshot_on_timeout)
 BOOST_AUTO_TEST_CASE(wait_for_terminal_unknown_id_returns_nullopt)
 {
     ManualClock clock = make_clock();
-    JobRunner runner(clock, JobRunnerOptions{1, 4, 256});
+    JobRunner runner(clock, JobRunnerOptions {1, 4, 256});
 
-    BOOST_TEST(
-        !runner.wait_for_terminal("j-404", std::chrono::milliseconds(0))
-             .has_value());
+    BOOST_TEST(!runner.wait_for_terminal("j-404", std::chrono::milliseconds(0))
+                    .has_value());
 }
 
 // Type: unit (wait_idle boundary / empty runner).
@@ -185,7 +186,7 @@ BOOST_AUTO_TEST_CASE(wait_for_terminal_unknown_id_returns_nullopt)
 BOOST_AUTO_TEST_CASE(wait_idle_true_on_empty_runner_timeout_zero)
 {
     ManualClock clock = make_clock();
-    JobRunner runner(clock, JobRunnerOptions{1, 4, 256});
+    JobRunner runner(clock, JobRunnerOptions {1, 4, 256});
 
     BOOST_TEST(runner.wait_idle(std::chrono::milliseconds(0)));
 }
@@ -198,9 +199,10 @@ BOOST_AUTO_TEST_CASE(wait_idle_true_on_empty_runner_timeout_zero)
 BOOST_AUTO_TEST_CASE(wait_idle_true_after_jobs_finish)
 {
     ManualClock clock = make_clock();
-    JobRunner runner(clock, JobRunnerOptions{1, 4, 256});
+    JobRunner runner(clock, JobRunnerOptions {1, 4, 256});
 
-    JobBody noop = [](IJobContext&) {
+    JobBody noop = [](IJobContext&)
+    {
         JobOutcome out;
         out.ok = true;
         return out;
@@ -220,11 +222,12 @@ BOOST_AUTO_TEST_CASE(wait_idle_true_after_jobs_finish)
 BOOST_AUTO_TEST_CASE(wait_idle_false_while_gated_job_runs)
 {
     ManualClock clock = make_clock();
-    JobRunner runner(clock, JobRunnerOptions{1, 4, 256});
+    JobRunner runner(clock, JobRunnerOptions {1, 4, 256});
 
     Gate gate;
     std::promise<void> running;
-    JobBody body = [&gate, &running](IJobContext&) {
+    JobBody body = [&gate, &running](IJobContext&)
+    {
         running.set_value();
         gate.wait();
         JobOutcome out;
@@ -252,7 +255,7 @@ BOOST_AUTO_TEST_CASE(wait_idle_false_while_gated_job_runs)
 BOOST_AUTO_TEST_CASE(cancel_all_cancels_queued_and_flags_running)
 {
     ManualClock clock = make_clock();
-    JobRunner runner(clock, JobRunnerOptions{1, 8, 256});
+    JobRunner runner(clock, JobRunnerOptions {1, 8, 256});
 
     std::promise<void> running;
     JobSubmitResult a =
@@ -260,18 +263,17 @@ BOOST_AUTO_TEST_CASE(cancel_all_cancels_queued_and_flags_running)
     BOOST_REQUIRE(a.job.has_value());
     running.get_future().wait();  // the single worker now holds job A
 
-    std::atomic<int> queued_ran{0};
+    std::atomic<int> queued_ran {0};
     std::vector<std::string> queued_ids;
-    for (int i = 0; i < 3; ++i)
-    {
-        JobBody q = [&queued_ran](IJobContext&) {
+    for (int i = 0; i < 3; ++i) {
+        JobBody q = [&queued_ran](IJobContext&)
+        {
             queued_ran.fetch_add(1);
             JobOutcome out;
             out.ok = true;
             return out;
         };
-        JobSubmitResult r =
-            runner.submit("link.import", "bbbb", std::move(q));
+        JobSubmitResult r = runner.submit("link.import", "bbbb", std::move(q));
         BOOST_REQUIRE(r.job.has_value());
         queued_ids.push_back(r.job->id);
     }
@@ -279,8 +281,7 @@ BOOST_AUTO_TEST_CASE(cancel_all_cancels_queued_and_flags_running)
     BOOST_TEST(runner.cancel_all() == 4u);
 
     // The three queued jobs are already cancelled and never ran their bodies.
-    for (const std::string& id : queued_ids)
-    {
+    for (const std::string& id : queued_ids) {
         std::optional<JobRecord> rec = runner.get(id);
         BOOST_REQUIRE(rec.has_value());
         BOOST_TEST((rec->state == JobState::cancelled));
@@ -306,7 +307,7 @@ BOOST_AUTO_TEST_CASE(cancel_all_cancels_queued_and_flags_running)
 BOOST_AUTO_TEST_CASE(cancel_all_twice_is_a_noop_the_second_time)
 {
     ManualClock clock = make_clock();
-    JobRunner runner(clock, JobRunnerOptions{1, 4, 256});
+    JobRunner runner(clock, JobRunnerOptions {1, 4, 256});
 
     std::promise<void> running;
     JobSubmitResult a =
@@ -332,7 +333,7 @@ BOOST_AUTO_TEST_CASE(cancel_all_twice_is_a_noop_the_second_time)
 BOOST_AUTO_TEST_CASE(shutdown_joins_cooperative_and_rejects_later_submit)
 {
     ManualClock clock = make_clock();
-    JobRunner runner(clock, JobRunnerOptions{1, 4, 256});
+    JobRunner runner(clock, JobRunnerOptions {1, 4, 256});
 
     std::promise<void> running;
     JobSubmitResult a =
@@ -348,7 +349,8 @@ BOOST_AUTO_TEST_CASE(shutdown_joins_cooperative_and_rejects_later_submit)
     BOOST_REQUIRE(rec.has_value());
     BOOST_TEST((rec->state == JobState::cancelled));
 
-    JobBody noop = [](IJobContext&) {
+    JobBody noop = [](IJobContext&)
+    {
         JobOutcome out;
         out.ok = true;
         return out;
@@ -368,7 +370,7 @@ BOOST_AUTO_TEST_CASE(shutdown_joins_cooperative_and_rejects_later_submit)
 BOOST_AUTO_TEST_CASE(shutdown_twice_is_safe)
 {
     ManualClock clock = make_clock();
-    JobRunner runner(clock, JobRunnerOptions{2, 4, 256});
+    JobRunner runner(clock, JobRunnerOptions {2, 4, 256});
 
     std::promise<void> running;
     JobSubmitResult a =
@@ -392,7 +394,7 @@ BOOST_AUTO_TEST_CASE(shutdown_twice_is_safe)
 BOOST_AUTO_TEST_CASE(concurrent_shutdown_is_safe)
 {
     ManualClock clock = make_clock();
-    JobRunner runner(clock, JobRunnerOptions{2, 8, 256});
+    JobRunner runner(clock, JobRunnerOptions {2, 8, 256});
 
     std::promise<void> running;
     JobSubmitResult a =
@@ -402,12 +404,10 @@ BOOST_AUTO_TEST_CASE(concurrent_shutdown_is_safe)
 
     std::vector<std::thread> callers;
     callers.reserve(8);
-    for (int i = 0; i < 8; ++i)
-    {
+    for (int i = 0; i < 8; ++i) {
         callers.emplace_back([&runner] { runner.shutdown(); });
     }
-    for (std::thread& t : callers)
-    {
+    for (std::thread& t : callers) {
         t.join();
     }
 
@@ -427,7 +427,7 @@ BOOST_AUTO_TEST_CASE(concurrent_shutdown_is_safe)
 BOOST_AUTO_TEST_CASE(shutdown_completes_within_bound_for_cooperative_body)
 {
     ManualClock clock = make_clock();
-    JobRunner runner(clock, JobRunnerOptions{1, 4, 256});
+    JobRunner runner(clock, JobRunnerOptions {1, 4, 256});
 
     std::promise<void> running;
     JobSubmitResult a =
@@ -456,11 +456,12 @@ BOOST_AUTO_TEST_CASE(shutdown_completes_within_bound_for_cooperative_body)
 BOOST_AUTO_TEST_CASE(non_polling_body_runs_to_completion_on_shutdown)
 {
     ManualClock clock = make_clock();
-    JobRunner runner(clock, JobRunnerOptions{1, 4, 256});
+    JobRunner runner(clock, JobRunnerOptions {1, 4, 256});
 
     Gate gate;
     std::promise<void> running;
-    JobBody body = [&gate, &running](IJobContext&) {
+    JobBody body = [&gate, &running](IJobContext&)
+    {
         running.set_value();
         gate.wait();  // never polls cancel_requested()
         JobOutcome out;
@@ -473,8 +474,8 @@ BOOST_AUTO_TEST_CASE(non_polling_body_runs_to_completion_on_shutdown)
 
     std::thread stopper([&runner] { runner.shutdown(); });
     // shutdown is now blocked joining the worker running the gated body.
-    gate.open();      // release the non-polling body
-    stopper.join();   // shutdown returns only after the body finished
+    gate.open();  // release the non-polling body
+    stopper.join();  // shutdown returns only after the body finished
 
     std::optional<JobRecord> rec = runner.get(a.job->id);
     BOOST_REQUIRE(rec.has_value());
@@ -491,10 +492,10 @@ BOOST_AUTO_TEST_CASE(non_polling_body_runs_to_completion_on_shutdown)
 BOOST_AUTO_TEST_CASE(destructor_cancels_pending_queued_without_hanging)
 {
     ManualClock clock = make_clock();
-    std::atomic<bool> queued_ran{false};
+    std::atomic<bool> queued_ran {false};
 
     {
-        JobRunner runner(clock, JobRunnerOptions{1, 4, 256});
+        JobRunner runner(clock, JobRunnerOptions {1, 4, 256});
 
         std::promise<void> running;
         JobSubmitResult a =
@@ -502,14 +503,14 @@ BOOST_AUTO_TEST_CASE(destructor_cancels_pending_queued_without_hanging)
         BOOST_REQUIRE(a.job.has_value());
         running.get_future().wait();  // single worker is busy on job A
 
-        JobBody q = [&queued_ran](IJobContext&) {
+        JobBody q = [&queued_ran](IJobContext&)
+        {
             queued_ran.store(true);
             JobOutcome out;
             out.ok = true;
             return out;
         };
-        JobSubmitResult b =
-            runner.submit("link.import", "bbbb", std::move(q));
+        JobSubmitResult b = runner.submit("link.import", "bbbb", std::move(q));
         BOOST_REQUIRE(b.job.has_value());
         // runner goes out of scope here: destructor -> shutdown.
     }
@@ -526,7 +527,7 @@ BOOST_AUTO_TEST_CASE(destructor_cancels_pending_queued_without_hanging)
 BOOST_AUTO_TEST_CASE(partial_result_of_cancelled_running_job_survives_shutdown)
 {
     ManualClock clock = make_clock();
-    JobRunner runner(clock, JobRunnerOptions{1, 4, 256});
+    JobRunner runner(clock, JobRunnerOptions {1, 4, 256});
 
     std::promise<void> running;
     JobSubmitResult a =
@@ -541,4 +542,122 @@ BOOST_AUTO_TEST_CASE(partial_result_of_cancelled_running_job_survives_shutdown)
     BOOST_TEST((rec->state == JobState::cancelled));
     BOOST_REQUIRE(rec->result_json.has_value());
     BOOST_TEST(rec->result_json.value() == "{\"done\":7}");
+}
+
+// Type: unit (lost-wakeup regression / T-89).
+// Scenario: under churn -- many short jobs submitted then drained -- wait_idle
+//   returns true well before a generous timeout on every iteration. A missed
+//   m_idle_cv wakeup (notify racing a waiter's predicate check) would stall the
+//   wait for the full timeout; the tight elapsed bound, repeated in a loop,
+//   makes that stall a hard failure rather than a flaky slowdown.
+// Boundaries: finish/notify vs wait_idle predicate check, 200 iterations x 16
+//   jobs across 4 workers.
+// On failure first check: is m_idle_cv.notify_all() signalled while holding
+//   m_mutex after the store finish (run_job / cancel_all), or did it drift back
+//   outside the lock and reopen the lost-wakeup window?
+BOOST_AUTO_TEST_CASE(wait_idle_never_misses_finish_wakeups_under_churn)
+{
+    ManualClock clock = make_clock();
+    JobRunner runner(clock, JobRunnerOptions {4, 64, 1024});
+
+    for (int iter = 0; iter < 200; ++iter) {
+        for (int i = 0; i < 16; ++i) {
+            JobBody noop = [](IJobContext&)
+            {
+                JobOutcome out;
+                out.ok = true;
+                return out;
+            };
+            JobSubmitResult r =
+                runner.submit("link.import", "aaaa", std::move(noop));
+            BOOST_REQUIRE(r.job.has_value());
+        }
+
+        const auto t0 = std::chrono::steady_clock::now();
+        const bool idle = runner.wait_idle(std::chrono::seconds(5));
+        const auto elapsed = std::chrono::steady_clock::now() - t0;
+
+        BOOST_REQUIRE(idle);
+        // 16 noops across 4 workers drain in milliseconds; a lost wakeup would
+        // push this to the full 5 s timeout.
+        BOOST_TEST((elapsed < std::chrono::seconds(2)));
+    }
+}
+
+// Type: unit (deadline overflow / T-106).
+// Scenario: wait_idle on an idle runner and wait_for_terminal on a finished job
+//   with milliseconds::max() both return immediately and correctly, rather than
+//   computing steady_clock::now() + timeout and overflowing the time_point
+//   (UB).
+// Boundaries: timeout == std::chrono::milliseconds::max().
+// On failure first check: did the deadline stop being clamped (compute_deadline
+//   / k_max_wait_timeout removed), reintroducing the signed-overflow UB?
+BOOST_AUTO_TEST_CASE(wait_with_extreme_timeout_returns_immediately)
+{
+    ManualClock clock = make_clock();
+    JobRunner runner(clock, JobRunnerOptions {1, 4, 256});
+
+    // Idle runner: the predicate already holds, so this must return at once.
+    const auto t0 = std::chrono::steady_clock::now();
+    BOOST_TEST(runner.wait_idle(std::chrono::milliseconds::max()));
+    BOOST_TEST(
+        (std::chrono::steady_clock::now() - t0 < std::chrono::seconds(1)));
+
+    JobBody noop = [](IJobContext&)
+    {
+        JobOutcome out;
+        out.ok = true;
+        return out;
+    };
+    JobSubmitResult a = runner.submit("link.import", "aaaa", std::move(noop));
+    BOOST_REQUIRE(a.job.has_value());
+    BOOST_REQUIRE(runner.wait_idle(std::chrono::seconds(10)));
+
+    // Finished job: wait_for_terminal returns the terminal record immediately.
+    const auto t1 = std::chrono::steady_clock::now();
+    std::optional<JobRecord> rec =
+        runner.wait_for_terminal(a.job->id, std::chrono::milliseconds::max());
+    BOOST_TEST(
+        (std::chrono::steady_clock::now() - t1 < std::chrono::seconds(1)));
+    BOOST_REQUIRE(rec.has_value());
+    BOOST_TEST(is_terminal(rec->state));
+}
+
+// Type: unit (self-join guard / T-89, T-106).
+// Scenario: a body calls shutdown(), which then runs on a worker thread. It
+// must
+//   perform stop + cancel_all and return without joining its own thread (a
+//   self-join is UB / throws); the deferred join is completed by a later
+//   non-worker caller without hanging.
+// Boundaries: shutdown() invoked from inside a running body.
+// On failure first check: did shutdown stop checking is_worker_thread() before
+//   the join loop, so the calling worker tries to join itself (hang via the
+//   thrown system_error leaving the body's promise unset)?
+BOOST_AUTO_TEST_CASE(shutdown_called_from_job_body_does_not_self_join)
+{
+    ManualClock clock = make_clock();
+    JobRunner runner(clock, JobRunnerOptions {2, 4, 256});
+
+    std::promise<void> body_returned;
+    JobBody body = [&runner, &body_returned](IJobContext&)
+    {
+        // Runs on a worker thread: shutdown() must not join this very thread.
+        runner.shutdown();
+        body_returned.set_value();
+        JobOutcome out;
+        out.ok = true;
+        return out;
+    };
+    JobSubmitResult a = runner.submit("link.import", "aaaa", std::move(body));
+    BOOST_REQUIRE(a.job.has_value());
+
+    // The in-body shutdown() returned (no throw, no self-join deadlock).
+    body_returned.get_future().wait();
+
+    // A non-worker caller completes the deferred join without hanging.
+    runner.shutdown();
+    BOOST_TEST(runner.wait_idle(std::chrono::milliseconds(0)));
+    std::optional<JobRecord> rec = runner.get(a.job->id);
+    BOOST_REQUIRE(rec.has_value());
+    BOOST_TEST(is_terminal(rec->state));
 }

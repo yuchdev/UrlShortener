@@ -16,12 +16,50 @@
 // the wait_* predicates call into the store while holding m_mutex; a worker
 // calls the store *without* m_mutex (mark_running/finish/update_progress) and
 // takes m_mutex only afterwards to erase a flag. A job body and the logger are
-// never invoked while m_mutex is held. m_idle_cv is signalled under or just
-// after m_mutex and never while the store mutex is held.
+// never invoked while m_mutex is held. m_idle_cv is always signalled while
+// holding m_mutex (never while the store mutex is held): publishing the store
+// change behind the same lock the waiters hold while checking their predicate
+// closes the lost-wakeup window between a waiter's predicate check and its
+// block (threat model T-89).
 // ---------------------------------------------------------------------------
 
 namespace url_shortener::commands
 {
+
+namespace
+{
+
+/**
+ * @brief Longest wait a @ref JobRunner blocking call will honour before it
+ * treats the request as effectively unbounded.
+ *
+ * Caps the caller's timeout so that `steady_clock::now() + timeout` cannot
+ * overflow the `time_point` (signed-overflow UB for a huge timeout such as
+ * `std::chrono::milliseconds::max()`, threat model T-106). 24h is far beyond
+ * any legitimate drain/wait, and a capped wait still returns the instant its
+ * predicate holds, so the cap never changes an observable result.
+ */
+constexpr std::chrono::milliseconds k_max_wait_timeout = std::chrono::hours(24);
+
+/**
+ * @brief Computes a saturating wait deadline from @p timeout.
+ *
+ * @param timeout Caller-supplied maximum wait; clamped to
+ * @ref k_max_wait_timeout before being added to the current time so the
+ * addition cannot overflow `std::chrono::steady_clock::time_point` (UB). A
+ * non-positive @p timeout yields a deadline at or before now, i.e. a single
+ * predicate poll with no blocking.
+ * @return `steady_clock::now()` plus the clamped timeout.
+ */
+std::chrono::steady_clock::time_point compute_deadline(
+    std::chrono::milliseconds timeout)
+{
+    const std::chrono::milliseconds capped =
+        timeout > k_max_wait_timeout ? k_max_wait_timeout : timeout;
+    return std::chrono::steady_clock::now() + capped;
+}
+
+}  // namespace
 
 // ---------------------------------------------------------------------------
 // JobContext
@@ -80,9 +118,26 @@ JobRunner::JobRunner(const IClock& clock, JobRunnerOptions options)
     , m_store(clock, m_options.max_retained_jobs)
 {
     m_workers.reserve(m_options.worker_count);
+    m_worker_ids.reserve(m_options.worker_count);
     for (std::size_t i = 0; i < m_options.worker_count; ++i) {
         m_workers.emplace_back([this] { worker_loop(); });
+        // Record the worker's id while it is live and before any join, so
+        // shutdown() can detect a self-join (a body calling shutdown runs on a
+        // worker thread). The vector is immutable after construction, so
+        // is_worker_thread() reads it without a lock (threat model T-89).
+        m_worker_ids.push_back(m_workers.back().get_id());
     }
+}
+
+bool JobRunner::is_worker_thread() const noexcept
+{
+    const std::thread::id self = std::this_thread::get_id();
+    for (const std::thread::id& id : m_worker_ids) {
+        if (id == self) {
+            return true;
+        }
+    }
+    return false;
 }
 
 JobRunner::~JobRunner()
@@ -256,12 +311,15 @@ void JobRunner::run_job(Pending job)
     {
         std::lock_guard<std::mutex> lock(m_mutex);
         m_flags.erase(job.id);
-    }
 
-    // The job is now terminal, so active_count may have reached zero; wake any
-    // wait_idle/wait_for_terminal waiter. Signalled off m_mutex (allowed) and
-    // never with the store mutex held.
-    m_idle_cv.notify_all();
+        // The job is now terminal, so active_count may have reached zero; wake
+        // any wait_idle/wait_for_terminal waiter. Signalled while holding
+        // m_mutex (never with the store mutex held) so a waiter that has just
+        // evaluated its predicate cannot block after this notify and miss it:
+        // the m_store.finish() above is published behind the same lock the
+        // waiters hold while re-checking (lost-wakeup fix, T-89).
+        m_idle_cv.notify_all();
+    }
 
     // One line per finished job; id/command/state only, never argument values
     // (contract C6, threat model T-108).
@@ -282,7 +340,9 @@ std::optional<JobRecord> JobRunner::wait_for_terminal(
         return std::nullopt;
     }
 
-    const auto deadline = std::chrono::steady_clock::now() + timeout;
+    // Saturating add: a huge timeout (e.g. milliseconds::max()) would overflow
+    // steady_clock::time_point otherwise (UB, threat model T-106).
+    const auto deadline = compute_deadline(timeout);
     m_idle_cv.wait_until(lock,
                          deadline,
                          [this, &id, &record]
@@ -299,7 +359,9 @@ std::optional<JobRecord> JobRunner::wait_for_terminal(
 bool JobRunner::wait_idle(std::chrono::milliseconds timeout) const
 {
     std::unique_lock<std::mutex> lock(m_mutex);
-    const auto deadline = std::chrono::steady_clock::now() + timeout;
+    // Saturating add: a huge timeout (e.g. milliseconds::max()) would overflow
+    // steady_clock::time_point otherwise (UB, threat model T-106).
+    const auto deadline = compute_deadline(timeout);
     // active_count() == 0 means no queued and no running job (T-88 drain gate).
     return m_idle_cv.wait_until(
         lock, deadline, [this] { return m_store.active_count() == 0; });
@@ -342,43 +404,73 @@ std::size_t JobRunner::cancel_all()
                 ++affected;
             }
         }
+
+        // Queued cancels may have dropped active_count; wake any drain waiter.
+        // Signalled while holding m_mutex (the store changes above are
+        // published behind the same lock the waiters re-check under) so a
+        // waiter cannot block just after this notify and miss it (lost-wakeup
+        // fix, T-89).
+        m_idle_cv.notify_all();
     }
 
-    // Queued cancels may have dropped active_count; wake any drain waiter.
-    m_idle_cv.notify_all();
     return affected;
 }
 
 void JobRunner::shutdown()
 {
+    // A body may call shutdown(); it then runs on a worker thread and must
+    // never join itself (a thread joining itself is UB / throws
+    // resource_deadlock_would_occur). Captured before taking any lock from the
+    // immutable worker-id list (threat model T-89, T-106).
+    const bool from_worker = is_worker_thread();
+
+    bool do_stop = false;
     {
         std::lock_guard<std::mutex> lock(m_mutex);
-        if (m_stopping) {
-            // Already stopping: idempotent and concurrency-safe. Only the first
-            // caller to flip m_stopping below performs the join; every later or
-            // concurrent call returns here without touching the threads, so no
-            // worker is ever joined twice (T-89).
-            return;
+        if (!m_stopping) {
+            // First caller to observe m_stopping as false owns the one-time
+            // stop signal; every later or concurrent call skips it. Idempotent
+            // and concurrency-safe (T-89).
+            m_stopping = true;
+            do_stop = true;
         }
-        m_stopping = true;
     }
 
-    // Cancel queued work (never run it) and flag running cooperative bodies so
-    // a long body is told to stop rather than blocking the join unboundedly
-    // (T-88). A non-cooperative body still blocks the join until it returns --
-    // C++ cannot forcibly stop a thread -- which is the documented limitation.
-    cancel_all();
+    if (do_stop) {
+        // Cancel queued work (never run it) and flag running cooperative bodies
+        // so a long body is told to stop rather than blocking the join
+        // unboundedly (T-88). A non-cooperative body still blocks the join
+        // until it returns -- C++ cannot forcibly stop a thread -- the
+        // documented limitation.
+        cancel_all();
 
-    // Wake every worker; a drained worker observes m_stopping and exits.
-    m_cv.notify_all();
+        // Wake every worker; a drained worker observes m_stopping and exits.
+        m_cv.notify_all();
+
+        // Value-free line only (contract C6): no argument values on exit paths.
+        m_logger.info("job_runner_shutdown");
+    }
+
+    if (from_worker) {
+        // Stop + cancel is done; skip the join. The calling worker cannot join
+        // itself, and joining the other workers here would race the eventual
+        // owner-side join. The join is completed by the destructor (or any
+        // other non-worker caller), which blocks on m_join_mutex below until
+        // every worker -- including this one, once its body returns -- has
+        // exited (T-89, T-106).
+        return;
+    }
+
+    // Join under m_join_mutex so concurrent non-worker callers serialize: the
+    // first joins every worker, the rest find them non-joinable and skip, so no
+    // worker is ever joined twice and every caller returns only after the join
+    // has completed (T-89).
+    std::lock_guard<std::mutex> join_lock(m_join_mutex);
     for (std::thread& worker : m_workers) {
         if (worker.joinable()) {
             worker.join();
         }
     }
-
-    // Value-free line only (contract C6): no argument values on exit paths.
-    m_logger.info("job_runner_shutdown");
 }
 
 }  // namespace url_shortener::commands

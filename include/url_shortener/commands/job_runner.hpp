@@ -265,7 +265,10 @@ public:
      *
      * @param id Target job id.
      * @param timeout Maximum time to wait, measured from entry on a steady
-     * clock; a value of `0` polls once and returns immediately.
+     * clock; a value of `0` polls once and returns immediately. Clamped to 24h
+     * so an extreme value (e.g. `std::chrono::milliseconds::max()`) cannot
+     * overflow the deadline `time_point` (UB); the wait still returns the
+     * instant the job becomes terminal, so the clamp never changes a result.
      * @return `std::nullopt` if @p id is unknown (or the record was evicted
      * while waiting); otherwise the record snapshot -- terminal when the job
      * finished in time, or the latest non-terminal snapshot if @p timeout
@@ -283,7 +286,10 @@ public:
      * work before @ref shutdown (stdio EOF, process shutdown).
      *
      * @param timeout Maximum time to wait, measured from entry on a steady
-     * clock; `0` polls the idle condition once without blocking.
+     * clock; `0` polls the idle condition once without blocking. Clamped to 24h
+     * so an extreme value (e.g. `std::chrono::milliseconds::max()`) cannot
+     * overflow the deadline `time_point` (UB); an already-idle runner still
+     * returns immediately, so the clamp never changes a result.
      * @return `true` if `queued + running == 0` was observed before @p timeout
      * elapsed; `false` if the timeout elapsed with work still outstanding.
      */
@@ -327,9 +333,19 @@ public:
      * before calling this.
      *
      * Safe under concurrent and repeated calls: only the first caller to
-     * observe @ref m_stopping as `false` performs the join; every other call
-     * (including the destructor's) returns immediately. No argument values are
-     * logged (contract C6).
+     * observe @ref m_stopping as `false` performs the one-time stop signal
+     * (step 1-2 and the `job_runner_shutdown` log line); every non-worker
+     * caller then runs the join loop serialized by @ref m_join_mutex, so no
+     * worker is joined twice and each caller returns only once the join has
+     * completed. No argument values are logged (contract C6).
+     *
+     * Self-join guard: a @ref JobBody may itself call `shutdown()`, in which
+     * case it executes on a worker thread. Such a call performs the stop and
+     * @ref cancel_all but **skips the join** -- a thread joining itself is
+     * undefined behaviour. The deferred join is completed by the destructor (or
+     * any other non-worker caller), which blocks until the calling worker has
+     * exited once its body returns. Callers must still ensure no other thread
+     * is using the runner when it is finally destroyed.
      */
     void shutdown();
 
@@ -389,6 +405,21 @@ private:
      */
     void run_job(Pending job);
 
+    /**
+     * @brief Tests whether the calling thread is one of this runner's workers.
+     *
+     * Used by @ref shutdown to detect a body that calls `shutdown()` (which
+     * then runs on a worker thread) so it can skip joining -- a thread joining
+     * itself is undefined behaviour. Reads @ref m_worker_ids, which is
+     * populated once in the constructor and never mutated afterwards, so no
+     * lock is taken.
+     *
+     * @return `true` if `std::this_thread::get_id()` matches a worker thread
+     * id; `false` otherwise (including every non-worker caller such as the
+     * destructor or an external shutdown caller).
+     */
+    bool is_worker_thread() const noexcept;
+
     ///< Validated construction bounds; declared first so @ref m_store can read
     ///< `max_retained_jobs` from it in the initializer list.
     const JobRunnerOptions m_options;
@@ -409,8 +440,11 @@ private:
     ///< Signalled after every @ref JobStore::finish and after a queued-job
     ///< cancel; @ref wait_for_terminal and @ref wait_idle wait on it. Distinct
     ///< from @ref m_cv so a waiter never steals a worker's `notify_one` wakeup
-    ///< (lost-wakeup hazard). `mutable` so the `const` wait methods can wait on
-    ///< it; guarded by @ref m_mutex, the outermost lock.
+    ///< (lost-wakeup hazard). Always signalled while holding @ref m_mutex so
+    ///< the store change is published behind the same lock the waiters re-check
+    ///< under, closing the lost-wakeup window between a predicate check and the
+    ///< block. `mutable` so the `const` wait methods can wait on it; guarded by
+    ///< @ref m_mutex, the outermost lock.
     mutable std::condition_variable m_idle_cv;
 
     ///< FIFO of queued (not yet running) jobs; bounded by
@@ -424,6 +458,18 @@ private:
 
     ///< The worker threads; joined by @ref shutdown.
     std::vector<std::thread> m_workers;
+
+    ///< Worker thread ids, captured once at construction and never mutated
+    ///< afterwards, so @ref is_worker_thread reads it without a lock. Lets
+    ///< @ref shutdown recognise a self-join when a body calls `shutdown()`.
+    std::vector<std::thread::id> m_worker_ids;
+
+    ///< Serializes the join loop in @ref shutdown across concurrent non-worker
+    ///< callers: the first joins every worker, the rest find them non-joinable
+    ///< and skip, so no worker is joined twice and every caller returns only
+    ///< after the join has completed. Independent of @ref m_mutex and never
+    ///< held together with it or the store mutex.
+    std::mutex m_join_mutex;
 
     ///< `true` once @ref shutdown has begun; blocks new `submit`s and tells
     ///< drained workers to exit.
