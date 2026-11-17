@@ -208,6 +208,16 @@ BOOST_AUTO_TEST_CASE(log_file_and_verbose_conflict)
 }
 
 /**
+ * [Unit][CLI] An empty `--log-file` value is rejected.
+ */
+BOOST_AUTO_TEST_CASE(log_file_empty_value_is_error)
+{
+    BOOST_CHECK_THROW(
+        parse({"url_shortener", "cmd", "link.get", "--log-file", ""}),
+        std::invalid_argument);
+}
+
+/**
  * [Unit][CLI] `--base-domain` and `--allow-private-targets` reach
  * `ParseResult::config` using the shared helpers.
  */
@@ -343,6 +353,31 @@ BOOST_AUTO_TEST_CASE(error_text_omits_supplied_json)
     }
     catch (const std::invalid_argument& e) {
         BOOST_CHECK(std::string(e.what()).find(sentinel) == std::string::npos);
+    }
+}
+
+/**
+ * [Unit][CLI] The GNU `--opt=value` form is unrecognised (flags match by exact
+ * token), and the "unknown option" error must echo only the stem before the
+ * first '=', never the value, which may be a secret (threat model T-77).
+ */
+BOOST_AUTO_TEST_CASE(error_text_omits_equals_form_value)
+{
+    const std::string sentinel = "do-not-leak-sentinel-77";
+    const std::vector<std::string> tokens = {
+        "--json={\"k\":\"" + sentinel + "\"}",
+        "--id=" + sentinel,
+        "--arg=x=" + sentinel,
+    };
+    for (const auto& tok : tokens) {
+        try {
+            parse({"url_shortener", "cmd", "link.get", tok});
+            BOOST_FAIL("expected std::invalid_argument");
+        }
+        catch (const std::invalid_argument& e) {
+            BOOST_CHECK(
+                std::string(e.what()).find(sentinel) == std::string::npos);
+        }
     }
 }
 

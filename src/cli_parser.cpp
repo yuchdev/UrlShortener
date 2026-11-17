@@ -605,7 +605,11 @@ CmdCliCommand parseCmdCommand(
             config.shortener_allow_private_targets = parseBool(value);
         }
         else if (token.rfind("--", 0) == 0) {
-            throw std::invalid_argument("Unknown cmd option: " + token);
+            // Flags match by exact token, so the GNU `--opt=value` form is
+            // unrecognised here. Echo only the stem before the first '=',
+            // never the value, which may be a secret (threat model T-77).
+            throw std::invalid_argument(
+                "Unknown cmd option: " + token.substr(0, token.find('=')));
         }
         else if (!name_set) {
             command.command = token;
