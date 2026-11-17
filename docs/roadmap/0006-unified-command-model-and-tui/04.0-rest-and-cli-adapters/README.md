@@ -55,7 +55,7 @@ factory mean subtask 13 and `03.0/18` (`build_command_runtime`) respectively.
 | 09 | [POST /api/v1/commands](09-rest-post-commands-endpoint.md) | ✅ Complete | 02, 06, 08, 01.0/03, 01.0/04, 01.0/07, 03.0/18 | 10, 05.0/11, 07.0/08 |
 | 10 | [GET /api/v1/commands and API reference regeneration](10-rest-get-commands-and-api-docs.md) | ✅ Complete | 07, 08, 09, 01.0/10 | 07.0/17, 08.0/09 |
 | 11 | [CLI `--arg` coercion](11-cli-arg-coercion.md) | ✅ Complete | 01, 01.0/05 | 13 |
-| 12 | [`cmd` parsing](12-cli-cmd-parsing.md) | ⬜ Not started | 01.0/03, 02.0/10 | 13 |
+| 12 | [`cmd` parsing](12-cli-cmd-parsing.md) | ✅ Complete | 01.0/03, 02.0/10 | 13 |
 | 13 | [`cmd` dispatch](13-cli-cmd-dispatch.md) | ⬜ Not started | 11, 12, 01.0/04, 01.0/07, 01.0/11, 03.0/18 | 15 |
 | 14 | [`link` flags to `args` converters and coverage test](14-cli-link-args-json-converters.md) | ⬜ Not started | 01, 03.0/11 | 15 |
 | 15 | [`link <verb>` through the registry](15-cli-link-verbs-via-registry.md) | ⬜ Not started | 13, 14, 01.0/02, 01.0/04, 03.0/18 | none |
