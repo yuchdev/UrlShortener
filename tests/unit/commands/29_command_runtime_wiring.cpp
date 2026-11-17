@@ -240,7 +240,8 @@ void write_file(const std::filesystem::path& path, const std::string& content)
 // Type: unit (default/legacy mode registers exactly the expected command set).
 // Scenario: build_command_runtime over an inactive backend handle produces a
 //   registry containing precisely the nine link commands, link.list, the two
-//   db.* commands, system.info and command.list -- 14 names, no more, no less.
+//   db.* commands, system.info, command.list, the three job commands and the
+//   two pair commands -- 19 names, no more, no less.
 // Boundaries: an inactive handle selects the legacy lister; the registry is the
 //   sole product registry (C11).
 // On failure first check: did a factory stop being registered, or a name drift?
@@ -271,7 +272,12 @@ BOOST_AUTO_TEST_CASE(legacy_mode_registers_expected_names)
                                             "db.tables",
                                             "db.rows",
                                             "system.info",
-                                            "command.list"};
+                                            "command.list",
+                                            "job.get",
+                                            "job.list",
+                                            "job.cancel",
+                                            "link.import",
+                                            "link.export"};
     BOOST_TEST((names == expected));
 }
 
@@ -507,9 +513,11 @@ BOOST_AUTO_TEST_CASE(catalog_rendering_invokes_no_handler)
     BOOST_TEST(source->calls == 0);
 
     // The documented registry builds the same set without invoking a handler.
+    // It now also carries the three job commands and the two pair commands
+    // (job.get/list/cancel, link.import/export), 19 descriptors in all.
     CommandRegistry documented;
     register_documented_commands(documented);
-    BOOST_TEST(documented.list().size() == 14u);
+    BOOST_TEST(documented.list().size() == 19u);
     BOOST_TEST(!render_catalog_markdown(documented).empty());
 }
 

@@ -55,9 +55,16 @@ std::shared_ptr<composition::CommandRuntime> acquire_command_runtime(
         if (const fallback_builder_t& builder = fallback_builder_slot()) {
             return builder(config);
         }
+        // Local-operator one-shot modes (`cmd`, `link <verb>`) opt into the
+        // file-path capability so `link.import`/`link.export` may name a local
+        // file (threat model T-95 default-deny; the REST runtime never takes
+        // this path). In production `main` installs a process runtime first, so
+        // this fallback is reached only by unit tests and tools.
+        composition::CommandRuntimeOptions options;
+        options.file_paths.allow_paths = true;
         return std::make_shared<composition::CommandRuntime>(
-            composition::build_command_runtime(config,
-                                               app::LinkBackendHandle {}));
+            composition::build_command_runtime(
+                config, app::LinkBackendHandle {}, options));
     }
     catch (const std::exception&) {
         return nullptr;

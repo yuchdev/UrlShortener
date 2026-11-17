@@ -2,6 +2,7 @@
  * @file main.cpp
  * @brief Application entry point for url_shortener service.
  */
+#include <chrono>
 #include <filesystem>
 #include <functional>
 #include <cstdlib>
@@ -19,6 +20,7 @@
 #include <url_shortener/cli/cmd_dispatch.hpp>
 #include <url_shortener/cli/link_command_dispatch.hpp>
 #include <url_shortener/composition/command_runtime.hpp>
+#include <url_shortener/composition/job_runtime.hpp>
 #include <url_shortener/composition/link_backend_bootstrap.hpp>
 #include <url_shortener/observability/logger_factory.hpp>
 #include <url_shortener/url_shortener.hpp>
@@ -129,10 +131,20 @@ int main(int argc, char* argv[])
         // db.rows read exactly what link CRUD writes — no split brain under
         // --storage-config. `parsed.config` outlives the runtime: runtime_cleanup
         // resets it on every exit path before `parsed` destructs.
+        //
+        // File-path capability (threat model T-95, default-deny): the server/REST
+        // runtime stays deny, so POST /api/v1/commands refuses a `path`. The
+        // local-operator one-shot CLI modes (`cmd`, `link <verb>`) opt in so
+        // `link.import`/`link.export` may name a local file; this install serves
+        // those dispatchers via acquire_command_runtime.
+        url_shortener::composition::CommandRuntimeOptions runtime_options;
+        if (parsed.command.has_value() || parsed.cmd.has_value()) {
+            runtime_options.file_paths.allow_paths = true;
+        }
         url_shortener::composition::install_process_command_runtime(
             std::make_shared<url_shortener::composition::CommandRuntime>(
                 url_shortener::composition::build_command_runtime(
-                    parsed.config, backend)));
+                    parsed.config, backend, runtime_options)));
 
         // Latch "serving" before any request-handling thread can exist (before
         // CLI dispatch and before HttpServer is constructed), so install()/
@@ -233,6 +245,12 @@ int main(int argc, char* argv[])
 #endif
             server.stop();
             UriMapSingleton::getInstance().serialize(std::string(uri_filename));
+            // Drain (bounded), cancel and join the process-wide job runner
+            // before flushing the backend, so an in-flight import/export job
+            // finishes or is cancelled while its service dependencies are still
+            // alive (05.0/20; order per 02.0/12: stop -> drain jobs -> flush).
+            url_shortener::composition::shutdown_process_job_runtime(
+                std::chrono::seconds(30));
             backend.flush();  // persist pending redirect counters before stop.
             io_context.stop();
         };

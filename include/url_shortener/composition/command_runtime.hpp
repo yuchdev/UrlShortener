@@ -1,6 +1,8 @@
 #pragma once
 
 #include <memory>
+#include <optional>
+#include <string>
 
 // Forward declarations only: this header is the public seam every transport
 // includes to obtain a registry, so it must stay free of storage/app/http
@@ -29,10 +31,38 @@ namespace commands
 {
 class IAuditSink;
 class CommandRegistry;
+class JobRunner;
 }  // namespace commands
 
 namespace composition
 {
+
+/**
+ * @brief The local-filesystem capability granted to a runtime's pair commands
+ * (`link.import` / `link.export`), a composition-layer mirror of
+ * `commands::PathPolicy`.
+ *
+ * **Default-deny (allowlist, threat model T-95).** A `path` argument is refused
+ * with `unsupported` unless the composing mode explicitly grants the capability
+ * here, independent of any transport name. The REST per-request runtime (Task
+ * 04.0 subtask 02) and any future transport that leaves this default refuse
+ * `path`; only the local-operator compositions opt in — `cmd` (04.0/13) and
+ * `tui` (06.0/19) set @ref allow_paths `true`, and `serve-stdio` (05.0/17) sets
+ * it from `{!--no-file-paths, --path-root}`. @ref build_command_runtime passes
+ * this struct through unchanged and never forces the capability on.
+ */
+struct PairFileOptions
+{
+    ///< `true` only when the composing mode grants the file-path capability.
+    ///< When `false` (the default), `link.import`/`link.export` refuse any
+    ///< `path` with `unsupported` before touching the filesystem (T-95).
+    bool allow_paths = false;
+
+    ///< When set, every `path` is confined to this canonical root (component-
+    ///< wise, by the 05.0/07 rules); a target outside it is `invalid_field`.
+    ///< Absent means the local operator's full filesystem (decision Q6).
+    std::optional<std::string> root;
+};
 
 /**
  * @brief Optional overrides for @ref build_command_runtime.
@@ -52,6 +82,14 @@ struct CommandRuntimeOptions
     ///< (01.0/09). Tests inject a recording sink here. There is no way to build
     ///< a runtime without a sink.
     std::shared_ptr<commands::IAuditSink> audit_sink;
+
+    ///< The local-filesystem capability the runtime's pair commands honour.
+    ///< Default-deny (@ref PairFileOptions::allow_paths `== false`, threat model
+    ///< T-95): a mode that omits it — including the REST per-request runtime —
+    ///< gets a runtime whose `link.import`/`link.export` refuse `path` with
+    ///< `unsupported`. Only local-operator modes (`cmd`/`tui`/`serve-stdio`) set
+    ///< it `true`. @ref build_command_runtime forwards it unchanged.
+    PairFileOptions file_paths;
 };
 
 /**
@@ -115,8 +153,17 @@ struct CommandRuntime
     ///< which case the create adapter skips the throttle (fail-open).
     std::shared_ptr<IRateLimiter> create_rate_limiter;
 
-    // Task 05.0 subtask 20 adds: std::shared_ptr<commands::JobRunner>
-    // job_runner (process-wide, shared) and the job/pair commands + jobs table.
+    ///< The one process-wide @ref commands::JobRunner (== @ref
+    ///< composition::process_job_runner()), shared by every @ref CommandRuntime
+    ///< of the process (milestone contract C11, decision log D13). Held as a
+    ///< `std::shared_ptr` so a job submitted through this (possibly per-request)
+    ///< runtime keeps running after the runtime and its registry are destroyed:
+    ///< the runner outlives every runtime and its bodies capture only shared
+    ///< ownership and values (threat model T-87). The `cmd` dispatcher waits on
+    ///< it (`wait_for_terminal`); the process shuts it down via
+    ///< @ref composition::shutdown_process_job_runtime. Never null after a
+    ///< successful build.
+    std::shared_ptr<commands::JobRunner> job_runner;
 };
 
 /**
@@ -136,7 +183,15 @@ struct CommandRuntime
  * `app::LegacyLinkLister` over the global `linkRepository()`) -> build the
  * `app::TableCatalog` with the `links` and `click_events` sources -> register
  * the nine link commands, `link.list`/`db.tables`/`db.rows`/`system.info`, and
- * the `command.list` built-in -> install the audit sink. The `system.info`
+ * the `command.list` built-in -> register the job commands
+ * (`job.get`/`job.list`/`job.cancel`) and pair commands (`link.import`, and
+ * `link.export` bound to the active lister) over the process-wide
+ * @ref commands::JobRunner, set that runner as the registry's job submitter, add
+ * the `jobs` table source, and record the runner on
+ * @ref CommandRuntime::job_runner -> install the audit sink. The file-path
+ * capability comes from @p options `.file_paths` unchanged (default-deny, T-95):
+ * the builder never forces it on, so a runtime built with default options
+ * refuses `path`. The `system.info`
  * snapshot is read from the already-filtered process-wide
  * `app::process_system_info()` (set by the Task 02.0 bootstrap); this function
  * never reads live config and so discloses only allowlisted, non-secret values

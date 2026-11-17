@@ -149,6 +149,46 @@ class CmdInputsAndReadOnlyTest(CliIntegrationBase):
         self.assertEqual(proc.returncode, 0)
         self.assertIn("Usage:", proc.stdout)
 
+    def test_link_export_waits_for_job(self):
+        # 05.0/20 (decision log D13): a job response (link.export) is waited for
+        # by default; the printed envelope is the terminal job.get record, and a
+        # succeeded job exits 0. The fresh in-memory store has no links, so the
+        # export succeeds with an empty (header-only) body.
+        proc = self._run("cmd", "link.export", "--json", '{"format":"csv"}')
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        body = json.loads(proc.stdout.strip())
+        self.assertTrue(body["ok"])
+        self.assertEqual(body["result"]["state"], "succeeded")
+
+    def test_link_export_no_wait_prints_accepted(self):
+        # `--no-wait` prints the accepted envelope (carrying the job id and its
+        # non-terminal state) and exits 0 without waiting for completion.
+        proc = self._run(
+            "cmd", "link.export", "--no-wait", "--json", '{"format":"csv"}')
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        body = json.loads(proc.stdout.strip())
+        self.assertIn("job", body)
+        self.assertIn("id", body["job"])
+        self.assertIn(
+            body["job"]["state"], ("queued", "running", "succeeded"))
+
+    def test_link_import_from_path_waits(self):
+        # Carry-forward (T-95 opt-in): the local-operator `cmd` runtime grants
+        # the file-path capability, so `link.import` may read a local `path`; the
+        # import runs as a job that `cmd` waits for and reports succeeded.
+        with self.make_tmpdir() as tmpdir:
+            csv_path = os.path.join(tmpdir, "import.csv")
+            with open(csv_path, "w", encoding="utf-8") as handle:
+                handle.write("https://example.com/p1,imp1\n")
+                handle.write("https://example.com/p2,imp2\n")
+            proc = self._run(
+                "cmd", "link.import", "--json",
+                json.dumps({"format": "csv", "path": csv_path}))
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            body = json.loads(proc.stdout.strip())
+            self.assertTrue(body["ok"])
+            self.assertEqual(body["result"]["state"], "succeeded")
+
 
 if __name__ == "__main__":
     unittest.main()

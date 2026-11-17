@@ -480,6 +480,7 @@ set(URL_SHORTENER_SOURCES
       tests/unit/commands/61_ndjson_line_reader.cpp
       tests/unit/commands/62_ndjson_session.cpp
       tests/unit/commands/63_stdio_adapter.cpp
+      tests/unit/commands/64_command_runtime_jobs.cpp
       tests/unit/commands/65_jobs_table_source.cpp
   )
 
@@ -591,6 +592,7 @@ set(URL_SHORTENER_SOURCES
       ${CMAKE_CURRENT_SOURCE_DIR}/src/app/link_backend.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/composition/link_command_service_factory.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/composition/command_runtime.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/composition/job_runtime.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/composition/process_command_runtime.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/config/storage_config.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/composition/storage_factory.cpp

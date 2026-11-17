@@ -1,3 +1,5 @@
+#include <cstddef>
+#include <memory>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -14,7 +16,11 @@
 #include <url_shortener/commands/builtin_commands.hpp>
 #include <url_shortener/commands/command_descriptor.hpp>
 #include <url_shortener/commands/command_registry.hpp>
+#include <url_shortener/commands/job_commands.hpp>
+#include <url_shortener/commands/job_runner.hpp>
 #include <url_shortener/commands/link_commands.hpp>
+#include <url_shortener/commands/pair_commands.hpp>
+#include <url_shortener/core/clock.hpp>
 #include <url_shortener/core/config.hpp>
 #include <url_shortener/core/utils.hpp>
 
@@ -245,6 +251,25 @@ app::TableCatalog& doc_catalog()
     return catalog;
 }
 
+/**
+ * @brief The process-lifetime placeholder @ref JobRunner the documented
+ * `job.*` / `link.import` / `link.export` descriptors bind to.
+ *
+ * The documented registry renders metadata only and never executes a handler
+ * (threat model T-19/T-58), so this runner's workers stay idle; it exists solely
+ * so `register_job_commands`/`register_pair_commands` can capture a runner
+ * reference while building descriptors. Process-lifetime statics (the clock
+ * declared before the runner so it outlives it) keep the reference valid for any
+ * registry @ref register_documented_commands populates.
+ * @return A reference to the shared placeholder runner.
+ */
+JobRunner& doc_job_runner()
+{
+    static SystemClock clock;
+    static JobRunner runner(clock, JobRunnerOptions {});
+    return runner;
+}
+
 std::string arg_to_json(const ArgSpec& arg)
 {
     std::string out = "{\"name\":";
@@ -394,6 +419,24 @@ void register_documented_commands(CommandRegistry& registry)
     register_link_commands(registry, doc_link_service());
     register_browse_commands(
         registry, doc_lister(), doc_catalog(), app::SystemInfo {});
+    register_job_commands(registry, doc_job_runner());
+
+    // Pair commands: `link.import` always, and `link.export` whenever a page
+    // source is set. A trivial (never-executed) source that returns an empty
+    // page is bound here so `link.export` is documented in the catalog; the
+    // service is a non-owning alias of the placeholder service (metadata only).
+    PairCommandDeps pair_deps;
+    pair_deps.service = std::shared_ptr<app::LinkCommandService>(
+        std::shared_ptr<void>(), &doc_link_service());
+    pair_deps.max_inline_bytes = 65536;
+    pair_deps.list_page = [](const LinkListFilter&, std::size_t,
+                             std::size_t) -> app::Result<LinkPage>
+    {
+        app::Result<LinkPage> out;
+        out.value = LinkPage {};
+        return out;
+    };
+    register_pair_commands(registry, std::move(pair_deps));
 }
 
 }  // namespace url_shortener::commands

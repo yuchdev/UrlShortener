@@ -163,11 +163,12 @@ BOOST_AUTO_TEST_CASE(db_rows_rejects_non_allowlisted_tables)
     }
 }
 
-// Type: unit (db.tables exposes exactly links and click_events, C6).
-// Scenario: db.tables lists precisely two logical tables -- links and
-//   click_events -- and no auth table.
-// Boundaries: the catalog is built from exactly two add() calls.
-// On failure first check: did the composition root register a third source, or
+// Type: unit (db.tables exposes exactly links, click_events and jobs, C6).
+// Scenario: db.tables lists precisely three logical tables -- links,
+//   click_events and jobs -- and no auth table.
+// Boundaries: the catalog is built from exactly three add() calls (the `jobs`
+//   source joins in 05.0/20).
+// On failure first check: did the composition root register a fourth source, or
 //   drop one?
 BOOST_AUTO_TEST_CASE(db_tables_lists_exactly_links_and_click_events)
 {
@@ -182,10 +183,11 @@ BOOST_AUTO_TEST_CASE(db_tables_lists_exactly_links_and_click_events)
 
     // Each table object carries a `,"rows":` immediately after its name; column
     // objects never do, so this counts table entries exactly.
-    BOOST_TEST(count_occurrences(response.result_json, R"(,"rows":)") == 2u);
+    BOOST_TEST(count_occurrences(response.result_json, R"(,"rows":)") == 3u);
     BOOST_TEST(contains(response.result_json, R"("name":"links","rows":)"));
     BOOST_TEST(
         contains(response.result_json, R"("name":"click_events","rows":)"));
+    BOOST_TEST(contains(response.result_json, R"("name":"jobs","rows":)"));
     BOOST_TEST(!contains(response.result_json, "app_users"));
     BOOST_TEST(!contains(response.result_json, "auth_sessions"));
 }

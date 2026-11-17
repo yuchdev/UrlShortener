@@ -395,11 +395,16 @@ Until Task 03.0 registers the link/browse commands, this block lists only
 | `command.list` | `read` | sync | no | no | List all commands and their argument schemas |
 | `db.rows` | `read` | sync | no | no | Read a page of rows from a browsable table. |
 | `db.tables` | `read` | sync | no | no | List the browsable tables with their row counts. |
+| `job.cancel` | `write` | sync | yes | no | Request cancellation of a job by id. |
+| `job.get` | `read` | sync | no | no | Fetch one job record by id. |
+| `job.list` | `read` | sync | no | no | List job records with state filter and paging. |
 | `link.create` | `write` | sync | yes | yes | Create a short link. |
 | `link.delete` | `write` | sync | yes | no | Soft-delete a short link. |
 | `link.disable` | `write` | sync | yes | no | Disable a short link. |
 | `link.enable` | `write` | sync | yes | no | Enable a short link. |
+| `link.export` | `read` | job | no | no | Export filtered links as CSV or NDJSON pairs. |
 | `link.get` | `read` | sync | no | no | Retrieve a short link by slug or id. |
+| `link.import` | `write` | job | yes | yes | Bulk-import full_url to short_url pairs. |
 | `link.list` | `read` | sync | no | no | List short links with filtering, sorting and paging. |
 | `link.preview` | `read` | sync | no | no | Preview a short link's resolved status. |
 | `link.restore` | `write` | sync | yes | no | Restore a soft-deleted short link. |
@@ -428,6 +433,35 @@ Maps to: `db rows`.
 List the browsable tables with their row counts.
 
 Maps to: `db tables`.
+
+#### `job.cancel` - Perm `write`, sync, Mut
+Request cancellation of a job by id.
+
+| Arg | Type | Req | Description |
+|---|---|---|---|
+| `id` | string | yes | Job id of the form j-<n> to address. |
+
+Maps to: `POST /api/v1/jobs/{id}/cancel`, `job cancel`.
+
+#### `job.get` - Perm `read`, sync
+Fetch one job record by id.
+
+| Arg | Type | Req | Description |
+|---|---|---|---|
+| `id` | string | yes | Job id of the form j-<n> to address. |
+
+Maps to: `GET /api/v1/jobs/{id}`, `job get`.
+
+#### `job.list` - Perm `read`, sync
+List job records with state filter and paging.
+
+| Arg | Type | Req | Description |
+|---|---|---|---|
+| `state` | enum `queued`\|`running`\|`succeeded`\|`failed`\|`cancelled` | no | Lifecycle filter; lists all states when omitted. |
+| `limit` | int | no | Maximum number of jobs to return (1..500). |
+| `offset` | int | no | Zero-based index of the first job to return (0..1000000). |
+
+Maps to: `GET /api/v1/jobs`, `job list`.
 
 #### `link.create` - Perm `write`, sync, Mut, `dry_run` yes
 Create a short link.
@@ -472,6 +506,20 @@ Enable a short link.
 
 Maps to: `POST /api/v1/links/{slug}/enable`, `link enable`.
 
+#### `link.export` - Perm `read`, job
+Export filtered links as CSV or NDJSON pairs.
+
+| Arg | Type | Req | Description |
+|---|---|---|---|
+| `format` | enum `csv`\|`ndjson` | yes | Wire format of the exported stream: csv or ndjson. |
+| `status` | enum `all`\|`active`\|`disabled`\|`expired`\|`deleted` | no | Lifecycle filter; defaults to active. |
+| `q` | string | no | Case-insensitive substring filter on slug or target URL. |
+| `tag` | string | no | Exact-match tag filter. |
+| `campaign` | string | no | Exact-match campaign name filter. |
+| `path` | string | no | Local file path; local-operator transports only. |
+
+Maps to: `GET /api/v1/links:export`, `link export`.
+
 #### `link.get` - Perm `read`, sync
 Retrieve a short link by slug or id.
 
@@ -481,6 +529,18 @@ Retrieve a short link by slug or id.
 | `id` | string | one of | Look up by opaque id. Exactly one of slug/id. |
 
 Maps to: `GET /api/v1/links/{slug}`, `GET /api/v1/links/id/{id}`, `link get`.
+
+#### `link.import` - Perm `write`, job, Mut, `dry_run` yes
+Bulk-import full_url to short_url pairs.
+
+| Arg | Type | Req | Description |
+|---|---|---|---|
+| `format` | enum `csv`\|`ndjson` | yes | Wire format of the pair stream: csv or ndjson. |
+| `data` | string | no | Inline pair payload; mutually exclusive with path. |
+| `path` | string | no | Local file path; local-operator transports only. |
+| `on_conflict` | enum `skip`\|`fail`\|`overwrite` | no | Behaviour on an existing slug: skip, fail or overwrite. |
+
+Maps to: `POST /api/v1/links:import`, `link import`.
 
 #### `link.list` - Perm `read`, sync
 List short links with filtering, sorting and paging.
@@ -549,6 +609,7 @@ Report the server version, selected storage backends and non-secret shortener se
 Maps to: `system info`.
 
 <!-- END GENERATED: commands -->
+ts=2026-11-17T23:02:01Z level=INFO component=job_runner msg=job_runner_shutdown
 
 ## 4. Job model
 

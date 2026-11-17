@@ -11,8 +11,10 @@
 #include <url_shortener/cli/cmd_dispatch.hpp>
 
 #include <algorithm>
+#include <chrono>
 #include <cstddef>
 #include <memory>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -25,8 +27,11 @@
 #include <url_shortener/commands/command_registry.hpp>
 #include <url_shortener/commands/envelope.hpp>
 #include <url_shortener/commands/error_codes.hpp>
+#include <url_shortener/commands/job_runner.hpp>
+#include <url_shortener/commands/job_types.hpp>
 #include <url_shortener/commands/json_scan.hpp>
 #include <url_shortener/composition/command_runtime.hpp>
+#include <url_shortener/composition/job_runtime.hpp>
 #include <url_shortener/core/config.hpp>
 #include <url_shortener/core/utils.hpp>
 #include <url_shortener/observability/logger_factory.hpp>
@@ -58,11 +63,11 @@ int reject_input(std::ostream& err, const char* code, const char* message)
 }
 
 /**
- * @brief Prints the final command response and returns its process exit code.
+ * @brief Prints a non-job command response and returns its process exit code.
  *
- * Realises the output contract (milestone contract C2, subtask 13 step 6):
- * - a job acceptance (no `job_runner` is wired until Task 05.0 subtask 20) is
- *   printed as the accepted envelope with a single stderr note and exit 0;
+ * Realises the output contract (milestone contract C2, subtask 13 step 6) for a
+ * synchronous response (a job acceptance is handled earlier by
+ * @ref wait_and_report_job):
  * - default mode prints `serialize_response(response)` on @p out;
  * - `--raw` prints only `result` on @p out for a success, or
  *   `cmd failed: <code>: <message>` on @p err for a failure (empty stdout).
@@ -74,21 +79,11 @@ int reject_input(std::ostream& err, const char* code, const char* message)
  * @param raw Whether `--raw` was requested.
  * @param out Stream for the success envelope/result.
  * @param err Stream for the value-free failure diagnostic.
- * @return @ref commands::exit_code_for for @p response (0 on success/job).
+ * @return @ref commands::exit_code_for for @p response.
  */
 int print_response(const commands::CommandResponse& response, bool raw,
                    std::ostream& out, std::ostream& err)
 {
-    if (response.ok && response.job.has_value()) {
-        // A job was accepted for background work. Waiting (and the 0/4 waited
-        // exit code) is a follow-up edit owned by Task 05.0 subtask 20; until
-        // the process-wide job runtime exists, print the accepted envelope and
-        // note that waiting is unavailable. exit_code_for returns 0 here.
-        out << commands::serialize_response(response) << '\n';
-        err << "job accepted; waiting is not available in this build\n";
-        return commands::exit_code_for(response);
-    }
-
     if (raw) {
         if (response.ok) {
             out << response.result_json << '\n';
@@ -249,6 +244,106 @@ std::string build_envelope(const std::string& id, const std::string& name,
     return text;
 }
 
+/**
+ * @brief Handles an accepted job: waits for it (or not), prints a `job.*`
+ * envelope and returns the waited exit code (Task 05.0 subtask 20, decision log
+ * D13/M4).
+ *
+ * The process-wide job runner (@ref composition::process_job_runner) outlives
+ * this runtime, so the accepted job keeps running regardless. Behaviour:
+ * - `--no-wait`: print the accepted envelope (its `job.state` is `queued`/
+ *   `running`) and exit `0`; the background job is then drained by the shutdown
+ *   below before this one-shot process exits.
+ * - otherwise: block on `wait_for_terminal`, then execute `job.get` through the
+ *   **same** registry and print that envelope (only `result` under `--raw`),
+ *   returning `0` when the job `succeeded` and `4` for `failed`/`cancelled` (or
+ *   if the wait did not observe a terminal state).
+ *
+ * Either way it calls @ref composition::shutdown_process_job_runtime before
+ * returning (per-mode shutdown, 02.0/12), so no worker thread outlives the
+ * process. No argument value is printed to @p err (milestone contract C6).
+ *
+ * @param command The parsed invocation (supplies `--no-wait`, `--raw`,
+ * `--read-only`, `--id`).
+ * @param config Server configuration (envelope byte/id caps for the `job.get`
+ * sub-request).
+ * @param runtime The acquired runtime; its `job_runner` is waited on and its
+ * `registry` executes the `job.get`.
+ * @param accepted The job-acceptance response from the original command (its
+ * `job->id` is the target).
+ * @param out Stream for the printed envelope/result.
+ * @param err Stream for a value-free failure diagnostic under `--raw`.
+ * @return `0` on `--no-wait` or a `succeeded` job; `4` for a `failed`/
+ * `cancelled` job or an unobserved terminal state.
+ */
+int wait_and_report_job(const CmdCliCommand& command, const ServerConfig& config,
+                        composition::CommandRuntime& runtime,
+                        const commands::CommandResponse& accepted,
+                        std::ostream& out, std::ostream& err)
+{
+    const std::string job_id = accepted.job->id;
+
+    if (command.no_wait) {
+        // Do not wait for completion: print the accepted envelope and exit 0.
+        // The shutdown below still drains the background job before the one-shot
+        // process exits (a cmd process cannot outlive its own job thread).
+        out << commands::serialize_response(accepted) << '\n';
+        composition::shutdown_process_job_runtime(std::chrono::seconds(30));
+        return commands::exit_code_for(accepted);
+    }
+
+    // Wait for the job to reach a terminal state (the runner clamps the timeout
+    // to 24h internally), then re-read its full record via job.get so the
+    // printed envelope is the standard job object.
+    std::optional<commands::JobRecord> record;
+    if (runtime.job_runner) {
+        record = runtime.job_runner->wait_for_terminal(job_id,
+                                                       std::chrono::hours(24));
+    }
+
+    commands::CallerContext caller;
+    caller.principal = "local-operator";
+    caller.control_set =
+        command.read_only ? ControlSet::User : ControlSet::Admin;
+    caller.transport = "cli";
+
+    const std::string args =
+        "{\"id\":" + url_shortener::jsonString(job_id) + "}";
+    const std::string envelope = build_envelope(
+        command.request_id.value_or("cli-1"), "job.get", args, false, false);
+
+    commands::envelope_limits limits;
+    limits.max_bytes = static_cast<std::size_t>(config.max_request_body_bytes);
+    limits.max_id_len = static_cast<std::size_t>(config.request_id_max_length);
+    const commands::CommandResponse got =
+        runtime.registry->execute_json(caller, envelope, limits);
+
+    if (command.raw) {
+        if (got.ok) {
+            out << got.result_json << '\n';
+        }
+        else {
+            err << "cmd failed: "
+                << commands::error_info_for(got.error.code).name << ": "
+                << got.error.message << '\n';
+        }
+    }
+    else {
+        out << commands::serialize_response(got) << '\n';
+    }
+
+    // Exit code from the terminal job state: 0 only for `succeeded`, 4 for
+    // `failed`/`cancelled` or an unobserved terminal state (wait timeout /
+    // evicted record).
+    const int rc =
+        (record.has_value() && record->state == commands::JobState::succeeded)
+            ? 0
+            : 4;
+
+    composition::shutdown_process_job_runtime(std::chrono::seconds(30));
+    return rc;
+}
+
 }  // namespace
 
 int DispatchCmdCommand(const CmdCliCommand& command, const ServerConfig& config,
@@ -340,6 +435,14 @@ int DispatchCmdCommand(const CmdCliCommand& command, const ServerConfig& config,
 
         const commands::CommandResponse response =
             registry.execute_json(caller, envelope, limits);
+
+        // Step 5 (jobs): an accepted job is waited for (unless `--no-wait`),
+        // reported via job.get through the same registry, and the runner is
+        // shut down before returning (Task 05.0 subtask 20, decision log D13).
+        if (response.ok && response.job.has_value()) {
+            return wait_and_report_job(command, config, *runtime, response, out,
+                                       err);
+        }
 
         // Steps 5-6: print the response (or only `result` under `--raw`) and
         // return the shared-table exit code.
