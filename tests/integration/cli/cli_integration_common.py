@@ -101,6 +101,7 @@ def run_cli(
     cwd: str | None = None,
     timeout: int = 10,
     env: dict | None = None,
+    input: str | None = None,
 ):
     """Run the binary with *args and return CompletedProcess.
 
@@ -114,6 +115,8 @@ def run_cli(
         caller's environment unchanged (legacy default). Pass ``clean_env()``
         to guarantee ``URL_SHORTENER_STORAGE_CONFIG`` cannot leak in (T-41),
         or an explicit map to select a backend for the persistence cases.
+    :param input: Text written to the child's stdin (for ``cmd ... --json -``).
+        ``None`` (the default) leaves stdin empty, preserving legacy callers.
     :return: The completed process with captured text stdout/stderr.
     """
     return subprocess.run(
@@ -123,6 +126,7 @@ def run_cli(
         timeout=timeout,
         cwd=cwd,
         env=env,
+        input=input,
     )
 
 

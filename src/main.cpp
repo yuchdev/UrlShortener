@@ -16,6 +16,7 @@
 #include <url_shortener/app/app_error.hpp>
 #include <url_shortener/app/link_backend.hpp>
 #include <url_shortener/cli/cli_parser.hpp>
+#include <url_shortener/cli/cmd_dispatch.hpp>
 #include <url_shortener/cli/link_command_dispatch.hpp>
 #include <url_shortener/composition/command_runtime.hpp>
 #include <url_shortener/composition/link_backend_bootstrap.hpp>
@@ -145,6 +146,16 @@ int main(int argc, char* argv[])
         if (parsed.command.has_value()) {
             const int rc = url_shortener::cli::DispatchLinkCommand(
                 *parsed.command, parsed.config);
+            backend.flush();  // shutdown-only; no-op on the default path.
+            return rc;
+        }
+
+        // One-shot CLI mode: a recognized `cmd <name>` short-circuits here the
+        // same way, running through the shared command registry as the local
+        // operator and never constructing an HttpServer (subtask 13; C4/C5).
+        if (parsed.cmd.has_value()) {
+            const int rc = url_shortener::cli::DispatchCmdCommand(
+                *parsed.cmd, parsed.config);
             backend.flush();  // shutdown-only; no-op on the default path.
             return rc;
         }

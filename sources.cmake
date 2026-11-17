@@ -4,6 +4,7 @@ set(URL_SHORTENER_CPP
         ${CMAKE_CURRENT_SOURCE_DIR}/src/cli/link_command_args.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/cli/link_command_dispatch.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/cli/arg_coercion.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cli/cmd_dispatch.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/uri_map_singleton.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/core/utils.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/analytics/click_event_queue.cpp
@@ -65,6 +66,7 @@ set(URL_SHORTENER_H
         ${CMAKE_CURRENT_SOURCE_DIR}/include/url_shortener/cli/cli_parser.hpp
         ${CMAKE_CURRENT_SOURCE_DIR}/include/url_shortener/cli/link_command_args.hpp
         ${CMAKE_CURRENT_SOURCE_DIR}/include/url_shortener/cli/link_command_dispatch.hpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/include/url_shortener/cli/cmd_dispatch.hpp
         ${CMAKE_CURRENT_SOURCE_DIR}/include/url_shortener/cli/arg_coercion.hpp
         ${CMAKE_CURRENT_SOURCE_DIR}/include/url_shortener/observability/log_level.hpp
         ${CMAKE_CURRENT_SOURCE_DIR}/include/url_shortener/observability/logging_config.hpp
@@ -361,6 +363,7 @@ set(URL_SHORTENER_SOURCES
       tests/unit/cli/05_cli_storage_config_flag.cpp
       tests/unit/cli/06_cli_arg_coercion.cpp
       tests/unit/cli/07_cli_parser_cmd.cpp
+      tests/unit/cli/08_cmd_dispatch.cpp
       tests/unit/cli/11_cli_parser_command_api_flags.cpp
   )
 
@@ -477,6 +480,7 @@ set(URL_SHORTENER_SOURCES
       ${CMAKE_CURRENT_SOURCE_DIR}/src/cli/link_command_args.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/cli/link_command_dispatch.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/cli/arg_coercion.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/cli/cmd_dispatch.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/uri_map_singleton.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/core/utils.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/analytics/click_event_queue.cpp
@@ -639,6 +643,8 @@ set(URL_SHORTENER_SOURCES
       tests/integration/cli/16_link_preview_not_found_and_invalid_input.py
       tests/integration/cli/17_storage_config_errors.py
       tests/integration/cli/18_server_and_cli_share_sqlite.py
+      tests/integration/cli/20_cmd_link_envelope.py
+      tests/integration/cli/21_cmd_inputs_and_read_only.py
   )
 
   set(ALL_INTEGRATION_SOURCES
