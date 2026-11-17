@@ -515,6 +515,31 @@ BOOST_AUTO_TEST_CASE(create_private_target_rejected_when_disabled)
     BOOST_TEST(extract_code(res.body()) == "invalid_url");
 }
 
+// Type: unit (CWE-113 response splitting: control byte target rejected).
+// Scenario: a create whose url carries a raw CRLF in the target is rejected
+//   with the SAME 400 invalid_url response other invalid URLs produce, and no
+//   link is stored. The raw bytes survive the REST body scan and the args
+//   round-trip (decode_json_string restores them), so they reach
+//   normalizeTargetUrl, which now rejects them - keeping the C3 error shape
+//   byte-for-byte identical to any other invalid URL.
+// Boundaries: the rejection is in the shared validator, not a REST-specific
+//   control-byte check; the response code/body must match invalid_url exactly.
+// On failure first check: did normalizeTargetUrl stop scanning for control
+//   bytes, or did the create path grow a bespoke code for this case?
+BOOST_AUTO_TEST_CASE(create_control_byte_target_is_invalid_url)
+{
+    std::string body = "{\"url\":\"https://evil.example/p";
+    body.push_back('\r');
+    body.push_back('\n');
+    body += "Set-Cookie: x=1/q\",\"slug\":\"c17split\"}";
+
+    const auto res = dispatch(
+        make_request(bhttp::verb::post, "/api/v1/links", body), test_config());
+    BOOST_TEST(res.result_int() == 400);
+    BOOST_TEST(extract_code(res.body()) == "invalid_url");
+    BOOST_TEST(!url_shortener::linkRepository().getBySlug("c17split"));
+}
+
 // Type: unit (compat route code/slug handling).
 // Scenario: on the compat POST /api/v1/short-urls route `code` is accepted as
 //   the short code, `slug` wins over `code` when both are present, and the

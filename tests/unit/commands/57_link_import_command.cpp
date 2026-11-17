@@ -15,7 +15,6 @@
 #include <boost/test/unit_test.hpp>
 
 #include "commands_test_fakes.hpp"
-
 #include "url_shortener/commands/command_registry.hpp"
 #include "url_shortener/commands/envelope.hpp"
 #include "url_shortener/commands/error_codes.hpp"
@@ -80,9 +79,9 @@ struct Harness
     explicit Harness(bool allow_private = false,
                      bool allow_paths = false,
                      unsigned workers = 2)
-        : config(commands_test_fakes::make_test_config(allow_private)),
-          clock(std::chrono::system_clock::time_point {}),
-          runner(std::make_shared<JobRunner>(
+        : config(commands_test_fakes::make_test_config(allow_private))
+        , clock(std::chrono::system_clock::time_point {})
+        , runner(std::make_shared<JobRunner>(
               clock, JobRunnerOptions {workers, 64, 256}))
     {
         service =
@@ -132,7 +131,8 @@ long json_int(const std::string& json, const std::string& key)
     long value = 0;
     bool any = false;
     while (i < json.size()
-           && std::isdigit(static_cast<unsigned char>(json[i])) != 0) {
+           && std::isdigit(static_cast<unsigned char>(json[i])) != 0)
+    {
         value = value * 10 + (json[i] - '0');
         ++i;
         any = true;
@@ -155,9 +155,9 @@ ImportResult run_real_import(Harness& harness, const CommandRequest& request)
 {
     const CommandResponse response =
         harness.registry.execute(admin_caller(), request);
-    BOOST_REQUIRE_MESSAGE(response.job.has_value(),
-                          "expected a job, got error: "
-                              + response.error.message);
+    BOOST_REQUIRE_MESSAGE(
+        response.job.has_value(),
+        "expected a job, got error: " + response.error.message);
     const std::optional<JobRecord> record = harness.runner->wait_for_terminal(
         response.job->id, std::chrono::seconds(20));
     BOOST_REQUIRE(record.has_value());
@@ -175,8 +175,7 @@ ImportResult run_real_import(Harness& harness, const CommandRequest& request)
 // removes it.
 std::string write_temp_file(const std::string& content)
 {
-    const std::filesystem::path path =
-        std::filesystem::temp_directory_path()
+    const std::filesystem::path path = std::filesystem::temp_directory_path()
         / ("import_test_"
            + std::to_string(
                std::chrono::steady_clock::now().time_since_epoch().count())
@@ -200,12 +199,12 @@ BOOST_AUTO_TEST_CASE(csv_mixed_counts_and_physical_line_numbers)
 {
     Harness harness;
     const std::string data =
-        "full_url,slug\n"                 // line 1: header -> skipped
-        "http://a.com/,aaa\n"             // line 2: created
-        "http://b.com/\n"                 // line 3: created (generated slug)
-        "x,y,z\n"                         // line 4: malformed -> failed
-        "\n"                              // line 5: blank -> skipped
-        "http://a.com/,aaa\n";            // line 6: dup slug -> skipped
+        "full_url,slug\n"  // line 1: header -> skipped
+        "http://a.com/,aaa\n"  // line 2: created
+        "http://b.com/\n"  // line 3: created (generated slug)
+        "x,y,z\n"  // line 4: malformed -> failed
+        "\n"  // line 5: blank -> skipped
+        "http://a.com/,aaa\n";  // line 6: dup slug -> skipped
 
     const ImportResult result =
         run_real_import(harness, import_request("csv", "data", data));
@@ -315,40 +314,80 @@ BOOST_AUTO_TEST_CASE(private_target_row_honours_allow_private_switch)
     }
 }
 
-// Type: unit (URL control-char regression / requirement 6).
-// Scenario: a CSV row whose full_url carries a CR in the path is rejected by
-//   the single CreateLink URL path as invalid_url (normalizeTargetUrl), exactly
-//   as isValidSlug rejects control chars in a slug.
-// Boundaries: control char reaches CreateLink (the CSV parser passes it
-//   through) and is rejected there, not in pair_commands.
-// On failure first check: did normalizeTargetUrl stop rejecting a line
-//   terminator in the URL, or did the CSV parser start stripping mid-field
-//   control bytes?
-// NOTE (reported to the brief owner): only CR/LF *in the path* are rejected by
-//   normalizeTargetUrl today; a NUL / U+2028 / other control byte embedded in
-//   the host or path is NOT rejected by the core validator. Per requirement 6
-//   this is reported rather than patched into core/utils.cpp here.
+// Type: unit (URL control-char regression / requirement 6, CWE-113).
+// Scenario: control bytes in an imported full_url never produce a stored link.
+//   Two distinct defense layers are proven:
+//     * A CR in the path and a U+2028 (E2 80 A8) line separator in the path
+//       both survive the import `data` argument and reach CreateLink, where
+//       normalizeTargetUrl (containsUnsafeUrlControlBytes) rejects them as a
+//       per-row invalid_url - exactly as isValidSlug rejects control chars.
+//     * A raw NUL cannot even be carried by the import `data` argument: the
+//       command arg decoder (decode_without_nul) rejects it as `wrong_type`
+//       before any row is parsed, so the whole command is rejected (no job)
+//       and the NUL never reaches CreateLink. NUL rejection inside the
+//       validator itself is covered by the core url-validation unit test.
+// Boundaries: CR/U+2028 are rejected "by create"; NUL is rejected earlier at
+//   the command argument boundary. The row terminator is the trailing '\n';
+//   the injected byte sits inside the single field.
+// On failure first check: did normalizeTargetUrl stop rejecting a control byte,
+//   did the CSV parser start stripping mid-field control bytes, or did the
+//   `data` arg decoder start accepting an embedded NUL?
 BOOST_AUTO_TEST_CASE(url_control_char_in_path_rejected_by_create)
 {
-    Harness harness;
-    std::string data = "http://example.com/a";
-    data.push_back('\r');
-    data += "b\n";
+    // CR in the path reaches CreateLink and is rejected as invalid_url.
+    {
+        Harness harness;
+        std::string data = "http://example.com/a";
+        data.push_back('\r');
+        data += "b\n";
 
-    const ImportResult result =
-        run_real_import(harness, import_request("csv", "data", data));
+        const ImportResult result =
+            run_real_import(harness, import_request("csv", "data", data));
 
-    BOOST_TEST(json_int(result.result_json, "failed") == 1);
-    BOOST_TEST(result.result_json.find("\"code\":\"invalid_url\"")
-               != std::string::npos);
-    BOOST_TEST(harness.store.size() == 0u);
+        BOOST_TEST(json_int(result.result_json, "failed") == 1);
+        BOOST_TEST(result.result_json.find("\"code\":\"invalid_url\"")
+                   != std::string::npos);
+        BOOST_TEST(harness.store.size() == 0u);
+    }
+
+    // U+2028 (E2 80 A8) line separator in the path reaches CreateLink and is
+    // rejected as invalid_url.
+    {
+        Harness harness;
+        const std::string data = "http://example.com/p\xE2\x80\xA8q\n";
+
+        const ImportResult result =
+            run_real_import(harness, import_request("csv", "data", data));
+
+        BOOST_TEST(json_int(result.result_json, "failed") == 1);
+        BOOST_TEST(result.result_json.find("\"code\":\"invalid_url\"")
+                   != std::string::npos);
+        BOOST_TEST(harness.store.size() == 0u);
+    }
+
+    // A raw NUL in the host is rejected at the command-argument boundary (the
+    // `data` arg decoder), before any row is parsed: the command returns an
+    // error (no job) and nothing is stored.
+    {
+        Harness harness;
+        std::string data = "http://exa";
+        data.push_back('\0');
+        data += "mple.com/p\n";
+
+        const CommandResponse response = harness.registry.execute(
+            admin_caller(), import_request("csv", "data", data));
+
+        BOOST_TEST(!response.job.has_value());
+        BOOST_TEST(harness.store.size() == 0u);
+    }
 }
 
 // Type: unit (conflict mode skip).
 // Scenario: a duplicate slug under on_conflict=skip is counted skipped and the
 //   first row stays persisted; the job succeeds.
 // Boundaries: slug_conflict -> skip branch.
-// On failure first check: did the body stop treating AppErrorCode::slug_conflict
+// On failure first check: did the body stop treating
+// AppErrorCode::slug_conflict
 //   as the skip trigger?
 BOOST_AUTO_TEST_CASE(conflict_skip_counts_skipped)
 {
@@ -404,7 +443,8 @@ BOOST_AUTO_TEST_CASE(many_bad_rows_cap_errors_at_100_with_omitted_50)
     std::size_t entries = 0;
     for (std::size_t p = result.result_json.find("\"line\":");
          p != std::string::npos;
-         p = result.result_json.find("\"line\":", p + 1)) {
+         p = result.result_json.find("\"line\":", p + 1))
+    {
         ++entries;
     }
     BOOST_TEST(entries == 100u);
@@ -418,8 +458,7 @@ BOOST_AUTO_TEST_CASE(many_bad_rows_cap_errors_at_100_with_omitted_50)
 BOOST_AUTO_TEST_CASE(over_long_line_failed_then_next_row_processed)
 {
     Harness harness;
-    std::string data(
-        url_shortener::commands::kMaxImportLineBytes + 100, 'a');
+    std::string data(url_shortener::commands::kMaxImportLineBytes + 100, 'a');
     data += "\nhttp://ok.example/,okslug\n";
 
     const ImportResult result =
@@ -478,8 +517,7 @@ BOOST_AUTO_TEST_CASE(both_or_neither_source_is_invalid_field)
     CommandRequest both;
     both.id = "b";
     both.command = "link.import";
-    both.args_json =
-        "{\"format\":\"csv\",\"data\":\"x\",\"path\":\"/tmp/x\"}";
+    both.args_json = "{\"format\":\"csv\",\"data\":\"x\",\"path\":\"/tmp/x\"}";
     const CommandResponse r2 = harness.registry.execute(admin_caller(), both);
     BOOST_TEST(r2.ok == false);
     BOOST_TEST((r2.error.code == CommandErrorCode::invalid_field));
@@ -501,8 +539,8 @@ BOOST_AUTO_TEST_CASE(inline_data_over_cap_is_invalid_field)
     commands_test_fakes::FakeStatsReader reader;
     ServerConfig config = commands_test_fakes::make_test_config();
     ManualClock clock(std::chrono::system_clock::time_point {});
-    auto runner = std::make_shared<JobRunner>(
-        clock, JobRunnerOptions {1u, 4u, 16u});
+    auto runner =
+        std::make_shared<JobRunner>(clock, JobRunnerOptions {1u, 4u, 16u});
     auto service =
         std::make_shared<app::LinkCommandService>(store, reader, config);
 
@@ -514,8 +552,7 @@ BOOST_AUTO_TEST_CASE(inline_data_over_cap_is_invalid_field)
     register_pair_commands(registry, std::move(deps));
 
     const CommandResponse response = registry.execute(
-        admin_caller(),
-        import_request("csv", "data", "http://a.com/,aaa\n"));
+        admin_caller(), import_request("csv", "data", "http://a.com/,aaa\n"));
     BOOST_TEST(response.ok == false);
     BOOST_TEST((response.error.code == CommandErrorCode::invalid_field));
     BOOST_TEST(runner->list(std::nullopt, 0, 100).total == 0u);
@@ -584,11 +621,10 @@ BOOST_AUTO_TEST_CASE(too_many_rows_fails_bounded_real_and_dry_run)
     Harness harness(/*allow_private=*/false, /*allow_paths=*/true);
 
     std::string content;
-    content.reserve(
-        (url_shortener::commands::kMaxImportRows + 1) * 6);
-    for (std::size_t i = 0;
-         i < url_shortener::commands::kMaxImportRows + 1;
-         ++i) {
+    content.reserve((url_shortener::commands::kMaxImportRows + 1) * 6);
+    for (std::size_t i = 0; i < url_shortener::commands::kMaxImportRows + 1;
+         ++i)
+    {
         content += "x,y,z\n";  // malformed: no store writes, bounded work
     }
     const std::string path = write_temp_file(content);
@@ -647,9 +683,9 @@ BOOST_AUTO_TEST_CASE(cancel_mid_import_keeps_partial_counts)
     BOOST_REQUIRE(response.job.has_value());
     const std::string job_id = response.job->id;
 
-    reached->get_future().wait();   // worker is inside the 50th create
+    reached->get_future().wait();  // worker is inside the 50th create
     harness.runner->cancel(job_id);  // set the cancel flag
-    release->set_value();            // let the 50th create finish
+    release->set_value();  // let the 50th create finish
 
     const std::optional<JobRecord> record =
         harness.runner->wait_for_terminal(job_id, std::chrono::seconds(20));

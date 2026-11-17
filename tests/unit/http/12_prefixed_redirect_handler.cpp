@@ -1,15 +1,14 @@
 #define BOOST_TEST_MODULE PrefixedRedirectHandler
-#include <boost/test/unit_test.hpp>
+#include <chrono>
 
-#include <url_shortener/core/config.hpp>
-#include <url_shortener/core/utils.hpp>
+#include <boost/test/unit_test.hpp>
 #include <url_shortener/analytics/aggregate_query.hpp>
 #include <url_shortener/analytics/aggregate_stats.hpp>
+#include <url_shortener/core/config.hpp>
+#include <url_shortener/core/utils.hpp>
 #include <url_shortener/http/router_builder.hpp>
-#include <url_shortener/storage/memory/in_memory_click_event_repository.hpp>
 #include <url_shortener/storage/link_repository.hpp>
-
-#include <chrono>
+#include <url_shortener/storage/memory/in_memory_click_event_repository.hpp>
 
 namespace bhttp = boost::beast::http;
 using url_shortener::Link;
@@ -18,15 +17,17 @@ using url_shortener::RedirectType;
 using url_shortener::http::BeastRequest;
 using url_shortener::http::RouterBuilder;
 
-namespace url_shortener {
+namespace url_shortener
+{
 storage::memory::InMemoryClickEventRepository& analyticsClickRepository();
 }
 
-namespace {
+namespace
+{
 
 BeastRequest make_request(const bhttp::verb method, const std::string& target)
 {
-    BeastRequest req{method, target, 11};
+    BeastRequest req {method, target, 11};
     req.set(bhttp::field::host, "short.test");
     req.prepare_payload();
     return req;
@@ -39,9 +40,8 @@ ServerConfig test_config()
     return config;
 }
 
-Link create_link(
-    const std::string& slug,
-    const RedirectType redirect_type = RedirectType::temporary)
+Link create_link(const std::string& slug,
+                 const RedirectType redirect_type = RedirectType::temporary)
 {
     Link link;
     link.id = url_shortener::generateId();
@@ -62,22 +62,23 @@ boost::beast::http::response<boost::beast::http::string_body> dispatch(
     return router.dispatch(req, test_config(), false);
 }
 
-boost::beast::http::response<boost::beast::http::string_body> dispatch_with_config(
-    const BeastRequest& req,
-    const ServerConfig& config)
+boost::beast::http::response<boost::beast::http::string_body>
+dispatch_with_config(const BeastRequest& req, const ServerConfig& config)
 {
     const auto router = RouterBuilder::buildApplicationRouter();
     return router.dispatch(req, config, false);
 }
 
-std::uint64_t aggregate_attempts_for(const std::string& slug, const std::uint16_t status)
+std::uint64_t aggregate_attempts_for(const std::string& slug,
+                                     const std::uint16_t status)
 {
     url_shortener::analytics::AggregateQuery query;
     query.slug = slug;
     query.from = std::chrono::system_clock::now() - std::chrono::hours(1);
     query.to = std::chrono::system_clock::now() + std::chrono::hours(1);
     url_shortener::analytics::AggregateStats stats;
-    BOOST_REQUIRE(url_shortener::analyticsClickRepository().GetAggregateStats(query, &stats, nullptr));
+    BOOST_REQUIRE(url_shortener::analyticsClickRepository().GetAggregateStats(
+        query, &stats, nullptr));
     for (const auto& count : stats.status_code_counts) {
         if (count.status_code == status) {
             return count.count;
@@ -104,25 +105,25 @@ void expect_error(
     const std::string& code)
 {
     BOOST_TEST(res.result_int() == status);
-    BOOST_TEST(res.body().find("\"code\":\"" + code + "\"") != std::string::npos);
+    BOOST_TEST(res.body().find("\"code\":\"" + code + "\"")
+               != std::string::npos);
     BOOST_TEST(!res.base()["X-Request-Id"].empty());
 }
 
-} // namespace
+}  // namespace
 
-BOOST_AUTO_TEST_CASE(prefixed_redirect_returns_temporary_and_permanent_redirects)
+BOOST_AUTO_TEST_CASE(
+    prefixed_redirect_returns_temporary_and_permanent_redirects)
 {
     create_link("prtemp001", RedirectType::temporary);
     create_link("prperm001", RedirectType::permanent);
 
-    expect_redirect(
-        dispatch(make_request(bhttp::verb::get, "/r/prtemp001")),
-        302,
-        "https://example.com/prtemp001");
-    expect_redirect(
-        dispatch(make_request(bhttp::verb::get, "/r/prperm001")),
-        301,
-        "https://example.com/prperm001");
+    expect_redirect(dispatch(make_request(bhttp::verb::get, "/r/prtemp001")),
+                    302,
+                    "https://example.com/prtemp001");
+    expect_redirect(dispatch(make_request(bhttp::verb::get, "/r/prperm001")),
+                    301,
+                    "https://example.com/prperm001");
 
     const auto updated = url_shortener::linkRepository().getBySlug("prtemp001");
     BOOST_REQUIRE(updated.has_value());
@@ -134,16 +135,20 @@ BOOST_AUTO_TEST_CASE(prefixed_redirect_ignores_query_string_for_slug_lookup)
 {
     create_link("prquery001", RedirectType::temporary);
 
-    expect_redirect(
-        dispatch(make_request(bhttp::verb::get, "/r/prquery001?utm_source=test")),
-        302,
-        "https://example.com/prquery001");
+    expect_redirect(dispatch(make_request(bhttp::verb::get,
+                                          "/r/prquery001?utm_source=test")),
+                    302,
+                    "https://example.com/prquery001");
 }
 
 BOOST_AUTO_TEST_CASE(prefixed_redirect_validates_slug_and_missing_link)
 {
-    expect_error(dispatch(make_request(bhttp::verb::get, "/r/bad.slug")), 404, "not_found");
-    expect_error(dispatch(make_request(bhttp::verb::get, "/r/prmissing001")), 404, "not_found");
+    expect_error(dispatch(make_request(bhttp::verb::get, "/r/bad.slug")),
+                 404,
+                 "not_found");
+    expect_error(dispatch(make_request(bhttp::verb::get, "/r/prmissing001")),
+                 404,
+                 "not_found");
 }
 
 BOOST_AUTO_TEST_CASE(prefixed_redirect_reports_terminal_link_states)
@@ -160,9 +165,15 @@ BOOST_AUTO_TEST_CASE(prefixed_redirect_reports_terminal_link_states)
     expired.expires_at = "2000-01-01T00:00:00Z";
     BOOST_REQUIRE(url_shortener::updateLinkAndInvalidateCache(expired));
 
-    expect_error(dispatch(make_request(bhttp::verb::get, "/r/prdeleted001")), 404, "link_deleted");
-    expect_error(dispatch(make_request(bhttp::verb::get, "/r/prdisabled001")), 410, "link_disabled");
-    expect_error(dispatch(make_request(bhttp::verb::get, "/r/prexpired001")), 410, "link_expired");
+    expect_error(dispatch(make_request(bhttp::verb::get, "/r/prdeleted001")),
+                 404,
+                 "link_deleted");
+    expect_error(dispatch(make_request(bhttp::verb::get, "/r/prdisabled001")),
+                 410,
+                 "link_disabled");
+    expect_error(dispatch(make_request(bhttp::verb::get, "/r/prexpired001")),
+                 410,
+                 "link_expired");
 }
 
 BOOST_AUTO_TEST_CASE(prefixed_redirect_analytics_can_be_disabled)
@@ -172,7 +183,8 @@ BOOST_AUTO_TEST_CASE(prefixed_redirect_analytics_can_be_disabled)
     create_link("prnoanalytics001");
 
     expect_redirect(
-        dispatch_with_config(make_request(bhttp::verb::get, "/r/prnoanalytics001"), config),
+        dispatch_with_config(
+            make_request(bhttp::verb::get, "/r/prnoanalytics001"), config),
         302,
         "https://example.com/prnoanalytics001");
     BOOST_TEST(aggregate_attempts_for("prnoanalytics001", 302) == 0U);
@@ -191,12 +203,14 @@ BOOST_AUTO_TEST_CASE(prefixed_redirect_records_terminal_status_analytics)
     expired.expires_at = "2000-01-01T00:00:00Z";
     BOOST_REQUIRE(url_shortener::updateLinkAndInvalidateCache(expired));
 
+    expect_error(dispatch_with_config(make_request(bhttp::verb::get,
+                                                   "/r/pranalyticsdisabled001"),
+                                      config),
+                 410,
+                 "link_disabled");
     expect_error(
-        dispatch_with_config(make_request(bhttp::verb::get, "/r/pranalyticsdisabled001"), config),
-        410,
-        "link_disabled");
-    expect_error(
-        dispatch_with_config(make_request(bhttp::verb::get, "/r/pranalyticsexpired001"), config),
+        dispatch_with_config(
+            make_request(bhttp::verb::get, "/r/pranalyticsexpired001"), config),
         410,
         "link_expired");
 
@@ -206,5 +220,40 @@ BOOST_AUTO_TEST_CASE(prefixed_redirect_records_terminal_status_analytics)
 
 BOOST_AUTO_TEST_CASE(prefixed_redirect_wrong_method_uses_router_error_shape)
 {
-    expect_error(dispatch(make_request(bhttp::verb::post, "/r/prmissing001")), 400, "invalid_method");
+    expect_error(dispatch(make_request(bhttp::verb::post, "/r/prmissing001")),
+                 400,
+                 "invalid_method");
+}
+
+// Type: unit (regression / CWE-113 defense in depth).
+// Scenario: an active link whose stored target_url carries a raw CRLF (seeded
+//   directly into the repository, bypassing normalizeTargetUrl, to simulate
+//   data persisted before the validator rejected control bytes) is resolved on
+//   the redirect fast path. The handler must NOT emit a Location header
+//   containing the control bytes; it returns 500 internal_error instead.
+// Boundaries: the guard is the single byte scan in the redirect handler, not
+//   the validator (the store was seeded raw). A 500 is chosen over 404 because
+//   the link exists and is active - the fault is unusable stored data.
+// On failure first check: did the containsUnsafeUrlControlBytes guard before
+//   redirectResponse get removed, or did it stop covering CR/LF?
+BOOST_AUTO_TEST_CASE(prefixed_redirect_never_emits_control_bytes_in_location)
+{
+    Link poisoned;
+    poisoned.id = url_shortener::generateId();
+    poisoned.slug = "prsplit001";
+    poisoned.target_url = "https://evil.example/p\r\nSet-Cookie: x=1/q";
+    poisoned.created_at = url_shortener::currentTimestamp();
+    poisoned.updated_at = poisoned.created_at;
+    poisoned.redirect_type = RedirectType::temporary;
+    BOOST_REQUIRE(url_shortener::linkRepository().create(poisoned));
+    url_shortener::linkCache().erase("prsplit001");
+
+    const auto res = dispatch(make_request(bhttp::verb::get, "/r/prsplit001"));
+
+    expect_error(res, 500, "internal_error");
+    const std::string location(res[bhttp::field::location]);
+    BOOST_TEST(location.empty());
+    // No field value in the whole response carries a bare CR or LF.
+    BOOST_TEST(res.body().find('\r') == std::string::npos);
+    BOOST_TEST(res.body().find('\n') == std::string::npos);
 }
