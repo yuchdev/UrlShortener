@@ -473,6 +473,7 @@ set(URL_SHORTENER_SOURCES
       tests/unit/commands/55_pair_line_parser.cpp
       tests/unit/commands/56_pair_file_access.cpp
       tests/unit/commands/57_link_import_command.cpp
+      tests/unit/commands/60_transport_factory.cpp
       tests/unit/commands/65_jobs_table_source.cpp
   )
 
@@ -583,6 +584,7 @@ set(URL_SHORTENER_SOURCES
       ${CMAKE_CURRENT_SOURCE_DIR}/src/composition/process_command_runtime.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/config/storage_config.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/composition/storage_factory.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/composition/transport_factory.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/composition/link_backend_bootstrap.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/observability/storage_observability.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/observability/log_level.cpp
