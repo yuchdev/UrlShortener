@@ -470,6 +470,7 @@ set(URL_SHORTENER_SOURCES
       tests/unit/commands/53_registry_job_dispatch.cpp
       tests/unit/commands/54_job_commands.cpp
       tests/unit/commands/55_pair_line_parser.cpp
+      tests/unit/commands/56_pair_file_access.cpp
   )
 
   set(COMMON_CPP_SOURCES
@@ -497,6 +498,7 @@ set(URL_SHORTENER_SOURCES
       ${CMAKE_CURRENT_SOURCE_DIR}/src/commands/job_runner.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/commands/job_commands.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/commands/pair_line_parser.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/commands/pair_file_access.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/cli_parser.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/cli/link_command_args.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/cli/app_exit_code.cpp
