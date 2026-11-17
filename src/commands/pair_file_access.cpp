@@ -9,6 +9,7 @@
 #include <string_view>
 #include <system_error>
 #include <variant>
+#include <vector>
 
 #include <url_shortener/commands/pair_file_access.hpp>
 
@@ -123,6 +124,134 @@ bool is_within_root(const fs::path& target, const fs::path& root)
     }
     return true;
 }
+
+#ifndef _WIN32
+/**
+ * @brief A verified in-root parent directory descriptor plus the final name.
+ *
+ * Produced by @ref open_rooted_parent. The caller takes ownership of @ref fd
+ * and must `close` it (directly for a read, or by handing it to an
+ * @ref AtomicFileSink that closes it on commit/abort for a write).
+ */
+struct rooted_dir
+{
+    ///< Owning descriptor of the verified parent directory; caller closes it.
+    int fd;
+
+    ///< The final path component (the file name) to open relative to @ref fd.
+    std::string name;
+};
+
+/**
+ * @brief Splits @p target into the path components that follow @p root.
+ *
+ * A component-wise (not string-prefix) match, so `<root>x/...` is not mistaken
+ * for a child of `<root>`. Both paths must already be lexically normalized;
+ * the comparison is purely lexical and performs no filesystem access, so it
+ * never follows a symlink.
+ *
+ * @param target The lexically normalized candidate path.
+ * @param root The lexically normalized root directory.
+ * @return The components of @p target after the @p root prefix (empty when
+ * @p target equals @p root), or `std::nullopt` when @p target is not under
+ * @p root.
+ */
+std::optional<std::vector<fs::path>> components_under_root(
+    const fs::path& target, const fs::path& root)
+{
+    auto ti = target.begin();
+    const auto te = target.end();
+    for (auto ri = root.begin(); ri != root.end(); ++ri, ++ti) {
+        if (ti == te || *ti != *ri) {
+            return std::nullopt;
+        }
+    }
+    std::vector<fs::path> rest;
+    for (; ti != te; ++ti) {
+        rest.push_back(*ti);
+    }
+    return rest;
+}
+
+/**
+ * @brief Opens the in-root parent directory of @p path by a symlink-free walk.
+ *
+ * Closes the intermediate-parent TOCTOU (threat model T-96): rather than
+ * canonicalizing the user path (which would follow directory symlinks on
+ * intermediate components) and then opening it by name, this opens the
+ * operator-trusted @p root once as a directory descriptor and walks the
+ * relative path from there one component at a time with
+ * `O_DIRECTORY | O_NOFOLLOW`. A symlinked or non-directory intermediate
+ * component fails the walk (`ELOOP`/`ENOTDIR`) and is refused value-free, so an
+ * in-root writer cannot swap `root/sub` for a symlink to escape the jail
+ * between validation and open. The relative path is derived lexically from the
+ * *given* root and user strings (same namespace, no symlink resolution); the
+ * walk then starts from the *canonical* root descriptor.
+ *
+ * @param path The untrusted local path to resolve. Never logged.
+ * @param root The operator-configured root directory (its own path is trusted
+ * and canonicalized once).
+ * @return A @ref rooted_dir owning the verified parent descriptor and the final
+ * component name, or a @ref PathError: `"not_found"` when the canonical root or
+ * an intermediate component does not exist, else `"invalid_field"`
+ * (`"path outside root"`) when @p path is not lexically under @p root or any
+ * intermediate component is `.`/`..`/empty, a symlink, or not a directory.
+ */
+std::variant<rooted_dir, PathError> open_rooted_parent(
+    const std::string& path, const std::string& root)
+{
+    std::error_code ec;
+    const fs::path canonical_root = fs::weakly_canonical(fs::path(root), ec);
+    if (ec) {
+        return invalid_field("path outside root");
+    }
+
+    // Derive the relative path lexically (no symlink resolution) from the given
+    // root and user strings, so both are in the same namespace; the walk below
+    // then starts from the canonical root descriptor.
+    const fs::path norm_root = fs::path(root).lexically_normal();
+    const fs::path norm_user = fs::path(path).lexically_normal();
+    auto rest = components_under_root(norm_user, norm_root);
+    if (!rest || rest->empty()) {
+        return invalid_field("path outside root");
+    }
+    for (const auto& comp : *rest) {
+        const std::string s = comp.string();
+        if (s.empty() || s == "." || s == "..") {
+            return invalid_field("path outside root");
+        }
+    }
+
+    int cur = ::open(canonical_root.c_str(),
+                     O_RDONLY | O_DIRECTORY | O_CLOEXEC);
+    if (cur < 0) {
+        return PathError {"not_found", "file not found"};
+    }
+    // Walk every component except the last as a non-symlink directory.
+    for (std::size_t i = 0; i + 1 < rest->size(); ++i) {
+        const std::string comp = (*rest)[i].string();
+        const int next = ::openat(cur,
+                                  comp.c_str(),
+                                  O_RDONLY | O_DIRECTORY | O_NOFOLLOW
+                                      | O_CLOEXEC);
+        const int open_errno = errno;
+        ::close(cur);
+        if (next < 0) {
+            if (open_errno == ENOENT) {
+                return PathError {"not_found", "file not found"};
+            }
+            // ELOOP (a symlinked component), ENOTDIR (a non-directory
+            // component), or anything else: not a plain in-root directory path.
+            return invalid_field("path outside root");
+        }
+        cur = next;
+    }
+    rooted_dir out;
+    out.fd = cur;
+    out.name = rest->back().string();
+    return out;
+}
+#endif  // !_WIN32
 
 /**
  * @brief Enforces the capability gate (rule 6) before any filesystem access.
@@ -299,42 +428,23 @@ std::variant<LineSource, PathError> LineSource::from_path(
 
 #ifndef _WIN32
     if (policy.root) {
-        // T-96, rooted POSIX: open relative to the canonical in-root parent
-        // with O_NOFOLLOW on the final component, then enforce S_ISREG and the
-        // size cap on the opened descriptor. openat against a validated
-        // directory fd ties the read to a non-symlink regular file directly
-        // inside the root, defeating a symlink-swap (ELOOP) or special-file
-        // swap (not S_ISREG) between validation and open.
-        const fs::path target(path);
-        const fs::path file_name = target.filename();
-        if (file_name.empty()) {
-            return invalid_field("invalid path");
+        // T-96, rooted POSIX: resolve the in-root parent by a symlink-free
+        // component walk from the canonical root descriptor (see
+        // open_rooted_parent), then open the final component with O_NOFOLLOW
+        // and enforce S_ISREG and the size cap on the opened descriptor. This
+        // defeats both an intermediate-parent swap (a symlinked directory
+        // component fails the walk) and a final-component symlink swap (ELOOP)
+        // or special-file swap (not S_ISREG) between validation and open.
+        auto opened = open_rooted_parent(path, *policy.root);
+        if (auto* err = std::get_if<PathError>(&opened)) {
+            return *err;
         }
-        fs::path parent = target.parent_path();
-        if (parent.empty()) {
-            parent = fs::path(".");
-        }
-        const fs::path canonical_parent = fs::weakly_canonical(parent, ec);
-        if (ec) {
-            return invalid_field("path outside root");
-        }
-        const fs::path canonical_root =
-            fs::weakly_canonical(fs::path(*policy.root), ec);
-        if (ec || !is_within_root(canonical_parent / file_name, canonical_root))
-        {
-            return invalid_field("path outside root");
-        }
-
-        const int dir_fd = ::open(canonical_parent.c_str(),
-                                  O_RDONLY | O_DIRECTORY | O_CLOEXEC);
-        if (dir_fd < 0) {
-            return PathError {"not_found", "file not found"};
-        }
-        const int fd = ::openat(dir_fd,
-                                file_name.c_str(),
+        const rooted_dir rd = std::get<rooted_dir>(opened);
+        const int fd = ::openat(rd.fd,
+                                rd.name.c_str(),
                                 O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC);
         const int open_errno = errno;
-        ::close(dir_fd);
+        ::close(rd.fd);
         if (fd < 0) {
             if (open_errno == ENOENT) {
                 return PathError {"not_found", "file not found"};
@@ -435,6 +545,49 @@ std::variant<AtomicFileSink, PathError> AtomicFileSink::create_new(
         return invalid_field("invalid path");
     }
 
+#ifndef _WIN32
+    if (policy.root) {
+        // T-96, rooted POSIX: resolve the in-root parent by a symlink-free
+        // component walk (see open_rooted_parent), then create the exclusive
+        // temp with openat relative to that verified descriptor. The descriptor
+        // is retained in the sink so commit's linkat/unlinkat publish bind to
+        // the verified directory, not to a re-resolved path.
+        auto opened = open_rooted_parent(path, *policy.root);
+        if (auto* err = std::get_if<PathError>(&opened)) {
+            return *err;
+        }
+        const rooted_dir rd = std::get<rooted_dir>(opened);
+
+        // Create-new: the target must not already exist (AT_SYMLINK_NOFOLLOW so
+        // an existing symlink also counts as present).
+        struct stat tst {};
+        if (::fstatat(rd.fd, rd.name.c_str(), &tst, AT_SYMLINK_NOFOLLOW) == 0) {
+            ::close(rd.fd);
+            return invalid_field("file exists");
+        }
+
+        const std::uint64_t rn = g_temp_counter.fetch_add(1);
+        const std::string rtemp = rd.name + ".tmp-"
+            + std::to_string(current_pid()) + "-" + std::to_string(rn);
+        const int rfd = ::openat(rd.fd,
+                                 rtemp.c_str(),
+                                 O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW
+                                     | O_CLOEXEC,
+                                 0600);
+        if (rfd < 0) {
+            ::close(rd.fd);
+            return invalid_field("cannot create temp file");
+        }
+
+        AtomicFileSink rsink;
+        rsink.m_fd = rfd;
+        rsink.m_dir_fd = rd.fd;
+        rsink.m_temp_path = rtemp;      // name relative to m_dir_fd
+        rsink.m_target_path = rd.name;  // name relative to m_dir_fd
+        return rsink;
+    }
+#endif
+
     std::error_code ec;
     fs::path parent = target.parent_path();
     if (parent.empty()) {
@@ -496,6 +649,8 @@ AtomicFileSink::AtomicFileSink(AtomicFileSink&& other) noexcept
 #else
     m_fd = other.m_fd;
     other.m_fd = -1;
+    m_dir_fd = other.m_dir_fd;
+    other.m_dir_fd = -1;
 #endif
     m_temp_path = std::move(other.m_temp_path);
     m_target_path = std::move(other.m_target_path);
@@ -515,6 +670,8 @@ AtomicFileSink& AtomicFileSink::operator=(AtomicFileSink&& other) noexcept
 #else
         m_fd = other.m_fd;
         other.m_fd = -1;
+        m_dir_fd = other.m_dir_fd;
+        other.m_dir_fd = -1;
 #endif
         m_temp_path = std::move(other.m_temp_path);
         m_target_path = std::move(other.m_target_path);
@@ -586,12 +743,42 @@ bool AtomicFileSink::commit()
     return true;
 #else
     if (m_fd >= 0) {
-        ::fsync(m_fd);
+        // A failed fsync means the temp's bytes may not be durable; do not
+        // publish a possibly-truncated file. abort() removes the temp (and, for
+        // a rooted sink, closes the directory descriptor).
+        if (::fsync(m_fd) != 0) {
+            abort();
+            return false;
+        }
         ::close(m_fd);
         m_fd = -1;
     }
-    // link() is create-new: it fails with EEXIST if the target exists, so of
-    // two racing sinks exactly one publishes (threat model T-99).
+
+    if (m_dir_fd >= 0) {
+        // Rooted: publish with linkat/unlinkat bound to the verified parent
+        // descriptor, not a re-resolved path (T-96). linkat is create-new (it
+        // fails with EEXIST if the target exists), so of two racing sinks
+        // exactly one publishes (threat model T-99).
+        if (::linkat(m_dir_fd, m_temp_path.c_str(), m_dir_fd,
+                     m_target_path.c_str(), 0)
+            != 0)
+        {
+            ::unlinkat(m_dir_fd, m_temp_path.c_str(), 0);
+            ::close(m_dir_fd);
+            m_dir_fd = -1;
+            m_temp_path.clear();
+            return false;
+        }
+        ::unlinkat(m_dir_fd, m_temp_path.c_str(), 0);
+        ::close(m_dir_fd);
+        m_dir_fd = -1;
+        m_temp_path.clear();
+        m_committed = true;
+        return true;
+    }
+
+    // Rootless: link() is create-new: it fails with EEXIST if the target
+    // exists, so of two racing sinks exactly one publishes (threat model T-99).
     if (::link(m_temp_path.c_str(), m_target_path.c_str()) != 0) {
         ::unlink(m_temp_path.c_str());
         m_temp_path.clear();
@@ -621,8 +808,19 @@ void AtomicFileSink::abort() noexcept
         m_fd = -1;
     }
     if (!m_temp_path.empty()) {
-        ::unlink(m_temp_path.c_str());
+        // A rooted sink's temp name is relative to the verified directory
+        // descriptor; a rootless sink's is a full path.
+        if (m_dir_fd >= 0) {
+            ::unlinkat(m_dir_fd, m_temp_path.c_str(), 0);
+        }
+        else {
+            ::unlink(m_temp_path.c_str());
+        }
         m_temp_path.clear();
+    }
+    if (m_dir_fd >= 0) {
+        ::close(m_dir_fd);
+        m_dir_fd = -1;
     }
 #endif
 }

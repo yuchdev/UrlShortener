@@ -85,15 +85,20 @@ Path rules (`from_path`, `create_new`), applied before opening:
    escapes because both sides are canonicalized. Without a root there is no `..` restriction: the local operator can already read and write
    those files (decision Q6; `serve-stdio` for a webview parent should set `--path-root` or `--no-file-paths`).
 7. Messages never echo the full path back to non-local callers; local callers get the path as given (it is their input).
-8. **Rooted-path confinement is enforced after open, not only before (T-96).** When `root` is set, defeat check-to-open TOCTOU: on POSIX
-   (`#ifndef _WIN32`) open the target with `O_NOFOLLOW` on the final component (reads: `O_RDONLY | O_NOFOLLOW`; writes: the exclusive temp is
-   created in the canonical in-root parent), then `fstat` the opened descriptor and (a) require `S_ISREG` - rejecting any special file a swap
-   introduced -> `invalid_field` - and (b) re-resolve the opened path (`weakly_canonical`, or compare `st_dev`/`st_ino` against the
-   pre-opened in-root parent directory) and re-assert the component-wise `root` prefix; a mismatch -> `invalid_field` ("path outside root")
-   and the descriptor is closed without any read/write. On Windows (`#ifdef _WIN32`) `O_NOFOLLOW` is unavailable: the rooted case falls back
-   to the pre-open canonical check of rule 6 and is documented as **best-effort** confinement with a residual in-root symlink-swap risk (see
-   Out of scope). Without `root` this post-open re-assertion is skipped: the rootless local operator already has full filesystem access, so
-   there is no boundary to defend.
+8. **Rooted-path confinement is enforced by a symlink-free `openat` walk, not a pre-open string check (T-96).** When `root` is set, the
+   intermediate-parent TOCTOU is closed structurally on POSIX (`#ifndef _WIN32`): open the operator-trusted `root` once as a directory
+   descriptor (`open(canonical_root, O_RDONLY | O_DIRECTORY | O_CLOEXEC)`); derive the relative path lexically from the *given* root and user
+   strings (never by canonicalizing the user path, which would follow symlinks); then walk that relative path from the root descriptor one
+   component at a time with `openat(cur, comp, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)`, rejecting any `.`/`..`/empty component and any
+   symlinked or non-directory component (`ELOOP`/`ENOTDIR`) with the value-free `invalid_field` ("path outside root"). The final component is
+   opened against the verified parent descriptor with `O_NOFOLLOW` (reads: `O_RDONLY | O_NOFOLLOW | O_NONBLOCK`, then `fstat` requiring
+   `S_ISREG` and the size cap; export temp: `O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC` mode `0600`, published with
+   `linkat(parent_fd, tmp, parent_fd, name, 0)` + `unlinkat` so the commit is bound to the verified descriptor, not a re-resolved path).
+   Because the walk refuses a symlinked component regardless of when it was introduced, an in-root writer cannot swap `root/sub` for a symlink
+   to escape the jail between validation and open - for a read or a write. On Windows (`#ifdef _WIN32`) `O_NOFOLLOW`/`openat` are unavailable:
+   the rooted case falls back to the pre-open canonical check of rule 6 and is documented as **best-effort** confinement with a residual
+   in-root symlink-swap risk (see Out of scope). Without `root` this walk is skipped: the rootless local operator already has full filesystem
+   access, so there is no boundary to defend.
 
 `from_inline`: `data.size() > max_bytes` -> `invalid_field`; the caller passes `ServerConfig::max_request_body_bytes`.
 

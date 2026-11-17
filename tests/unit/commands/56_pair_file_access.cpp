@@ -538,6 +538,50 @@ BOOST_FIXTURE_TEST_CASE(rooted_toctou_post_open, TempDirFixture)
     BOOST_TEST(std::get<PathError>(swapped_fifo).code == "invalid_field");
 }
 
+// Type: unit (rooted intermediate-parent swap, threat model T-96).
+// Scenario: a validated in-root target (root/sub/file.csv) whose intermediate
+// parent (root/sub) is replaced by a symlink to an outside directory holding a
+// same-named file is rejected for BOTH read and export, value-free, with no
+// access to the outside file. The swap is done before the call because the
+// symlink-free openat walk refuses any symlinked component regardless of
+// timing, which is exactly what makes the check-to-open race unwinnable.
+// Boundaries: symlinked intermediate directory component.
+// On failure first check: the O_DIRECTORY|O_NOFOLLOW intermediate walk in
+// open_rooted_parent (ELOOP on the symlinked "sub").
+BOOST_FIXTURE_TEST_CASE(rooted_intermediate_parent_swap, TempDirFixture)
+{
+    const fs::path root = dir / "r";
+    const fs::path sub = root / "sub";
+    fs::create_directories(sub);
+    write_file(sub / "file.csv", "in-root\n");
+
+    // An outside directory the swapped symlink will point at, with a file of
+    // the same name the attacker hopes to read/overwrite.
+    const fs::path outside = dir / "outside";
+    fs::create_directories(outside);
+    write_file(outside / "file.csv", "secret\n");
+
+    // Swap the intermediate parent for a symlink to the outside directory.
+    fs::remove_all(sub);
+    fs::create_symlink(outside, sub);
+
+    const fs::path target = sub / "file.csv";  // root/sub/file.csv
+
+    auto rd = LineSource::from_path(target.string(), rooted_policy(root));
+    BOOST_REQUIRE(std::holds_alternative<PathError>(rd));
+    const PathError& re = std::get<PathError>(rd);
+    BOOST_TEST(re.code == "invalid_field");
+    BOOST_TEST(re.message.find("secret") == std::string::npos);
+    BOOST_TEST(re.message.find(target.string()) == std::string::npos);
+
+    auto wr = AtomicFileSink::create_new(target.string(), rooted_policy(root));
+    BOOST_REQUIRE(std::holds_alternative<PathError>(wr));
+    BOOST_TEST(std::get<PathError>(wr).code == "invalid_field");
+
+    // The outside file was neither read nor overwritten.
+    BOOST_TEST(read_file(outside / "file.csv") == "secret\n");
+}
+
 // Type: unit (rooted write confinement).
 // Scenario: with a root set, a create-new write inside the root succeeds and a
 // ".." escape is rejected.

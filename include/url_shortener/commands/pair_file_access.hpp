@@ -294,12 +294,17 @@ public:
      *
      * Uses a create-new rename/link, so it fails rather than overwrite: if the
      * target appeared since @ref create_new (e.g. a racing sink committed
-     * first), the temp is removed and `false` is returned. After a successful
-     * commit the destructor does nothing.
+     * first), the temp is removed and `false` is returned. On POSIX the temp is
+     * `fsync`ed first and the publish is aborted (no target created) if that
+     * fails, so a non-durable write is never published. For a rooted POSIX sink
+     * the publish uses `linkat`/`unlinkat` bound to the verified parent
+     * descriptor (threat model T-96). After a successful commit the destructor
+     * does nothing.
      *
      * @return `true` when the target was created from the temp file; `false`
-     * when the target already exists or the close/publish failed (the temp file
-     * is removed in both failure cases).
+     * when the sink was already committed/inert, the target already exists, the
+     * `fsync` failed, or the publish failed (the temp file is removed in every
+     * failure case).
      */
     bool commit();
 
@@ -320,12 +325,23 @@ private:
 #else
     ///< POSIX descriptor of the exclusively-opened temp file; `-1` when closed.
     int m_fd = -1;
+
+    ///< POSIX descriptor of the verified in-root parent directory for a rooted
+    ///< export (threat model T-96); `-1` for a rootless sink. When set,
+    ///< @ref m_temp_path and @ref m_target_path are names relative to this
+    ///< descriptor and @ref commit publishes with `linkat`/`unlinkat` bound to
+    ///< it rather than to a re-resolved path. Closed on commit or abort.
+    int m_dir_fd = -1;
 #endif
 
-    ///< Absolute path of the temp file; empty when the sink is inert.
+    ///< The temp file's location; empty when the sink is inert. An absolute
+    ///< path for a rootless/Windows sink, or a name relative to @ref m_dir_fd
+    ///< for a rooted POSIX sink.
     std::string m_temp_path;
 
-    ///< Absolute canonical path the temp is published to on @ref commit.
+    ///< Where the temp is published on @ref commit. An absolute canonical path
+    ///< for a rootless/Windows sink, or a name relative to @ref m_dir_fd for a
+    ///< rooted POSIX sink.
     std::string m_target_path;
 
     ///< `true` once @ref commit has published the file, so the destructor and
