@@ -43,7 +43,7 @@ Decisions made in this task: `JobRunner` does not reuse `AnalyticsWorker`/`Bound
 | 01 | [Job types and JobStore](01-job-types-and-store.md) | ✅ Complete | none | 02, 05 |
 | 02 | [JobRunner worker pool, queue, cancel](02-job-runner-worker-pool.md) | ✅ Complete | 01, 01.0/08 | 03, 04, 05, 21 |
 | 03 | [JobRunner wait, drain, shutdown](03-job-runner-wait-and-shutdown.md) | ✅ Complete | 02 | 15, 20 |
-| 04 | [Registry job dispatch](04-registry-job-dispatch.md) | ⬜ Not started | 02, 01.0/06, 01.0/07, 01.0/08 | 05, 08, 10, 20 |
+| 04 | [Registry job dispatch](04-registry-job-dispatch.md) | ✅ Complete | 02, 01.0/06, 01.0/07, 01.0/08 | 05, 08, 10, 20 |
 | 05 | [job.get, job.list, job.cancel](05-job-commands.md) | ⬜ Not started | 01, 02, 04 | 11, 20, 06.0/15, 06.0/16, 06.0/17 |
 | 06 | [Pair line parsers and error list](06-pair-line-parsers.md) | ✅ Complete | none | 07, 08 |
 | 07 | [Pair file access and path rules](07-pair-file-access.md) | ⬜ Not started | 06 | 08, 10, 13 |
