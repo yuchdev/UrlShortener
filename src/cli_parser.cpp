@@ -652,6 +652,153 @@ CmdCliCommand parseCmdCommand(
     return command;
 }
 
+/**
+ * @brief Render the static usage text for `url_shortener serve-stdio --help`.
+ *
+ * Documents the NDJSON framing contract (one request/response envelope per
+ * line, EOF ends the session), states that logs go to stderr and never stdout
+ * (threat model T-102), lists the three hardening flags recommended for a
+ * sidecar deployment (threat model T-107), and points at the transport guide.
+ * No supplied value is ever interpolated.
+ *
+ * @return std::string The multi-line usage listing.
+ */
+std::string buildServeStdioHelpText()
+{
+    return
+        "Usage: url_shortener serve-stdio [options]\n\n"
+        "Serve one command per line over stdin/stdout as an NDJSON transport:\n"
+        "one request envelope per input line, one response envelope per output\n"
+        "line; EOF on stdin drains in-flight jobs and shuts down. Logs go to\n"
+        "stderr, never stdout. See docs/commands/adding-a-transport.md.\n\n"
+        "Options:\n"
+        "  --read-only          Run the local session as a read-only user\n"
+        "                       (ControlSet::User) instead of the default "
+        "admin.\n"
+        "  --no-file-paths      Reject link.import/export `path` arguments\n"
+        "                       (recommended for a webview-driven sidecar).\n"
+        "  --path-root <DIR>    Confine link.import/export `path` to this "
+        "directory\n"
+        "                       (mutually exclusive with --no-file-paths).\n"
+        "  --base-domain <URL>  Base domain for generated short URLs.\n"
+        "  --allow-private-targets <BOOL>\n"
+        "                       Permit private/intranet targets (true/false).\n"
+        "  --storage-config <FILE>\n"
+        "                       Storage configuration YAML. Default: "
+        "in-memory.\n"
+        "  --help, -h           Print this message.\n";
+}
+
+/**
+ * @brief Normalize a `--path-root` value by stripping trailing separators.
+ *
+ * The rooted path check in `pair_file_access` compares the lexically normalized
+ * user path against the lexically normalized root component-by-component; a
+ * trailing separator leaves a trailing empty component on the root (e.g.
+ * `"/srv/r/"` iterates as `{"/","srv","r",""}`), which no in-root path can
+ * match, so every rooted access would fail closed. Normalizing once here, at
+ * the only place that produces a `path_root`, keeps that closed subtask
+ * untouched. A lone `"/"` is preserved; the caller rejects an empty value
+ * before this runs, so the result is never empty.
+ *
+ * @param value The non-empty `--path-root` operand.
+ * @return @p value with every trailing `/` removed, except that a path
+ * consisting only of separators collapses to a single `"/"`.
+ */
+std::string normalize_path_root(const std::string& value)
+{
+    std::string normalized = value;
+    while (normalized.size() > 1 && normalized.back() == '/') {
+        normalized.pop_back();
+    }
+    return normalized;
+}
+
+/**
+ * @brief Parse a `serve-stdio [options]` invocation into ServeStdioCliOptions.
+ *
+ * Runs a single token loop like the `cmd <name>` path (no Boost.ProgramOptions,
+ * no sub-verb): every token is a known flag or an error, and no positional is
+ * accepted. The global `--storage-config` flag is stripped first (recorded in
+ * @p config); `--base-domain` and `--allow-private-targets` are applied to @p
+ * config the same way the `link`/`cmd` paths do. Logging flags are
+ * deliberately absent: `serve-stdio` forces logs to stderr (subtask 17), so no
+ * option can route them to stdout (threat model T-102) and `--log-file` /
+ * `--verbose` are simply unknown flags here. Nothing is executed and no
+ * transport is constructed. Error messages echo only a flag's stem before any
+ * `'='`, never an operand value (threat model T-77).
+ *
+ * @param tokens The tokens after the leading `serve-stdio` positional
+ *        (argv[2..]); consumed in place by `--storage-config` stripping.
+ * @param config ServerConfig receiving `--base-domain`,
+ *        `--allow-private-targets` and `--storage-config`.
+ * @return ServeStdioCliOptions The parsed hardening options.
+ * @throws std::invalid_argument If an option is unknown or missing its value,
+ *         `--path-root` is empty, a non-flag positional appears, or
+ *         `--no-file-paths` and `--path-root` are combined.
+ */
+ServeStdioCliOptions parse_serve_stdio(
+    std::vector<std::string>& tokens, ServerConfig& config)
+{
+    // Strip the global --storage-config flag (any position) before the flag
+    // loop, exactly as the `link <verb>` and `cmd` paths do.
+    extract_storage_config_flag(tokens, config);
+
+    ServeStdioCliOptions options;
+
+    for (std::size_t i = 0; i < tokens.size(); ++i) {
+        const std::string& token = tokens[i];
+
+        if (token == "--read-only") {
+            options.read_only = true;
+        }
+        else if (token == "--no-file-paths") {
+            options.no_file_paths = true;
+        }
+        else if (token == "--path-root") {
+            const std::string& value = cmdFlagValue(tokens, i, "--path-root");
+            if (value.empty()) {
+                throw std::invalid_argument(
+                    "Empty value for --path-root flag.");
+            }
+            options.path_root = normalize_path_root(value);
+        }
+        else if (token == "--base-domain") {
+            const std::string& value =
+                cmdFlagValue(tokens, i, "--base-domain");
+            if (value.empty()) {
+                throw std::invalid_argument(
+                    "Empty value for --base-domain flag.");
+            }
+            config.shortener_base_domain = value;
+        }
+        else if (token == "--allow-private-targets") {
+            const std::string& value =
+                cmdFlagValue(tokens, i, "--allow-private-targets");
+            config.shortener_allow_private_targets = parseBool(value);
+        }
+        else if (token.rfind("--", 0) == 0) {
+            // Flags match by exact token; the GNU `--opt=value` form is unknown
+            // here. Echo only the stem before the first '=', never the value.
+            throw std::invalid_argument(
+                "Unknown serve-stdio option: "
+                + token.substr(0, token.find('=')));
+        }
+        else {
+            throw std::invalid_argument(
+                "Unexpected positional argument for serve-stdio.");
+        }
+    }
+
+    // Cross-flag rule: confining and disabling `path` at once is contradictory.
+    if (options.no_file_paths && options.path_root.has_value()) {
+        throw std::invalid_argument(
+            "--no-file-paths and --path-root are mutually exclusive.");
+    }
+
+    return options;
+}
+
 } // namespace
 
 /**
@@ -763,6 +910,24 @@ ParseResult CliParser::parse(int argc, char* argv[]) const
             return result;
         }
         result.cmd = std::move(parsed);
+        return result;
+    }
+
+    // Top-level `serve-stdio` one-shot mode: mirrors the `link`/`cmd` branches
+    // (no server-flag parsing). `serve-stdio --help`/`-h` yields the static
+    // usage text; otherwise the hardening options are returned via
+    // `ParseResult::serve_stdio`. `serve-stdio` is recognized only as argv[1],
+    // so a trailing `serve-stdio` in server mode stays a server-flag error.
+    if (argc >= 2 && std::string(argv[1]) == "serve-stdio") {
+        std::vector<std::string> stdio_args(argv + 2, argv + argc);
+        for (const auto& token : stdio_args) {
+            if (token == "--help" || token == "-h") {
+                result.help_text = buildServeStdioHelpText();
+                result.help_requested = true;
+                return result;
+            }
+        }
+        result.serve_stdio = parse_serve_stdio(stdio_args, result.config);
         return result;
     }
 

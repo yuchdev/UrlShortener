@@ -152,6 +152,42 @@ struct CmdCliCommand
     OneShotLogging logging;
 };
 
+/// Options parsed from a `serve-stdio [options]` one-shot invocation.
+///
+/// `serve-stdio` runs the NDJSON stdio transport (Task 05.0 subtask 17): one
+/// request envelope per stdin line, one response per stdout line, EOF ends the
+/// session. This subtask (16) only turns `argv` into this struct; nothing is
+/// executed and no transport, `io_context` or `HttpServer` is constructed.
+///
+/// The three fields harden the session for the case where the parent process
+/// relays stdin from a less-trusted producer such as a webview sidecar (threat
+/// model T-107). By default the local caller is `ControlSet::Admin` with full
+/// filesystem access, so a sidecar deployment is expected to set @ref read_only
+/// and one of @ref no_file_paths / @ref path_root.
+struct ServeStdioCliOptions
+{
+    ///< `--read-only`: run the local session as `ControlSet::User` rather than
+    ///< the default `Admin` (ADR 0002 Authorization). `false` when the flag was
+    ///< not given.
+    bool read_only = false;
+
+    ///< `--no-file-paths`: reject `link.import`/`link.export` `path` arguments
+    ///< as `unsupported` (decision Q6, recommended for webview-driven
+    ///< sidecars). Mutually exclusive with @ref path_root (rejected at parse
+    ///< time). `false` when the flag was not given.
+    bool no_file_paths = false;
+
+    ///< `--path-root <dir>`: confine `link.import`/`link.export` `path` to this
+    ///< directory (05.0/07 rule 6). Stored with any trailing separator stripped
+    ///< (except a lone "/"), so the value is never empty and never ends in a
+    ///< separator; a trailing separator would otherwise make every in-root path
+    ///< fail the lexical root check in `pair_file_access`. The directory's
+    ///< existence is validated at startup (subtask 17), not here. Mutually
+    ///< exclusive with @ref no_file_paths. `std::nullopt` when the flag was not
+    ///< given.
+    std::optional<std::string> path_root;
+};
+
 /// Result returned by CliParser::parse().
 ///
 /// When help_requested is true, help_text contains the formatted usage
@@ -174,6 +210,11 @@ struct ParseResult
     /// engaged at the same time as @ref command (the two top-level modes are
     /// mutually exclusive).
     std::optional<CmdCliCommand> cmd;
+
+    /// Set only for `serve-stdio` invocations; std::nullopt otherwise. Never
+    /// engaged at the same time as @ref command or @ref cmd (the top-level
+    /// modes are mutually exclusive).
+    std::optional<ServeStdioCliOptions> serve_stdio;
 };
 
 /**
@@ -206,6 +247,9 @@ url_shortener::observability::LoggingConfig one_shot_logging_config(
  *  - Recognizes a leading `cmd <name>` positional as the generic one-shot
  *    command mode and returns it via `ParseResult::cmd`, likewise
  *    short-circuiting all server-flag parsing.
+ *  - Recognizes a leading `serve-stdio` positional as the NDJSON stdio
+ *    transport mode and returns its options via `ParseResult::serve_stdio`,
+ *    likewise short-circuiting all server-flag parsing.
  *  - Defines and documents every supported CLI option in one place.
  *  - Validates argument values and produces clear error messages.
  *  - Handles `--help` and `link [<verb>] --help` by populating
