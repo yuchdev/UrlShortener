@@ -10,7 +10,7 @@ Tracks progress against [plan.md](/docs/roadmap/0006-unified-command-model-and-t
 | 02.0 | Storage path unification | ✅ Complete (16/16 subtasks, incl. added 02.0/16) | 15 targets (`app__19`-`24`, `metadata__09`, `inmemory__16`, `storage__15` x2, http `30`/`31`, `cli__05`, `cli_03`/`17`/`18`, `e2e_12`) |
 | 03.0 | Link and browse commands | ✅ Complete (18/18 subtasks) | 23 targets (`commands__20`-`30`, `app__40`-`48`, `core 09`, `memory__17`, `analytics__16`, storage list-events SQLite/Postgres, contract `10`-`12`) |
 | 04.0 | REST and CLI adapters | ✅ Complete (15/15 subtasks) | 22 (`commands__40`, http `15`-`25`; `cli__06`-`12`; cli int `20`, `21`; `observability__04`; `ratelimiter__08`) |
-| 05.0 | Jobs, pair import/export, stdio | 🔶 In progress (14/21 subtasks) | 15 (`commands__50`-`58`, `60`-`62`, `65`; `app__60`; `cli__20`) |
+| 05.0 | Jobs, pair import/export, stdio | 🔶 In progress (15/21 subtasks) | 16 (`commands__50`-`58`, `60`-`63`, `65`; `app__60`; `cli__20`) |
 | 06.0 | Terminal UI | ⬜ Not started | 0 |
 | 07.0 | Tests and conformance | ⬜ Not started | 0 |
 | 08.0 | Docs and registry sync | ⬜ Not started | 0 |

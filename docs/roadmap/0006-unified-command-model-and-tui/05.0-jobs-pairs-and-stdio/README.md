@@ -54,7 +54,7 @@ Decisions made in this task: `JobRunner` does not reuse `AnalyticsWorker`/`Bound
 | 12 | [ITransportAdapter and factory](12-transport-adapter-interface.md) | ✅ Complete | 01.0/06, 01.0/07 | 15, 17, 19 |
 | 13 | [NDJSON line reader](13-ndjson-line-reader.md) | ✅ Complete | 07 | 14 |
 | 14 | [NdjsonSession](14-ndjson-session.md) | ✅ Complete | 13, 01.0/01, 01.0/03, 01.0/04, 01.0/07 | 15, 19 |
-| 15 | [StdioAdapter, drain, shutdown](15-stdio-adapter-and-shutdown.md) | ⬜ Not started | 03, 12, 14 | 17, 19 |
+| 15 | [StdioAdapter, drain, shutdown](15-stdio-adapter-and-shutdown.md) | ✅ Complete | 03, 12, 14 | 17, 19 |
 | 16 | [CLI parser: serve-stdio](16-cli-parser-serve-stdio.md) | ✅ Complete | none | 17 |
 | 17 | [serve-stdio runtime wiring](17-serve-stdio-runtime-wiring.md) | ⬜ Not started | 12, 15, 16, 20 | 18 |
 | 18 | [serve-stdio process tests](18-serve-stdio-process-tests.md) | ⬜ Not started | 17 | 19, 07.0/07 |
