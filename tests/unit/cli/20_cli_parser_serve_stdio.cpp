@@ -35,15 +35,9 @@ public:
         }
     }
 
-    int argc() const
-    {
-        return static_cast<int>(m_pointers_.size());
-    }
+    int argc() const { return static_cast<int>(m_pointers_.size()); }
 
-    char** argv()
-    {
-        return m_pointers_.data();
-    }
+    char** argv() { return m_pointers_.data(); }
 
 private:
     std::vector<std::string> m_storage_;
@@ -54,7 +48,7 @@ private:
 ParseResult parse(std::vector<std::string> args)
 {
     ArgvBuilder argv(std::move(args));
-    return CliParser{}.parse(argv.argc(), argv.argv());
+    return CliParser {}.parse(argv.argc(), argv.argv());
 }
 }  // namespace
 
@@ -154,13 +148,98 @@ BOOST_AUTO_TEST_CASE(path_root_root_slash_is_preserved)
 }
 
 /**
+ * [Unit][CLI] Repeated separators are collapsed and the trailing one stripped,
+ * so `"//srv//r/"` normalizes to `"/srv/r"` (threat model T-96): a sloppy root
+ * must not widen or fail-closed the lexical confinement.
+ *
+ * If this breaks, first check:
+ *   - normalize_path_root collapses separator runs between components.
+ */
+BOOST_AUTO_TEST_CASE(path_root_collapses_repeated_separators)
+{
+    const ParseResult result =
+        parse({"url_shortener", "serve-stdio", "--path-root", "//srv//r/"});
+
+    BOOST_REQUIRE(result.serve_stdio.has_value());
+    BOOST_REQUIRE(result.serve_stdio->path_root.has_value());
+    BOOST_CHECK_EQUAL(*result.serve_stdio->path_root, std::string("/srv/r"));
+}
+
+/**
+ * [Unit][CLI] A relative `--path-root` is rejected: only an absolute root is a
+ * meaningful confinement boundary (threat model T-96).
+ */
+BOOST_AUTO_TEST_CASE(path_root_relative_throws)
+{
+    BOOST_CHECK_THROW(
+        parse({"url_shortener", "serve-stdio", "--path-root", "srv/r"}),
+        std::invalid_argument);
+    BOOST_CHECK_THROW(
+        parse({"url_shortener", "serve-stdio", "--path-root", "x"}),
+        std::invalid_argument);
+}
+
+/**
+ * [Unit][CLI] A `~`-prefixed `--path-root` is rejected: home expansion is a
+ * shell concern and must never silently resolve here (threat model T-96).
+ */
+BOOST_AUTO_TEST_CASE(path_root_tilde_throws)
+{
+    BOOST_CHECK_THROW(
+        parse({"url_shortener", "serve-stdio", "--path-root", "~"}),
+        std::invalid_argument);
+    BOOST_CHECK_THROW(
+        parse({"url_shortener", "serve-stdio", "--path-root", "~/srv"}),
+        std::invalid_argument);
+}
+
+/**
+ * [Unit][CLI] A `--path-root` containing a `.` or `..` component is rejected:
+ * dot segments could obscure or escape the intended root (threat model T-96).
+ */
+BOOST_AUTO_TEST_CASE(path_root_dot_components_throw)
+{
+    BOOST_CHECK_THROW(
+        parse({"url_shortener", "serve-stdio", "--path-root", "/srv/../etc"}),
+        std::invalid_argument);
+    BOOST_CHECK_THROW(
+        parse({"url_shortener", "serve-stdio", "--path-root", "/srv/./r"}),
+        std::invalid_argument);
+    BOOST_CHECK_THROW(
+        parse({"url_shortener", "serve-stdio", "--path-root", "/.."}),
+        std::invalid_argument);
+}
+
+/**
+ * [Unit][CLI] The `--path-root` rejection error names only the flag and never
+ * echoes the operand (CWE-209; threat model T-77).
+ *
+ * If this breaks, first check:
+ *   - normalize_path_root's throw messages interpolate no value.
+ */
+BOOST_AUTO_TEST_CASE(path_root_error_omits_value)
+{
+    const std::string sentinel = "do-not-leak-root-sentinel";
+    try {
+        parse({"url_shortener",
+               "serve-stdio",
+               "--path-root",
+               "relative/" + sentinel});
+        BOOST_FAIL("expected std::invalid_argument");
+    } catch (const std::invalid_argument& e) {
+        BOOST_CHECK(std::string(e.what()).find(sentinel) == std::string::npos);
+        BOOST_CHECK(std::string(e.what()).find("--path-root")
+                    != std::string::npos);
+    }
+}
+
+/**
  * [Unit][CLI] `--path-root` with no following value is a usage error.
  */
 BOOST_AUTO_TEST_CASE(path_root_without_value_throws)
 {
-    BOOST_CHECK_THROW(
-        parse({"url_shortener", "serve-stdio", "--path-root"}),
-        std::invalid_argument);
+    BOOST_CHECK_THROW(parse({"url_shortener", "serve-stdio", "--path-root"}),
+                      std::invalid_argument);
 }
 
 /**
@@ -169,20 +248,31 @@ BOOST_AUTO_TEST_CASE(path_root_without_value_throws)
  */
 BOOST_AUTO_TEST_CASE(path_root_with_no_file_paths_throws)
 {
-    BOOST_CHECK_THROW(
-        parse({"url_shortener", "serve-stdio",
-            "--path-root", "/tmp/x", "--no-file-paths"}),
-        std::invalid_argument);
-    BOOST_CHECK_THROW(
-        parse({"url_shortener", "serve-stdio",
-            "--no-file-paths", "--path-root", "/tmp/x"}),
-        std::invalid_argument);
+    BOOST_CHECK_THROW(parse({"url_shortener",
+                             "serve-stdio",
+                             "--path-root",
+                             "/tmp/x",
+                             "--no-file-paths"}),
+                      std::invalid_argument);
+    BOOST_CHECK_THROW(parse({"url_shortener",
+                             "serve-stdio",
+                             "--no-file-paths",
+                             "--path-root",
+                             "/tmp/x"}),
+                      std::invalid_argument);
 }
 
 /**
  * [Unit][CLI] `serve-stdio --help` and `serve-stdio -h` request help, emit the
  * stdio usage text (NDJSON framing, EOF, stderr-only logs, the three hardening
- * flags and the transport guide), and parse no options.
+ * flags and the transport guide), and parse no options. The help must also warn
+ * plainly that the default posture is a local admin with file paths enabled and
+ * recommend the hardening flags for untrusted/sidecar input (threat model
+ * T-107).
+ *
+ * If this breaks, first check:
+ *   - buildServeStdioHelpText keeps the "Security:" paragraph and "admin" /
+ *     "sidecar" wording.
  */
 BOOST_AUTO_TEST_CASE(help_prints_usage)
 {
@@ -200,8 +290,12 @@ BOOST_AUTO_TEST_CASE(help_prints_usage)
         BOOST_CHECK(help.find("--read-only") != std::string::npos);
         BOOST_CHECK(help.find("--no-file-paths") != std::string::npos);
         BOOST_CHECK(help.find("--path-root") != std::string::npos);
-        BOOST_CHECK(
-            help.find("adding-a-transport.md") != std::string::npos);
+        BOOST_CHECK(help.find("adding-a-transport.md") != std::string::npos);
+        // The under-warning fix (T-107): the default admin + file-path posture
+        // and the sidecar hardening recommendation must be stated plainly.
+        BOOST_CHECK(help.find("Security") != std::string::npos);
+        BOOST_CHECK(help.find("admin") != std::string::npos);
+        BOOST_CHECK(help.find("sidecar") != std::string::npos);
     }
 }
 
@@ -211,14 +305,12 @@ BOOST_AUTO_TEST_CASE(help_prints_usage)
  */
 BOOST_AUTO_TEST_CASE(unknown_flag_throws)
 {
-    BOOST_CHECK_THROW(
-        parse({"url_shortener", "serve-stdio", "--nope"}),
-        std::invalid_argument);
+    BOOST_CHECK_THROW(parse({"url_shortener", "serve-stdio", "--nope"}),
+                      std::invalid_argument);
     // Logging flags belong to `cmd`, not `serve-stdio`: they cannot route logs
     // to stdout here and are simply unknown (threat model T-102).
-    BOOST_CHECK_THROW(
-        parse({"url_shortener", "serve-stdio", "--verbose"}),
-        std::invalid_argument);
+    BOOST_CHECK_THROW(parse({"url_shortener", "serve-stdio", "--verbose"}),
+                      std::invalid_argument);
     BOOST_CHECK_THROW(
         parse({"url_shortener", "serve-stdio", "--log-file", "/tmp/x.log"}),
         std::invalid_argument);
@@ -229,9 +321,8 @@ BOOST_AUTO_TEST_CASE(unknown_flag_throws)
  */
 BOOST_AUTO_TEST_CASE(extra_positional_throws)
 {
-    BOOST_CHECK_THROW(
-        parse({"url_shortener", "serve-stdio", "extra"}),
-        std::invalid_argument);
+    BOOST_CHECK_THROW(parse({"url_shortener", "serve-stdio", "extra"}),
+                      std::invalid_argument);
 }
 
 /**
@@ -248,9 +339,8 @@ BOOST_AUTO_TEST_CASE(serve_stdio_not_first_is_not_the_mode)
     // `serve-stdio` positional is rejected by Boost.ProgramOptions; either way
     // it never engages stdio mode. Boost reports the extra positional as an
     // error, so assert it does not become a stdio invocation.
-    BOOST_CHECK_THROW(
-        parse({"url_shortener", "8080", "serve-stdio"}),
-        std::invalid_argument);
+    BOOST_CHECK_THROW(parse({"url_shortener", "8080", "serve-stdio"}),
+                      std::invalid_argument);
 }
 
 /**
@@ -279,18 +369,44 @@ BOOST_AUTO_TEST_CASE(server_and_link_modes_unchanged)
  */
 BOOST_AUTO_TEST_CASE(global_config_flags_apply_to_config)
 {
-    const ParseResult result = parse({"url_shortener", "serve-stdio",
-        "--read-only",
-        "--base-domain", "https://sho.rt",
-        "--storage-config", "/etc/url_shortener/storage.yaml"});
+    const ParseResult result = parse({"url_shortener",
+                                      "serve-stdio",
+                                      "--read-only",
+                                      "--base-domain",
+                                      "https://sho.rt",
+                                      "--storage-config",
+                                      "/etc/url_shortener/storage.yaml"});
 
     BOOST_REQUIRE(result.serve_stdio.has_value());
     BOOST_CHECK_EQUAL(result.serve_stdio->read_only, true);
-    BOOST_CHECK_EQUAL(
-        result.config.shortener_base_domain, std::string("https://sho.rt"));
+    BOOST_CHECK_EQUAL(result.config.shortener_base_domain,
+                      std::string("https://sho.rt"));
     BOOST_REQUIRE(result.config.storage_config_path.has_value());
     BOOST_CHECK_EQUAL(*result.config.storage_config_path,
-        std::string("/etc/url_shortener/storage.yaml"));
+                      std::string("/etc/url_shortener/storage.yaml"));
+}
+
+/**
+ * [Unit][CLI] An invalid `--allow-private-targets` operand is rejected with a
+ * value-free error that never echoes the supplied operand (CWE-209; threat
+ * model T-77). `parseBool` was made value-free globally, so the message names
+ * no operand value.
+ *
+ * If this breaks, first check:
+ *   - parseBool's message interpolates no value.
+ */
+BOOST_AUTO_TEST_CASE(allow_private_targets_invalid_value_omits_value)
+{
+    const std::string sentinel = "do-not-leak-bool-sentinel";
+    try {
+        parse({"url_shortener",
+               "serve-stdio",
+               "--allow-private-targets",
+               sentinel});
+        BOOST_FAIL("expected std::invalid_argument");
+    } catch (const std::invalid_argument& e) {
+        BOOST_CHECK(std::string(e.what()).find(sentinel) == std::string::npos);
+    }
 }
 
 /**
@@ -311,8 +427,7 @@ BOOST_AUTO_TEST_CASE(serve_stdio_short_circuit_is_undisturbed)
     BOOST_CHECK(!result.command.has_value());
     BOOST_CHECK(!result.cmd.has_value());
     BOOST_CHECK_EQUAL(result.config.command_api_enabled, false);
-    BOOST_CHECK_EQUAL(
-        result.config.command_api_role, std::string("user"));
+    BOOST_CHECK_EQUAL(result.config.command_api_role, std::string("user"));
 }
 
 /**
@@ -321,9 +436,11 @@ BOOST_AUTO_TEST_CASE(serve_stdio_short_circuit_is_undisturbed)
  */
 BOOST_AUTO_TEST_CASE(serve_stdio_empty_for_link)
 {
-    const ParseResult result =
-        parse({"url_shortener", "link", "create", "--url",
-            "https://example.com/path"});
+    const ParseResult result = parse({"url_shortener",
+                                      "link",
+                                      "create",
+                                      "--url",
+                                      "https://example.com/path"});
 
     BOOST_REQUIRE(result.command.has_value());
     BOOST_CHECK(!result.serve_stdio.has_value());
