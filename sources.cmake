@@ -475,6 +475,7 @@ set(URL_SHORTENER_SOURCES
       tests/unit/commands/57_link_import_command.cpp
       tests/unit/commands/60_transport_factory.cpp
       tests/unit/commands/61_ndjson_line_reader.cpp
+      tests/unit/commands/62_ndjson_session.cpp
       tests/unit/commands/65_jobs_table_source.cpp
   )
 
@@ -506,6 +507,7 @@ set(URL_SHORTENER_SOURCES
       ${CMAKE_CURRENT_SOURCE_DIR}/src/commands/pair_file_access.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/commands/pair_commands.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/commands/ndjson_line_reader.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/commands/ndjson_session.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/commands/jobs_table_source.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/cli_parser.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/cli/link_command_args.cpp
