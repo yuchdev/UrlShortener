@@ -60,7 +60,7 @@ Decisions made in this task: `JobRunner` does not reuse `AnalyticsWorker`/`Bound
 | 18 | [serve-stdio process tests](18-serve-stdio-process-tests.md) | ⬜ Not started | 17 | 19, 07.0/07 |
 | 19 | [adding-a-transport guide](19-adding-a-transport-guide.md) | ⬜ Not started | 12, 14, 15, 18 | 08.0/04 |
 | 20 | [Process-wide job runtime in `build_command_runtime`](20-process-job-runtime-composition.md) | ⬜ Not started | 03, 04, 05, 08, 09, 10, 21, 02.0/12, 03.0/18 | 11, 17, 06.0/19 |
-| 21 | [`jobs` table source](21-jobs-table-source.md) | ⬜ Not started | 02, 03.0/15 | 20 |
+| 21 | [`jobs` table source](21-jobs-table-source.md) | ✅ Complete | 02, 03.0/15 | 20 |
 
 Parallel lanes once 01.0 and 03.0 are ready: A = 01-05, 21 (jobs), B = 06-10 (pairs, 08/10 need A's 04), C = 12-16 (transport; 15 needs 03); 20 joins A and B into the shared runtime, then 11 and 17. 06.0 (TUI) needs 05, 08, 10 (command contracts) and 20 (runtime, for 06.0/19).
 
