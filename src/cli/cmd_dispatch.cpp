@@ -12,7 +12,6 @@
 
 #include <algorithm>
 #include <cstddef>
-#include <exception>
 #include <memory>
 #include <string>
 #include <utility>
@@ -20,6 +19,7 @@
 
 #include <url_shortener/cli/arg_coercion.hpp>
 #include <url_shortener/cli/cli_parser.hpp>
+#include <url_shortener/cli/command_runtime_acquire.hpp>
 #include <url_shortener/commands/catalog.hpp>
 #include <url_shortener/commands/command_descriptor.hpp>
 #include <url_shortener/commands/command_registry.hpp>
@@ -27,7 +27,6 @@
 #include <url_shortener/commands/error_codes.hpp>
 #include <url_shortener/commands/json_scan.hpp>
 #include <url_shortener/composition/command_runtime.hpp>
-#include <url_shortener/composition/link_backend_bootstrap.hpp>
 #include <url_shortener/core/config.hpp>
 #include <url_shortener/core/utils.hpp>
 #include <url_shortener/observability/logger_factory.hpp>
@@ -250,37 +249,6 @@ std::string build_envelope(const std::string& id, const std::string& name,
     return text;
 }
 
-/**
- * @brief Obtains the shared command runtime, preferring the installed one.
- *
- * Mirrors the REST bridge's `request_runtime()`: use the process-wide runtime
- * `main` installed from the active backend (so reads and writes share one store
- * under `--storage-config`), falling back to a runtime built here from an
- * inactive backend handle when none is installed (unit tests/tools). D14 holds
- * either way because the audit `Logger` resolves its sink lazily at emit time,
- * and logging is initialized before any command executes.
- *
- * @param config Server configuration the fallback runtime borrows by reference.
- * @return The shared runtime, or `nullptr` when the fallback build threw.
- */
-std::shared_ptr<composition::CommandRuntime> acquire_runtime(
-    const ServerConfig& config)
-{
-    if (std::shared_ptr<composition::CommandRuntime> installed =
-            composition::process_command_runtime())
-    {
-        return installed;
-    }
-    try {
-        return std::make_shared<composition::CommandRuntime>(
-            composition::build_command_runtime(config,
-                                               app::LinkBackendHandle {}));
-    }
-    catch (const std::exception&) {
-        return nullptr;
-    }
-}
-
 }  // namespace
 
 int DispatchCmdCommand(const CmdCliCommand& command, const ServerConfig& config,
@@ -299,9 +267,10 @@ int DispatchCmdCommand(const CmdCliCommand& command, const ServerConfig& config,
             return 2;
         }
 
-        // Step 1: the single shared registry (milestone contract C11).
+        // Step 1: the single shared registry (milestone contract C11),
+        // obtained through the helper shared with the `link <verb>` dispatcher.
         const std::shared_ptr<composition::CommandRuntime> runtime =
-            acquire_runtime(config);
+            acquire_command_runtime(config);
         if (!runtime) {
             err << "cmd failed: internal\n";
             return 4;
