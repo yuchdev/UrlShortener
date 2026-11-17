@@ -27,11 +27,15 @@ namespace
 {
 
 /**
- * @brief Maps a browse `list_status` (non-`all`) to the `LinkStatus` a
- * decoded link must resolve to in order to match.
- * @param status Browse status filter; must not be `list_status::all` (the
- * caller handles `all` without calling this).
- * @return The corresponding `LinkStatus`.
+ * @brief Maps a browse `list_status` to the single `LinkStatus` a decoded link
+ * must resolve to in order to match.
+ * @param status Browse status filter; must be one of the single-status members
+ * `active`, `disabled`, `expired` or `deleted`. The set-valued members `all`
+ * and `not_deleted` have no single `LinkStatus` and are handled by the caller
+ * before this is reached.
+ * @return The corresponding `LinkStatus` for a single-status member;
+ * `LinkStatus::active` as a safe, defined default for `all`/`not_deleted` so
+ * the switch is total.
  */
 LinkStatus to_link_status(list_status status)
 {
@@ -45,9 +49,11 @@ LinkStatus to_link_status(list_status status)
         case list_status::deleted:
             return LinkStatus::deleted;
         case list_status::all:
+        case list_status::not_deleted:
         default:
-            // `all` is filtered out before this is reached; return `active` as
-            // a safe, defined default so the switch is total.
+            // `all`/`not_deleted` are set-valued and filtered out before this is
+            // reached; return `active` as a safe, defined default so the switch
+            // is total.
             return LinkStatus::active;
     }
 }
@@ -101,8 +107,18 @@ LinkSortField to_sort_field(list_sort sort)
             // no raw-attribute leak (subtask 12 requirement 3).
             return false;
         }
-        if (status != list_status::all
-            && resolveLinkStatus(link) != to_link_status(status))
+        const LinkStatus resolved = resolveLinkStatus(link);
+        if (status == list_status::not_deleted) {
+            // Set-valued filter: keep every link except soft-deleted ones (the
+            // union of active/disabled/expired). This is the filter the `db.*`
+            // `links` browse source uses so a read-only `User` can never
+            // enumerate soft-deleted rows (threat model T-71).
+            if (resolved == LinkStatus::deleted) {
+                return false;
+            }
+        }
+        else if (status != list_status::all
+                 && resolved != to_link_status(status))
         {
             return false;
         }

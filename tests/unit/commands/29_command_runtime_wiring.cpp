@@ -344,12 +344,15 @@ BOOST_AUTO_TEST_CASE(create_list_get_lifecycle_flow)
 
 // Type: unit (db.tables row counts agree with the browse ports).
 // Scenario: db.tables reports links and click_events with row counts equal to
-//   link.list(status=all)'s total and the ListEvents total respectively, after
-//   seeding a link and two click events.
+//   the non-deleted link total (link.list status=all minus status=deleted) and
+//   the ListEvents total respectively, after seeding a link and two click
+//   events. The links source excludes soft-deleted rows for every caller
+//   (threat model T-71), so its count is the not-deleted total, not status=all.
 // Boundaries: db.tables counts come from the same ports the browse commands
-// use. On failure first check: did a source's row_count diverge from its
-// rows(), or
-//   did the catalog lose a table?
+//   use; the links count subtracts soft-deleted links.
+// On failure first check: did the links source stop excluding soft-deleted rows
+//   (T-71), did a source's row_count diverge from its rows(), or did the catalog
+//   lose a table?
 BOOST_AUTO_TEST_CASE(db_tables_counts_match_browse_totals)
 {
     url_shortener::app::LinkBackend::reset();
@@ -377,19 +380,29 @@ BOOST_AUTO_TEST_CASE(db_tables_counts_match_browse_totals)
     url_shortener::analyticsClickRepository().InsertBatch({event, event2},
                                                           nullptr);
 
-    // status=all requires write/admin (threat model T-71).
-    const CommandResponse listed = registry.execute(
+    // The links source excludes soft-deleted rows (T-71), so its count is the
+    // not-deleted total: status=all minus status=deleted. Both status filters
+    // require write/admin on link.list. Deriving it this way keeps the
+    // assertion correct even if a prior test case left a soft-deleted link in
+    // the process-global backend.
+    const CommandResponse listed_all = registry.execute(
         caller(ControlSet::Admin),
         request("link.list", R"({"status":"all","limit":500})"));
-    BOOST_REQUIRE(listed.ok);
-    const std::size_t link_total = parse_total(listed.result_json);
+    BOOST_REQUIRE(listed_all.ok);
+    const CommandResponse listed_deleted = registry.execute(
+        caller(ControlSet::Admin),
+        request("link.list", R"({"status":"deleted","limit":500})"));
+    BOOST_REQUIRE(listed_deleted.ok);
+    const std::size_t link_not_deleted_total =
+        parse_total(listed_all.result_json)
+        - parse_total(listed_deleted.result_json);
 
     const CommandResponse tables =
         registry.execute(caller(ControlSet::User), request("db.tables", "{}"));
     BOOST_REQUIRE(tables.ok);
-    BOOST_TEST(
-        contains(tables.result_json,
-                 R"("name":"links","rows":)" + std::to_string(link_total)));
+    BOOST_TEST(contains(tables.result_json,
+                        R"("name":"links","rows":)"
+                            + std::to_string(link_not_deleted_total)));
     BOOST_TEST(contains(
         tables.result_json,
         R"("name":"click_events","rows":)" + std::to_string(click_total())));

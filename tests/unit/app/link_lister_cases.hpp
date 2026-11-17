@@ -237,6 +237,20 @@ inline std::vector<ListerCase> lister_cases()
              {"alpha", "bravo", "charlie", "delta", "echo", "foxtrot"},
              6});
     }
+    // not_deleted (active + disabled + expired, never soft-deleted): every slug
+    // except the deleted "delta" (threat model T-71). This is the filter the
+    // `db.*` links browse source uses.
+    {
+        LinkListQuery q;
+        q.status = list_status::not_deleted;
+        q.sort = list_sort::slug;
+        q.descending = false;
+        cases.push_back(
+            {"status_not_deleted",
+             q,
+             {"alpha", "bravo", "charlie", "echo", "foxtrot"},
+             5});
+    }
 
     // Free text: "Alpha" (mixed case) matches the "alpha" slug and the
     // "ALPHA" segment of delta's URL, case-insensitively.

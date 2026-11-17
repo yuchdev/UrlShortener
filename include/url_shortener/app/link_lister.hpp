@@ -44,7 +44,19 @@ enum class list_status
 
     ///< Only links whose `resolveLinkStatus` is `deleted`
     ///< (`deleted_at` is set).
-    deleted
+    deleted,
+
+    ///< Every link whose `resolveLinkStatus` is *not* `deleted`, i.e. the union
+    ///< of `active`, `disabled` and `expired`. There is no single `LinkStatus`
+    ///< this maps to, so the lister evaluates it as "`resolveLinkStatus`
+    ///< != `deleted`" rather than through `to_link_status`.
+    ///<
+    ///< This value is internal to the `db.*` browse surface (the `links` table
+    ///< source, which must never expose soft-deleted rows to a read-only
+    ///< `User`; threat model T-71). It is deliberately absent from `link.list`'s
+    ///< public `status` token set (`all|active|disabled|expired|deleted`), so
+    ///< adding it here does not change `link.list`'s public enum semantics.
+    not_deleted
 };
 
 /**

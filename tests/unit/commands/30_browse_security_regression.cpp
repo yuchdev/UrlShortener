@@ -257,6 +257,96 @@ BOOST_AUTO_TEST_CASE(click_events_hostile_free_text_stays_valid_json)
     BOOST_TEST(contains(response.result_json, "x\\\"y\\\\z\\n"));
 }
 
+// Type: unit (db.rows table=links never exposes soft-deleted rows, T-71).
+// Scenario: one active, one disabled, one expired and one soft-deleted link are
+//   seeded as Admin; db.rows table=links then runs once as a read-only User and
+//   once as Admin. Neither response contains the soft-deleted slug, a
+//   "status":"deleted" cell or a non-null deleted_at value, both responses do
+//   contain the active/disabled/expired slugs, and "total":3 excludes the
+//   deleted link. This closes the enumeration oracle where db.rows (read, no
+//   permission_for hook) bypassed the link.list/link.export status=all|deleted
+//   write gate (user rulings 2026-11-16/17: a User may see active/disabled/
+//   expired, never soft-deleted).
+// Boundaries: the links table source requests list_status::not_deleted, so the
+//   deleted row is dropped for every caller and never counted.
+// On failure first check: did the links source revert to status=all, or did the
+//   lister stop honoring the not_deleted filter?
+BOOST_AUTO_TEST_CASE(db_rows_links_excludes_soft_deleted_for_every_caller)
+{
+    LinkBackend::reset();
+    ServerConfig server;
+    LinkBackendHandle backend;
+    const CommandRuntime runtime = fresh_runtime(server, backend);
+    CommandRegistry& registry = *runtime.registry;
+
+    // Active link.
+    BOOST_REQUIRE(
+        registry
+            .execute(caller(ControlSet::Admin),
+                     request("link.create",
+                             R"({"target_url":"https://example.com/a",)"
+                             R"("slug":"sec71-active"})"))
+            .ok);
+    // Disabled link (create then disable).
+    BOOST_REQUIRE(
+        registry
+            .execute(caller(ControlSet::Admin),
+                     request("link.create",
+                             R"({"target_url":"https://example.com/d",)"
+                             R"("slug":"sec71-disabled"})"))
+            .ok);
+    BOOST_REQUIRE(
+        registry
+            .execute(caller(ControlSet::Admin),
+                     request("link.disable",
+                             R"({"slug":"sec71-disabled"})"))
+            .ok);
+    // Expired link (past expires_at -> resolveLinkStatus == expired).
+    BOOST_REQUIRE(
+        registry
+            .execute(caller(ControlSet::Admin),
+                     request("link.create",
+                             R"({"target_url":"https://example.com/e",)"
+                             R"("slug":"sec71-expired",)"
+                             R"("expires_at":"2020-01-01T00:00:00Z"})"))
+            .ok);
+    // Soft-deleted link (create then delete).
+    BOOST_REQUIRE(
+        registry
+            .execute(caller(ControlSet::Admin),
+                     request("link.create",
+                             R"({"target_url":"https://example.com/x",)"
+                             R"("slug":"sec71-deleted"})"))
+            .ok);
+    BOOST_REQUIRE(
+        registry
+            .execute(caller(ControlSet::Admin),
+                     request("link.delete", R"({"slug":"sec71-deleted"})"))
+            .ok);
+
+    const std::vector<ControlSet> roles = {ControlSet::User,
+                                           ControlSet::Admin};
+    for (const ControlSet role : roles) {
+        const CommandResponse response = registry.execute(
+            caller(role),
+            request("db.rows", R"({"table":"links","limit":500})"));
+        BOOST_REQUIRE(response.ok);
+
+        // The soft-deleted link is never surfaced to any caller.
+        BOOST_TEST(!contains(response.result_json, "sec71-deleted"));
+        BOOST_TEST(!contains(response.result_json, R"("status":"deleted")"));
+        BOOST_TEST(!contains(response.result_json, R"("deleted_at":"2)"));
+
+        // The non-deleted lifecycle states remain visible.
+        BOOST_TEST(contains(response.result_json, "sec71-active"));
+        BOOST_TEST(contains(response.result_json, "sec71-disabled"));
+        BOOST_TEST(contains(response.result_json, "sec71-expired"));
+
+        // The total counts exactly the three non-deleted links.
+        BOOST_TEST(contains(response.result_json, R"("total":3)"));
+    }
+}
+
 // Type: unit (system.info leaks no secret, T-53).
 // Scenario: the process snapshot is built from a StorageConfig with a DSN,
 //   redis address and sqlite path plus a ServerConfig with TLS material and the

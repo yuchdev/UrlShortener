@@ -1,8 +1,9 @@
 /**
  * @file 46_links_table_source.cpp
  * @brief Unit tests for @ref url_shortener::app::LinksTableSource: metadata,
- * exact per-row key set, `status=all` visibility, sort/`q` forwarding,
- * `row_count`, lister-error mapping, and hostile-input JSON validity.
+ * exact per-row key set, `status=not_deleted` visibility (soft-deleted rows are
+ * never requested; threat model T-71), sort/`q` forwarding, `row_count`,
+ * lister-error mapping, and hostile-input JSON validity.
  */
 #define BOOST_TEST_MODULE AppLinksTableSourceTest
 #include <cstddef>
@@ -197,15 +198,17 @@ BOOST_AUTO_TEST_CASE(row_key_set_equals_columns)
     }
 }
 
-// Type: unit (status=all visibility; absent timestamps are null).
-// Scenario: a deleted, a disabled and an expired link are returned and their
-//   `status` cells read "deleted"/"disabled"/"expired"; a link without
-//   expires_at/deleted_at emits JSON null for those cells.
-// Boundaries: the source always queries status=all, so every lifecycle state is
-//   visible.
-// On failure first check: did the source stop forcing status=all, or mis-map
-//   the optional timestamps?
-BOOST_AUTO_TEST_CASE(status_all_and_null_optionals)
+// Type: unit (status=not_deleted request; cell serialization; null optionals).
+// Scenario: the fake lister (which does not itself filter) returns a disabled
+//   and an expired link whose `status` cells read "disabled"/"expired"; a link
+//   without expires_at/deleted_at emits JSON null for those cells. The source
+//   must have asked for status=not_deleted, so the real lister would drop
+//   soft-deleted rows (threat model T-71).
+// Boundaries: the source requests not_deleted, never all; serialize_link_row
+//   still renders every lifecycle cell correctly.
+// On failure first check: did the source stop forcing status=not_deleted, or
+//   mis-map the optional timestamps?
+BOOST_AUTO_TEST_CASE(status_not_deleted_and_null_optionals)
 {
     FakeLinkLister lister;
     LinkView deleted = make_view(
@@ -225,8 +228,10 @@ BOOST_AUTO_TEST_CASE(status_all_and_null_optionals)
     BOOST_REQUIRE(page.ok());
     BOOST_REQUIRE(page.value->rows_json.size() == 3u);
 
-    // The source must have asked for status=all.
-    BOOST_TEST((lister.m_last_query.status == list_status::all));
+    // The source must have asked for status=not_deleted (soft-deleted rows are
+    // never requested; T-71). The fake lister does not itself filter, so the
+    // deleted LinkView still comes back and exercises serialize_link_row.
+    BOOST_TEST((lister.m_last_query.status == list_status::not_deleted));
 
     BOOST_TEST(page.value->rows_json[0].find("\"status\":\"deleted\"")
                != std::string::npos);
@@ -271,7 +276,7 @@ BOOST_AUTO_TEST_CASE(sort_and_q_forwarded)
     const Result<TableRowsPage> page = source.rows(query);
     BOOST_REQUIRE(page.ok());
 
-    BOOST_TEST((lister.m_last_query.status == list_status::all));
+    BOOST_TEST((lister.m_last_query.status == list_status::not_deleted));
     BOOST_TEST((lister.m_last_query.sort == list_sort::updated_at));
     BOOST_TEST(lister.m_last_query.descending);
     BOOST_REQUIRE(lister.m_last_query.q.has_value());
@@ -282,9 +287,11 @@ BOOST_AUTO_TEST_CASE(sort_and_q_forwarded)
 
 // Type: unit (row_count delegates to the lister total).
 // Scenario: the lister reports total=42 and the source's row_count returns 42,
-//   having asked with status=all and limit=1 (no window materialized).
-// Boundaries: row_count mirrors the filtered total, not the page size.
-// On failure first check: did row_count read items.size() instead of total?
+//   having asked with status=not_deleted and limit=1 (no window materialized).
+// Boundaries: row_count mirrors the not-deleted filtered total, not the page
+//   size; soft-deleted links are never counted (T-71).
+// On failure first check: did row_count read items.size() instead of total, or
+//   stop requesting status=not_deleted?
 BOOST_AUTO_TEST_CASE(row_count_equals_total)
 {
     FakeLinkLister lister;
@@ -294,7 +301,7 @@ BOOST_AUTO_TEST_CASE(row_count_equals_total)
     const Result<std::size_t> count = source.row_count();
     BOOST_REQUIRE(count.ok());
     BOOST_TEST(*count.value == 42u);
-    BOOST_TEST((lister.m_last_query.status == list_status::all));
+    BOOST_TEST((lister.m_last_query.status == list_status::not_deleted));
     BOOST_TEST(lister.m_last_query.limit == 1u);
 }
 

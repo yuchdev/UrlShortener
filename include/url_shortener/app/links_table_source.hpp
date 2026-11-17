@@ -22,8 +22,16 @@ namespace app
  * are exactly the columns `db.rows` may expose. Rows are flat scalar objects
  * whose keys equal the column names; no `tags`, `metadata`, `campaign`,
  * `short_url` or any other `LinkView` field is surfaced. Browse queries always
- * use `list_status::all` (the TUI shows every lifecycle state) and map the
- * admissible `sort`/`q` of a @ref TableQuery onto a @ref LinkListQuery.
+ * use `list_status::not_deleted` (active, disabled and expired links are
+ * visible; soft-deleted links are never surfaced) and map the admissible
+ * `sort`/`q` of a @ref TableQuery onto a @ref LinkListQuery.
+ *
+ * Soft-deleted rows are excluded for every caller because `db.rows` is a
+ * read-permission command with no `permission_for` hook: surfacing deleted
+ * rows would let a read-only `User` bulk-enumerate soft-deleted links,
+ * bypassing the T-71 gate that `link.list`/`link.export` enforce
+ * (`status=all|deleted` raise the command to write). Admins still reach deleted
+ * links through `link.list status=deleted` / `link.export status=deleted`.
  *
  * Thread-safety follows the backing @ref ILinkLister.
  */
@@ -63,10 +71,11 @@ public:
     const std::vector<TableColumn>& columns() const override;
 
     /**
-     * @brief The total number of links across every lifecycle status.
+     * @brief The total number of links, excluding soft-deleted links.
      * @return `Result<std::size_t>` holding the lister's `total` for a
-     * `status=all` query (requested with `limit == 1` so no window is
-     * materialized); on a lister failure a `storage_failure`.
+     * `status=not_deleted` query (active/disabled/expired only, requested with
+     * `limit == 1` so no window is materialized); soft-deleted links are never
+     * counted (threat model T-71); on a lister failure a `storage_failure`.
      */
     Result<std::size_t> row_count() const override;
 
@@ -77,7 +86,8 @@ public:
      * @return `Result<TableRowsPage>` whose `rows_json` holds one flat,
      * `jsonString`-escaped object per link (keys equal the column names,
      * absent optional timestamps emitted as `null`) and whose `total` is the
-     * `status=all` filtered count before the window; on a lister failure a
+     * `status=not_deleted` filtered count before the window; soft-deleted links
+     * are never surfaced (threat model T-71); on a lister failure a
      * `storage_failure`.
      */
     Result<TableRowsPage> rows(const TableQuery& query) const override;

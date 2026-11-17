@@ -137,8 +137,16 @@ int main(int argc, char* argv[])
         // local-operator one-shot CLI modes (`cmd`, `link <verb>`) opt in so
         // `link.import`/`link.export` may name a local file; this install serves
         // those dispatchers via acquire_command_runtime.
+        // Invariant: a one-shot CLI invocation (`link <verb>` or `cmd <name>`)
+        // short-circuits below and never constructs an HttpServer. Both the
+        // file-path capability opt-in here and the two early returns below are
+        // derived from this single predicate, so allow_paths == true always
+        // implies the process never builds HttpServer (and the server/REST
+        // runtime therefore always stays deny, threat model T-95).
+        const bool one_shot_mode =
+            parsed.command.has_value() || parsed.cmd.has_value();
         url_shortener::composition::CommandRuntimeOptions runtime_options;
-        if (parsed.command.has_value() || parsed.cmd.has_value()) {
+        if (one_shot_mode) {
             runtime_options.file_paths.allow_paths = true;
         }
         url_shortener::composition::install_process_command_runtime(

@@ -158,7 +158,13 @@ const std::vector<TableColumn>& LinksTableSource::columns() const
 Result<std::size_t> LinksTableSource::row_count() const
 {
     LinkListQuery query;
-    query.status = list_status::all;
+    // Exclude soft-deleted links from the count for every caller: `db.rows` is
+    // a read-permission command, so counting deleted rows here would let a
+    // read-only `User` learn how many soft-deleted links exist, bypassing the
+    // T-71 gate that `link.list`/`link.export` enforce (status=all|deleted
+    // require write). Admins still reach deleted links via
+    // `link.list status=deleted`.
+    query.status = list_status::not_deleted;
     query.limit = 1;  // We only need the total, not a materialized window.
 
     const Result<LinkListPage> page = m_lister_.list(query);
@@ -175,7 +181,13 @@ Result<std::size_t> LinksTableSource::row_count() const
 Result<TableRowsPage> LinksTableSource::rows(const TableQuery& query) const
 {
     LinkListQuery list_query;
-    list_query.status = list_status::all;  // The TUI shows every status.
+    // Exclude soft-deleted links for every caller (active/disabled/expired are
+    // all visible). `db.rows` is a read-permission command with no
+    // `permission_for` hook, so surfacing deleted rows here would let a
+    // read-only `User` bulk-enumerate soft-deleted links, bypassing the T-71
+    // gate that `link.list`/`link.export` enforce (status=all|deleted require
+    // write). Admins still reach deleted links via `link.list status=deleted`.
+    list_query.status = list_status::not_deleted;
     list_query.q = query.q;
     list_query.offset = query.offset;
     list_query.limit = query.limit;
