@@ -376,6 +376,7 @@ set(URL_SHORTENER_SOURCES
       tests/unit/cli/10_link_dispatch_via_registry.cpp
       tests/unit/cli/11_cli_parser_command_api_flags.cpp
       tests/unit/cli/12_dispatch_null_runtime.cpp
+      tests/unit/cli/20_cli_parser_serve_stdio.cpp
   )
 
   set(ANALYTICS_INTEGRATION_SOURCES
