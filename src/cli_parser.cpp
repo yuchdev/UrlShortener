@@ -668,9 +668,10 @@ std::string buildServeStdioHelpText()
     return
         "Usage: url_shortener serve-stdio [options]\n\n"
         "Serve one command per line over stdin/stdout as an NDJSON transport:\n"
-        "one request envelope per input line, one response envelope per output\n"
-        "line; EOF on stdin drains in-flight jobs and shuts down. Logs go to\n"
-        "stderr, never stdout. See docs/commands/adding-a-transport.md.\n\n"
+        "one request envelope per input line, one response envelope per\n"
+        "output line; EOF on stdin drains in-flight jobs and shuts down. Logs\n"
+        "go to stderr, never stdout. See\n"
+        "docs/commands/adding-a-transport.md.\n\n"
         "Options:\n"
         "  --read-only          Run the local session as a read-only user\n"
         "                       (ControlSet::User) instead of the default "
