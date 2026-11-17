@@ -103,7 +103,7 @@ ArgSpec make_campaign_arg()
  *
  * @return The ordered @ref ArgSpec list for the descriptor.
  */
-std::vector<ArgSpec> make_link_create_args()
+std::vector<ArgSpec> make_link_create_args_impl()
 {
     ArgSpec redirect_type;
     redirect_type.name = "redirect_type";
@@ -172,6 +172,36 @@ CommandResult handle_link_create(app::LinkCommandService& service,
                                  const ArgsView& args)
 {
     app::CreateLinkCommand command;
+    CommandError decode_error;
+    if (!decode_create_link_command(args, &command, &decode_error)) {
+        CommandResult result;
+        result.error = std::move(decode_error);
+        return result;
+    }
+
+    const app::Result<app::LinkView> result =
+        context.dry_run ? service.ValidateCreateLink(command)
+                        : service.CreateLink(command);
+
+    return link_view_result(result, command.slug.value_or(""));
+}
+
+}  // namespace
+
+std::vector<ArgSpec> link_create_arg_specs()
+{
+    return make_link_create_args_impl();
+}
+
+bool decode_create_link_command(const ArgsView& args,
+                                app::CreateLinkCommand* out,
+                                CommandError* error)
+{
+    if (out == nullptr) {
+        return false;
+    }
+
+    app::CreateLinkCommand command;
 
     // target_url is required; the registry's ArgSpec presence check has already
     // guaranteed it is present as a string.
@@ -211,29 +241,21 @@ CommandResult handle_link_create(app::LinkCommandService& service,
     // present object is decoded. decode_campaign is only valid on a present
     // object, so it is guarded by the PATCH state.
     if (patch_state_of(args, "campaign") == patch_state::value) {
-        CommandError error;
-        if (!decode_campaign(args, "campaign", &command.campaign, &error)) {
-            CommandResult result;
-            result.error = std::move(error);
-            return result;
+        if (!decode_campaign(args, "campaign", &command.campaign, error)) {
+            return false;
         }
     }
 
-    const app::Result<app::LinkView> result =
-        context.dry_run ? service.ValidateCreateLink(command)
-                        : service.CreateLink(command);
-
-    return link_view_result(result, command.slug.value_or(""));
+    *out = std::move(command);
+    return true;
 }
-
-}  // namespace
 
 CommandDescriptor make_link_create_descriptor(app::LinkCommandService& service)
 {
     CommandDescriptor descriptor;
     descriptor.name = "link.create";
     descriptor.summary = "Create a short link.";
-    descriptor.args = make_link_create_args();
+    descriptor.args = link_create_arg_specs();
     descriptor.permission = Permission::write;
     descriptor.kind = ExecutionKind::sync;
     descriptor.mutating = true;

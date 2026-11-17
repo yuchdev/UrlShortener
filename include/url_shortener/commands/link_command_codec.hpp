@@ -3,6 +3,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <vector>
 
 #include <url_shortener/app/app_error.hpp>
 #include <url_shortener/commands/arg_spec.hpp>
@@ -22,6 +23,7 @@ namespace app
 struct LinkView;
 struct LinkStatsView;
 struct GetLinkQuery;
+struct CreateLinkCommand;
 
 }  // namespace app
 }  // namespace url_shortener
@@ -219,5 +221,47 @@ patch_state patch_state_of(const ArgsView& args, std::string_view name);
 bool decode_slug_or_id(const ArgsView& args,
                        app::GetLinkQuery* out,
                        CommandError* error);
+
+/**
+ * @brief Returns the shared `link.create` argument schema (catalog 3.1 table).
+ *
+ * The single definition of the create-argument @ref ArgSpec set (milestone
+ * contract C1): `make_link_create_descriptor` builds the `link.create`
+ * descriptor from it, and `link.import` validates every NDJSON row against the
+ * very same schema before decoding, so the two surfaces can never diverge on
+ * which keys/types/bounds a create accepts. Builds a fresh vector on each call;
+ * callers that validate many rows should build it once and reuse it.
+ *
+ * @return The ordered @ref ArgSpec list for a `link.create` argument object.
+ */
+std::vector<ArgSpec> link_create_arg_specs();
+
+/**
+ * @brief Decodes a validated `link.create` argument view into an
+ * `app::CreateLinkCommand` (milestone contract C1).
+ *
+ * The single `args -> CreateLinkCommand` mapping, shared by the `link.create`
+ * handler and by `link.import`'s NDJSON rows. It only copies already-validated
+ * fields (@p args must have passed @ref validate_args against
+ * @ref link_create_arg_specs): `target_url`, optional `slug`, `redirect_type`,
+ * `expires_at` (verbatim; the service re-validates), `enabled`, `tags`,
+ * `metadata`, and the tri-state `campaign` (absent/null -> no campaign, a
+ * present object via @ref decode_campaign). It performs **no** URL, slug, SSRF
+ * or conflict check: all domain validation stays in `LinkCommandService`
+ * (contract C1, SSRF indistinguishability). The decoded command retains no
+ * reference to @p args, so it stays valid after the view is destroyed.
+ *
+ * @param args The validated argument view over one create-args object.
+ * @param[out] out When non-null, filled with the decoded command on success;
+ * partially written and not usable on failure.
+ * @param[out] error When non-null and the call fails, set to `internal` (the
+ * only failure is a `campaign` decode inconsistency the registry should already
+ * have prevented); left unchanged on success.
+ * @return `true` when the command was decoded; `false` only on the defensive
+ * `campaign` decode inconsistency path.
+ */
+bool decode_create_link_command(const ArgsView& args,
+                                app::CreateLinkCommand* out,
+                                CommandError* error);
 
 }  // namespace url_shortener::commands
