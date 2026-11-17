@@ -9,17 +9,18 @@
 
 ## Objective
 
-Centralize every filesystem interaction of `link.import` / `link.export` in two small, testable classes: a bounded line source for reading a local `path` (or an inline `data` string) and a create-new atomic file sink for export. Path arguments are untrusted input: the rules below decide what is accepted, with the explicit trust model that CLI/TUI/stdio callers are the local operator (decision Q6) and REST callers may never use `path`.
+Centralize every filesystem interaction of `link.import` / `link.export` in two small, testable classes: a bounded line source for reading a local `path` (or an inline `data` string) and a create-new atomic file sink for export. Path arguments are untrusted input: the rules below decide what is accepted, with the explicit trust model that CLI/TUI/stdio callers are the local operator (decision Q6) and callers without the file-path capability (REST and any future transport) may never use `path`. The capability is **default-deny (allowlist, T-95)**: `PathPolicy::allow_paths` defaults to `false`, so only a runtime explicitly granted the file-path capability (CLI/TUI/stdio composition, 05.0/20) may name a `path`; REST and any transport that omits the flag inherit deny.
 
 ## Dependencies
 
 - 05.0/06 constants (`kMaxImportLineBytes`).
 - `<filesystem>` (C++17). Windows caveats apply (UNC and device paths).
 - `ServerConfig::max_request_body_bytes` (verified, default 65536) caps inline `data`.
-- Transport identity from `CallerContext` (01.0/06, field name UNVERIFIED; this subtask only needs a boolean `is_remote`/`transport == "rest"` supplied by the caller of these classes).
+- No transport identity is needed here (T-95): these classes gate `path` purely on `PathPolicy.allow_paths`, never on `is_remote`/`transport == "rest"`. The composition layer (05.0/20) decides which runtime carries the capability.
 - `PairFileOptions {allow_paths, root}` (declared by 05.0/20 in `composition/command_runtime.hpp`, mirrored here as a plain struct
-  `commands::PathPolicy` so this header does not include composition headers); filled from `serve-stdio --path-root` / `--no-file-paths`
-  (05.0/16) and defaulting to "paths allowed, no root" for `cmd` and `tui`.
+  `commands::PathPolicy` so this header does not include composition headers); **default-deny** (`allow_paths = false`); the local-operator
+  compositions set it `true` explicitly - `serve-stdio` from `--path-root` / `--no-file-paths` (05.0/16, `allow_paths = !no_file_paths`),
+  and `cmd` / `tui` in their runtime options (05.0/20) - while the REST per-request runtime leaves the default (deny).
 
 ## Files affected
 
@@ -73,13 +74,26 @@ Path rules (`from_path`, `create_new`), applied before opening:
 3. Resolve with `std::filesystem::weakly_canonical` (error code overloads, never throws); for reads the target must be a regular file (`is_regular_file` after symlink resolution) -> else `not_found` (missing) / `invalid_field` (directory, FIFO, device, socket).
 4. Reads: `file_size <= kMaxImportFileBytes` else `invalid_field`; also stop reading at the cap in case the file grows (`bytes_read` check).
 5. Writes: parent directory must exist; the target must NOT exist (create-new) -> `invalid_field` ("file exists"); data is written to `<path>.tmp-<pid>-<n>` opened exclusively, then `commit` renames. There is no overwrite flag in V1 (not in the catalog).
-6. `PathPolicy {bool allow_paths = true; std::optional<std::string> root;}`: `allow_paths == false` -> `unsupported` ("file paths disabled")
-   before any filesystem call. With `root` set, the `weakly_canonical` result (rule 3; for writes, the canonical parent joined with the
-   file name) must have the canonical `root` as a path prefix compared component-wise (not as a string prefix), else `invalid_field`
-   ("path outside root"); this also catches `..` and symlink escapes because both sides are canonicalized. Without a root there is no
-   `..` restriction: the local operator can already read and write those files (decision Q6; `serve-stdio` for a webview parent should set
-   `--path-root` or `--no-file-paths`).
+6. `PathPolicy {bool allow_paths = false; std::optional<std::string> root;}` - **default-deny (allowlist, T-95)**: a `path` is refused
+   unless the caller explicitly carries the file-path capability. `allow_paths == false` -> `unsupported` ("file paths disabled"), a
+   **value-free** message that never echoes the path, returned before any filesystem call. The capability is set `true` only by the
+   local-operator compositions (`cmd`, `tui`, and `serve-stdio` unless `--no-file-paths`); the REST/HTTP per-request runtime leaves it
+   default (`false`), and any future transport that does not set it inherits deny (05.0/20). The refusal is governed by this flag alone:
+   neither these classes nor the import/export factory (08/10) perform a `transport == "rest"` check for `path`. With `root` set, the
+   `weakly_canonical` result (rule 3; for writes, the canonical parent joined with the file name) must have the canonical `root` as a path
+   prefix compared component-wise (not as a string prefix), else `invalid_field` ("path outside root"); this also catches `..` and symlink
+   escapes because both sides are canonicalized. Without a root there is no `..` restriction: the local operator can already read and write
+   those files (decision Q6; `serve-stdio` for a webview parent should set `--path-root` or `--no-file-paths`).
 7. Messages never echo the full path back to non-local callers; local callers get the path as given (it is their input).
+8. **Rooted-path confinement is enforced after open, not only before (T-96).** When `root` is set, defeat check-to-open TOCTOU: on POSIX
+   (`#ifndef _WIN32`) open the target with `O_NOFOLLOW` on the final component (reads: `O_RDONLY | O_NOFOLLOW`; writes: the exclusive temp is
+   created in the canonical in-root parent), then `fstat` the opened descriptor and (a) require `S_ISREG` - rejecting any special file a swap
+   introduced -> `invalid_field` - and (b) re-resolve the opened path (`weakly_canonical`, or compare `st_dev`/`st_ino` against the
+   pre-opened in-root parent directory) and re-assert the component-wise `root` prefix; a mismatch -> `invalid_field` ("path outside root")
+   and the descriptor is closed without any read/write. On Windows (`#ifdef _WIN32`) `O_NOFOLLOW` is unavailable: the rooted case falls back
+   to the pre-open canonical check of rule 6 and is documented as **best-effort** confinement with a residual in-root symlink-swap risk (see
+   Out of scope). Without `root` this post-open re-assertion is skipped: the rootless local operator already has full filesystem access, so
+   there is no boundary to defend.
 
 `from_inline`: `data.size() > max_bytes` -> `invalid_field`; the caller passes `ServerConfig::max_request_body_bytes`.
 
@@ -103,15 +117,15 @@ Windows/multi-config: `--config Debug` / `-C Debug`. Windows-only cases use `#if
 
 | Test file | Target | Label | Cases |
 |---|---|---|---|
-| `tests/unit/commands/56_pair_file_access.cpp` | `commands__56_pair_file_access` | unit | read: normal file, CRLF file, last line without newline, empty file; line exactly `max` OK, `max+1` -> `too_long` and next line still readable; file of `kMaxImportFileBytes+1` (sparse or mocked via a size seam) rejected; missing file -> `not_found`; directory -> `invalid_field`; empty path, NUL in path, 4097-byte path -> `invalid_field`; inline: exactly `max_bytes` OK, `max_bytes+1` rejected; POSIX: FIFO and `/dev/zero` rejected, symlink to regular file accepted; Windows: `\\host\share\f`, `\\.\pipe\x`, `CON` rejected; write: create-new succeeds and content equals; existing target rejected and untouched; missing parent -> `invalid_field`; abort or destructor leaves no temp file; commit failure path removes temp; two sinks racing for the same target: exactly one commits; policy: `allow_paths=false` -> `unsupported` for read and write with no filesystem access; `root=<tmp>/r`: `<tmp>/r/a.csv` accepted, `<tmp>/r/../x.csv`, `<tmp>/rx/a.csv` (string-prefix trap) and (POSIX) a symlink inside the root pointing outside -> `invalid_field` |
+| `tests/unit/commands/56_pair_file_access.cpp` | `commands__56_pair_file_access` | unit | read: normal file, CRLF file, last line without newline, empty file; line exactly `max` OK, `max+1` -> `too_long` and next line still readable; file of `kMaxImportFileBytes+1` (sparse or mocked via a size seam) rejected; missing file -> `not_found`; directory -> `invalid_field`; empty path, NUL in path, 4097-byte path -> `invalid_field`; inline: exactly `max_bytes` OK, `max_bytes+1` rejected; POSIX: FIFO and `/dev/zero` rejected, symlink to regular file accepted; Windows: `\\host\share\f`, `\\.\pipe\x`, `CON` rejected; write: create-new succeeds and content equals; existing target rejected and untouched; missing parent -> `invalid_field`; abort or destructor leaves no temp file; commit failure path removes temp; two sinks racing for the same target: exactly one commits; policy: default-constructed `PathPolicy{}` (allow_paths=false) -> `unsupported` for read and write with no filesystem access and a message containing no path (default-deny, T-95); explicit `allow_paths=false` behaves the same; `root=<tmp>/r`: `<tmp>/r/a.csv` accepted, `<tmp>/r/../x.csv`, `<tmp>/rx/a.csv` (string-prefix trap) and (POSIX) a symlink inside the root pointing outside -> `invalid_field`; (POSIX, T-96) rooted TOCTOU: a validated in-root target swapped for a symlink pointing outside the root between validation and open -> `invalid_field` with no read/write, and swapped for a FIFO -> `invalid_field` via the post-open `S_ISREG` check |
 
 Manual check: on Windows, run the import of a UNC path from the TUI/CLI and confirm no network access is attempted (Process Monitor), only an immediate `invalid_field`.
 
 ## Constraints
 
-- Security: UNC/device paths rejected; size caps on both read and inline; export never overwrites; temp file removed on failure; bounded memory per line.
+- Security: UNC/device paths rejected; size caps on both read and inline; export never overwrites; temp file removed on failure; bounded memory per line; default-deny file-path capability (rule 6); rooted paths re-asserted after open on POSIX (rule 8).
 - C5: no `uri.txt`/`UriMapSingleton`, no sockets.
-- REST must never reach this code with a `path` (rejected earlier in 08/10 with `unsupported`); this class does not know about transports.
+- Refusal of `path` is by capability, not transport: a caller without `allow_paths=true` (the REST default and any future transport that omits the flag) gets `unsupported` from `from_path`/`create_new`; this class performs no `transport == "rest"` check.
 - C++17 only (`std::filesystem` is available in the supported toolchains), no new dependency, `.cpp` in `sources.cmake`.
 
 ## Success criteria
@@ -122,6 +136,6 @@ Manual check: on Windows, run the import of a UNC path from the TUI/CLI and conf
 
 ## Out of scope / risks
 
-- File locking, atomic rename across volumes. (The optional root jail of rule 6 is in scope; without a root, symlink escapes are irrelevant under the local-operator trust model.)
-- TOCTOU between the regular-file check and open is accepted for local operators; the size cap is re-checked while reading.
-- Risk: a future remote transport (IPC with remote peers) must set `is_remote` so `path` is refused; recorded in the adding-a-transport guide (subtask 19).
+- File locking, atomic rename across volumes. (The optional root jail of rules 6/8 is in scope; without a root, symlink escapes are irrelevant under the local-operator trust model.)
+- TOCTOU between the regular-file check and open is accepted **only for the rootless local-operator case**; the size cap is re-checked while reading. With `--path-root` set, rule 8 re-asserts the root (and `S_ISREG`) against the opened descriptor on POSIX, so an in-root symlink swapped in after validation is rejected. On Windows the rooted case is best-effort (no `O_NOFOLLOW`); the residual in-root-swap risk is documented and `--no-file-paths` is the hard control.
+- Risk: a future remote transport (IPC with remote peers) inherits the default-deny capability (`allow_paths = false`), so `path` is refused unless the transport explicitly opts in; recorded in the adding-a-transport guide (subtask 19).

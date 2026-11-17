@@ -77,7 +77,7 @@ void reset_process_job_runtime_for_tests();
 
 // command_runtime.hpp additions
 struct PairFileOptions {                 // serve-stdio --path-root / --no-file-paths (05.0/16)
-    bool allow_paths = true;
+    bool allow_paths = false;            // default-deny (allowlist, T-95); only a local-operator mode sets this true
     std::optional<std::string> root;     // canonicalized by 05.0/07 rules
 };
 struct CommandRuntimeOptions {           // (03.0/18) gains:
@@ -97,6 +97,14 @@ struct CommandRuntime {                  // (03.0/18) gains:
    `std::shared_ptr<app::ILinkLister>` **by value**.
 4. `registry->set_job_submitter(runner); tables->add(make_jobs_table_source(*runner));`
 5. `runtime.job_runner = runner;`
+
+**File-path capability is default-deny (T-95).** `PairFileOptions::allow_paths` defaults to `false`; `build_command_runtime` passes
+`options.file_paths` through unchanged and never forces it on. The REST per-request runtime (04.0/02) constructs `CommandRuntimeOptions`
+without setting `file_paths`, so it gets `allow_paths == false` and `link.import` / `link.export` refuse any `path` with `unsupported`
+(value-free), regardless of the transport name. Only the local-operator compositions set it `true`: `serve-stdio` via
+`{!no_file_paths, path_root}` (05.0/17), and `cmd` (04.0/13) and `tui` (06.0/19) set `file_paths.allow_paths = true` in their runtime
+options (a forward constraint on those subtasks, which depend on this one). Any future transport that omits `file_paths` inherits deny. The
+import/export factory (08/10) refuses `path` on the capability alone and performs no `transport == "rest"` check.
 
 ### Follow-up edit: `cmd` waits for jobs (owned here, decision log D13/M4)
 
@@ -167,6 +175,10 @@ ctest --test-dir cmake-build -L unit --output-on-failure
 - Audit: with a recording sink in `CommandRuntimeOptions`, a `link.import`
   submission records outcome `job_accepted` with the job id as target; `job.get`
   records nothing.
+- **Default-deny (T-95):** a runtime from `CommandRuntimeOptions{}` (no `file_paths` set,
+  as the REST per-request runtime builds it) reports `file_paths.allow_paths == false`;
+  `link.import` and `link.export` with `path` -> `unsupported` with no transport-name check,
+  while a runtime built with `file_paths.allow_paths = true` accepts `path`.
 - `PairFileOptions{allow_paths=false}` -> `link.import` with `path` -> `unsupported`;
   `root` set -> a `path` outside the root -> `invalid_field` (rule from 05.0/07).
 - Shutdown: `shutdown_process_job_runtime(50 ms)` with one gated running job and
@@ -180,6 +192,9 @@ ctest --test-dir cmake-build -L unit --output-on-failure
 
 - C11 / C1: one registry builder; this file never includes transport headers
   (`http/`, `cli/`, `tui/`, `transport/`).
+- T-95: `PairFileOptions::allow_paths` is default-deny; `build_command_runtime`
+  never sets it, so the REST per-request runtime stays `false`; only local-operator
+  modes opt in. The runtime grants no file-path capability by transport name.
 - C5: no listener; C10: redirect path untouched.
 - No job body captures `CommandRuntime&`, `CommandRegistry&` or `ServerConfig&`.
 - Shutdown never blocks longer than the given drain timeout plus the time running
