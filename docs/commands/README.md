@@ -609,7 +609,6 @@ Report the server version, selected storage backends and non-secret shortener se
 Maps to: `system info`.
 
 <!-- END GENERATED: commands -->
-ts=2026-11-17T23:02:01Z level=INFO component=job_runner msg=job_runner_shutdown
 
 ## 4. Job model
 
