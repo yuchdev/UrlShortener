@@ -418,4 +418,9 @@ const std::vector<std::vector<std::string>>& TableModel::rows() const
     return m_result_.rows;
 }
 
+const std::vector<ColumnDef>& TableModel::columns() const
+{
+    return m_columns_;
+}
+
 }  // namespace url_shortener::tui

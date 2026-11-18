@@ -347,6 +347,13 @@ public:
     /// @return The current page's per-column cells.
     const std::vector<std::vector<std::string>>& rows() const;
 
+    /// @return The model's column definitions in display order, including
+    /// currently hidden ones. Valid until the model is destroyed; the column
+    /// chooser (06.0/10) reads titles and visibility through it. The backing
+    /// storage is contiguous, so a pointer returned by @ref shown_columns can be
+    /// turned into an index via `ptr - columns().data()`.
+    const std::vector<ColumnDef>& columns() const;
+
 private:
     /**
      * @brief Bumps the generation, enters @ref LoadState::loading and calls the

@@ -1,0 +1,24 @@
+Links
+filter: []
+ SLUG     TARGET URL                               STATUS   CLICKS EXPIRES
+>docs     https://example.com/docs/getting-started active    12044 -
+ launch   https://example.com/launch?utm_source... active     8730 2026-12
+ promo    https://shop.example.com/promo           disabled   4112 -
+ old-blog https://example.com/blog/2019/hello      deleted       7 -
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+page 1/61  (20 per page)
