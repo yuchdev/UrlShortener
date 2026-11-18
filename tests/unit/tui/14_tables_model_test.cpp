@@ -235,6 +235,40 @@ BOOST_AUTO_TEST_CASE(secret_columns_filtered)
 }
 
 // ---------------------------------------------------------------------------
+// redact_secret_fields projects secret-named keys out of a row's JSON, keeping
+// the row-JSON view symmetric with the column filter (security review LOW).
+// ---------------------------------------------------------------------------
+BOOST_AUTO_TEST_CASE(redact_secret_fields_projects_out_secrets)
+{
+    std::size_t hidden = 0;
+    const std::string row =
+        R"({"slug":"home","password_hash":"abc","api_token":"xyz",)"
+        R"("client_id_hash":"h1","url":"https://x/"})";
+    const std::string out =
+        tui::TablesModel::redact_secret_fields(row, &hidden);
+    BOOST_TEST(hidden == 2u);
+    BOOST_TEST(out.find("password_hash") == std::string::npos);
+    BOOST_TEST(out.find("abc") == std::string::npos);
+    BOOST_TEST(out.find("api_token") == std::string::npos);
+    BOOST_TEST(out.find("xyz") == std::string::npos);
+    BOOST_TEST(out.find("client_id_hash") != std::string::npos);
+    BOOST_TEST(out.find("h1") != std::string::npos);
+    BOOST_TEST(out.find("slug") != std::string::npos);
+
+    // No secret field -> byte-identical to the compact source (criterion 2).
+    std::size_t none = 9;
+    const std::string clean = R"({"slug":"home","url":"https://x/"})";
+    BOOST_TEST(tui::TablesModel::redact_secret_fields(clean, &none) == clean);
+    BOOST_TEST(none == 0u);
+
+    // A non-object row is returned unchanged.
+    std::size_t z = 9;
+    BOOST_TEST(tui::TablesModel::redact_secret_fields("not json", &z)
+               == "not json");
+    BOOST_TEST(z == 0u);
+}
+
+// ---------------------------------------------------------------------------
 // Empty and malformed db.tables leave an empty, selection-less model.
 // ---------------------------------------------------------------------------
 BOOST_AUTO_TEST_CASE(empty_and_malformed)

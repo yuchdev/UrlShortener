@@ -482,7 +482,10 @@ private:
 
     // --- Row JSON ------------------------------------------------------------
 
-    /// Opens the row-JSON viewer over the selected row's exact stored JSON.
+    /// Opens the row-JSON viewer over the selected row's stored JSON,
+    /// projecting out any secret-named top-level field first so the viewer
+    /// stays symmetric with the right-pane column filter (security review
+    /// 06.0/14 LOW).
     void open_row_json(std::size_t /*row*/)
     {
         if (!m_rows_model_) {
@@ -492,7 +495,10 @@ private:
         if (raw == nullptr) {
             return;
         }
-        m_row_view_ = std::make_unique<ResultViewerModel>(*raw, view_width());
+        const std::string redacted =
+            TablesModel::redact_secret_fields(*raw, &m_row_hidden_);
+        m_row_view_ =
+            std::make_unique<ResultViewerModel>(redacted, view_width());
         m_mode_ = Mode::row_json;
         // The viewer is modal; claim the keyboard so Esc/scroll reach here.
         m_context_.text_input_active = true;
@@ -796,6 +802,14 @@ private:
         if (lines.empty()) {
             lines.push_back(text("(empty)") | to_decorator(m_theme_.hint));
         }
+        if (m_row_hidden_ != 0) {
+            // Defence-in-depth notice, symmetric with the column filter: a
+            // secret-named field was projected out before display.
+            lines.push_back(text(fit(std::to_string(m_row_hidden_)
+                                         + " secret-named field(s) hidden",
+                                     width))
+                            | to_decorator(m_theme_.hint));
+        }
         std::string footer = "j/k scroll  Esc back";
         if (m_row_view_->truncated()) {
             footer += "   (truncated)";
@@ -972,6 +986,10 @@ private:
 
     ///< The row-JSON viewer while @ref Mode::row_json.
     std::unique_ptr<ResultViewerModel> m_row_view_;
+
+    ///< Number of secret-named fields projected out of the open row's JSON;
+    ///< drives the one-line "N secret-named field(s) hidden" viewer note.
+    std::size_t m_row_hidden_ = 0;
 
     ///< The insert form model while @ref Mode::form; heap-held so the view
     ///< context's reference stays stable.

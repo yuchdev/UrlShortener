@@ -149,6 +149,43 @@ bool TablesModel::is_secret_column_name(const std::string& name)
     return false;
 }
 
+std::string TablesModel::redact_secret_fields(const std::string& row_json,
+                                              std::size_t* hidden)
+{
+    const std::vector<JsonField> fields = object_fields(row_json);
+    if (fields.empty()) {
+        // Not a scannable object (including `{}` and malformed input): nothing
+        // to redact, so the row is shown verbatim.
+        if (hidden != nullptr) {
+            *hidden = 0;
+        }
+        return row_json;
+    }
+
+    std::string out = "{";
+    std::size_t dropped = 0;
+    bool first = true;
+    for (const JsonField& field : fields) {
+        if (is_secret_column_name(field.key)) {
+            ++dropped;
+            continue;
+        }
+        if (!first) {
+            out += ',';
+        }
+        first = false;
+        out += url_shortener::jsonString(field.key);
+        out += ':';
+        out += field.raw_value;  // scanner-validated raw token, copied verbatim
+    }
+    out += "}";
+
+    if (hidden != nullptr) {
+        *hidden = dropped;
+    }
+    return out;
+}
+
 void TablesModel::apply_tables(const std::string& db_tables_result_json)
 {
     const std::optional<std::string> tables_raw =

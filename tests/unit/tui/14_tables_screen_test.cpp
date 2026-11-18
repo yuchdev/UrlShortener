@@ -259,6 +259,42 @@ BOOST_AUTO_TEST_CASE(enter_shows_row_json_golden)
 }
 
 // ---------------------------------------------------------------------------
+// The row-JSON view hides secret-named fields (symmetric with the column
+// filter): neither the key nor the value of password_hash / api_token appears,
+// while client_id_hash is still shown (security review 06.0/14 LOW).
+// ---------------------------------------------------------------------------
+BOOST_AUTO_TEST_CASE(row_json_hides_secret_fields)
+{
+    const std::string rows_with_secret =
+        R"({"table":"links","columns":[{"name":"slug","type":"string"}],)"
+        R"("rows":[{"slug":"home","password_hash":"SECRETHASH",)"
+        R"("api_token":"SECRETTOKEN","client_id_hash":"h1"}],)"
+        R"("offset":0,"limit":20,"total":1})";
+
+    Fixture fx;
+    fx.client.enqueue("db.tables",
+                      commands::make_success("tui-1", three_tables()));
+    fx.client.enqueue("db.rows",
+                      commands::make_success("tui-2", rows_with_secret));
+
+    std::unique_ptr<tui::IScreen> screen = fx.tables();
+    render_to_text(screen->component(), 80, 24);
+    screen->on_enter();
+    fx.drain(1);
+    fx.drain(1);
+
+    send_events(screen->component(), {ftxui::Event::Tab, ftxui::Event::Return});
+    const std::string grid = render_to_text(screen->component(), 80, 24);
+
+    BOOST_TEST(grid.find("password_hash") == std::string::npos);
+    BOOST_TEST(grid.find("SECRETHASH") == std::string::npos);
+    BOOST_TEST(grid.find("api_token") == std::string::npos);
+    BOOST_TEST(grid.find("SECRETTOKEN") == std::string::npos);
+    BOOST_TEST(grid.find("client_id_hash") != std::string::npos);
+    BOOST_TEST(grid.find("secret-named field") != std::string::npos);
+}
+
+// ---------------------------------------------------------------------------
 // `/` search sends q; `s` toggles sort; page keys send the right offset.
 // ---------------------------------------------------------------------------
 BOOST_AUTO_TEST_CASE(search_sort_and_page_requests)

@@ -250,6 +250,36 @@ public:
      */
     static bool is_secret_column_name(const std::string& name);
 
+    /**
+     * @brief Projects out every secret-named top-level key from one row's JSON,
+     * keeping the row-JSON viewer symmetric with @ref columns_for_selected
+     * (security review 06.0/14 LOW, defence in depth).
+     *
+     * Reads @p row_json's top-level members through the sanctioned `json_view`
+     * helpers (contract C9) and re-emits a compact object, dropping any member
+     * whose key satisfies @ref is_secret_column_name; each kept member's key is
+     * re-escaped with `jsonString` and its value copied as the
+     * scanner-validated raw token (as `reserialize_object` does), so no
+     * untrusted text is spliced.
+     *
+     * Byte-identity note: the spec's "row JSON is byte-identical to the rows
+     * element (modulo `pretty_print` whitespace)" holds whenever @p row_json
+     * contains no secret-named field (the `db.rows` columns are fixed,
+     * canonically-escaped identifiers, so re-escaping is a no-op); when a
+     * secret field is present it is intentionally absent from the output, and
+     * the screen shows a one-line note.
+     *
+     * @param row_json One `db.rows` element's exact JSON object text; treated
+     * as untrusted and read only through `json_view`.
+     * @param hidden Optional out-param receiving the number of members dropped;
+     * `0` when none matched or @p row_json is not a scannable object.
+     * @return The compact object with secret-named members removed; @p row_json
+     * returned unchanged when it is not a scannable object (including `{}` and
+     * malformed input), so a non-object row still displays.
+     */
+    static std::string redact_secret_fields(const std::string& row_json,
+                                            std::size_t* hidden = nullptr);
+
 private:
     ///< The parsed tables in server order (bounded by @ref k_max_tables).
     std::vector<TableInfo> m_tables_;
