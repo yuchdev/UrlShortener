@@ -758,6 +758,7 @@ set(URL_SHORTENER_SOURCES
         ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/toast.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/confirm.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/equivalent_cmd.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/settings_model.cpp
     )
 
     set(TUI_UI_CPP_SOURCES
@@ -772,6 +773,7 @@ set(URL_SHORTENER_SOURCES
         ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/column_chooser.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/toast_view.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/confirm_view.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/screens/settings_screen.cpp
     )
 
     # Model unit tests link url_shortener_tui_model (no FTXUI).
@@ -793,6 +795,7 @@ set(URL_SHORTENER_SOURCES
         tests/unit/tui/06_toast_test.cpp
         tests/unit/tui/06_confirm_test.cpp
         tests/unit/tui/06_equivalent_cmd_test.cpp
+        tests/unit/tui/21_settings_model_test.cpp
     )
 
     # Render/snapshot unit tests link url_shortener_tui (FTXUI).
@@ -803,5 +806,6 @@ set(URL_SHORTENER_SOURCES
         tests/unit/tui/10_table_view_render_test.cpp
         tests/unit/tui/10_table_view_keys_test.cpp
         tests/unit/tui/06_dialog_render_test.cpp
+        tests/unit/tui/21_settings_screen_test.cpp
     )
   endif()
