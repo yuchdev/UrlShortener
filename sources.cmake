@@ -748,11 +748,18 @@ set(URL_SHORTENER_SOURCES
         ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/text_fit.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/table_model.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/row_mapper.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/router.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/keymap.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/frame_model.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/terminal_restore.cpp
     )
 
     set(TUI_UI_CPP_SOURCES
         ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/ftxui_smoke.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/ftxui_poster.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/frame_view.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/app.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/screens/placeholder_screen.cpp
     )
 
     # Model unit tests link url_shortener_tui_model (no FTXUI).
@@ -764,10 +771,15 @@ set(URL_SHORTENER_SOURCES
         tests/unit/tui/09_table_model_test.cpp
         tests/unit/tui/09_text_fit_test.cpp
         tests/unit/tui/09_row_mapper_test.cpp
+        tests/unit/tui/04_router_test.cpp
+        tests/unit/tui/04_frame_model_test.cpp
+        tests/unit/tui/04_terminal_restore_test.cpp
+        tests/unit/tui/04_app_teardown_test.cpp
     )
 
     # Render/snapshot unit tests link url_shortener_tui (FTXUI).
     set(TUI_RENDER_UNIT_SOURCES
         tests/unit/tui/01_render_harness_selftest.cpp
+        tests/unit/tui/04_frame_render_test.cpp
     )
   endif()
