@@ -97,10 +97,36 @@ void decode_utf8(std::string_view s,
     len = need + 1;
 }
 
+///< Maximum number of combining marks kept after a single base character; the
+///< rest of a run are dropped so a Zalgo flood cannot survive the byte cap or
+///< make width fitting super-linear (security follow-up, combining-mark DoS).
+constexpr std::size_t k_max_combining_marks = 4;
+
+/**
+ * @brief Reports whether a code point is a zero-width combining mark.
+ *
+ * These are the same ranges @ref codepoint_width treats as width `0`; the
+ * sanitizer caps consecutive runs of them per base character.
+ *
+ * @param cp A decoded Unicode scalar value.
+ * @return `true` when @p cp is a combining mark.
+ */
+bool is_combining_mark(std::uint32_t cp)
+{
+    return (cp >= 0x0300u && cp <= 0x036Fu) ||
+           (cp >= 0x1AB0u && cp <= 0x1AFFu) ||
+           (cp >= 0x1DC0u && cp <= 0x1DFFu) ||
+           (cp >= 0x20D0u && cp <= 0x20FFu) ||
+           (cp >= 0xFE20u && cp <= 0xFE2Fu);
+}
+
 /**
  * @brief Reports whether a code point must be stripped by
- * @ref sanitize_for_terminal: C1 controls, bidirectional-format controls and
- * zero-width / invisible code points.
+ * @ref sanitize_for_terminal: C1 controls, bidirectional-format controls,
+ * zero-width / invisible code points and invisible format-spoofing code points.
+ *
+ * Line separators U+2028/U+2029 are *not* listed here: the sanitizer maps them
+ * to a space (like other line breaks) rather than dropping them.
  *
  * @param cp A decoded Unicode scalar value.
  * @return `true` when @p cp is forbidden and must be dropped.
@@ -112,8 +138,23 @@ bool is_forbidden_codepoint(std::uint32_t cp)
     {
         return true;
     }
+    // Soft hyphen (invisible unless line-wrapped).
+    if (cp == 0x00ADu)
+    {
+        return true;
+    }
+    // Combining grapheme joiner (invisible format control).
+    if (cp == 0x034Fu)
+    {
+        return true;
+    }
     // Arabic letter mark.
     if (cp == 0x061Cu)
+    {
+        return true;
+    }
+    // Mongolian vowel separator (zero-width in modern Unicode).
+    if (cp == 0x180Eu)
     {
         return true;
     }
@@ -142,8 +183,19 @@ bool is_forbidden_codepoint(std::uint32_t cp)
     {
         return true;
     }
+    // Variation selectors (alter the rendering of the preceding glyph).
+    if (cp >= 0xFE00u && cp <= 0xFE0Fu)
+    {
+        return true;
+    }
     // Zero-width no-break space / byte-order mark.
     if (cp == 0xFEFFu)
+    {
+        return true;
+    }
+    // Tag characters and the variation-selector supplement (both invisible and
+    // abusable for hidden payloads / spoofing).
+    if (cp >= 0xE0000u && cp <= 0xE01EFu)
     {
         return true;
     }
@@ -160,11 +212,7 @@ bool is_forbidden_codepoint(std::uint32_t cp)
 std::size_t codepoint_width(std::uint32_t cp)
 {
     // Combining diacritical marks (best-effort zero-width set).
-    if ((cp >= 0x0300u && cp <= 0x036Fu) ||
-        (cp >= 0x1AB0u && cp <= 0x1AFFu) ||
-        (cp >= 0x1DC0u && cp <= 0x1DFFu) ||
-        (cp >= 0x20D0u && cp <= 0x20FFu) ||
-        (cp >= 0xFE20u && cp <= 0xFE2Fu))
+    if (is_combining_mark(cp))
     {
         return 0;
     }
@@ -357,11 +405,19 @@ std::string truncate_to_width(const std::string& utf8, std::size_t width)
         return utf8.empty() ? utf8 : std::string();
     }
 
+    // Independent of display width, bound the number of code points examined so
+    // a zero-width (combining-mark / Zalgo) flood cannot make this super-linear
+    // in the field length: a fitting cell has at most a few code points per
+    // column, so a string exceeding this count is treated as needing
+    // truncation even if its columns would nominally fit.
+    const std::size_t max_codepoints = width * 8 + 32;
+
     // Phase 1: does the whole string fit within width? Stop as soon as the
-    // budget is exceeded so a huge field is not walked in full (O(width)).
+    // width budget or the code-point budget is exceeded (O(width)).
     {
         std::size_t w = 0;
         std::size_t i = 0;
+        std::size_t cp_count = 0;
         bool fits = true;
         while (i < utf8.size())
         {
@@ -369,7 +425,8 @@ std::string truncate_to_width(const std::string& utf8, std::size_t width)
             std::size_t len = 0;
             decode_utf8(utf8, i, cp, len);
             w += codepoint_width(cp);
-            if (w > width)
+            ++cp_count;
+            if (w > width || cp_count > max_codepoints)
             {
                 fits = false;
                 break;
@@ -382,25 +439,28 @@ std::string truncate_to_width(const std::string& utf8, std::size_t width)
         }
     }
 
-    // Phase 2: keep whole code points up to (width - ellipsis) columns, then
-    // append the ellipsis (shrunk to fit a very small width).
+    // Phase 2: keep whole code points up to (width - ellipsis) columns, bounded
+    // by the same code-point budget, then append the ellipsis (shrunk to fit a
+    // very small width).
     const std::size_t ellipsis = width < 3 ? width : 3;
     const std::size_t budget = width - ellipsis;
     std::string out;
     std::size_t w = 0;
     std::size_t i = 0;
+    std::size_t cp_count = 0;
     while (i < utf8.size())
     {
         std::uint32_t cp = 0;
         std::size_t len = 0;
         decode_utf8(utf8, i, cp, len);
         const std::size_t cw = codepoint_width(cp);
-        if (w + cw > budget)
+        if (w + cw > budget || cp_count >= max_codepoints)
         {
             break;
         }
         out.append(utf8, i, len);
         w += cw;
+        ++cp_count;
         i += len;
     }
     out.append(ellipsis, '.');
@@ -427,6 +487,9 @@ std::string sanitize_for_terminal(std::string_view in, std::size_t max_bytes)
 
     const std::size_t n = in.size();
     std::size_t i = 0;
+    // Consecutive combining marks emitted since the last base character; capped
+    // at k_max_combining_marks so a Zalgo flood cannot survive the byte cap.
+    std::size_t combining_run = 0;
     while (i < n)
     {
         const auto byte = static_cast<unsigned char>(in[i]);
@@ -448,6 +511,7 @@ std::string sanitize_for_terminal(std::string_view in, std::size_t max_bytes)
                 break;
             }
             out.push_back(' ');
+            combining_run = 0;
             ++i;
             continue;
         }
@@ -468,12 +532,42 @@ std::string sanitize_for_terminal(std::string_view in, std::size_t max_bytes)
                 break;
             }
             append_utf8(k_replacement, out);
+            combining_run = 0;
             ++i;
             continue;
         }
 
-        if (is_forbidden_codepoint(cp))  // C1 / bidi / zero-width code points
+        if (cp == 0x2028u || cp == 0x2029u)  // line/paragraph separator -> space
         {
+            if (out.size() + 1 > max_bytes)
+            {
+                break;
+            }
+            out.push_back(' ');
+            combining_run = 0;
+            i += len;
+            continue;
+        }
+
+        if (is_forbidden_codepoint(cp))  // C1 / bidi / zero-width / format
+        {
+            i += len;
+            continue;
+        }
+
+        if (is_combining_mark(cp))  // cap a combining run per base character
+        {
+            if (combining_run >= k_max_combining_marks)
+            {
+                i += len;  // drop the excess; do not reset the run
+                continue;
+            }
+            if (out.size() + len > max_bytes)
+            {
+                break;
+            }
+            out.append(in.data() + i, len);
+            ++combining_run;
             i += len;
             continue;
         }
@@ -483,6 +577,7 @@ std::string sanitize_for_terminal(std::string_view in, std::size_t max_bytes)
             break;
         }
         out.append(in.data() + i, len);
+        combining_run = 0;  // a base character resets the combining run
         i += len;
     }
 

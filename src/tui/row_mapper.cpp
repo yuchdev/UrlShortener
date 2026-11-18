@@ -1,5 +1,6 @@
 #include <url_shortener/tui/row_mapper.hpp>
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <optional>
@@ -16,6 +17,12 @@ namespace
 
 ///< Placeholder shown for a missing, null or non-scalar cell value (D3).
 constexpr char k_empty_cell[] = "-";
+
+///< Hard cap on the number of elements mapped into rows, independent of how
+///< many the server returns. Above the catalog's largest page (`db.rows` limit
+///< 500) it bounds per-call work even if a backend over-returns (threat model
+///< T-121); `total` still reflects the payload's reported count.
+constexpr std::size_t k_max_rows = 1000;
 
 /**
  * @brief Resolves one (possibly dotted) key against an element's JSON object to
@@ -83,11 +90,13 @@ std::optional<PageResult> rows_from_result(
 
     PageResult page;
     const std::vector<std::string> elements = split_array(*array);
-    page.raw_rows.reserve(elements.size());
-    page.rows.reserve(elements.size());
+    const std::size_t kept = std::min(elements.size(), k_max_rows);
+    page.raw_rows.reserve(kept);
+    page.rows.reserve(kept);
 
-    for (const std::string& element : elements)
+    for (std::size_t r = 0; r < kept; ++r)
     {
+        const std::string& element = elements[r];
         std::vector<std::string> cells;
         cells.reserve(column_keys.size());
         for (const std::string& key : column_keys)

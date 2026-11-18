@@ -46,8 +46,12 @@ std::size_t display_width(const std::string& utf8);
  * the result's display width never exceeds @p width. A UTF-8 sequence is never
  * split. When @p width is below the ellipsis width the result degrades to that
  * many dots (e.g. width `1` yields `"."`); @p width `0` yields an empty string.
- * The scan is `O(width)`: it stops as soon as the width budget is exceeded, so
- * a huge field is not walked in full (threat model T-121).
+ * The scan is `O(width)`: besides stopping once the width budget is exceeded it
+ * also stops after a code-point count proportional to @p width, so a zero-width
+ * (combining-mark / Zalgo) flood cannot make it super-linear in the field
+ * length even when the field is not pre-sanitized (threat model T-121). A
+ * string that exceeds that code-point budget is treated as needing truncation
+ * even if its columns would nominally fit.
  *
  * @param utf8 The string to fit; interpreted as UTF-8.
  * @param width The maximum display width, in columns.
@@ -91,11 +95,18 @@ std::string pad_to_width(const std::string& utf8,
  * - maps every remaining C0 control (0x00-0x1F, including tab, newline and CR)
  *   to a single space;
  * - drops DEL (0x7F);
+ * - maps the Unicode line / paragraph separators U+2028 / U+2029 to a space
+ *   (like the other line breaks above);
  * - drops C1 controls whether they arrive as raw bytes 0x80-0x9F (always
  *   invalid UTF-8 in a leading position) or as the code points U+0080-U+009F;
  * - drops bidirectional-format controls (U+202A-U+202E, U+2066-U+2069, U+200E,
- *   U+200F, U+061C) and zero-width / invisible code points (U+200B-U+200D,
- *   U+2060, U+FEFF);
+ *   U+200F, U+061C), zero-width / invisible code points (U+200B-U+200D, U+2060,
+ *   U+FEFF) and invisible format-spoofing code points (U+00AD soft hyphen,
+ *   U+034F combining grapheme joiner, U+180E, variation selectors U+FE00-U+FE0F
+ *   and U+E0100-U+E01EF, and tag characters U+E0000-U+E007F);
+ * - keeps at most four combining marks after any base character and drops the
+ *   rest of the run, so a Zalgo flood cannot survive the byte cap or inflate
+ *   later width-fitting work;
  * - replaces every invalid UTF-8 byte with U+FFFD (the replacement character);
  * - caps the result at @p max_bytes bytes, never splitting a UTF-8 sequence at
  *   the cut.

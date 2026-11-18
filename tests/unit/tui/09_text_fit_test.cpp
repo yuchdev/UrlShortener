@@ -17,8 +17,11 @@ using url_shortener::tui::display_width;
 using url_shortener::tui::pad_to_width;
 using url_shortener::tui::sanitize_for_terminal;
 using url_shortener::tui::truncate_to_width;
+using url_shortener::tui::testing::combining_flood;
+using url_shortener::tui::testing::has_display_hazard;
 using url_shortener::tui::testing::has_terminal_hazard;
 using url_shortener::tui::testing::hostile_samples;
+using url_shortener::tui::testing::zalgo_cluster;
 
 namespace
 {
@@ -82,23 +85,14 @@ std::vector<std::uint32_t> decode_all_or_fail(std::string_view s)
     return out;
 }
 
-// Mirrors sanitize_for_terminal's forbidden-code-point set for assertions.
-bool is_forbidden(std::uint32_t cp)
-{
-    return (cp >= 0x0080u && cp <= 0x009Fu) || cp == 0x061Cu ||
-           (cp >= 0x200Bu && cp <= 0x200Du) || cp == 0x200Eu ||
-           cp == 0x200Fu || (cp >= 0x202Au && cp <= 0x202Eu) ||
-           cp == 0x2060u || (cp >= 0x2066u && cp <= 0x2069u) || cp == 0xFEFFu;
-}
-
-// Asserts sanitized output carries no hazard byte and no forbidden code point.
+// Asserts sanitized output is valid UTF-8 and carries no display hazard (the
+// authoritative sink check: control bytes, bidi, zero-width, spoofing format
+// code points and over-cap combining runs).
 void assert_output_is_safe(const std::string& out)
 {
     BOOST_TEST(!has_terminal_hazard(out));
-    for (std::uint32_t cp : decode_all_or_fail(out))
-    {
-        BOOST_TEST(!is_forbidden(cp));
-    }
+    BOOST_TEST(!has_display_hazard(out));
+    decode_all_or_fail(out);  // also asserts the output is valid UTF-8
 }
 
 }  // namespace
@@ -299,6 +293,74 @@ BOOST_AUTO_TEST_CASE(sanitize_caps_output_and_never_splits_a_sequence)
     assert_output_is_safe(capped);
 }
 
+BOOST_AUTO_TEST_CASE(sanitize_maps_line_separators_to_space)
+{
+    // U+2028 and U+2029 collapse to spaces like other line breaks.
+    const std::string out =
+        sanitize_for_terminal("a\xe2\x80\xa8""b\xe2\x80\xa9""c");
+    BOOST_TEST(out == "a b c");
+    assert_output_is_safe(out);
+}
+
+BOOST_AUTO_TEST_CASE(sanitize_strips_invisible_format_marks)
+{
+    BOOST_TEST(sanitize_for_terminal("ad\xc2\xad""min") == "admin");  // U+00AD
+    // U+180E Mongolian vowel sep + U+034F combining grapheme joiner.
+    BOOST_TEST(sanitize_for_terminal("a\xe1\xa0\x8e""b\xcd\x8f""c") == "abc");
+    // U+FE0F variation selector.
+    BOOST_TEST(sanitize_for_terminal("x\xef\xb8\x8f""y") == "xy");
+    // U+E0041 tag character.
+    BOOST_TEST(sanitize_for_terminal("a\xf3\xa0\x81\x81""b") == "ab");
+}
+
+BOOST_AUTO_TEST_CASE(sanitize_caps_combining_run_per_base)
+{
+    // One base 'a' with 40 stacked combining marks, then 'b'.
+    const std::string out = sanitize_for_terminal(zalgo_cluster());
+    // At most four combining marks survive per base: 'a' + 4 marks + 'b'.
+    BOOST_TEST(out == std::string("a") + "\xcc\x81\xcc\x81\xcc\x81\xcc\x81" +
+                          "b");
+    BOOST_TEST(display_width(out) == 2u);
+    assert_output_is_safe(out);
+}
+
+BOOST_AUTO_TEST_CASE(sanitize_bounds_a_64kib_combining_flood)
+{
+    // A ~64 KiB field of nothing but combining marks collapses to the per-base
+    // cap (no base yet, so the leading run is capped too): at most 4 marks.
+    const std::string out = sanitize_for_terminal(combining_flood());
+    BOOST_TEST(out.size() <= 4u * 2u);  // <= 4 two-byte marks
+    BOOST_TEST(display_width(out) == 0u);
+    assert_output_is_safe(out);
+}
+
+BOOST_AUTO_TEST_CASE(truncate_is_bounded_on_raw_combining_flood)
+{
+    // truncate_to_width must stay within the width/time bound even when handed
+    // an un-sanitized zero-width flood (its columns nominally "fit").
+    const std::string flood = combining_flood();
+    const std::string out = truncate_to_width(flood, 40);
+    BOOST_TEST(display_width(out) <= 40u);
+    // Bounded well below the 64 KiB input: O(width) code points plus ellipsis.
+    BOOST_TEST(out.size() <= (40u * 8u + 32u) * 2u + 3u);
+}
+
+BOOST_AUTO_TEST_CASE(has_display_hazard_flags_raw_and_clears_sanitized)
+{
+    for (const auto& sample : hostile_samples())
+    {
+        BOOST_TEST_INFO("sample=" << sample.name);
+        // The big_field/benign-ish samples contain no hazard even raw, so only
+        // assert the sanitized form is clean here.
+        const std::string safe = sanitize_for_terminal(sample.raw);
+        BOOST_TEST(!has_display_hazard(safe));
+    }
+    // A raw bidi override and a raw over-cap combining run are both flagged.
+    BOOST_TEST(has_display_hazard("ab\xe2\x80\xae""cd"));         // U+202E
+    BOOST_TEST(has_display_hazard(zalgo_cluster()));             // 40 marks
+    BOOST_TEST(has_display_hazard("x\xef\xb8\x8f""y"));           // U+FE0F
+}
+
 BOOST_AUTO_TEST_CASE(sanitize_handles_every_hostile_sample)
 {
     for (const auto& sample : hostile_samples())
@@ -318,7 +380,7 @@ BOOST_AUTO_TEST_CASE(sanitize_then_truncate_never_reexposes_control)
         {
             const std::string fitted = truncate_to_width(safe, w);
             BOOST_TEST_INFO("sample=" << sample.name << " width=" << w);
-            BOOST_TEST(!has_terminal_hazard(fitted));
+            BOOST_TEST(!has_display_hazard(fitted));
         }
     }
 }

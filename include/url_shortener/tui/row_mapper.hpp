@@ -32,6 +32,11 @@ namespace url_shortener::tui
  * (the D3 convention for empty values). @ref PageResult::total comes from the
  * payload's `total`, falling back to the number of elements when absent.
  *
+ * At most 1000 elements are mapped into rows regardless of how many the server
+ * returns (above the catalog's largest page, `db.rows` limit 500), bounding
+ * per-call work if a backend over-returns (threat model T-121); @ref
+ * PageResult::total still reflects the payload's reported count.
+ *
  * @param result_json The command response's `result` payload (a JSON object).
  * @param column_keys The field key (or dotted path) each output column reads,
  * in column order.
