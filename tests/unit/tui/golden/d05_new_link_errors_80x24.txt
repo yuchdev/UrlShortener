@@ -1,0 +1,24 @@
+╭ New link  (command: link.create) ────────────────────────────────────────────╮
+│target_url*   [                                        ]                      │
+│slug          [                                        ]     blank = generated│
+│redirect_type ( ) permanent  ( ) temporary                                    │
+│expires_at    [                                        ISO-8601, blank = never│
+│enabled       [ ]                                                             │
+│tags          [                                        ]       comma separated│
+│metadata      [                                     key=value, comma separated│
+│campaign      [name      ] [source    ] [medium    ]                          │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│[ Create ]  [ Cancel ]                               validation: target_url ok│
+├──────────────────────────────────────────────────────────────────────────────┤
+│Equivalent: url_shortener cmd link.create --json '{"target_url":""}'          │
+╰──────────────────────────────────────────────────────────────────────────────╯
