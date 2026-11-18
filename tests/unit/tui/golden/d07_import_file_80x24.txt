@@ -1,0 +1,24 @@
+╭ Import pairs (command: link.import, runs as a job) ──────────────────────────╮
+│(Import)   Export    F2 switch                                                │
+│                                                                              │
+│Source:  ( ) paste   (*) file path [/tmp/pairs.csv]                           │
+│Format:  (*) CSV  full_url,slug   ( ) NDJSON                                  │
+│On conflict: (*) skip   ( ) fail   ( ) overwrite (destructive)                │
+│                                                                              │
+│╭────────────────────────────────────────────────────────────────────────────╮│
+││https://example.com/a,a                                                     ││
+││https://example.com/b,b                                                     ││
+││https://example.com/c,                 <- blank slug = generated            ││
+│╰────────────────────────────────────────────────────────────────────────────╯│
+│source: file path (the server reads it)                                       │
+│                                                                              │
+│[ ] dry run (validate only)      [ Start import ]  [ Cancel ]                 │
+│                                                                              │
+│Tab move  Space/</> set  Ctrl-S start  F2 export                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯

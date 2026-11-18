@@ -41,6 +41,7 @@
 #include <url_shortener/security/control_set.hpp>
 #include <url_shortener/tui/app.hpp>
 #include <url_shortener/tui/in_process_client.hpp>
+#include <url_shortener/tui/screens/import_export_screen.hpp>
 #include <url_shortener/tui/screens/jobs_screen.hpp>
 #include <url_shortener/tui/screens/links_screen.hpp>
 #include <url_shortener/tui/screens/palette_screen.hpp>
@@ -228,6 +229,14 @@ int run_tui(const TuiCliOptions& cli,
         app.register_screen(
             [catalog = client.commands()](ScreenContext& screen_context)
             { return make_jobs_screen(screen_context, catalog); });
+        // The Import/Export tab (D7) submits link.import / link.export as jobs
+        // and hands the accepted job to the Jobs screen; it is handed the live
+        // catalog here (a screen never sees ICommandClient itself, contract C8)
+        // so it can resolve those two CommandInfos for the confirm / read-only
+        // gate. Replaces the Import/Export tab's placeholder.
+        app.register_screen(
+            [catalog = client.commands()](ScreenContext& screen_context)
+            { return make_import_export_screen(screen_context, catalog); });
         rc = app.run();
     } catch (const std::exception& e) {
         // App's RAII guard has already restored the terminal; record the

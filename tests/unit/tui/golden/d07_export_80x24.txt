@@ -1,0 +1,24 @@
+╭ Export pairs (command: link.export, runs as a job) ──────────────────────────╮
+│ Import   (Export)   F2 switch                                                │
+│                                                                              │
+│Format:  (*) CSV  full_url,slug   ( ) NDJSON                                  │
+│Status:  (*) all   ( ) active   ( ) disabled   ( ) deleted                    │
+│                                                                              │
+│Query (q):  [(all)]                                                           │
+│Tag:        [(any)]                                                           │
+│Campaign:   [(any)]                                                           │
+│File path:  [(inline; blank = return data)]                                   │
+│                                                                              │
+│[ Start export ]                                                              │
+│                                                                              │
+│Tab move  Space/</> set  Ctrl-S start  F2 import                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
