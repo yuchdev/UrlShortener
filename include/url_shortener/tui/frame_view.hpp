@@ -7,6 +7,7 @@
 #include <url_shortener/tui/frame_model.hpp>
 #include <url_shortener/tui/keymap.hpp>
 #include <url_shortener/tui/screen_id.hpp>
+#include <url_shortener/tui/theme.hpp>
 
 namespace url_shortener::tui
 {
@@ -37,6 +38,10 @@ inline constexpr int k_min_frame_height = 24;
  * @param footer_hints The active screen's own hints, shown before the globals.
  * @param width Current terminal width in cells.
  * @param height Current terminal height in cells.
+ * @param theme The active theme (subtask 05): its roles style the title, tabs
+ * and banner, and when @ref Theme::ascii_only is set (the `mono` theme) the
+ * whole frame is wrapped in @ref ascii_filter so its borders render as ASCII.
+ * Defaults to the dark theme, so pre-05 callers are unaffected.
  * @return The frame element, or the too-small message when under 80x24.
  */
 ftxui::Element render_frame(const FrameModel& model,
@@ -44,6 +49,7 @@ ftxui::Element render_frame(const FrameModel& model,
                             ftxui::Element body,
                             const std::vector<KeyHint>& footer_hints,
                             int width,
-                            int height);
+                            int height,
+                            const Theme& theme = theme_for(ThemeName::dark));
 
 }  // namespace url_shortener::tui

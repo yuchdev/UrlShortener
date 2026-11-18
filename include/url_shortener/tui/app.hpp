@@ -84,6 +84,10 @@ private:
     ///< defers digits/`:`/`q` to the input. Wired by form/filter screens later.
     bool m_text_input_active_ = false;
 
+    ///< `true` while the F1 help overlay is open; it then owns all input and is
+    ///< drawn over the frame (subtask 05). Toggled by F1/`?`, closed by Esc.
+    bool m_help_visible_ = false;
+
     ///< The backend label shown in the title; `"connecting..."` until
     ///< `system.info` answers. Server data once set (rendered via the T-110
     ///< sink; see `frame_view.cpp`).

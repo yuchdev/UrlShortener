@@ -16,10 +16,14 @@
 #include <url_shortener/tui/frame_model.hpp>
 #include <url_shortener/tui/frame_view.hpp>
 #include <url_shortener/tui/ftxui_poster.hpp>
+#include <url_shortener/tui/help_model.hpp>
+#include <url_shortener/tui/help_overlay.hpp>
 #include <url_shortener/tui/json_view.hpp>
 #include <url_shortener/tui/keymap.hpp>
 #include <url_shortener/tui/screens/placeholder_screen.hpp>
 #include <url_shortener/tui/terminal_restore.hpp>
+#include <url_shortener/tui/theme.hpp>
+#include <url_shortener/tui/theme_ftxui.hpp>
 
 namespace url_shortener::tui
 {
@@ -45,6 +49,19 @@ int stdin_fd()
 #else
     return ::fileno(stdin);
 #endif
+}
+
+/// The global keymap listed first in the F1 help overlay (subtask 05). These
+/// are composition-fixed labels, never server data.
+std::vector<KeyHint> help_global_hints()
+{
+    return {
+        KeyHint {"F1 / ?", "help"},
+        KeyHint {"1-7", "switch tab"},
+        KeyHint {":", "palette"},
+        KeyHint {"q / Esc", "back"},
+        KeyHint {"Ctrl-C", "quit"},
+    };
 }
 
 /// A tab slot and the placeholder text shown until a real screen registers it.
@@ -205,11 +222,37 @@ int App::run()
         {
             hints = m_screens_[active_index]->hints();
         }
-        return render_frame(model, m_router_.active_tab(), tabs->Render(),
-                            hints, size.dimx, size.dimy);
+        const Theme& theme = theme_for(m_options_.theme);
+        Element frame = render_frame(model, m_router_.active_tab(),
+                                     tabs->Render(), hints, size.dimx,
+                                     size.dimy, theme);
+        if (m_help_visible_)
+        {
+            HelpModel help(help_global_hints(), hints);
+            Element overlay = render_help_overlay(help, theme);
+            // The frame root folds its own glyphs in mono; the overlay is
+            // composited on top afterwards, so fold it too (idempotent).
+            if (theme.ascii_only)
+            {
+                overlay = ascii_filter(std::move(overlay));
+            }
+            frame = dbox({std::move(frame), std::move(overlay)});
+        }
+        return frame;
     });
 
     root = CatchEvent(root, [&](const Event& event) -> bool {
+        // While the help overlay is open it owns all input: Esc/F1/`?` close it,
+        // everything else is swallowed so no key leaks to the screen beneath.
+        if (m_help_visible_)
+        {
+            if (event == Event::Escape || event == Event::F1
+                || event == Event::Character("?"))
+            {
+                m_help_visible_ = false;
+            }
+            return true;
+        }
         // A focused text input swallows navigation keys (typing `1` in a slug
         // field must not switch tab).
         if (m_text_input_active_)
@@ -223,7 +266,8 @@ int App::run()
         }
         if (event == Event::F1)
         {
-            return true;  // help overlay toggle lands in subtask 05
+            m_help_visible_ = true;
+            return true;
         }
         if (event == Event::Escape)
         {
@@ -232,6 +276,11 @@ int App::run()
         if (event.is_character() && event.character().size() == 1)
         {
             const char key = event.character()[0];
+            if (key == '?')
+            {
+                m_help_visible_ = true;
+                return true;
+            }
             if ((key >= '1' && key <= '7') || key == ':')
             {
                 return m_router_.navigate_tab(key);

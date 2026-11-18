@@ -752,6 +752,9 @@ set(URL_SHORTENER_SOURCES
         ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/keymap.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/frame_model.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/terminal_restore.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/theme.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/ascii.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/help_model.cpp
     )
 
     set(TUI_UI_CPP_SOURCES
@@ -760,6 +763,8 @@ set(URL_SHORTENER_SOURCES
         ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/frame_view.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/app.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/screens/placeholder_screen.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/theme_ftxui.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/help_overlay.cpp
     )
 
     # Model unit tests link url_shortener_tui_model (no FTXUI).
@@ -775,11 +780,15 @@ set(URL_SHORTENER_SOURCES
         tests/unit/tui/04_frame_model_test.cpp
         tests/unit/tui/04_terminal_restore_test.cpp
         tests/unit/tui/04_app_teardown_test.cpp
+        tests/unit/tui/05_theme_test.cpp
+        tests/unit/tui/05_ascii_test.cpp
+        tests/unit/tui/05_help_model_test.cpp
     )
 
     # Render/snapshot unit tests link url_shortener_tui (FTXUI).
     set(TUI_RENDER_UNIT_SOURCES
         tests/unit/tui/01_render_harness_selftest.cpp
         tests/unit/tui/04_frame_render_test.cpp
+        tests/unit/tui/05_theme_render_test.cpp
     )
   endif()

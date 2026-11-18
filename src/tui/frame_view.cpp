@@ -4,6 +4,7 @@
 #include <utility>
 
 #include <url_shortener/tui/keymap.hpp>
+#include <url_shortener/tui/theme_ftxui.hpp>
 
 namespace url_shortener::tui
 {
@@ -50,7 +51,8 @@ ftxui::Element render_frame(const FrameModel& model,
                             ftxui::Element body,
                             const std::vector<KeyHint>& footer_hints,
                             int width,
-                            int height)
+                            int height,
+                            const Theme& theme)
 {
     using namespace ftxui;
 
@@ -67,18 +69,16 @@ ftxui::Element render_frame(const FrameModel& model,
     // title rather than hugging the right corner; the D1 order (title first,
     // Help hint last) is preserved. Right-corner alignment is an FTXUI
     // limitation documented as a minor deviation from the D1 sketch.
-    Element title_row =
-        hbox({text(model.title()), filler(), text("[F1 Help]")});
+    Element title_row = hbox({text(model.title()) | to_decorator(theme.title),
+                              filler(),
+                              text("[F1 Help]") | to_decorator(theme.hint)});
 
     Elements tab_cells;
     for (const std::pair<std::string, bool>& tab : model.tabs(active_tab))
     {
-        Element cell = text(tab.first);
-        if (tab.second)
-        {
-            cell = cell | inverted;
-        }
-        tab_cells.push_back(std::move(cell));
+        const StyleSpec& style = tab.second ? theme.tab_active
+                                            : theme.tab_inactive;
+        tab_cells.push_back(text(tab.first) | to_decorator(style));
         tab_cells.push_back(text(" "));
     }
     // The full D1 tab set is wider than 80 columns; an xframe clips the row at
@@ -91,13 +91,22 @@ ftxui::Element render_frame(const FrameModel& model,
     content.push_back(separator());
     if (std::optional<std::string> banner = model.banner())
     {
-        content.push_back(text(*banner) | inverted);
+        content.push_back(text(*banner) | to_decorator(theme.banner));
     }
     content.push_back(std::move(body) | flex);
     content.push_back(separator());
-    content.push_back(text(footer_text(footer_hints)));
+    content.push_back(text(footer_text(footer_hints))
+                      | to_decorator(theme.hint));
 
-    return window(std::move(title_row), vbox(std::move(content)));
+    Element frame = window(std::move(title_row), vbox(std::move(content)));
+
+    // Mono theme: fold Unicode box-drawing/block glyphs to ASCII once at the
+    // frame root (ADR 0003 "ASCII-borders fallback" for legacy consoles/tmux).
+    if (theme.ascii_only)
+    {
+        frame = ascii_filter(std::move(frame));
+    }
+    return frame;
 }
 
 }  // namespace url_shortener::tui
