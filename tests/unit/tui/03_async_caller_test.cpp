@@ -172,6 +172,30 @@ public:
     SessionInfo session() const override { return {}; }
 };
 
+// An echo client with a fixed per-call delay, modelling a slow transport for
+// the "submit never blocks" timing assertion (success criterion 3).
+class DelayedEchoClient final : public ICommandClient
+{
+public:
+    explicit DelayedEchoClient(std::chrono::milliseconds delay)
+        : m_delay_(delay)
+    {
+    }
+
+    CommandResponse call(const CommandRequest& request) override
+    {
+        std::this_thread::sleep_for(m_delay_);
+        return make_success(request.id, "{}");
+    }
+
+    std::vector<CommandInfo> commands() const override { return {}; }
+
+    SessionInfo session() const override { return {}; }
+
+private:
+    std::chrono::milliseconds m_delay_;
+};
+
 }  // namespace
 
 // ---------------------------------------------------------------------------
@@ -270,6 +294,49 @@ BOOST_AUTO_TEST_CASE(cancel_suppresses_handler)
 
     BOOST_TEST(!handler_ran.load());
     BOOST_TEST(caller.in_flight() == 0u);
+}
+
+// ---------------------------------------------------------------------------
+// T-121: cancelling an unknown token, or a token that already delivered, never
+// leaks an entry into the cancel set.
+// On failure first check: the m_live_ membership guard in cancel() and the
+// m_live_/m_cancelled_ erase in deliver().
+// ---------------------------------------------------------------------------
+BOOST_AUTO_TEST_CASE(cancel_of_unknown_or_delivered_token_does_not_leak)
+{
+    EchoClient client;
+    InlinePoster poster;
+    AsyncCaller caller(client, poster, 1);
+
+    // Unknown token: never submitted, so nothing is recorded.
+    caller.cancel(99999);
+    BOOST_TEST(caller.tracked_cancellations() == 0u);
+
+    // Submit, let it fully deliver, then cancel its (now stale) token.
+    const CallToken token =
+        caller.submit(make_request("echo.run", "id-1"),
+                      [](const CommandResponse&) {});
+    poster.wait_for_posted(1);
+    poster.run_pending();
+    BOOST_TEST(caller.in_flight() == 0u);
+
+    caller.cancel(token);
+    BOOST_TEST(caller.tracked_cancellations() == 0u);
+
+    // A cancel that does land (live token) is erased on delivery, so the set
+    // returns to empty rather than leaking.
+    GatedClient gated;
+    InlinePoster gated_poster;
+    AsyncCaller gated_caller(gated, gated_poster, 1);
+    const CallToken live = gated_caller.submit(
+        make_request("cmd.live", "l"), [](const CommandResponse&) {});
+    gated.wait_started(1);
+    gated_caller.cancel(live);
+    BOOST_TEST(gated_caller.tracked_cancellations() == 1u);
+    gated.release("cmd.live");
+    gated_poster.wait_for_posted(1);
+    gated_poster.run_pending();
+    BOOST_TEST(gated_caller.tracked_cancellations() == 0u);
 }
 
 // ---------------------------------------------------------------------------
@@ -405,6 +472,35 @@ BOOST_AUTO_TEST_CASE(submit_never_blocks_the_caller)
         (elapsed < std::chrono::seconds(5)));
 
     client.release_all();
+}
+
+// ---------------------------------------------------------------------------
+// Success criterion 3: 1,000 submits against a 10 ms-per-call client complete
+// their submit loop (not the drain) in well under 100 ms, because the queue
+// caps at 64 and the rest are answered immediately with a busy envelope.
+// On failure first check: submit() performing any per-call blocking work.
+// ---------------------------------------------------------------------------
+BOOST_AUTO_TEST_CASE(submit_loop_completes_under_100ms_with_10ms_client)
+{
+    DelayedEchoClient client(std::chrono::milliseconds(10));
+    InlinePoster poster;
+    AsyncCaller caller(client, poster, 2);
+
+    const auto start = std::chrono::steady_clock::now();
+    for (int i = 0; i < 1000; ++i)
+    {
+        caller.submit(make_request("echo.run", std::to_string(i)),
+                      [](const CommandResponse&) {});
+    }
+    const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now() - start);
+
+    BOOST_TEST_MESSAGE("submit loop elapsed ms: " << elapsed.count());
+    BOOST_TEST((elapsed < std::chrono::milliseconds(100)));
+
+    // No drain needed: the destructor drops the queued work and joins the
+    // workers (each finishing at most one in-flight 10 ms call), and any
+    // posted-but-undrained completion is a no-op after teardown (T-120).
 }
 
 // ---------------------------------------------------------------------------

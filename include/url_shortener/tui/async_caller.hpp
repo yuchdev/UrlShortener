@@ -194,6 +194,18 @@ public:
     bool busy() const { return in_flight() > 0; }
 
     /**
+     * @brief Diagnostic/testing accessor for the recorded-cancellation count.
+     *
+     * Exposes the size of the internal cancel set so a test can prove it does
+     * not leak: cancelling an unknown or already-delivered token records
+     * nothing, and a delivered or cancelled token is erased (T-121). Not part
+     * of the screen-facing contract.
+     *
+     * @return The number of tokens currently flagged for suppression.
+     */
+    std::size_t tracked_cancellations() const;
+
+    /**
      * @brief Maximum number of requests that may be queued before @ref submit
      * answers immediately with a `busy` envelope.
      */
@@ -260,8 +272,8 @@ private:
     ///< The UI-thread poster; not owned, must outlive this object.
     IUiPoster& m_poster_;
 
-    ///< Guards @ref m_queue_, @ref m_cancelled_, @ref m_next_token_ and
-    ///< @ref m_stopping_.
+    ///< Guards @ref m_queue_, @ref m_live_, @ref m_cancelled_,
+    ///< @ref m_next_token_ and @ref m_stopping_.
     mutable std::mutex m_mutex_;
 
     ///< Signals workers that work was queued or that a stop was requested.
@@ -270,7 +282,13 @@ private:
     ///< Bounded FIFO of pending work (cap @ref k_queue_capacity).
     std::deque<work_item> m_queue_;
 
+    ///< Tokens that have been submitted but not yet delivered. A token must be
+    ///< live for @ref cancel to record it, and delivery erases it, so the
+    ///< cancel set cannot leak entries for unknown or stale tokens (T-121).
+    std::unordered_set<CallToken> m_live_;
+
     ///< Tokens whose handlers must be suppressed; a completion erases its own.
+    ///< Only ever holds a subset of @ref m_live_.
     std::unordered_set<CallToken> m_cancelled_;
 
     ///< The worker threads; joined in the destructor.

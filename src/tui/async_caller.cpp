@@ -53,6 +53,13 @@ CallToken AsyncCaller::submit(commands::CommandRequest request,
     {
         std::lock_guard<std::mutex> lock(m_mutex_);
         token = ++m_next_token_;
+        // Register the token as live and count it as in flight before the work
+        // can become visible to a worker, so a fast completion can never
+        // fetch_sub before this fetch_add and underflow the counter. Both the
+        // accepted and the overflow path post exactly one completion, so both
+        // are counted identically and in_flight() still returns to 0.
+        m_live_.insert(token);
+        m_in_flight_.fetch_add(1, std::memory_order_acq_rel);
         if (m_stopping_ || m_queue_.size() >= k_queue_capacity)
         {
             overflow = true;
@@ -63,11 +70,6 @@ CallToken AsyncCaller::submit(commands::CommandRequest request,
                 work_item {token, std::move(request), std::move(on_done)});
         }
     }
-
-    // Every accepted submission counts as in flight until its completion runs
-    // on the UI thread; the overflow path also posts a completion, so it is
-    // counted identically and in_flight() still returns to 0.
-    m_in_flight_.fetch_add(1, std::memory_order_acq_rel);
 
     if (overflow)
     {
@@ -86,12 +88,24 @@ CallToken AsyncCaller::submit(commands::CommandRequest request,
 void AsyncCaller::cancel(CallToken token)
 {
     std::lock_guard<std::mutex> lock(m_mutex_);
-    m_cancelled_.insert(token);
+    // Only record a cancellation for a token that is still outstanding;
+    // cancelling an unknown or already-delivered token is a true no-op and
+    // never leaks an entry into the cancel set (T-121).
+    if (m_live_.count(token) > 0)
+    {
+        m_cancelled_.insert(token);
+    }
 }
 
 std::size_t AsyncCaller::in_flight() const
 {
     return m_in_flight_.load(std::memory_order_acquire);
+}
+
+std::size_t AsyncCaller::tracked_cancellations() const
+{
+    std::lock_guard<std::mutex> lock(m_mutex_);
+    return m_cancelled_.size();
 }
 
 void AsyncCaller::worker_loop()
@@ -159,6 +173,9 @@ void AsyncCaller::deliver(CallToken token,
     bool cancelled = false;
     {
         std::lock_guard<std::mutex> lock(m_mutex_);
+        // The token is being delivered now, so it is no longer live; drop it
+        // from both sets so neither can leak (T-121).
+        m_live_.erase(token);
         auto it = m_cancelled_.find(token);
         if (it != m_cancelled_.end())
         {
