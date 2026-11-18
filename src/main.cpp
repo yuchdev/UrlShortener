@@ -140,17 +140,22 @@ int main(int argc, char* argv[])
         // those dispatchers via acquire_command_runtime.
         // Invariant: a one-shot invocation (`link <verb>`, `cmd <name>` or
         // `serve-stdio`) short-circuits below and never constructs an HttpServer.
-        // Both the file-path capability opt-in here and the early returns below
-        // are derived from this single predicate, so allow_paths == true always
-        // implies the process never builds HttpServer (and the server/REST
-        // runtime therefore always stays deny, threat model T-95). `serve-stdio`
-        // builds its own runtime with its own file-path policy (05.0/17), so the
-        // capability set here on the installed runtime is moot for that mode; it
-        // is folded in only to keep the no-HttpServer invariant explicit.
         const bool one_shot_mode = parsed.command.has_value()
             || parsed.cmd.has_value() || parsed.serve_stdio.has_value();
+
+        // File-path capability on the INSTALLED runtime (threat model T-95,
+        // default-deny): only the one-shot CLI modes that execute file-naming
+        // commands THROUGH the installed runtime opt in — `link <verb>` and `cmd`
+        // reach `link.import`/`link.export` via acquire_command_runtime. The
+        // server/REST runtime stays deny (POST /api/v1/commands refuses a
+        // `path`). `serve-stdio` builds its OWN runtime with its own file-path
+        // policy (05.0/17) and never uses this installed one, so it is
+        // deliberately excluded here; allow_paths == true still implies the
+        // process never builds HttpServer.
+        const bool installed_runtime_file_ops =
+            parsed.command.has_value() || parsed.cmd.has_value();
         url_shortener::composition::CommandRuntimeOptions runtime_options;
-        if (one_shot_mode) {
+        if (installed_runtime_file_ops) {
             runtime_options.file_paths.allow_paths = true;
         }
         url_shortener::composition::install_process_command_runtime(
@@ -189,8 +194,11 @@ int main(int argc, char* argv[])
         // is constructed and before uri.txt is loaded, so it never starts the
         // server (plan.md C5; subtask 17).
         if (parsed.serve_stdio.has_value()) {
+            // Pass the ACTIVE backend handle so serve-stdio's runtime lister
+            // reads the configured repository `main` installed (no split store
+            // under --storage-config; 05.0/17).
             const int rc = url_shortener::cli::RunServeStdio(
-                parsed.config, *parsed.serve_stdio);
+                parsed.config, *parsed.serve_stdio, backend);
             backend.flush();  // shutdown-only; no-op on the default path.
             return rc;
         }

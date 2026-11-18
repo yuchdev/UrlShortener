@@ -23,6 +23,15 @@ struct ServerConfig;
 /// `--path-root` (defined in url_shortener/cli/cli_parser.hpp).
 struct ServeStdioCliOptions;
 
+namespace url_shortener::app
+{
+/// The process-wide storage handle `main` installed (active under
+/// `--storage-config`, inactive for the legacy in-memory default); defined in
+/// url_shortener/composition/link_backend_bootstrap.hpp. Taken by const
+/// reference so this seam header needs no storage definitions.
+class LinkBackendHandle;
+}  // namespace url_shortener::app
+
 namespace url_shortener::cli
 {
 /**
@@ -31,11 +40,15 @@ namespace url_shortener::cli
  * side effect other than the process-wide job runtime).
  *
  * Obtains the command runtime from the one composition root
- * (`composition::build_command_runtime`, milestone contract C11) with the
- * file-path capability derived from @p options (`allow_paths = !no_file_paths`,
- * `root = path_root`; threat model T-95 default-deny is lifted here because the
- * local operator owns the filesystem), creates the stdio adapter through
- * `composition::make_transport_adapter`, runs it against the one registry, then
+ * (`composition::build_command_runtime`, milestone contract C11) over @p backend
+ * — the same active handle `main` installed, so the browse lister
+ * (`link.list`/`link.export`/`db.rows links`) reads the same configured
+ * repository that `link.create`/`update`/`delete` write through, with no split
+ * store under `--storage-config` — with the file-path capability derived from
+ * @p options (`allow_paths = !no_file_paths`, `root = path_root`; threat model
+ * T-95 default-deny is lifted here because the local operator owns the
+ * filesystem). It then creates the stdio adapter through
+ * `composition::make_transport_adapter`, runs it against the one registry, and
  * drains and joins the process-wide job runtime. It constructs no
  * `CommandRegistry`, `JobRunner` or service bundle of its own, builds no
  * `HttpServer`, binds no socket, and never touches `uri.txt`/`UriMapSingleton`
@@ -54,6 +67,10 @@ namespace url_shortener::cli
  * @param options The parsed `serve-stdio` hardening flags: `read_only`
  * downgrades the local caller to `ControlSet::User`; `no_file_paths` and
  * `path_root` shape the file-path capability.
+ * @param backend The process-wide storage handle; its `repository()` selects the
+ * browse lister (active handle -> `RepositoryLinkLister` over the configured
+ * backend, inactive handle -> the legacy in-memory lister). Must outlive the
+ * call. Tests pass an inactive or an active handle through this seam.
  * @param in Untrusted request source, one NDJSON envelope per line; never
  * logged. Must outlive the call.
  * @param out Response sink; only response envelopes are written here (contract
@@ -65,6 +82,7 @@ namespace url_shortener::cli
  */
 int RunServeStdioOn(const ServerConfig& config,
                     const ServeStdioCliOptions& options,
+                    const app::LinkBackendHandle& backend,
                     std::istream& in,
                     std::ostream& out);
 
@@ -90,9 +108,13 @@ int RunServeStdioOn(const ServerConfig& config,
  * @param config Server configuration forwarded to @ref RunServeStdioOn; must
  * outlive the call.
  * @param options The parsed `serve-stdio` hardening flags forwarded unchanged.
+ * @param backend The process-wide storage handle `main` installed, forwarded to
+ * @ref RunServeStdioOn so the lister reads the configured backend. Must outlive
+ * the call.
  * @return The exit code of @ref RunServeStdioOn over the process streams.
  */
 int RunServeStdio(const ServerConfig& config,
-                  const ServeStdioCliOptions& options);
+                  const ServeStdioCliOptions& options,
+                  const app::LinkBackendHandle& backend);
 
 }  // namespace url_shortener::cli

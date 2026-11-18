@@ -77,6 +77,11 @@ std::string_view StdioAdapter::name() const
     return "stdio";
 }
 
+std::size_t StdioAdapter::responses_written() const noexcept
+{
+    return m_responses_written;
+}
+
 void StdioAdapter::drain_jobs(bool graceful)
 {
     if (m_options.job_runner == nullptr) {
@@ -147,6 +152,7 @@ int StdioAdapter::run(commands::CommandRegistry& registry)
         // Carry-forward 2: max_line_bytes bounds every frame via the session.
         commands::NdjsonSession session(m_in, m_out, m_options.max_line_bytes);
         end = session.serve(registry, caller);
+        m_responses_written = session.responses_written();
     }
     catch (const std::exception&) {
         // Carry-forward 5: no std::exception (e.g. bad_alloc in serialize, a

@@ -135,6 +135,15 @@ public:
      */
     int run(commands::CommandRegistry& registry) override;
 
+    /**
+     * @brief The number of response envelopes the most recent @ref run wrote,
+     * for the subtask-17 `serve_stdio_stop` log line.
+     * @return The session's response tally after @ref run returns (a failed
+     * write is not counted); `0` before @ref run, or if @ref run threw before
+     * the session produced output.
+     */
+    std::size_t responses_written() const noexcept override;
+
 private:
     /**
      * @brief Drains the job runner at shutdown, then stops it.
@@ -173,6 +182,11 @@ private:
 
     ///< `true` once @ref run has been entered; enforces run-exactly-once.
     bool m_has_run = false;
+
+    ///< Response envelopes written by the most recent @ref run session; read by
+    ///< @ref responses_written for the `serve_stdio_stop` log line. `0` until a
+    ///< session produces output.
+    std::size_t m_responses_written = 0;
 };
 
 } // namespace url_shortener::transport

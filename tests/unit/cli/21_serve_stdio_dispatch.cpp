@@ -87,15 +87,19 @@ std::vector<std::string> lines_of(const std::string& text)
 }
 
 /// Runs one `serve-stdio` session over the fixed input and returns the written
-/// output and exit code. Uses a default @ref ServerConfig (the same wiring every
-/// unit test here relies on).
+/// output and exit code. Uses a default @ref ServerConfig and, by default, an
+/// inactive storage handle (the legacy in-memory wiring every unit test here
+/// relies on); a case may pass an active handle to exercise the configured
+/// backend.
 std::string run_session(const ServeStdioCliOptions& options,
-                        const std::string& input, int& rc_out)
+                        const std::string& input, int& rc_out,
+                        const app::LinkBackendHandle& backend =
+                            app::LinkBackendHandle{})
 {
     const ServerConfig config;
     std::istringstream in(input);
     std::ostringstream out;
-    rc_out = RunServeStdioOn(config, options, in, out);
+    rc_out = RunServeStdioOn(config, options, backend, in, out);
     return out.str();
 }
 
@@ -299,7 +303,8 @@ BOOST_FIXTURE_TEST_CASE(inline_import_job_then_get_succeeded, Fixture)
     std::istream in(&buf);
     std::ostringstream out;
     const ServerConfig config;
-    const int rc = RunServeStdioOn(config, ServeStdioCliOptions{}, in, out);
+    const int rc = RunServeStdioOn(config, ServeStdioCliOptions{},
+                                   app::LinkBackendHandle{}, in, out);
 
     BOOST_TEST(rc == 0);
     const std::vector<std::string> out_lines = lines_of(out.str());
@@ -489,9 +494,18 @@ BOOST_FIXTURE_TEST_CASE(audit_goes_to_stderr_not_the_wire, Fixture)
     BOOST_TEST(parsed.response->ok);
 
     // Exactly one audit line, and it is on stderr, never on the wire.
-    BOOST_TEST(count_of(cerr_capture.str(), "msg=command_audit") == 1u);
+    const std::string err = cerr_capture.str();
+    BOOST_TEST(count_of(err, "msg=command_audit") == 1u);
     BOOST_TEST(!contains(out, "command_audit"));
     BOOST_TEST(cout_capture.str().empty());
+
+    // serve_stdio_start carries version + backend names; serve_stdio_stop counts
+    // the one response written (both value-free, stderr only).
+    BOOST_TEST(contains(err, "msg=serve_stdio_start"));
+    BOOST_TEST(contains(err, "version="));
+    BOOST_TEST(contains(err, "metadata_backend="));
+    BOOST_TEST(contains(err, "msg=serve_stdio_stop"));
+    BOOST_TEST(contains(err, "responses=1"));
 }
 
 // Type: unit (no worker thread survives the session; the runner is shut down).
@@ -524,4 +538,65 @@ BOOST_FIXTURE_TEST_CASE(runner_is_shut_down_after_session, Fixture)
             return outcome;
         });
     BOOST_TEST(!rejected.job.has_value());
+}
+
+// Type: unit (active --storage-config handle -> no split store, security HIGH).
+// Scenario: with an ACTIVE SQLite handle threaded in, link.create then link.list
+//   in one session returns the created link: the browse lister reads the same
+//   configured repository the create wrote through.
+// Boundaries: with the old inactive-handle hardcode the lister read the empty
+//   legacy repository and link.list would omit the link.
+// On failure first check: did RunServeStdioOn pass the given backend handle (not
+//   LinkBackendHandle{}) into build_command_runtime?
+BOOST_FIXTURE_TEST_CASE(active_handle_lister_sees_created_link, Fixture)
+{
+    namespace fs = std::filesystem;
+    const std::string tag = std::to_string(
+        std::chrono::steady_clock::now().time_since_epoch().count());
+    const fs::path db = fs::temp_directory_path() / ("ss21_active_" + tag + ".db");
+    const fs::path yaml =
+        fs::temp_directory_path() / ("ss21_active_" + tag + ".yaml");
+    fs::remove(db);
+    {
+        std::ofstream f(yaml, std::ios::binary);
+        f << "metadata:\n  backend: sqlite\n  sqlite_path: " << db.string()
+          << "\n";
+    }
+
+    ServerConfig config;
+    config.storage_config_path = yaml.string();
+
+    const std::string slug = "ss21-active";
+    {
+        app::LinkBackend::reset();
+        app::LinkBackendHandle backend = app::InitLinkBackend(config);
+        BOOST_REQUIRE(backend.active());
+        BOOST_REQUIRE(backend.repository() != nullptr);
+
+        std::istringstream in(
+            envelope("c", "link.create",
+                     R"({"target_url":"https://example.com/)" + slug
+                         + R"(","slug":")" + slug + R"("})")
+            + envelope("l", "link.list", "{}"));
+        std::ostringstream out;
+        const int rc =
+            RunServeStdioOn(config, ServeStdioCliOptions{}, backend, in, out);
+
+        BOOST_TEST(rc == 0);
+        const std::vector<std::string> out_lines = lines_of(out.str());
+        BOOST_REQUIRE(out_lines.size() == 2u);
+        const commands::parse_response_result created =
+            commands::parse_response(out_lines[0]);
+        const commands::parse_response_result listed =
+            commands::parse_response(out_lines[1]);
+        BOOST_REQUIRE(created.response.has_value()
+                      && listed.response.has_value());
+        BOOST_TEST(created.response->ok);
+        BOOST_TEST(listed.response->ok);
+        BOOST_TEST(contains(listed.response->result_json, slug));
+    }  // the handle destructs here (flusher stopped) before reset below
+
+    app::LinkBackend::reset();
+    fs::remove(db);
+    fs::remove(yaml);
 }

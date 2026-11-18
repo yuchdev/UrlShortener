@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <string_view>
 
 namespace url_shortener::commands
@@ -78,6 +79,20 @@ public:
      * usage error, `4` for an internal error.
      */
     virtual int run(CommandRegistry& registry) = 0;
+
+    /**
+     * @brief The number of response envelopes successfully written during the
+     * most recent @ref run, for a value-free shutdown log line.
+     *
+     * A count that rises by one per response delivered to the output stream (a
+     * failed write is not counted). `0` before @ref run is called. The default
+     * implementation returns `0` so an adapter that does not track the count
+     * need not override it; the stdio adapter reports its session's tally.
+     *
+     * @return The response count of the last @ref run; `0` if none has run or
+     * the adapter does not track it.
+     */
+    virtual std::size_t responses_written() const noexcept { return 0; }
 };
 
 } // namespace url_shortener::commands

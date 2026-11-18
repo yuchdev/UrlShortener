@@ -28,6 +28,7 @@
 #include <csignal>
 #endif
 
+#include <url_shortener/app/system_info.hpp>
 #include <url_shortener/cli/cli_parser.hpp>
 #include <url_shortener/commands/command_registry.hpp>
 #include <url_shortener/commands/error_codes.hpp>
@@ -58,6 +59,7 @@ constexpr std::chrono::seconds k_shutdown_timeout{5};
 
 int RunServeStdioOn(const ServerConfig& config,
                     const ServeStdioCliOptions& options,
+                    const app::LinkBackendHandle& backend,
                     std::istream& in,
                     std::ostream& out)
 {
@@ -79,17 +81,28 @@ int RunServeStdioOn(const ServerConfig& config,
     // Step 2: the one composition root (contract C11). The file-path capability
     // is the local operator's (threat model T-95 default-deny is lifted here):
     // `allow_paths = !--no-file-paths`, confined to `--path-root` when given. No
-    // designated initializers (C++17): assign the members. The backend handle is
-    // inactive here; the link service still binds to the process-wide
-    // `app::LinkBackend::store()`, so this mode sees the same store as every
-    // other mode (the store bootstrapped by `main`'s `InitLinkBackend`).
+    // designated initializers (C++17): assign the members. The runtime is built
+    // over @p backend — the same active handle `main` installed — so the browse
+    // lister reads the configured repository that `link.create`/`update`/`delete`
+    // write through; a stale/empty `link.list` under `--storage-config` (the
+    // split store bug) is thereby avoided.
     composition::CommandRuntimeOptions runtime_options;
     runtime_options.file_paths.allow_paths = !options.no_file_paths;
     runtime_options.file_paths.root = options.path_root;
 
+    // Startup record (stderr only, D14): version and the allowlisted backend
+    // names system.info reports, plus the hardening policy. Every field is
+    // value-free — no paths, DSNs, addresses or peers (contract C6; the
+    // SystemInfo backend fields are drawn from fixed per-section allowlists).
+    const app::SystemInfo info = app::process_system_info();
     const auto logger = observability::LoggerFactory::Component("serve_stdio");
     logger.info("serve_stdio_start",
-                {{"read_only", options.read_only ? "true" : "false"},
+                {{"version", info.version},
+                 {"metadata_backend", info.metadata},
+                 {"cache_backend", info.cache},
+                 {"analytics_backend", info.analytics},
+                 {"rate_limit_backend", info.rate_limit},
+                 {"read_only", options.read_only ? "true" : "false"},
                  {"file_paths",
                   runtime_options.file_paths.allow_paths ? "allowed"
                                                          : "denied"},
@@ -98,8 +111,8 @@ int RunServeStdioOn(const ServerConfig& config,
 
     composition::CommandRuntime runtime;
     try {
-        runtime = composition::build_command_runtime(
-            config, app::LinkBackendHandle{}, runtime_options);
+        runtime =
+            composition::build_command_runtime(config, backend, runtime_options);
     }
     catch (const std::exception&) {
         // An unrecoverable wiring failure (reserved for programming/startup
@@ -133,12 +146,16 @@ int RunServeStdioOn(const ServerConfig& config,
     // outlives the process. Idempotent after the adapter's own `shutdown()`.
     composition::shutdown_process_job_runtime(k_shutdown_timeout);
 
-    logger.info("serve_stdio_stop", {{"exit", std::to_string(rc)}});
+    logger.info(
+        "serve_stdio_stop",
+        {{"exit", std::to_string(rc)},
+         {"responses", std::to_string(adapter->responses_written())}});
     return rc;
 }
 
 int RunServeStdio(const ServerConfig& config,
-                  const ServeStdioCliOptions& options)
+                  const ServeStdioCliOptions& options,
+                  const app::LinkBackendHandle& backend)
 {
     // Step 1: decouple C and C++ streams for throughput and stop `std::cin`
     // flushing `std::cout`; no iostream exception masks are enabled, so a broken
@@ -170,7 +187,7 @@ int RunServeStdio(const ServerConfig& config,
     log_cfg.sink = observability::LogSink::Stderr;
     observability::LoggerFactory::Initialize(log_cfg);
 
-    return RunServeStdioOn(config, options, std::cin, std::cout);
+    return RunServeStdioOn(config, options, backend, std::cin, std::cout);
 }
 
 }  // namespace url_shortener::cli
