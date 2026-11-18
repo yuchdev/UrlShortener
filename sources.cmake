@@ -765,6 +765,8 @@ set(URL_SHORTENER_SOURCES
         ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/form_model.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/palette_model.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/result_viewer_model.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/links_query.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/links_model.cpp
     )
 
     set(TUI_UI_CPP_SOURCES
@@ -787,6 +789,7 @@ set(URL_SHORTENER_SOURCES
         ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/screens/form_screen.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/screens/generic_command_screen.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/screens/palette_screen.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/screens/links_screen.cpp
     )
 
     # Model unit tests link url_shortener_tui_model (no FTXUI).
@@ -814,6 +817,8 @@ set(URL_SHORTENER_SOURCES
         tests/unit/tui/07_form_model_request_test.cpp
         tests/unit/tui/11_palette_model_test.cpp
         tests/unit/tui/11_result_viewer_model_test.cpp
+        tests/unit/tui/12_links_query_test.cpp
+        tests/unit/tui/12_links_model_test.cpp
         tests/unit/tui/21_settings_model_test.cpp
     )
 
@@ -830,6 +835,7 @@ set(URL_SHORTENER_SOURCES
         tests/unit/tui/08_mutation_flow_test.cpp
         tests/unit/tui/11_palette_render_test.cpp
         tests/unit/tui/11_generic_command_flow_test.cpp
+        tests/unit/tui/12_links_screen_test.cpp
         tests/unit/tui/19_tui_options_test.cpp
         tests/unit/tui/19_tui_entry_boundary_test.cpp
         tests/unit/tui/21_settings_screen_test.cpp

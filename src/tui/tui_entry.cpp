@@ -41,6 +41,7 @@
 #include <url_shortener/security/control_set.hpp>
 #include <url_shortener/tui/app.hpp>
 #include <url_shortener/tui/in_process_client.hpp>
+#include <url_shortener/tui/screens/links_screen.hpp>
 #include <url_shortener/tui/screens/palette_screen.hpp>
 #include <url_shortener/tui/screens/settings_screen.hpp>
 #include <url_shortener/tui/theme.hpp>
@@ -196,6 +197,13 @@ int run_tui(const TuiCliOptions& cli,
     try {
         App app(client, *options);
         app.register_screen(make_settings_screen);
+        // The Links tab (D3) drives the generic link.* calls through a bespoke
+        // table; it is handed the live catalog here (a screen never sees
+        // ICommandClient itself, contract C8) so it can resolve the CommandInfo
+        // each mutation needs. Replaces the Links tab's placeholder.
+        app.register_screen(
+            [catalog = client.commands()](ScreenContext& screen_context)
+            { return make_links_screen(screen_context, catalog); });
         // The Command Palette lists the live catalog; it is passed in here (a
         // screen never sees ICommandClient itself, contract C8) so a command
         // added to the registry appears with a working form and zero TUI code
