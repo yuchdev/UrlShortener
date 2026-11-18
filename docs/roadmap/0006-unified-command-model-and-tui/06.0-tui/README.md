@@ -75,7 +75,7 @@ for 18 to verify - see 21's own Constraints), only 20.
 |---|----------|--------|------------|--------|
 | 01 | [FTXUI dependency, CMake option, render harness](01-ftxui-dependency-and-cmake-option.md) | ✅ Complete | none | 02, 03, 04, 19, 20 |
 | 02 | [ICommandClient, InProcessClient, JSON view helpers, include boundary](02-command-client-seam.md) | ✅ Complete | 01, 01.0/01, 01.0/03, 01.0/04, 01.0/05, 01.0/06, 01.0/07 | 03, 04, 06, 07, 09, 11, 18, 19, 20 |
-| 03 | [Async call helper (worker + PostEvent)](03-async-call-helper.md) | ⬜ Not started | 01, 02 | 04, 06, 08, 09, 11, 12, 13, 14, 15, 16, 17, 20 |
+| 03 | [Async call helper (worker + PostEvent)](03-async-call-helper.md) | ✅ Complete | 01, 02 | 04, 06, 08, 09, 11, 12, 13, 14, 15, 16, 17, 20 |
 | 04 | [App shell, frame (D1) and router (D11)](04-app-shell-frame-and-router.md) | ⬜ Not started | 01, 02, 03 | 05, 06, 08, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20 |
 | 05 | [Theme (dark/light/mono) and help overlay](05-theme-and-help-overlay.md) | ⬜ Not started | 04 | 06, 08, 10, 11, 14, 17, 19, 20 |
 | 06 | [Toast and confirm components (D10)](06-toast-and-confirm-components.md) | ⬜ Not started | 02, 03, 04, 05 | 07, 08, 11, 12, 13, 15, 16, 17, 18, 20 |
