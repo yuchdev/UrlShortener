@@ -1,0 +1,24 @@
+╭ Tables ────────────────────╮links  (1,204 rows)
+│> links           1,204     │filter: []
+│  click_events    912,550   │ slug url                      status   created_at
+│  jobs            3         │>home https://example.com/     active   2026-01-02
+│                            │ docs https://example.com/docs active   2026-01-03
+│                            │ old  https://example.com/old  disabled 2025-12-31
+│                            │
+│                            │
+│                            │
+│                            │
+│                            │
+│                            │
+│                            │
+│                            │
+│                            │
+│                            │
+│                            │
+│                            │
+│                            │
+├────────────────────────────┤
+│read-only logical views over│
+│storage ports; no           │
+│auth/secret tables          │page 1/61  (20 per page)
+╰────────────────────────────╯Enter row JS  / searc  s sor  c col  n inse  Tab p
