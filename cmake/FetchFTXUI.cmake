@@ -24,9 +24,14 @@ include(FetchContent)
 # fetch_ftxui() : expose the ftxui::screen / ftxui::dom / ftxui::component
 # imported targets. Call once, only when URLSHORTENER_ENABLE_TUI is ON.
 function(fetch_ftxui)
-  # Prefer a pre-built FTXUI (vcpkg `tui` feature / system install). This keeps
-  # offline/vcpkg builds working without a network fetch.
-  find_package(ftxui CONFIG QUIET)
+  # Prefer a pre-built FTXUI (vcpkg `tui` feature / system install) only when it
+  # matches the audited release. Requesting the version makes find_package reject
+  # a different FTXUI so a stale/older system copy cannot silently shadow the
+  # pinned SHA below (security review follow-up). FTXUI's config version file is
+  # generated with COMPATIBILITY SameMajorVersion, so this accepts 7.x >= 7.0.3
+  # and rejects anything older or a different major (e.g. the vcpkg baseline's
+  # 6.1.9), falling through to the SHA-pinned FetchContent instead.
+  find_package(ftxui 7.0.3 CONFIG QUIET)
   if(ftxui_FOUND)
     message(STATUS "FTXUI: using find_package (version ${ftxui_VERSION})")
     return()
@@ -51,11 +56,18 @@ function(fetch_ftxui)
   message(STATUS
       "FTXUI: fetching ${URLSHORTENER_FTXUI_GIT_TAG} (v7.0.3) via FetchContent")
 
+  # SYSTEM (CMake 3.25+, matching the project's cmake_minimum_required) marks
+  # FTXUI's interface include dirs as system headers for our targets, so its
+  # headers raise no warnings in url_shortener_tui / the render tests.
+  # GIT_SUBMODULES "" fetches no submodules (FTXUI needs none for the libraries;
+  # mirrors cmake/FetchSOCI.cmake) - smaller, more deterministic checkout.
   FetchContent_Declare(
     ftxui
     GIT_REPOSITORY https://github.com/ArthurSonzogni/FTXUI.git
     GIT_TAG ${URLSHORTENER_FTXUI_GIT_TAG}
     GIT_SHALLOW TRUE
+    GIT_SUBMODULES ""
+    SYSTEM
   )
   FetchContent_MakeAvailable(ftxui)
 endfunction()
