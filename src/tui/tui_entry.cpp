@@ -155,6 +155,14 @@ int run_tui(const TuiCliOptions& cli,
     // the TUI opts explicitly into file paths (T-95 default-deny is lifted
     // here) so link.import/link.export `path` works. No designated initializers
     // (C++17): assign the members.
+    //
+    // Known limitation (06.0/19 security follow-up, T-118): unlike serve-stdio,
+    // the TUI exposes no `--no-file-paths`/`--path-root` flag and sets no
+    // confinement root here, so the capability is the operator's full
+    // filesystem. --read-only still blocks link.import writes server-side (the
+    // registry denies the write permission), but link.export can read any file
+    // the operator can read. Acceptable for a local-operator tool; a
+    // confinement flag is a documented follow-up, not added here.
     composition::CommandRuntimeOptions runtime_options;
     runtime_options.file_paths.allow_paths = true;
 

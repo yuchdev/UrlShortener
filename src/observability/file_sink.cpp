@@ -9,6 +9,7 @@
 #include <fcntl.h>
 #else
 #include <fcntl.h>
+#include <sys/stat.h>
 #include <unistd.h>
 #endif
 
@@ -51,6 +52,27 @@ std::unique_ptr<FileSink> FileSink::Open(const std::string& path,
                               | O_NOFOLLOW,
                           0600);
     if (fd < 0) {
+        error = k_open_failure;
+        return nullptr;
+    }
+
+    // Post-open ownership/permission check (06.0/19 security follow-up, threat
+    // model T-119). O_CREAT without O_EXCL appends to a pre-existing file and
+    // leaves its owner and mode untouched, so a log pre-planted by another user
+    // in a shared directory - the default `url_shortener-tui.log` lives in the
+    // operator's current directory - could otherwise be read or truncated
+    // through us. O_NOFOLLOW already refuses a symlink at the final component;
+    // additionally fstat the opened descriptor and fail closed unless it is a
+    // regular file we own, with no group/other access and no extra hard link
+    // (nlink 1). Fail-closed is consistent with the rest of this function: the
+    // value-free diagnostic maps to the caller's usage exit (e.g. tui exit 2),
+    // never silently redirecting output. A newly created `0600` file owned by
+    // this process passes unchanged.
+    struct stat st;
+    if (::fstat(fd, &st) != 0 || !S_ISREG(st.st_mode)
+        || st.st_uid != ::geteuid() || st.st_nlink != 1
+        || (st.st_mode & 077) != 0) {
+        ::close(fd);
         error = k_open_failure;
         return nullptr;
     }

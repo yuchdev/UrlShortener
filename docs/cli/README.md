@@ -133,6 +133,8 @@ pipe or redirect it exits `2`.
 
 Exit codes: `0` on a clean quit; `1` for a parse error (an unknown flag or an invalid `--theme`), the same convention as every other mode; `2` for a non-terminal stdin/stdout, a log-file open failure, or `built without TUI support` when compiled with `-DURLSHORTENER_ENABLE_TUI=OFF`; `4` on a storage/bootstrap failure. The full UI guide is in Task 08.0.
 
+**File-path capability (known limitation).** As a local-operator tool the TUI enables `link.import`/`link.export` `path` arguments against the operator's **full filesystem**. Unlike `serve-stdio`, it offers **no** `--no-file-paths` or `--path-root` confinement flag. `--read-only` still blocks `link.import` writes server-side (the registry denies the write permission), but `link.export` can read any file the operator can already read. A confinement flag is a documented follow-up (threat model T-118). The log/audit file is created `0600` and the file sink refuses a pre-planted, group/other-readable, hard-linked, or symlinked path (fail closed).
+
 ## Exit codes
 
 | Code | Condition |

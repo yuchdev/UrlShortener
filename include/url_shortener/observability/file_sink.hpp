@@ -20,8 +20,13 @@ namespace url_shortener::observability
  * - The open refuses to follow a symlink at the final path component
  *   (`O_NOFOLLOW`), so an attacker cannot redirect the audit log through a
  *   planted symlink.
- * - An existing regular file is opened append-only and its permissions are
- *   left untouched (no `chmod`).
+ * - After opening, the descriptor is `fstat`-checked and the open is refused
+ *   (fail closed) unless the target is a regular file owned by the effective
+ *   uid, with no group/other permission bits and exactly one hard link. This
+ *   stops appending to, or exposing, a log file a different user pre-planted in
+ *   a shared directory (the default log path lives in the operator's CWD).
+ * - An existing regular file that passes those checks is opened append-only and
+ *   its permissions are left untouched (no `chmod`).
  *
  * On Windows the symlink refusal and exact `0600` mode have no direct
  * equivalent; see @ref Open for the reduced-guarantee behavior.
@@ -47,9 +52,11 @@ public:
      * an `errno` detail) when the open fails; left unmodified on success.
      * @return An owning @ref FileSink on success; `nullptr` when the file
      * cannot be opened because the directory is missing, permissions are
-     * denied, the final component is a symlink (POSIX), or any other open
-     * failure. The caller must treat `nullptr` as a hard initialization
-     * failure and must not fall back to another sink.
+     * denied, the final component is a symlink (POSIX), the opened file is not
+     * a regular file owned by the effective uid with mode `& 077 == 0` and a
+     * single hard link (POSIX, the pre-planted-log hardening above), or any
+     * other open failure. The caller must treat `nullptr` as a hard
+     * initialization failure and must not fall back to another sink.
      */
     static std::unique_ptr<FileSink> Open(const std::string& path,
                                           std::string& error);
