@@ -77,12 +77,13 @@ public:
     PollTicker& operator=(PollTicker&&) = delete;
 
     /**
-     * @brief Sets the wait between ticks, taking effect on the next wait.
+     * @brief Sets the wait between ticks, taking effect immediately.
      *
      * Safe to call while the ticker is running or stopped; a running thread
-     * waiting on the old interval is woken so it re-waits for the new one. A
-     * non-positive interval is clamped to a 1 ms minimum so the thread can
-     * never busy-spin.
+     * waiting on the old interval is woken immediately and re-waits for the new
+     * one, so the change interrupts the in-progress wait rather than being
+     * deferred to the end of the old interval. A non-positive interval is
+     * clamped to a 1 ms minimum so the thread can never busy-spin.
      *
      * @param interval The new inter-tick delay.
      */
@@ -136,6 +137,11 @@ private:
 
     ///< Current inter-tick wait; at least 1 ms.
     std::chrono::milliseconds m_interval_ {std::chrono::milliseconds(1000)};
+
+    ///< Set by @ref set_interval and consulted by the thread's wait predicate
+    ///< so a new interval interrupts the current wait and takes effect
+    ///< immediately (rather than only after the previous interval elapses).
+    bool m_interval_changed_ = false;
 
     ///< `true` once a stop has been requested; the thread exits its loop.
     bool m_stop_ = false;

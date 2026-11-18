@@ -37,8 +37,11 @@ void PollTicker::set_interval(std::chrono::milliseconds interval)
     {
         std::lock_guard<std::mutex> lock(m_mutex_);
         m_interval_ = interval < k_min_interval ? k_min_interval : interval;
+        m_interval_changed_ = true;
     }
-    // Wake the thread so a wait on the previous interval re-arms immediately.
+    // Wake the thread so a wait on the previous interval re-arms immediately
+    // (the changed flag is part of the wait predicate, so the notify is honored
+    // rather than swallowed when the thread re-evaluates and keeps waiting).
     m_cv_.notify_all();
 }
 
@@ -81,19 +84,24 @@ bool PollTicker::running() const
 void PollTicker::run()
 {
     for (;;) {
-        std::chrono::milliseconds interval {k_min_interval};
         {
             std::unique_lock<std::mutex> lock(m_mutex_);
-            interval = m_interval_;
+            m_interval_changed_ = false;
+            const std::chrono::milliseconds interval = m_interval_;
             // Wait the current interval, waking early on stop or an interval
-            // change. wait_for returns on timeout (false) or when the predicate
-            // holds (true) - a true return means a stop was requested.
-            if (m_cv_.wait_for(lock, interval, [this] { return m_stop_; })) {
-                return;  // stop requested; no tick is posted
-            }
-            // The interval changed while we were waiting: re-wait rather than
-            // tick now, so a shortened interval cannot fire a tick early.
-            if (m_interval_ != interval) {
+            // change. wait_for returns true when the predicate holds (a stop or
+            // an interval change) and false on timeout (a due tick).
+            if (m_cv_.wait_for(lock,
+                               interval,
+                               [this]
+                               { return m_stop_ || m_interval_changed_; }))
+            {
+                if (m_stop_) {
+                    return;  // stop requested; no tick is posted
+                }
+                // The interval changed: restart the wait with the new interval
+                // so a shortened interval takes effect at once and a lengthened
+                // one cannot fire a tick early.
                 continue;
             }
         }

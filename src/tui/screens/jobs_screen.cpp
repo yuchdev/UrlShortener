@@ -214,6 +214,7 @@ private:
     /// flight (skip, never queue - at most one in flight, success criterion 2).
     void poll_list()
     {
+        ensure_ticking();  // a refresh re-arms the auto-poll if it went idle
         if (m_list_in_flight_) {
             return;
         }
@@ -264,6 +265,9 @@ private:
         if (m_flow_.awaiting_confirm() || m_flow_.busy()) {
             return;
         }
+        // A no-op/confirm/read-only toast or an async submit follows; keep the
+        // ticker alive so a pushed toast still expires and a confirm can poll.
+        ensure_ticking();
         if (!m_model_.can_cancel_selected()) {
             const std::string state = m_model_.selected_state();
             Toast t;
@@ -323,6 +327,7 @@ private:
     /// flight.
     void poll_detail()
     {
+        ensure_ticking();  // re-arm auto-refresh if the ticker went idle
         if (m_detail_in_flight_ || m_detail_id_.empty()) {
             return;
         }
@@ -366,23 +371,48 @@ private:
 
     /// The periodic tick (UI thread): poll the detail while open and
     /// non-terminal, else poll the list while it should keep polling; otherwise
-    /// stop the ticker so the app goes idle.
+    /// stop the ticker so the app goes idle (review 06.0/16 item 2).
     void on_tick()
     {
         m_toasts_.tick();
+        bool did_poll = false;
         if (m_mode_ == Mode::detail) {
             if (!m_detail_terminal_) {
                 poll_detail();
+                did_poll = true;
             }
-            return;
         }
-        if (m_schedule_.should_poll(m_visible_, m_model_.any_active())) {
+        else if (m_schedule_.should_poll(m_visible_, m_model_.any_active())) {
             poll_list();
+            did_poll = true;
         }
-        else {
+        // Stop the thread once there is nothing left to do - no ongoing poll
+        // need (hidden list with no active jobs, or a terminal detail) and no
+        // auto-expiring toast still pending - so the app does not wake at 1 Hz
+        // doing nothing. Any action that needs polling again (leaving the
+        // detail, a manual refresh, a new active job, a pushed toast) restarts
+        // the ticker through @ref ensure_ticking.
+        if (!did_poll && !toasts_pending()) {
             m_ticker_->stop();
         }
     }
+
+    /// Whether an auto-expiring (info/success) toast is still visible and so
+    /// needs the ticker to keep running to expire it. An error toast persists
+    /// until dismissed and deliberately does not keep the ticker alive.
+    bool toasts_pending() const
+    {
+        for (const Toast& t : m_toasts_.visible()) {
+            if (t.kind != ToastKind::error) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /// Restarts the poll ticker if it stopped itself while idle; a no-op when
+    /// it is already running (@ref PollTicker::start is idempotent).
+    void ensure_ticking() { m_ticker_->start(); }
 
     /// Detail-view keys: scroll, `r` refresh, `Esc` back.
     bool detail_keys(const ftxui::Event& event)

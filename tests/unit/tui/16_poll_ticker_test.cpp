@@ -113,6 +113,30 @@ BOOST_AUTO_TEST_CASE(double_start_is_noop)
 }
 
 // ---------------------------------------------------------------------------
+// Regression (review 06.0/16 item 3): set_interval takes effect immediately,
+// interrupting the in-progress wait rather than only after the old interval.
+// ---------------------------------------------------------------------------
+BOOST_AUTO_TEST_CASE(set_interval_takes_effect_immediately)
+{
+    InlinePoster poster;
+    std::atomic<int> posted {0};
+    tui::PollTicker ticker(poster, [&posted] { ++posted; });
+    ticker.start();  // default 1000 ms interval
+    // Shorten to 10 ms right away; with the fix the first ticks arrive in tens
+    // of ms, not after the original ~1 s wait elapses.
+    ticker.set_interval(std::chrono::milliseconds(10));
+
+    const auto t0 = std::chrono::steady_clock::now();
+    poster.wait_for_posted(3);
+    const auto elapsed = std::chrono::steady_clock::now() - t0;
+    ticker.stop();
+
+    const auto ms =
+        std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count();
+    BOOST_TEST(ms < 500);  // would be ~1000 ms if the change were deferred
+}
+
+// ---------------------------------------------------------------------------
 // The callback runs only on the draining (UI) thread, never the ticker thread.
 // ---------------------------------------------------------------------------
 BOOST_AUTO_TEST_CASE(callback_runs_on_ui_thread_only)

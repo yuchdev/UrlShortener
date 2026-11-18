@@ -1,6 +1,9 @@
 #define BOOST_TEST_MODULE TuiJobsModelTest
 
+#include <cctype>
 #include <chrono>
+#include <cstdint>
+#include <limits>
 #include <string>
 
 #include <boost/test/unit_test.hpp>
@@ -65,6 +68,46 @@ BOOST_AUTO_TEST_CASE(progress_bar_renders_gauge)
     BOOST_TEST(tui::progress_bar(100, 100, 10, true) == "##########  100%");
     // done > total clamps to 100%.
     BOOST_TEST(tui::progress_bar(15, 10, 10, true) == "##########  100%");
+}
+
+// Regression (review 06.0/16 item 1): extreme uint64/int64 counters with
+// done < total must not wrap `done * 100` and must yield a sane 0..100 percent
+// and the correct bar width.
+BOOST_AUTO_TEST_CASE(progress_bar_extreme_counters_no_overflow)
+{
+    const std::uint64_t big = std::numeric_limits<std::uint64_t>::max();
+    const std::uint64_t i64max =
+        static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max());
+
+    // done == total -> 100%, full bar.
+    BOOST_TEST(tui::progress_bar(big, big, 10, true) == "##########  100%");
+
+    // done just below total -> 99% (strictly < 100), width 15, no wrap.
+    const std::string near = tui::progress_bar(big - 1, big, 10, true);
+    BOOST_TEST(tui::display_width(near) == 15u);
+    BOOST_TEST(near.find("99%") != std::string::npos);
+
+    // done ~ half of total -> ~50%.
+    BOOST_TEST(tui::progress_bar(big / 2, big, 10, true).find("50%")
+               != std::string::npos);
+
+    // A swept set of huge (done < total) counters always parses to [0,100].
+    const std::uint64_t cases[] = {
+        big, big - 1, big / 2, big / 3, big / 100 + 1, i64max, i64max - 1};
+    for (std::uint64_t num : cases) {
+        const std::string s = tui::progress_bar(num, big, 10, true);
+        const std::size_t pct_end = s.find('%');
+        BOOST_REQUIRE(pct_end != std::string::npos);
+        std::size_t start = pct_end;
+        while (start > 0
+               && std::isdigit(static_cast<unsigned char>(s[start - 1])))
+        {
+            --start;
+        }
+        const int pct = std::stoi(s.substr(start, pct_end - start));
+        BOOST_TEST(pct >= 0);
+        BOOST_TEST(pct <= 100);
+    }
 }
 
 BOOST_AUTO_TEST_CASE(progress_bar_unknown_total)

@@ -9,6 +9,7 @@
  * sinks do that, T-110).
  */
 #include <algorithm>
+#include <limits>
 #include <string>
 #include <utility>
 
@@ -82,7 +83,25 @@ std::string progress_bar(std::uint64_t done,
         percent = "?";  // unknown total
     }
     else {
-        const std::uint64_t pct = done >= total ? 100 : (done * 100) / total;
+        // Compute the percent without overflowing: `done * 100` wraps a
+        // uint64 once `done > UINT64_MAX / 100` (~1.84e17). For such extreme
+        // counters (done < total here) scale the denominator down first and
+        // clamp to 99, since done < total means the percent is strictly below
+        // 100 (threat model T-121: server-derived counters are untrusted).
+        std::uint64_t pct = 0;
+        if (done >= total) {
+            pct = 100;
+        }
+        else if (done <= std::numeric_limits<std::uint64_t>::max() / 100) {
+            pct = (done * 100) / total;
+        }
+        else {
+            const std::uint64_t denom = total / 100;  // > 0 in this branch
+            pct = denom == 0 ? 99 : done / denom;
+            if (pct > 99) {
+                pct = 99;
+            }
+        }
         percent = std::to_string(pct) + "%";
         filled_cells = static_cast<std::size_t>((pct * width) / 100);
         if (filled_cells > width) {
@@ -218,6 +237,11 @@ void JobsModel::apply_list(const std::string& job_list_result_json)
 {
     const std::optional<std::string> items_raw =
         raw_field(job_list_result_json, "items");
+    // `split_array` materializes every element, but it runs over the sanctioned
+    // scanner whose input is capped at 8 MiB (json_view, threat model T-121),
+    // so the element vector is already byte-bounded; the rendered rows are then
+    // further capped at k_max_jobs below. A dedicated early-stopping split is
+    // intentionally not added here to avoid changing the shared json_view API.
     const std::vector<std::string> jobs = items_raw.has_value()
         ? split_array(*items_raw)
         : std::vector<std::string>();
