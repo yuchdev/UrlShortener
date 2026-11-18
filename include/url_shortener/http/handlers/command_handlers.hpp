@@ -82,12 +82,12 @@ BeastResponse handleExecuteCommand(const BeastRequest& req,
  * Pipeline (every step either answers and stops, or falls through):
  * 1. **Gate (threat model T-64):** when the command API is disabled
  *    (`command_api_enabled(config) == false`, the secure default) it answers
- *    byte-for-byte like `GET /api/v1/commands` does *before* this route exists —
- *    i.e. the router's method-mismatch reply for the POST-only path,
- *    `400 invalid_method "Only POST is supported"` — not a `404`, because
- *    `POST /api/v1/commands` (subtask 09) already makes the path exist (the same
- *    subtlety `handleListLinks` handles for `GET /api/v1/links`). The catalog is
- *    never disclosed on this branch and the query is never read.
+ *    byte-for-byte like `GET /api/v1/commands` does *before* this route exists
+ * — i.e. the router's method-mismatch reply for the POST-only path, `400
+ * invalid_method "Only POST is supported"` — not a `404`, because `POST
+ * /api/v1/commands` (subtask 09) already makes the path exist (the same
+ *    subtlety `handleListLinks` handles for `GET /api/v1/links`). The catalog
+ * is never disclosed on this branch and the query is never read.
  * 2. **Query parse (threat model T-73):** `context.query_string` is parsed by
  *    @ref parse_query_string (percent-decoded, duplicates preserved); a
  *    malformed query yields `400 invalid_request` with a fixed, value-free
@@ -138,7 +138,7 @@ BeastResponse handleListCommands(const BeastRequest& req,
  * Pipeline (every step either answers and stops, or falls through):
  * 1. **Gate (threat model T-64):** when the command API is disabled
  *    (`command_api_enabled(config) == false`, the secure default) it answers
- *    byte-for-byte like an unmatched `/api/v1/*` route — `404 not_found
+ *    byte-for-byte like an unmatched `/api/v1` route — `404 not_found
  *    "Route not found"` — and the job runner is never read.
  * 2. **Query parse (threat model T-73):** `context.query_string` is parsed by
  *    @ref parse_query_string (percent-decoded, duplicates preserved); a
@@ -190,7 +190,7 @@ BeastResponse handleListJobs(const BeastRequest& req,
  * shape produced by the bridge.
  *
  * Pipeline: **Gate (T-64)** — gate off answers `404 not_found "Route not
- * found"`, byte-equal to an unmatched `/api/v1/*` route, and the runner is
+ * found"`, byte-equal to an unmatched `/api/v1` route, and the runner is
  * never read; otherwise the path `id` is forwarded as the sole `job.get` arg
  * and the command runs through @ref execute_resource_command as the gated
  * caller (@ref command_api_caller), a `read` command any role may call (threat
@@ -200,7 +200,8 @@ BeastResponse handleListJobs(const BeastRequest& req,
  * @param config Server configuration; selects the gate and caller role.
  * @param is_tls `true` on HTTPS connections; gates HSTS/`nosniff`.
  * @param context Route context; `path_params["id"]` is the addressed job id and
- * `context.peer` is the gated caller's locality input (never logged, T-70/T-84).
+ * `context.peer` is the gated caller's locality input (never logged,
+ * T-70/T-84).
  * @return `404 not_found` (gate off, byte-equal to an unmatched route, or an
  * unknown job id); otherwise a `200` whose body is the `job.get` result.
  */
@@ -220,7 +221,7 @@ BeastResponse handleGetJob(const BeastRequest& req,
  * (an empty body is accepted).
  *
  * Pipeline: **Gate (T-64)** — gate off answers `404 not_found "Route not
- * found"`, byte-equal to an unmatched `/api/v1/*` route, and the runner is
+ * found"`, byte-equal to an unmatched `/api/v1` route, and the runner is
  * never read; otherwise the path `id` is forwarded as the sole `job.cancel` arg
  * and the command runs through @ref execute_resource_command as the gated
  * caller (@ref command_api_caller). `job.cancel` is a `write`, `mutating`
@@ -231,13 +232,13 @@ BeastResponse handleGetJob(const BeastRequest& req,
  * `Admin` caller is never used here, decision D4). @ref resource_response
  * renders the outcome.
  *
- * @param req Incoming request; supplies the HTTP version and the request id. Its
- * body is never read.
+ * @param req Incoming request; supplies the HTTP version and the request id.
+ * Its body is never read.
  * @param config Server configuration; selects the gate and caller role.
  * @param is_tls `true` on HTTPS connections; gates HSTS/`nosniff`.
  * @param context Route context; `path_params["id"]` is the addressed job id and
- * `context.peer` is the gated caller's locality input, the sole admin-escalation
- * gate (never a header, never logged, threat model T-70/T-84).
+ * `context.peer` is the gated caller's locality input, the sole
+ * admin-escalation gate (never a header, never logged, threat model T-70/T-84).
  * @return `404 not_found` (gate off, byte-equal to an unmatched route, or an
  * unknown job id); `403 not_authorized` (caller is not a loopback `admin`);
  * otherwise a `200` whose body is the `job.cancel` result.

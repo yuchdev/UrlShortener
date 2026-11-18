@@ -44,10 +44,10 @@ bool is_application_json(std::string_view header)
     if (semicolon != std::string_view::npos) {
         header = header.substr(0, semicolon);
     }
-    const auto not_space = [](const unsigned char c) {
-        return std::isspace(c) == 0;
-    };
-    while (!header.empty() && !not_space(static_cast<unsigned char>(header.front())))
+    const auto not_space = [](const unsigned char c)
+    { return std::isspace(c) == 0; };
+    while (!header.empty()
+           && !not_space(static_cast<unsigned char>(header.front())))
     {
         header.remove_prefix(1);
     }
@@ -116,8 +116,8 @@ bool is_valid_arg_name(const std::string& name)
         return false;
     }
     for (const char c : name) {
-        const bool ok = (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9')
-            || c == '_';
+        const bool ok =
+            (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_';
         if (!ok) {
             return false;
         }
@@ -130,14 +130,15 @@ bool is_valid_arg_name(const std::string& name)
  * reports that it is not a plain integer.
  *
  * `job.list`'s integer arguments (`offset`, `limit`) are emitted as JSON number
- * tokens via `args_builder::add_raw`, which inserts the token verbatim and never
- * validates it. To keep that token always valid JSON (JSON forbids leading zeros
- * and there is no octal/ambiguous parse), this accepts only a `^[0-9]+$` value
- * of at most 18 digits (so it always fits `long long`) and strips its leading
- * zeros, keeping a single `0` for an all-zero input. So `007` -> `7`, `00` ->
- * `0` (interpreted as decimal, never octal). Anything else — a sign, non-digit,
- * empty, or 19+ digits — returns `std::nullopt`, and the caller forwards the raw
- * value as a JSON **string** instead, so the registry rejects it as
+ * tokens via `args_builder::add_raw`, which inserts the token verbatim and
+ * never validates it. To keep that token always valid JSON (JSON forbids
+ * leading zeros and there is no octal/ambiguous parse), this accepts only a
+ * `^[0-9]+$` value of at most 18 digits (so it always fits `long long`) and
+ * strips its leading zeros, keeping a single `0` for an all-zero input. So
+ * `007` -> `7`, `00` -> `0` (interpreted as decimal, never octal). Anything
+ * else — a sign, non-digit, empty, or 19+ digits — returns `std::nullopt`, and
+ * the caller forwards the raw value as a JSON **string** instead, so the
+ * registry rejects it as
  * `<arg>: wrong_type`. Mirrors the identically-named helper in
  * `link_handlers.cpp` (duplicated rather than shared to keep the handler files
  * decoupled in this slice).
@@ -179,11 +180,12 @@ BeastResponse handleExecuteCommand(const BeastRequest& req,
     }
 
     // 2. Content-Type must be application/json (threat model T-67). The body is
-    // not parsed on a refusal. Beast's string_view is converted by data()/size()
-    // (it is not implicitly convertible to std::string_view).
+    // not parsed on a refusal. Beast's string_view is converted by
+    // data()/size() (it is not implicitly convertible to std::string_view).
     const auto content_type = req[bhttp::field::content_type];
     if (!is_application_json(
-            std::string_view(content_type.data(), content_type.size()))) {
+            std::string_view(content_type.data(), content_type.size())))
+    {
         return url_shortener::makeApiErrorResponse(
             req,
             config,
@@ -195,8 +197,8 @@ BeastResponse handleExecuteCommand(const BeastRequest& req,
 
     // 3. Full envelope limits (threat model T-68): override only max_bytes and
     // max_id_len from config; keep the hardening defaults (max_command_len 64,
-    // max_depth 8) so a deep/overlong body is still rejected by the scanner. The
-    // member cap (256) and key-length cap (128) live in the scanner's own
+    // max_depth 8) so a deep/overlong body is still rejected by the scanner.
+    // The member cap (256) and key-length cap (128) live in the scanner's own
     // scan_limits inside parse_request and must not be loosened.
     commands::envelope_limits limits;
     limits.max_bytes = config.max_request_body_bytes;
@@ -215,10 +217,10 @@ BeastResponse handleExecuteCommand(const BeastRequest& req,
     }
     const commands::CommandRequest& request = *parsed.request;
 
-    // 5. Create throttle (threat model T-75): link.create - including a dry_run,
-    // which runs the full SSRF/validator and is not cheaper - consumes the same
-    // per-peer throttle as POST /api/v1/links, before execute. No other command
-    // is throttled here.
+    // 5. Create throttle (threat model T-75): link.create - including a
+    // dry_run, which runs the full SSRF/validator and is not cheaper - consumes
+    // the same per-peer throttle as POST /api/v1/links, before execute. No
+    // other command is throttled here.
     if (request.command == "link.create") {
         if (std::optional<BeastResponse> throttled =
                 apply_create_throttle(req, config, is_tls, context))
@@ -253,9 +255,12 @@ BeastResponse handleListCommands(const BeastRequest& req,
     // /api/v1/links path), not a 404. The catalog is never disclosed here and
     // the query is never read.
     if (!command_api_enabled(config)) {
-        return url_shortener::makeApiErrorResponse(
-            req, config, is_tls, 400, "invalid_method",
-            "Only POST is supported");
+        return url_shortener::makeApiErrorResponse(req,
+                                                   config,
+                                                   is_tls,
+                                                   400,
+                                                   "invalid_method",
+                                                   "Only POST is supported");
     }
 
     // 2. Parse the query string (percent-decoded, repeated keys preserved). A
@@ -264,9 +269,12 @@ BeastResponse handleListCommands(const BeastRequest& req,
     std::vector<query_param> params;
     std::string parse_error;
     if (!parse_query_string(context.query_string, &params, &parse_error)) {
-        return url_shortener::makeApiErrorResponse(
-            req, config, is_tls, 400, "invalid_request",
-            "malformed query string");
+        return url_shortener::makeApiErrorResponse(req,
+                                                   config,
+                                                   is_tls,
+                                                   400,
+                                                   "invalid_request",
+                                                   "malformed query string");
     }
 
     // Forward every parameter as an args member (contract C1: the handler only
@@ -278,12 +286,20 @@ BeastResponse handleListCommands(const BeastRequest& req,
     for (const query_param& param : params) {
         if (!is_valid_arg_name(param.name)) {
             return url_shortener::makeApiErrorResponse(
-                req, config, is_tls, 400, "invalid_request",
+                req,
+                config,
+                is_tls,
+                400,
+                "invalid_request",
                 "invalid parameter name");
         }
         if (args.has(param.name)) {
             return url_shortener::makeApiErrorResponse(
-                req, config, is_tls, 400, "invalid_request",
+                req,
+                config,
+                is_tls,
+                400,
+                "invalid_request",
                 param.name + ": duplicate");
         }
         args.add_string(param.name, param.value);
@@ -311,7 +327,7 @@ BeastResponse handleListJobs(const BeastRequest& req,
                              const RouteContext& context)
 {
     // 1. Gate (threat model T-64): when the command API is disabled (the secure
-    // default), answer byte-for-byte like an unmatched /api/v1/* route - 404
+    // default), answer byte-for-byte like an unmatched /api/v1 route - 404
     // not_found "Route not found", the router's own not-found reply (and what
     // the /{path} fallback returns for a reserved /api/ path). The runner is
     // never read and the query is never parsed on this branch.
@@ -326,9 +342,12 @@ BeastResponse handleListJobs(const BeastRequest& req,
     std::vector<query_param> params;
     std::string parse_error;
     if (!parse_query_string(context.query_string, &params, &parse_error)) {
-        return url_shortener::makeApiErrorResponse(
-            req, config, is_tls, 400, "invalid_request",
-            "malformed query string");
+        return url_shortener::makeApiErrorResponse(req,
+                                                   config,
+                                                   is_tls,
+                                                   400,
+                                                   "invalid_request",
+                                                   "malformed query string");
     }
 
     // Build the job.list args from the query (contract C1: the handler only
@@ -343,12 +362,20 @@ BeastResponse handleListJobs(const BeastRequest& req,
     for (const query_param& param : params) {
         if (!is_valid_arg_name(param.name)) {
             return url_shortener::makeApiErrorResponse(
-                req, config, is_tls, 400, "invalid_request",
+                req,
+                config,
+                is_tls,
+                400,
+                "invalid_request",
                 "invalid parameter name");
         }
         if (args.has(param.name)) {
             return url_shortener::makeApiErrorResponse(
-                req, config, is_tls, 400, "invalid_request",
+                req,
+                config,
+                is_tls,
+                400,
+                "invalid_request",
                 param.name + ": duplicate");
         }
         if (param.name == "offset" || param.name == "limit") {
@@ -383,7 +410,7 @@ BeastResponse handleGetJob(const BeastRequest& req,
                            const RouteContext& context)
 {
     // 1. Gate (threat model T-64): gate off answers byte-for-byte like an
-    // unmatched /api/v1/* route (404 not_found "Route not found"); the runner
+    // unmatched /api/v1 route (404 not_found "Route not found"); the runner
     // is never read.
     if (!command_api_enabled(config)) {
         return url_shortener::makeApiErrorResponse(
@@ -416,7 +443,7 @@ BeastResponse handleCancelJob(const BeastRequest& req,
                               const RouteContext& context)
 {
     // 1. Gate (threat model T-64): gate off answers byte-for-byte like an
-    // unmatched /api/v1/* route (404 not_found "Route not found"); the runner
+    // unmatched /api/v1 route (404 not_found "Route not found"); the runner
     // is never touched.
     if (!command_api_enabled(config)) {
         return url_shortener::makeApiErrorResponse(
