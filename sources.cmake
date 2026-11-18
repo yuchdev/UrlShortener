@@ -696,6 +696,8 @@ set(URL_SHORTENER_SOURCES
       tests/integration/cli/18_server_and_cli_share_sqlite.py
       tests/integration/cli/20_cmd_link_envelope.py
       tests/integration/cli/21_cmd_inputs_and_read_only.py
+      tests/integration/cli/40_serve_stdio_session.py
+      tests/integration/cli/41_serve_stdio_jobs_and_eof.py
   )
 
   set(ALL_INTEGRATION_SOURCES
@@ -726,4 +728,5 @@ set(URL_SHORTENER_SOURCES
           16_cli_link_enable_disable
           17_cli_link_restore
           18_cli_link_preview
+          30_serve_stdio
       )
