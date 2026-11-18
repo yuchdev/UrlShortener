@@ -7,11 +7,13 @@
  */
 #include <algorithm>
 #include <cstdlib>
+#include <limits>
 #include <string>
 #include <utility>
 
 #include "url_shortener/tui/dashboard_model.hpp"
 
+#include <url_shortener/tui/jobs_model.hpp>  // percent_of (reused, 16)
 #include <url_shortener/tui/json_view.hpp>
 
 namespace url_shortener::tui
@@ -23,6 +25,24 @@ namespace
 /// Full-block glyph U+2588 for a bar in the colour themes (folded to `#` by the
 /// mono ASCII filter).
 constexpr char k_block[] = "\xe2\x96\x88";
+
+/// Adds @p b to @p a, saturating at `UINT64_MAX` instead of wrapping so a run
+/// of up to 200 INT64_MAX-clamped sample counts cannot overflow (T-121).
+std::uint64_t saturating_add(std::uint64_t a, std::uint64_t b)
+{
+    const std::uint64_t max = std::numeric_limits<std::uint64_t>::max();
+    return a > max - b ? max : a + b;
+}
+
+/// Orders top-slug entries by redirect count descending, breaking ties by slug
+/// ascending so the ranking is deterministic regardless of server order.
+bool by_count_desc(const TopSlug& a, const TopSlug& b)
+{
+    if (a.count != b.count) {
+        return a.count > b.count;
+    }
+    return a.slug < b.slug;
+}
 
 /// Reads a non-negative integer field as unsigned (negatives / absent -> 0).
 std::uint64_t unsigned_field(const std::string& json, const std::string& field)
@@ -282,15 +302,12 @@ void DashboardModel::apply_sample(const commands::CommandResponse& response)
             }
             ++seen;
             const std::uint64_t count = item_redirects_24h(item);
-            sum += count;
+            sum = saturating_add(sum, count);
             slugs.push_back(
                 {get_string(item, "slug").value_or(std::string()), count});
         }
     }
-    std::stable_sort(slugs.begin(),
-                     slugs.end(),
-                     [](const TopSlug& a, const TopSlug& b)
-                     { return a.count > b.count; });
+    std::stable_sort(slugs.begin(), slugs.end(), by_count_desc);
     if (slugs.size() > k_max_top) {
         slugs.resize(k_max_top);
     }
@@ -330,12 +347,18 @@ void DashboardModel::apply_stats_summary(
     std::vector<TopSlug> slugs;
     if (const std::optional<std::string> top = raw_field(json, "top_slugs")) {
         for (const std::string& entry : split_array(*top)) {
-            if (slugs.size() >= k_max_top) {
-                break;
+            if (slugs.size() >= k_max_sample) {
+                break;  // bound server-derived work before ranking (T-121)
             }
             slugs.push_back({get_string(entry, "slug").value_or(std::string()),
                              unsigned_field(entry, "count")});
         }
+    }
+    // The server need not sort top_slugs; rank here so the bar max (the first
+    // entry's count) scales the series correctly.
+    std::stable_sort(slugs.begin(), slugs.end(), by_count_desc);
+    if (slugs.size() > k_max_top) {
+        slugs.resize(k_max_top);
     }
     m_top_ = std::move(slugs);
 }
@@ -395,9 +418,7 @@ std::string DashboardModel::jobs_line() const
     {
         const std::uint64_t done = unsigned_field(*progress, "done");
         const std::uint64_t total = unsigned_field(*progress, "total");
-        if (total > 0) {
-            pct = done >= total ? 100u : (done * 100u) / total;
-        }
+        pct = percent_of(done, total);  // overflow-safe, shared with 16
     }
     return "Jobs: " + std::to_string(jobs.size()) + " running (" + command + " "
         + std::to_string(pct) + "%)";

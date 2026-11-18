@@ -31,6 +31,24 @@ namespace url_shortener::tui
  */
 
 /**
+ * @brief Computes an integer completion percentage (0..100) without overflow.
+ *
+ * Pure and overflow-safe for untrusted server counters (threat model T-121):
+ * `done * 100` wraps a `std::uint64_t` once `done > UINT64_MAX / 100`
+ * (~1.84e17), so for such extreme counters the denominator is scaled down
+ * first. Shared by @ref progress_bar and the Dashboard's jobs line
+ * (subtask 06.0/17) so the two can never disagree. No 128-bit arithmetic is
+ * used (MSVC has no `__int128`).
+ *
+ * @param done Work units completed (untrusted).
+ * @param total Total work units (untrusted).
+ * @return `0` when @p total is `0` (no progress is knowable); `100` when
+ * `done >= total`; otherwise the floor of `done / total * 100`, clamped to the
+ * range `[0, 99]` for the strictly-below-100 case.
+ */
+std::uint64_t percent_of(std::uint64_t done, std::uint64_t total);
+
+/**
  * @brief Renders a textual progress gauge, e.g. `"######----  62%"`.
  *
  * Produces a @p width-column bar of "filled" then "empty" glyphs followed by

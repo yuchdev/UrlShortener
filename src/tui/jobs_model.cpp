@@ -69,6 +69,29 @@ constexpr const char* k_block_empty = "\xE2\x96\x91";  // U+2591 LIGHT SHADE
 
 }  // namespace
 
+std::uint64_t percent_of(std::uint64_t done, std::uint64_t total)
+{
+    // `done * 100` wraps a uint64 once `done > UINT64_MAX / 100` (~1.84e17).
+    // For such extreme counters (done < total here) scale the denominator down
+    // first and clamp to 99, since done < total means the percent is strictly
+    // below 100 (threat model T-121: server-derived counters are untrusted).
+    if (total == 0) {
+        return 0;  // no progress is knowable
+    }
+    if (done >= total) {
+        return 100;
+    }
+    if (done <= std::numeric_limits<std::uint64_t>::max() / 100) {
+        return (done * 100) / total;
+    }
+    const std::uint64_t denom = total / 100;  // > 0 in this branch
+    std::uint64_t pct = denom == 0 ? 99 : done / denom;
+    if (pct > 99) {
+        pct = 99;
+    }
+    return pct;
+}
+
 std::string progress_bar(std::uint64_t done,
                          std::uint64_t total,
                          std::size_t width,
@@ -83,25 +106,7 @@ std::string progress_bar(std::uint64_t done,
         percent = "?";  // unknown total
     }
     else {
-        // Compute the percent without overflowing: `done * 100` wraps a
-        // uint64 once `done > UINT64_MAX / 100` (~1.84e17). For such extreme
-        // counters (done < total here) scale the denominator down first and
-        // clamp to 99, since done < total means the percent is strictly below
-        // 100 (threat model T-121: server-derived counters are untrusted).
-        std::uint64_t pct = 0;
-        if (done >= total) {
-            pct = 100;
-        }
-        else if (done <= std::numeric_limits<std::uint64_t>::max() / 100) {
-            pct = (done * 100) / total;
-        }
-        else {
-            const std::uint64_t denom = total / 100;  // > 0 in this branch
-            pct = denom == 0 ? 99 : done / denom;
-            if (pct > 99) {
-                pct = 99;
-            }
-        }
+        const std::uint64_t pct = percent_of(done, total);
         percent = std::to_string(pct) + "%";
         filled_cells = static_cast<std::size_t>((pct * width) / 100);
         if (filled_cells > width) {

@@ -1,7 +1,9 @@
 #define BOOST_TEST_MODULE TuiDashboardModelTest
 
+#include <cctype>
 #include <cstdint>
 #include <functional>
+#include <limits>
 #include <string>
 #include <vector>
 
@@ -295,4 +297,85 @@ BOOST_AUTO_TEST_CASE(all_requests_are_read_commands)
                        "non-read command in batch: " << request.command);
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// Regression (LOW): a run of INT64_MAX-valued sample counts saturates the 24h
+// sum at UINT64_MAX instead of wrapping (threat model T-121).
+// ---------------------------------------------------------------------------
+BOOST_AUTO_TEST_CASE(sample_sum_saturates_without_wrapping)
+{
+    // Each item's redirects_24h is clamped to INT64_MAX; three of them exceed
+    // UINT64_MAX, so a wrapping accumulator would yield a small number.
+    const std::string big = std::to_string(
+        static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max()));
+    tui::DashboardModel model(false);
+    model.apply("redirects",
+                ok(R"({"items":[)"
+                   R"({"slug":"a","stats":{"redirects_24h":)"
+                   + big
+                   + R"(}},)"
+                     R"({"slug":"b","stats":{"redirects_24h":)"
+                   + big
+                   + R"(}},)"
+                     R"({"slug":"c","stats":{"redirects_24h":)"
+                   + big
+                   + R"(}})"
+                     R"(],"total":3})"));
+
+    BOOST_REQUIRE(model.redirects().redirects_24h.has_value());
+    BOOST_TEST(*model.redirects().redirects_24h
+               == std::numeric_limits<std::uint64_t>::max());
+}
+
+// ---------------------------------------------------------------------------
+// Regression (LOW): a running job whose `done` is huge (but below `total`)
+// yields a sane 0..100 percentage rather than a wrapped value.
+// ---------------------------------------------------------------------------
+BOOST_AUTO_TEST_CASE(jobs_line_percentage_never_wraps)
+{
+    // done is above UINT64_MAX/100 (the overflow threshold) but below total.
+    tui::DashboardModel model(false);
+    model.apply("jobs",
+                ok(R"({"items":[{"command":"link.import","state":"running",)"
+                   R"("progress":{"done":9000000000000000000,)"
+                   R"("total":9223372036854775807}}],"total":1})"));
+
+    const std::string line = model.jobs_line();
+    // Extract the "<pct>%)" number and assert it is a sane percentage.
+    const std::string::size_type pct_end = line.find("%)");
+    BOOST_REQUIRE(pct_end != std::string::npos);
+    std::string::size_type start = pct_end;
+    while (start > 0
+           && std::isdigit(static_cast<unsigned char>(line[start - 1])))
+    {
+        --start;
+    }
+    const int pct = std::stoi(line.substr(start, pct_end - start));
+    BOOST_TEST(pct >= 0);
+    BOOST_TEST(pct <= 100);
+}
+
+// ---------------------------------------------------------------------------
+// Regression (INFO): unsorted stats.summary top_slugs are ranked descending so
+// the first entry (the bar max) is the largest and scales a full-width bar.
+// ---------------------------------------------------------------------------
+BOOST_AUTO_TEST_CASE(stats_summary_top_slugs_are_ranked)
+{
+    tui::DashboardModel model(true);
+    model.apply("redirects",
+                ok(R"({"redirects_24h":100,"top_slugs":[)"
+                   R"({"slug":"promo","count":4112},)"
+                   R"({"slug":"docs","count":12044},)"
+                   R"({"slug":"launch","count":8730})"
+                   R"(]})"));
+
+    const std::vector<tui::TopSlug>& top = model.top_slugs();
+    BOOST_REQUIRE_EQUAL(top.size(), 3u);
+    BOOST_TEST(top[0].slug == "docs");
+    BOOST_TEST(top[0].count == 12044u);
+    BOOST_TEST(top[1].slug == "launch");
+    BOOST_TEST(top[2].slug == "promo");
+    // The largest entry (the bar max) fills the full width.
+    BOOST_TEST(model.bars(top[0].count, top[0].count, 8, true).size() == 8u);
 }
