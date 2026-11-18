@@ -2,25 +2,29 @@
 
 #include <utility>
 
+#include <url_shortener/tui/text_fit.hpp>
+
 namespace url_shortener::tui
 {
 
 namespace
 {
 
-/// Maximum display length of the backend label in the title bar (D1 step 2).
-constexpr std::string::size_type k_backend_label_max = 60;
+/// Maximum display width of the backend label in the title bar (D1 step 2).
+constexpr std::size_t k_backend_label_max = 60;
 
-/// Truncates @p value to @ref k_backend_label_max chars, ending in "..." when
-/// it was longer. Width is counted in bytes here; the render sink performs the
-/// UTF-8-aware fit and T-110 sanitization (subtask 09).
-std::string truncate_label(const std::string& value)
+/// Sanitizes the server-provided backend label and fits it into the title.
+///
+/// T-110: @p value comes from `system.info` (untrusted server data), so it is
+/// first run through @ref sanitize_for_terminal (dropping ESC/CSI/OSC/DCS, C0/
+/// C1, bidi and zero-width code points) and only then width-fitted with
+/// @ref truncate_to_width (UTF-8-aware, ellipsis on cut). Doing both in the
+/// model means every consumer of @ref FrameModel::title gets a safe, bounded
+/// label with no per-sink duplication.
+std::string safe_label(const std::string& value)
 {
-    if (value.size() <= k_backend_label_max)
-    {
-        return value;
-    }
-    return value.substr(0, k_backend_label_max - 3) + "...";
+    return truncate_to_width(sanitize_for_terminal(value),
+                             k_backend_label_max);
 }
 
 /// One D1 tab: its label and the screen whose active tab lights it up.
@@ -58,7 +62,7 @@ FrameModel::FrameModel(SessionInfo session,
 std::string FrameModel::title() const
 {
     const char* role = m_session_.read_only ? "User" : "Admin";
-    return "url_shortener -- backend: " + truncate_label(m_backend_label_)
+    return "url_shortener -- backend: " + safe_label(m_backend_label_)
         + " -- user: local/" + role;
 }
 

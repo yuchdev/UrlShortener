@@ -59,11 +59,10 @@ ftxui::Element render_frame(const FrameModel& model,
         return too_small_element();
     }
 
-    // T-110: model.title() embeds the server-provided backend label. It is
-    // length-bounded here; once subtask 09 lands, route it (and any other
-    // server string the frame renders) through sanitize_for_terminal before
-    // this text() call. No server data other than the backend label reaches
-    // the frame in this subtask.
+    // T-110: model.title() already sanitizes and width-fits the server-provided
+    // backend label (FrameModel::title -> sanitize_for_terminal +
+    // truncate_to_width), so no server control bytes reach this text() call. No
+    // server data other than the backend label reaches the frame here.
     // FTXUI sizes a window title to its natural width, so [F1 Help] trails the
     // title rather than hugging the right corner; the D1 order (title first,
     // Help hint last) is preserved. Right-corner alignment is an FTXUI

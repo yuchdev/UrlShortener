@@ -10,6 +10,7 @@
 #include <url_shortener/tui/terminal_restore.hpp>
 
 using url_shortener::tui::FdTerminalSink;
+using url_shortener::tui::ITerminalModeRestore;
 using url_shortener::tui::ITerminalSink;
 using url_shortener::tui::k_marker_disable_bracketed_paste;
 using url_shortener::tui::k_marker_disable_mouse;
@@ -36,6 +37,35 @@ public:
 
 private:
     std::string m_bytes_;
+};
+
+// A spy line-discipline hook: counts restore_mode() calls and records whether
+// the escape sink was still empty when it ran (proving termios precedes
+// escapes, T-123). Stays TTY-free - no real termios.
+class SpyModeRestore final : public ITerminalModeRestore
+{
+public:
+    explicit SpyModeRestore(const RecordingSink& sink) : m_sink_(sink) {}
+
+    void restore_mode() noexcept override
+    {
+        if (m_calls_ == 0)
+        {
+            m_sink_empty_on_first_call_ = m_sink_.bytes().empty();
+        }
+        ++m_calls_;
+    }
+
+    std::size_t calls() const { return m_calls_; }
+    bool sink_empty_on_first_call() const
+    {
+        return m_sink_empty_on_first_call_;
+    }
+
+private:
+    const RecordingSink& m_sink_;
+    std::size_t m_calls_ = 0;
+    bool m_sink_empty_on_first_call_ = false;
 };
 
 std::size_t count_occurrences(const std::string& haystack,
@@ -122,6 +152,27 @@ BOOST_AUTO_TEST_CASE(simulated_sigterm_restores_and_does_not_double_restore)
 
     // The loop then unwinds normally; the guard must not restore again.
     run_with_restore(restore, [] {});
+    expect_restored_once(sink.bytes());
+}
+
+// ---------------------------------------------------------------------------
+// T-123: the SIGTERM path restores the line discipline (termios) exactly once,
+// before writing the escape sequences. Uses an injected spy hook so the test
+// needs no real tty.
+// On failure first check: ScopedSignalRestore not calling the mode hook, or
+// calling it after the escape restore.
+// ---------------------------------------------------------------------------
+BOOST_AUTO_TEST_CASE(simulated_sigterm_restores_line_discipline_before_escapes)
+{
+    RecordingSink sink;
+    TerminalRestore restore(sink);
+    SpyModeRestore mode(sink);
+    ScopedSignalRestore signal_restore(restore, &mode);
+
+    signal_restore.simulate_raise();
+
+    BOOST_TEST(mode.calls() == 1u);
+    BOOST_TEST(mode.sink_empty_on_first_call());  // termios before escapes
     expect_restored_once(sink.bytes());
 }
 

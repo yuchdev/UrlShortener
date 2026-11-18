@@ -2,6 +2,7 @@
 
 #include <atomic>
 #include <cstddef>
+#include <new>
 
 #if defined(_WIN32)
 #include <io.h>
@@ -9,11 +10,13 @@
 #include <unistd.h>
 #endif
 
-// POSIX signal handling is guarded: on platforms without <signal.h>'s POSIX
-// surface the app relies on the RAII guard instead (documented in the header).
+// POSIX signal handling and termios are guarded: on platforms without the
+// POSIX surface the app relies on FTXUI + the RAII guard (documented in the
+// header).
 #if defined(__unix__) || defined(__APPLE__)
 #define URLSHORTENER_TUI_POSIX_SIGNALS 1
 #include <csignal>
+#include <termios.h>
 #else
 #define URLSHORTENER_TUI_POSIX_SIGNALS 0
 #endif
@@ -29,16 +32,33 @@ namespace
 /// at most one live restore; cleared by that installer's destructor.
 std::atomic<TerminalRestore*> g_signal_restore {nullptr};
 
-#if URLSHORTENER_TUI_POSIX_SIGNALS
-/// SIGTERM handler: restore the terminal (async-signal-safe), then re-raise
-/// with the default disposition so the process terminates as the signal asked.
-extern "C" void tui_handle_sigterm(int sig)
+/// Companion slot for the optional line-discipline hook (termios tcsetattr),
+/// run before the escape restore. Null when no hook was supplied.
+std::atomic<ITerminalModeRestore*> g_signal_mode_restore {nullptr};
+
+/// Drives the line-discipline hook (if any) then the escape restore, in that
+/// order (termios before escapes, T-123). Async-signal-safe.
+void run_signal_restore()
 {
+    ITerminalModeRestore* mode =
+        g_signal_mode_restore.load(std::memory_order_acquire);
+    if (mode != nullptr)
+    {
+        mode->restore_mode();
+    }
     TerminalRestore* restore = g_signal_restore.load(std::memory_order_acquire);
     if (restore != nullptr)
     {
         restore->restore();
     }
+}
+
+#if URLSHORTENER_TUI_POSIX_SIGNALS
+/// SIGTERM handler: restore the terminal (async-signal-safe), then re-raise
+/// with the default disposition so the process terminates as the signal asked.
+extern "C" void tui_handle_sigterm(int sig)
+{
+    run_signal_restore();
     struct sigaction default_action;
     default_action.sa_handler = SIG_DFL;
     sigemptyset(&default_action.sa_mask);
@@ -49,6 +69,50 @@ extern "C" void tui_handle_sigterm(int sig)
 #endif
 
 }  // namespace
+
+struct TtyModeRestore::Impl
+{
+#if URLSHORTENER_TUI_POSIX_SIGNALS
+    ///< The tty descriptor to restore.
+    int fd = -1;
+
+    ///< The captured canonical/echo terminal settings.
+    struct termios saved;
+#endif
+};
+
+TtyModeRestore::TtyModeRestore(int fd) noexcept : m_impl_(nullptr)
+{
+#if URLSHORTENER_TUI_POSIX_SIGNALS
+    Impl* impl = new (std::nothrow) Impl;
+    if (impl != nullptr && tcgetattr(fd, &impl->saved) == 0)
+    {
+        impl->fd = fd;
+        m_impl_ = impl;
+    }
+    else
+    {
+        delete impl;  // non-tty (e.g. a pipe in CI): leave restore a no-op
+    }
+#else
+    (void)fd;
+#endif
+}
+
+TtyModeRestore::~TtyModeRestore()
+{
+    delete m_impl_;
+}
+
+void TtyModeRestore::restore_mode() noexcept
+{
+#if URLSHORTENER_TUI_POSIX_SIGNALS
+    if (m_impl_ != nullptr)
+    {
+        tcsetattr(m_impl_->fd, TCSANOW, &m_impl_->saved);
+    }
+#endif
+}
 
 FdTerminalSink::FdTerminalSink(int fd) noexcept : m_fd_(fd)
 {
@@ -104,10 +168,12 @@ void run_with_restore(TerminalRestore& restore,
     loop();
 }
 
-ScopedSignalRestore::ScopedSignalRestore(TerminalRestore& restore)
-    : m_restore_(restore)
+ScopedSignalRestore::ScopedSignalRestore(TerminalRestore& restore,
+                                         ITerminalModeRestore* mode_restore)
+    : m_restore_(restore), m_mode_restore_(mode_restore)
 {
     g_signal_restore.store(&restore, std::memory_order_release);
+    g_signal_mode_restore.store(mode_restore, std::memory_order_release);
 #if URLSHORTENER_TUI_POSIX_SIGNALS
     struct sigaction action;
     action.sa_handler = &tui_handle_sigterm;
@@ -132,6 +198,7 @@ ScopedSignalRestore::~ScopedSignalRestore()
         sigaction(SIGTERM, &default_action, nullptr);
     }
 #endif
+    g_signal_mode_restore.store(nullptr, std::memory_order_release);
     g_signal_restore.store(nullptr, std::memory_order_release);
 }
 
@@ -142,13 +209,10 @@ bool ScopedSignalRestore::installed() const noexcept
 
 void ScopedSignalRestore::simulate_raise() noexcept
 {
-    // Drive the exact restore the OS handler would, minus the terminating
-    // re-raise, so a test observes the signal-path restore without dying.
-    TerminalRestore* restore = g_signal_restore.load(std::memory_order_acquire);
-    if (restore != nullptr)
-    {
-        restore->restore();
-    }
+    // Drive the exact restore the OS handler would (termios then escapes),
+    // minus the terminating re-raise, so a test observes the signal-path
+    // restore without dying.
+    run_signal_restore();
 }
 
 }  // namespace url_shortener::tui

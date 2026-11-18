@@ -37,6 +37,16 @@ int stdout_fd()
 #endif
 }
 
+/// Returns the file descriptor behind `stdin`, for the termios-restore hook.
+int stdin_fd()
+{
+#if defined(_WIN32)
+    return ::_fileno(stdin);
+#else
+    return ::fileno(stdin);
+#endif
+}
+
 /// A tab slot and the placeholder text shown until a real screen registers it.
 struct TabSlot
 {
@@ -55,6 +65,42 @@ const TabSlot k_tab_slots[] = {
     {ScreenId::analytics, "Analytics: provided by Milestone 0002"},
     {ScreenId::settings, "Settings: not implemented"},
     {ScreenId::palette, "Command palette: not implemented"},
+};
+
+/**
+ * @brief Owns the interactive screen, its UI poster and the async caller with a
+ * fixed member order that encodes the teardown invariant (03 review, T-120).
+ *
+ * Grouping the three in one struct makes the destruction order structural
+ * rather than dependent on local-variable declaration order in @ref App::run:
+ * members are destroyed in reverse declaration order, so @ref caller is torn
+ * down first - joining its workers - before @ref poster and @ref screen, so a
+ * completion in flight at shutdown can never post to a destroyed screen. DO NOT
+ * REORDER THESE MEMBERS. The AsyncCaller-joins-before-poster semantics this
+ * relies on are exercised headlessly by `04_app_teardown_test`; the full struct
+ * cannot be driven in CI because its screen needs a real terminal.
+ */
+struct LoopRuntime
+{
+    ///< The FTXUI interactive screen; destroyed last.
+    ftxui::ScreenInteractive screen;
+
+    ///< Posts async completions onto @ref screen; destroyed after @ref caller.
+    FtxuiPoster poster;
+
+    ///< Runs commands off the UI thread; destroyed first (joins its workers).
+    AsyncCaller caller;
+
+    /**
+     * @brief Wires the poster to @p s and the caller to @p client and poster.
+     *
+     * @param s The interactive screen, moved in.
+     * @param client The command transport the caller runs; must outlive this.
+     */
+    LoopRuntime(ftxui::ScreenInteractive s, ICommandClient& client)
+        : screen(std::move(s)), poster(screen), caller(client, poster)
+    {
+    }
 };
 
 }  // namespace
@@ -92,14 +138,12 @@ int App::run()
         }
     }
 
-    auto screen = ScreenInteractive::Fullscreen();
+    // Teardown ordering (UAF safety) is encoded by LoopRuntime's member order:
+    // the caller is destroyed before the poster and screen (see its doc).
+    LoopRuntime runtime(ScreenInteractive::Fullscreen(), m_client_);
+    ScreenInteractive& screen = runtime.screen;
+    AsyncCaller& caller = runtime.caller;
     screen.TrackMouse(false);  // mouse is an ADR 0003 non-goal (T-124)
-
-    // Teardown ordering (UAF safety): the caller is declared after the poster
-    // and the screen, so it is destroyed first and joins its workers before the
-    // poster/screen die - a late completion can never post to a dead screen.
-    FtxuiPoster poster(screen);
-    AsyncCaller caller(m_client_, poster);
 
     // Map a screen id to its index in the tab container.
     const auto index_for = [this](ScreenId id) -> int {
@@ -200,9 +244,16 @@ int App::run()
         return false;
     });
 
+    // FTXUI (v7.0.3) already restores termios + escapes on every exit path
+    // including exceptions (its Loop destructor) and SIGINT/SIGTERM/SIGQUIT/
+    // SIGHUP/SIGTSTP/crash signals; this restore is defense-in-depth for the
+    // windows before Install / after Uninstall. The mode hook captures the
+    // (cooked) line discipline so the SIGTERM handler can tcsetattr before
+    // writing the escapes (T-123).
     FdTerminalSink sink(stdout_fd());
     TerminalRestore restore(sink);
-    ScopedSignalRestore signal_restore(restore);
+    TtyModeRestore mode_restore(stdin_fd());
+    ScopedSignalRestore signal_restore(restore, &mode_restore);
 
     run_with_restore(restore, [&] { screen.Loop(root); });
     return 0;

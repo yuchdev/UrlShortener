@@ -15,6 +15,7 @@
 #include <url_shortener/tui/screens/placeholder_screen.hpp>
 
 #include "golden.hpp"
+#include "hostile_strings.hpp"
 #include "render_helpers.hpp"
 
 using url_shortener::tui::FrameModel;
@@ -24,6 +25,8 @@ using url_shortener::tui::render_frame;
 using url_shortener::tui::ScreenId;
 using url_shortener::tui::SessionInfo;
 using url_shortener::tui::testing::assert_matches_golden;
+using url_shortener::tui::testing::has_display_hazard;
+using url_shortener::tui::testing::hostile_samples;
 using url_shortener::tui::testing::render_to_text;
 
 namespace
@@ -135,4 +138,29 @@ BOOST_AUTO_TEST_CASE(resize_keeps_footer_on_last_row)
     BOOST_REQUIRE(footer_line >= 0);
     // The footer sits just above the window's bottom border (the last row).
     BOOST_TEST(footer_line >= static_cast<int>(lines.size()) - 2);
+}
+
+// ---------------------------------------------------------------------------
+// T-110: a hostile backend label never reaches the rendered 80x24 grid - no
+// ESC/C1/bidi/zero-width byte survives into any cell.
+// On failure first check: FrameModel::title no longer sanitizes the label.
+// ---------------------------------------------------------------------------
+BOOST_AUTO_TEST_CASE(hostile_backend_label_never_reaches_grid)
+{
+    for (const auto& sample : hostile_samples())
+    {
+        FrameModel model(admin_session(), sample.raw, true, "dark");
+        const ftxui::Element frame = render_frame(
+            model, ScreenId::dashboard, dashboard_body(), {}, 80, 24);
+        const std::string grid = render_to_text(frame, 80, 24);
+        BOOST_TEST(grid.find('\x1b') == std::string::npos,
+                   "ESC reached the grid for sample: " << sample.name);
+        // render_to_text joins rows with '\n'; check each rendered line so the
+        // row separator is not mistaken for a control byte in a cell.
+        for (const std::string& line : split(grid))
+        {
+            BOOST_TEST(!has_display_hazard(line),
+                       "display hazard in a cell for sample: " << sample.name);
+        }
+    }
 }

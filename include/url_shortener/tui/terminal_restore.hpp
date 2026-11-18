@@ -192,18 +192,97 @@ void run_with_restore(TerminalRestore& restore,
                       const std::function<void()>& loop);
 
 /**
- * @brief Installs a `SIGTERM` handler that drives @ref TerminalRestore::restore
- * so a `kill` does not leave a half-raw terminal (T-123).
+ * @brief Restores the terminal's line discipline (canonical mode + echo) on an
+ * exit path that bypasses the normal unwinding (a signal), T-123.
  *
- * FTXUI owns `SIGINT`; this covers `SIGTERM`, which it does not. On POSIX the
- * constructor installs a handler that performs the async-signal-safe restore
- * and then re-raises `SIGTERM` with the default disposition so the process
- * still terminates; the destructor removes it. On platforms without POSIX
- * signals the installer is a no-op (@ref installed is `false`) and the app
- * relies on the RAII guard; this is documented, not a silent gap.
+ * Writing the escape sequences alone does not undo raw mode: the `termios`
+ * `tcsetattr` must also run. A signal handler cannot unwind the stack, so
+ * FTXUI's own `Loop`-destructor `tcsetattr` never executes for it; this hook
+ * lets @ref ScopedSignalRestore do that `tcsetattr` from the handler. It is an
+ * interface so tests inject a spy and stay TTY-free. @ref restore_mode must be
+ * `noexcept` and, for a production implementation, async-signal-safe.
+ */
+class ITerminalModeRestore
+{
+public:
+    /**
+     * @brief Virtual destructor; hooks are held through this base.
+     */
+    virtual ~ITerminalModeRestore() = default;
+
+    /**
+     * @brief Restores the previously-captured terminal line discipline.
+     *
+     * Must be async-signal-safe (a single `tcsetattr`) in a production hook;
+     * idempotent so the handler may call it without coordinating with FTXUI.
+     */
+    virtual void restore_mode() noexcept = 0;
+};
+
+/**
+ * @brief The production @ref ITerminalModeRestore: captures the tty's `termios`
+ * at construction and restores it with `tcsetattr(TCSANOW)`.
  *
- * Only one instance may be active at a time (it uses a single process-global
- * slot); @ref App owns exactly one. Not copyable or movable.
+ * On POSIX the constructor runs `tcgetattr` on the given descriptor (snapshot
+ * of canonical mode / echo before FTXUI switches to raw) and @ref restore_mode
+ * applies it back. Off POSIX it is a no-op. A failed capture also makes
+ * @ref restore_mode a no-op so a non-tty (e.g. a pipe in CI) never errors.
+ */
+class TtyModeRestore final : public ITerminalModeRestore
+{
+public:
+    /**
+     * @brief Captures the terminal mode of @p fd (POSIX).
+     *
+     * @param fd The tty descriptor whose mode to snapshot and later restore,
+     * typically `STDIN_FILENO`. Must stay open for this object's lifetime.
+     */
+    explicit TtyModeRestore(int fd) noexcept;
+
+    /**
+     * @brief Frees the captured-mode storage.
+     */
+    ~TtyModeRestore() override;
+
+    TtyModeRestore(const TtyModeRestore&) = delete;
+    TtyModeRestore& operator=(const TtyModeRestore&) = delete;
+    TtyModeRestore(TtyModeRestore&&) = delete;
+    TtyModeRestore& operator=(TtyModeRestore&&) = delete;
+
+    /**
+     * @brief Applies the captured `termios` with `tcsetattr(TCSANOW)`.
+     *
+     * A no-op when the capture failed or on a non-POSIX build.
+     */
+    void restore_mode() noexcept override;
+
+private:
+    ///< Opaque holder for the captured `termios` (keeps `<termios.h>` out of
+    ///< this header so the type stays portable); null when capture failed.
+    struct Impl;
+    Impl* m_impl_;
+};
+
+/**
+ * @brief Installs a `SIGTERM` handler that restores the terminal so a `kill`
+ * does not leave a half-raw terminal (T-123), as a fallback around FTXUI.
+ *
+ * The pinned FTXUI (v7.0.3) already installs deferred handlers for `SIGINT`,
+ * `SIGTERM`, `SIGQUIT`, `SIGHUP`, `SIGTSTP` and `SIGWINCH` plus emergency
+ * handlers for the crash signals, and restores `termios` + the escape modes on
+ * exit (its `Loop` destructor runs on exceptions too). FTXUI's handlers are
+ * active only *during* `Loop`; this covers the narrow windows before `Install`
+ * and after `Uninstall`, where FTXUI's are not installed. On POSIX the
+ * constructor installs a `SIGTERM` handler that first restores the line
+ * discipline via the optional @ref ITerminalModeRestore hook, then performs the
+ * async-signal-safe escape restore, then re-raises `SIGTERM` with the default
+ * disposition so the process still terminates; the destructor removes it. Off
+ * POSIX it is a no-op (@ref installed is `false`). Only `SIGTERM` is installed
+ * here; FTXUI owns `SIGQUIT`/`SIGHUP`/`SIGTSTP`, so this does not double-install
+ * them (avoiding interference with FTXUI's deferred handling).
+ *
+ * Only one instance may be active at a time (a single process-global slot);
+ * @ref App owns exactly one. Not copyable or movable.
  */
 class ScopedSignalRestore
 {
@@ -213,8 +292,12 @@ public:
      *
      * @param restore The restore the handler drives; must outlive this object.
      * Not owned.
+     * @param mode_restore Optional line-discipline hook run before the escape
+     * restore; `nullptr` to skip it. Must outlive this object when supplied.
+     * Not owned.
      */
-    explicit ScopedSignalRestore(TerminalRestore& restore);
+    explicit ScopedSignalRestore(TerminalRestore& restore,
+                                 ITerminalModeRestore* mode_restore = nullptr);
 
     /**
      * @brief Removes the handler and clears the process-global slot.
@@ -247,6 +330,10 @@ public:
 private:
     ///< The restore this installer bound to the global slot; not owned.
     TerminalRestore& m_restore_;
+
+    ///< Optional line-discipline hook run before the escape restore; may be
+    ///< null. Not owned.
+    ITerminalModeRestore* m_mode_restore_;
 
     ///< `true` when a real OS handler was installed (POSIX).
     bool m_installed_ = false;

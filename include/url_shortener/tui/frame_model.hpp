@@ -22,10 +22,11 @@ namespace url_shortener::tui
  * and keeps config values off the client (only the server-provided *label* is
  * shown, never a DSN or path, ADR 0003 D1 / step 2).
  *
- * T-110: @ref title embeds @p backend_label, which is server-provided data.
- * This model only length-bounds it (@ref title truncates to 60 chars); the
- * render sink must additionally route it through `sanitize_for_terminal`
- * (subtask 09) once that helper lands. See `frame_view.cpp`.
+ * T-110: @ref title embeds the server-provided backend label, so the model
+ * runs it through `sanitize_for_terminal` (dropping ESC/CSI/OSC/DCS, C0/C1,
+ * bidi and zero-width code points) and then `truncate_to_width` before
+ * composing the title. Sanitizing in the model means every consumer gets a
+ * terminal-safe string; a render sink need not re-sanitize the title.
  */
 class FrameModel
 {
@@ -36,8 +37,8 @@ public:
      * @param session The current session; its @ref SessionInfo::read_only flag
      * selects the `local/Admin` vs `local/User` role shown in the title.
      * @param backend_label The metadata backend's human label from
-     * `system.info` (e.g. `"sqlite (links.db)"`); server data, shown truncated
-     * and otherwise rendered through the T-110 sanitizer at the sink.
+     * `system.info` (e.g. `"sqlite (links.db)"`); server data, sanitized and
+     * width-fitted by @ref title (T-110).
      * @param persistent `true` when the backend survives process exit; when
      * `false`, @ref banner yields the memory-store warning.
      * @param theme_name The active theme name (carried for subtask 05; it does
@@ -53,8 +54,9 @@ public:
      *
      * Format: `"url_shortener -- backend: <label> -- user: local/<role>"`,
      * where `<role>` is `Admin` for a read/write session and `User` for a
-     * read-only one, and `<label>` is the backend label truncated to 60
-     * display characters with a trailing `"..."` when it was longer.
+     * read-only one, and `<label>` is the backend label after
+     * `sanitize_for_terminal` and `truncate_to_width` (at most 60 display
+     * columns, with a trailing `"..."` when it was longer).
      *
      * @return The composed title; always non-empty.
      */

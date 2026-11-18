@@ -10,9 +10,13 @@
 #include <url_shortener/tui/frame_model.hpp>
 #include <url_shortener/tui/screen_id.hpp>
 
+#include "hostile_strings.hpp"
+
 using url_shortener::tui::FrameModel;
 using url_shortener::tui::ScreenId;
 using url_shortener::tui::SessionInfo;
+using url_shortener::tui::testing::has_display_hazard;
+using url_shortener::tui::testing::hostile_samples;
 
 namespace
 {
@@ -128,4 +132,24 @@ BOOST_AUTO_TEST_CASE(long_backend_label_truncated_at_60_chars)
     BOOST_TEST(label.size() == 60u);
     BOOST_TEST(label.substr(label.size() - 3) == "...");
     BOOST_TEST(label.substr(0, 57) == std::string(57, 'x'));
+}
+
+// ---------------------------------------------------------------------------
+// T-110: a hostile backend label (ESC/CSI/OSC/DCS, C1, bidi, zero-width, 64 KiB)
+// never survives into the title; FrameModel sanitizes it before composing.
+// On failure first check: FrameModel::title stopped routing the label through
+// sanitize_for_terminal (frame_model.cpp safe_label).
+// ---------------------------------------------------------------------------
+BOOST_AUTO_TEST_CASE(hostile_backend_label_never_reaches_title)
+{
+    for (const auto& sample : hostile_samples())
+    {
+        FrameModel model(admin_session(), sample.raw, true, "dark");
+        const std::string title = model.title();
+        BOOST_TEST(!has_display_hazard(title),
+                   "hostile sample leaked into title: " << sample.name);
+        // The fixed scaffolding is always intact around the sanitized label.
+        BOOST_TEST(title.rfind("url_shortener -- backend: ", 0) == 0u);
+        BOOST_TEST(title.find("user: local/Admin") != std::string::npos);
+    }
 }
