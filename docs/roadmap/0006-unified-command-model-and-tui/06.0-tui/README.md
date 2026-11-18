@@ -84,7 +84,7 @@ for 18 to verify - see 21's own Constraints), only 20.
 | 09 | [TableModel (paging, sort, filter, hscroll)](09-table-model.md) | ✅ Complete | 02, 03 | 10, 12, 14, 16, 20 |
 | 10 | [TableView renderer (D3/D6/D8 body)](10-table-view.md) | ✅ Complete | 04, 05, 09 | 12, 14, 16, 20 |
 | 11 | [Command Palette (D9) and generic command screen](11-command-palette-and-generic-command-screen.md) | ✅ Complete | 02, 03, 04, 05, 06, 07, 08 | 12, 13, 14, 15, 16, 18, 20 |
-| 12 | [Links list screen (D3)](12-links-list-screen.md) | ⬜ Not started | 03, 04, 06, 08, 09, 10, 11, 03.0/11, 03.0/14 | 13, 17, 18, 20 |
+| 12 | [Links list screen (D3)](12-links-list-screen.md) | ✅ Complete | 03, 04, 06, 08, 09, 10, 11, 03.0/11, 03.0/14 | 13, 17, 18, 20 |
 | 13 | [Link detail, stats, preview (D4)](13-link-detail-screen.md) | ⬜ Not started | 03, 04, 06, 08, 11, 12, 03.0/08, 03.0/11 | 18, 20 |
 | 14 | [Tables browser (D6)](14-tables-browser-screen.md) | ⬜ Not started | 03, 04, 05, 08, 09, 10, 11, 03.0/15, 03.0/16 | 18, 20 |
 | 15 | [Import / export pairs (D7)](15-import-export-screen.md) | ⬜ Not started | 03, 04, 06, 08, 11, 05.0/05, 05.0/08, 05.0/10 | 18, 20 |
