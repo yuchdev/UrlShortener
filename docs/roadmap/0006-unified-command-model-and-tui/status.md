@@ -11,7 +11,7 @@ Tracks progress against [plan.md](/docs/roadmap/0006-unified-command-model-and-t
 | 03.0 | Link and browse commands | ✅ Complete (18/18 subtasks) | 23 targets (`commands__20`-`30`, `app__40`-`48`, `core 09`, `memory__17`, `analytics__16`, storage list-events SQLite/Postgres, contract `10`-`12`) |
 | 04.0 | REST and CLI adapters | ✅ Complete (15/15 subtasks) | 22 (`commands__40`, http `15`-`25`; `cli__06`-`12`; cli int `20`, `21`; `observability__04`; `ratelimiter__08`) |
 | 05.0 | Jobs, pair import/export, stdio | ✅ Complete (21/21 subtasks) | 23 (`commands__50`-`65`; `app__60`; `cli__20`, `cli__21`; http `40`; cli int `40`, `41`; e2e `30`) |
-| 06.0 | Terminal UI | 🔶 In progress (15/21 subtasks) | 45 (`tui__01`, `tui__02_*` x3, `tui__03`, `tui__04_*` x6, `tui__05_*` x4, `tui__06_*` x4, `tui__07_*` x3, `tui__08_*` x3, `tui__09_*` x3, `tui__10_*` x2, `tui__11_*` x4, `tui__12_*` x3, `tui__16_*` x3, `tui__19_*` x2, `tui__21_*` x2, `cli__30`) |
+| 06.0 | Terminal UI | 🔶 In progress (16/21 subtasks) | 47 (`tui__01`, `tui__02_*` x3, `tui__03`, `tui__04_*` x6, `tui__05_*` x4, `tui__06_*` x4, `tui__07_*` x3, `tui__08_*` x3, `tui__09_*` x3, `tui__10_*` x2, `tui__11_*` x4, `tui__12_*` x3, `tui__14_*` x2, `tui__16_*` x3, `tui__19_*` x2, `tui__21_*` x2, `cli__30`) |
 | 07.0 | Tests and conformance | ⬜ Not started | 0 |
 | 08.0 | Docs and registry sync | ⬜ Not started | 0 |
 
