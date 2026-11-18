@@ -53,6 +53,15 @@ std::string fit(const std::string& raw, std::size_t width)
     return truncate_to_width(sanitize_for_terminal(raw), width);
 }
 
+/// The top-level dotted prefix of a command name (the text before the first
+/// `.`), used to group commands in the empty-query compaction (D9). Returns the
+/// whole name when it has no dot.
+std::string top_prefix(const std::string& name)
+{
+    const std::string::size_type dot = name.find('.');
+    return dot == std::string::npos ? name : name.substr(0, dot);
+}
+
 /**
  * @brief The Command Palette body: filter input + ranked command rows, hosting
  * the generic command flow inline when a command is chosen.
@@ -253,7 +262,90 @@ private:
         return row;
     }
 
-    /// The windowed list body.
+    /// Builds the empty-query compaction (D9): commands sharing a top-level
+    /// name prefix (`db.*`, `job.*`, `link.*`, ...) are packed onto one or more
+    /// `name / name / ...` lines, driven entirely by the prefix (no hard-coded
+    /// group list). Selection is still per-command: the selected command's token
+    /// is marked `>` and highlighted, and a disabled command's token is dim, so
+    /// every command stays reachable with the arrows and the read-only state
+    /// still reads. Per-command summaries/tags are shown when the operator
+    /// filters (the full-row view); the compaction trades them for density.
+    /// @param content_width Columns available for wrapping.
+    /// @param[out] out_lines The built compact lines.
+    /// @param[out] sel_line Index into @p out_lines of the selected command's
+    /// line (for windowing).
+    void build_compact_lines(std::size_t content_width,
+                             ftxui::Elements& out_lines,
+                             std::size_t& sel_line) const
+    {
+        using namespace ftxui;
+        const std::vector<PaletteEntry>& entries = m_model_.entries();
+        const std::size_t sel = m_model_.selected_index();
+        sel_line = 0;
+
+        std::size_t i = 0;
+        while (i < entries.size()) {
+            const std::string prefix = top_prefix(entries[i].info->name);
+            Elements cur;
+            std::size_t cur_w = 0;
+            for (; i < entries.size()
+                 && top_prefix(entries[i].info->name) == prefix;
+                 ++i)
+            {
+                const bool selected = i == sel;
+                const std::string token = (selected ? ">" : "")
+                    + fit(entries[i].info->name, content_width);
+                const std::size_t tok_w = display_width(token);
+                const std::size_t sep_w = cur.empty() ? 0u : 3u;
+                if (!cur.empty() && cur_w + sep_w + tok_w > content_width) {
+                    out_lines.push_back(hbox(cur));
+                    cur.clear();
+                    cur_w = 0;
+                }
+                if (!cur.empty()) {
+                    cur.push_back(text(" / "));
+                    cur_w += 3;
+                }
+                Element e = text(token);
+                if (!entries[i].enabled) {
+                    e = e | to_decorator(m_theme_.disabled);
+                }
+                if (selected) {
+                    e = e | to_decorator(m_theme_.selected_row);
+                    sel_line = out_lines.size();
+                }
+                cur.push_back(std::move(e));
+                cur_w += tok_w;
+            }
+            if (!cur.empty()) {
+                out_lines.push_back(hbox(cur));
+            }
+        }
+    }
+
+    /// Windows @p lines to @ref visible_rows rows keeping @p sel_line visible.
+    ftxui::Elements window_lines(ftxui::Elements lines,
+                                 std::size_t sel_line) const
+    {
+        const std::size_t rows_shown = visible_rows();
+        if (lines.size() <= rows_shown) {
+            return lines;
+        }
+        std::size_t first = 0;
+        if (sel_line >= rows_shown) {
+            first = sel_line - rows_shown + 1;
+        }
+        if (first + rows_shown > lines.size()) {
+            first = lines.size() - rows_shown;
+        }
+        ftxui::Elements out;
+        for (std::size_t k = first; k < first + rows_shown; ++k) {
+            out.push_back(std::move(lines[k]));
+        }
+        return out;
+    }
+
+    /// The windowed list body: compact (empty query) or full rows (filtered).
     ftxui::Element render_list() const
     {
         using namespace ftxui;
@@ -262,11 +354,18 @@ private:
                                          ? measured_width() - 2
                                          : 0);
         const std::vector<PaletteEntry>& entries = m_model_.entries();
+        const bool empty_query = m_model_.query().empty();
 
         Elements rows;
         if (entries.empty()) {
             rows.push_back(text("  (no matching command)")
                            | to_decorator(m_theme_.hint));
+        }
+        else if (empty_query) {
+            Elements lines;
+            std::size_t sel_line = 0;
+            build_compact_lines(content_width, lines, sel_line);
+            rows = window_lines(std::move(lines), sel_line);
         }
         else {
             const std::size_t rows_shown = visible_rows();
@@ -287,13 +386,21 @@ private:
             }
         }
 
-        Element content = vbox({
-            filter_line(content_width),
-            separator(),
-            vbox(std::move(rows)) | flex,
-        });
+        Elements content_rows;
+        content_rows.push_back(filter_line(content_width));
+        // In the compact view the per-command disabled reason is not shown, so a
+        // read-only session gets an explicit note (the dim style still applies
+        // to each disabled command token).
+        if (m_context_.options.read_only && empty_query) {
+            content_rows.push_back(
+                text(" read-only session: write commands disabled")
+                | to_decorator(m_theme_.warning));
+        }
+        content_rows.push_back(separator());
+        content_rows.push_back(vbox(std::move(rows)) | flex);
+
         return window(text(" Command palette ") | to_decorator(m_theme_.title),
-                      std::move(content));
+                      vbox(std::move(content_rows)));
     }
 
     ///< Screen context (caller, session, router, options); not owned.

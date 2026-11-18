@@ -188,9 +188,11 @@ void PaletteModel::rebuild()
         entry.info = &m_commands_[i];
         entry.tag = m_tags_[i];
         entry.score = s;
-        const bool is_read = m_commands_[i].permission == "read"
-            || m_commands_[i].permission.empty();
-        entry.enabled = !(m_read_only_ && !is_read);
+        // Fail closed via the one shared predicate (threat model T-116): an
+        // empty/unknown permission is treated as a write, so a read-only
+        // session disables it rather than offering it.
+        entry.enabled =
+            !(m_read_only_ && !is_read_only_command(m_commands_[i]));
         if (!entry.enabled) {
             entry.disabled_reason = "not_authorized (read-only session)";
         }

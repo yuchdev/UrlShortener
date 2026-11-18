@@ -69,7 +69,15 @@ std::vector<std::string> collect_violations(const std::vector<fs::path>& roots)
         R"((scan_[A-Za-z0-9_]*|parse_json[A-Za-z0-9_]*)\s*\()");
     // A direct ICommandClient::call under screens/ (C8): a screen must submit
     // through AsyncCaller, never call the client itself (subtask 11).
-    static const std::regex call_re(R"((->|\.)call\s*\()");
+    //
+    // NOTE: this regex is a cheap *lint*, not the boundary itself. The real
+    // boundary is structural: the forbidden-include allow-list above (a screen
+    // cannot include the registry/composition/service headers), and
+    // ScreenContext exposing only an AsyncCaller - no ICommandClient - to a
+    // screen. The lint just catches an accidental `foo.call(`/`foo->call(` that
+    // would need an ICommandClient in scope; it tolerates surrounding
+    // whitespace but is not a substitute for the include check.
+    static const std::regex call_re(R"((->|\.)\s*call\s*\()");
 
     std::vector<std::string> violations;
     for (const fs::path& root : roots) {

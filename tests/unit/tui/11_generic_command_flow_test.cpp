@@ -117,6 +117,51 @@ tui::CommandInfo cache_purge()
     return info;
 }
 
+tui::CommandInfo mk(const std::string& name,
+                    const std::string& permission,
+                    bool mutating,
+                    bool is_job,
+                    std::vector<tui::ArgInfo> args)
+{
+    tui::CommandInfo info;
+    info.name = name;
+    info.summary = name + " summary";
+    info.permission = permission;
+    info.mutating = mutating;
+    info.is_job = is_job;
+    info.args = std::move(args);
+    return info;
+}
+
+/// A broad catalog covering every command shape the palette must reach,
+/// including `link.import` and `job.cancel` (success criterion #1).
+std::vector<tui::CommandInfo> full_catalog()
+{
+    const tui::ArgInfo slug = arg("slug", true);
+    const tui::ArgInfo id = arg("id", true);
+    return {
+        mk("link.create", "write", true, false, {arg("target_url", true)}),
+        mk("link.get", "read", false, false, {slug}),
+        mk("link.list", "read", false, false, {}),      // no-arg read
+        mk("link.update", "write", true, false, {slug}),
+        mk("link.delete", "write", true, false, {slug}),
+        mk("link.enable", "write", true, false, {slug}),
+        mk("link.disable", "write", true, false, {slug}),
+        mk("link.restore", "write", true, false, {slug}),
+        mk("link.preview", "read", false, false, {slug}),
+        mk("link.stats", "read", false, false, {slug}),
+        mk("link.import", "write", true, true, {}),     // no-arg mutating job
+        mk("link.export", "read", false, true, {arg("path", false)}),
+        mk("db.tables", "read", false, false, {}),      // no-arg read
+        mk("db.rows", "read", false, false, {arg("table", true)}),
+        mk("job.get", "read", false, false, {id}),
+        mk("job.list", "read", false, false, {}),       // no-arg read
+        mk("job.cancel", "write", true, false, {id}),   // has-arg mutating
+        mk("system.info", "read", false, false, {}),    // no-arg read
+        mk("command.list", "read", false, false, {}),   // no-arg read
+    };
+}
+
 std::vector<ftxui::Event> type(const std::string& text)
 {
     std::vector<ftxui::Event> events;
@@ -406,4 +451,99 @@ BOOST_AUTO_TEST_CASE(t116_no_arg_mutating_confirm_and_readonly)
         send_events(screen->component(), {ftxui::Event::Return});
         BOOST_TEST(fx.client.recorded_requests().empty());
     }
+}
+
+// ---------------------------------------------------------------------------
+// Success criterion #1: EVERY catalog command (incl. link.import, job.cancel)
+// is selectable in the palette and executable - a no-arg read sends exactly one
+// request, a no-arg mutating command confirms then sends one (via run_mutation),
+// and a command with args opens its form.
+// On failure first check: PaletteModel scoring / the generic screen's submit
+// path for the named command (BOOST_TEST_CONTEXT reports which one).
+// ---------------------------------------------------------------------------
+BOOST_AUTO_TEST_CASE(every_catalog_command_selectable_and_executable)
+{
+    const std::vector<tui::CommandInfo> catalog = full_catalog();
+    for (const tui::CommandInfo& cmd : catalog) {
+        BOOST_TEST_CONTEXT("command=" << cmd.name)
+        {
+            Fixture fx(/*assume_yes=*/false, /*read_only=*/false);
+            fx.client.enqueue(cmd.name,
+                              commands::make_success("tui-1", R"({"ok":1})"));
+            std::unique_ptr<tui::IScreen> palette = fx.palette(catalog);
+
+            // Selectable: filtering by the exact name lists it, and Enter opens
+            // it (the exact match is the top-ranked, selected entry).
+            render_to_text(palette->component(), 80, 24);
+            send_events(palette->component(), type(cmd.name));
+            BOOST_TEST(render_to_text(palette->component(), 80, 24).find(
+                           cmd.name)
+                       != std::string::npos);
+            send_events(palette->component(), {ftxui::Event::Return});
+            render_to_text(palette->component(), 80, 24);
+
+            if (cmd.args.empty()) {
+                send_events(palette->component(), {ftxui::Event::CtrlS});
+                if (cmd.mutating) {
+                    // A no-arg mutating command is gated by the confirm (it goes
+                    // through run_mutation / ConfirmPolicy), then submits once.
+                    BOOST_TEST(fx.client.recorded_requests().empty());
+                    send_events(palette->component(), {ftxui::Event::Return});
+                }
+                fx.drain(1);
+                BOOST_TEST(fx.client.recorded_requests().size() == 1u);
+            }
+            else {
+                // A command with args opens its generated form; nothing is sent
+                // until the operator fills and submits it.
+                BOOST_TEST(render_to_text(palette->component(), 80, 24).find(
+                               "(command: " + cmd.name)
+                           != std::string::npos);
+                BOOST_TEST(fx.client.recorded_requests().empty());
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// After a job response, pressing `5` navigates to the Jobs tab (the generic
+// screen fires navigate_tab('5')).
+// ---------------------------------------------------------------------------
+BOOST_AUTO_TEST_CASE(job_response_five_navigates_to_jobs)
+{
+    Fixture fx(/*assume_yes=*/true, /*read_only=*/false);
+    commands::JobInfo job;
+    job.id = "j-9";
+    job.state = commands::JobState::queued;
+    fx.client.enqueue("link.import",
+                      commands::make_job_accepted("tui-1", job));
+
+    std::unique_ptr<tui::IScreen> screen = fx.generic(link_import());
+    render_to_text(screen->component(), 80, 24);
+    send_events(screen->component(), {ftxui::Event::CtrlS});
+    fx.drain(1);
+
+    BOOST_TEST(tui::to_string(fx.router.current()) != "jobs");  // not yet
+    send_events(screen->component(), {ftxui::Event::Character("5")});
+    BOOST_TEST(tui::to_string(fx.router.current()) == "jobs");
+}
+
+// ---------------------------------------------------------------------------
+// Esc on the palette with an empty filter is NOT consumed, so App pops the
+// palette tab (router pop); with a filter, Esc clears it and is consumed.
+// ---------------------------------------------------------------------------
+BOOST_AUTO_TEST_CASE(palette_esc_pops_when_filter_empty)
+{
+    Fixture fx(/*assume_yes=*/false, /*read_only=*/false);
+    std::unique_ptr<tui::IScreen> palette = fx.palette({db_tables()});
+    render_to_text(palette->component(), 80, 24);
+
+    // Empty filter: Esc returns false so App's handler runs router.pop().
+    BOOST_TEST(palette->component()->OnEvent(ftxui::Event::Escape) == false);
+
+    // With a filter: Esc clears the query and is consumed (true)...
+    send_events(palette->component(), type("db"));
+    BOOST_TEST(palette->component()->OnEvent(ftxui::Event::Escape) == true);
+    // ...and the now-empty filter lets the next Esc pop again.
+    BOOST_TEST(palette->component()->OnEvent(ftxui::Event::Escape) == false);
 }

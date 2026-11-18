@@ -88,7 +88,7 @@ void MutationFlow::begin(
     // non-`read` command, even through a direct run_mutation caller. Refuse up
     // front with a toast and zero submits; the registry's AccessGuard would
     // deny it too, but we never put the write on the wire.
-    if (m_deps_.read_only && info.permission != "read") {
+    if (m_deps_.read_only && !is_read_only_command(info)) {
         m_awaiting_ = false;
         m_confirm_.reset();
         Toast t;

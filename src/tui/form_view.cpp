@@ -355,7 +355,7 @@ private:
     /// Whether the submit button is currently active.
     bool submit_enabled() const
     {
-        if (m_ctx_.read_only && m_model_.command().permission != "read") {
+        if (m_ctx_.read_only && !is_read_only_command(m_model_.command())) {
             return false;
         }
         return !m_flow_.busy() && !m_flow_.awaiting_confirm();

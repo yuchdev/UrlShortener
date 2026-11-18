@@ -160,7 +160,9 @@ BOOST_AUTO_TEST_CASE(read_only_palette_matches_golden)
     std::unique_ptr<tui::IScreen> screen = fx.make();
     const std::string grid = render_to_text(screen->component(), 80, 24);
 
-    BOOST_TEST(grid.find("not_authorized (read-only session)")
+    // The empty-query view is compacted, so the per-command reason is replaced
+    // by an explicit read-only note (disabled command tokens are also dim).
+    BOOST_TEST(grid.find("read-only session: write commands disabled")
                != std::string::npos);
     assert_matches_golden(grid, "d09_palette_readonly_80x24.txt");
 }
@@ -199,6 +201,10 @@ BOOST_AUTO_TEST_CASE(hostile_summary_never_reaches_grid)
             cmd("link.evil", sample.raw, "read")};
         std::unique_ptr<tui::IScreen> screen =
             tui::make_palette_screen(context, commands);
+        // Filter so the full-row view renders the hostile summary (the compact
+        // empty-query view shows names only); both paths must stay clean.
+        render_to_text(screen->component(), 80, 24);
+        send_events(screen->component(), type("link"));
         const std::string grid = render_to_text(screen->component(), 80, 24);
 
         BOOST_TEST(grid.find('\x1b') == std::string::npos,

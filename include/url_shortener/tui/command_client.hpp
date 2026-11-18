@@ -130,6 +130,27 @@ struct CommandInfo
 };
 
 /**
+ * @brief The one predicate the TUI uses to decide whether a command is a
+ * read-only (non-mutating-capability) command.
+ *
+ * Shared by every capability gate - the palette's read-only disabling, the
+ * form's disabled submit button, and @ref MutationFlow's defence-in-depth
+ * refusal - so they can never disagree (threat model T-116). It is a pure
+ * function of the descriptor's base permission and **fails closed**: only the
+ * exact wire string `"read"` counts as read-only; any other value, including an
+ * empty permission, is treated as a potential write so a read-only session
+ * refuses it. Authorization itself still rests with the registry (contract C7);
+ * this only decides client-side friction/disabling.
+ *
+ * @param info The command to classify.
+ * @return `true` iff @ref CommandInfo::permission is exactly `"read"`.
+ */
+inline bool is_read_only_command(const CommandInfo& info)
+{
+    return info.permission == "read";
+}
+
+/**
  * @brief The identity and mode of the current client session.
  *
  * A snapshot describing who the screens render for and whether writes are
