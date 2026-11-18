@@ -468,6 +468,59 @@ BOOST_AUTO_TEST_CASE(filter_commit_requeries)
 }
 
 // ---------------------------------------------------------------------------
+// Two quick previews: only the second's result opens the viewer (the first is
+// cancelled when the operator moves on). Stale-response guard (review
+// follow-up). On failure first check: do_preview's epoch/token discipline and
+// the cancel-on-key in OnEvent.
+// ---------------------------------------------------------------------------
+BOOST_AUTO_TEST_CASE(two_quick_previews_only_second_result_shown)
+{
+    Fixture fx;
+    fx.client.enqueue("link.list", ok(list_four()));
+    fx.client.enqueue("link.preview", ok(R"({"body":"PREVIEW-FIRST"})"));
+    fx.client.enqueue("link.preview", ok(R"({"body":"PREVIEW-SECOND"})"));
+
+    std::unique_ptr<tui::IScreen> screen = fx.screen();
+    screen->on_enter();
+    fx.settle(1);
+    render_twice(screen->component(), 80, 24);
+
+    send_events(screen->component(), {ftxui::Event::Character("p")});
+    send_events(screen->component(),
+                {ftxui::Event::Character("j")});  // move on
+    send_events(screen->component(), {ftxui::Event::Character("p")});
+    fx.settle(3);  // list + both previews posted (the first is dropped)
+
+    const std::string grid = render_twice(screen->component(), 80, 24);
+    BOOST_TEST(grid.find("PREVIEW-SECOND") != std::string::npos);
+    BOOST_TEST(grid.find("PREVIEW-FIRST") == std::string::npos);
+}
+
+// ---------------------------------------------------------------------------
+// Preview then navigate away: the late preview result does not open the viewer.
+// ---------------------------------------------------------------------------
+BOOST_AUTO_TEST_CASE(preview_then_navigate_does_not_open_viewer)
+{
+    Fixture fx;
+    fx.client.enqueue("link.list", ok(list_four()));
+    fx.client.enqueue("link.preview", ok(R"({"body":"PREVIEW-LATE"})"));
+
+    std::unique_ptr<tui::IScreen> screen = fx.screen();
+    screen->on_enter();
+    fx.settle(1);
+    render_twice(screen->component(), 80, 24);
+
+    send_events(screen->component(), {ftxui::Event::Character("p")});  // submit
+    send_events(screen->component(),
+                {ftxui::Event::Character("j")});  // moved on
+    fx.settle(2);  // list + preview posted, but the completion is dropped
+
+    const std::string grid = render_twice(screen->component(), 80, 24);
+    BOOST_TEST(grid.find("PREVIEW-LATE") == std::string::npos);
+    BOOST_TEST(grid.find("Enter detail") != std::string::npos);  // still table
+}
+
+// ---------------------------------------------------------------------------
 // A read-only session dims the write keys and sends no mutation.
 // ---------------------------------------------------------------------------
 BOOST_AUTO_TEST_CASE(read_only_dims_write_keys_and_sends_nothing)

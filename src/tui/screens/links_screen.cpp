@@ -131,6 +131,10 @@ public:
         }
     }
 
+    /// Called when the tab is left: drop any in-flight preview so its result
+    /// cannot open a viewer behind another tab.
+    void on_leave_cleanup() { cancel_preview(); }
+
     /// @copydoc ftxui::ComponentBase::OnRender
     ftxui::Element OnRender() override
     {
@@ -184,6 +188,12 @@ public:
             const bool handled = m_flow_.overlay_event(event);
             m_context_.text_input_active = m_flow_.awaiting_confirm();
             return handled;
+        }
+        // Any key in table mode means the operator moved on, so an in-flight
+        // preview must not open its viewer late (over a changed selection or a
+        // started action). A fresh `p` re-submits through do_preview.
+        if (m_preview_token_ != 0) {
+            cancel_preview();
         }
         const bool consumed = m_table_view_->OnEvent(event);
         if (m_flow_.awaiting_confirm()) {
@@ -417,6 +427,12 @@ private:
     }
 
     /// Submits `link.preview` for the selected link and shows it in the viewer.
+    ///
+    /// Applies the same stale-response discipline as @ref run_list: any
+    /// in-flight preview is cancelled first and the new call is tagged with the
+    /// current @ref m_preview_epoch_, so a slow response cannot open the viewer
+    /// after the operator has moved on (changed selection, started another
+    /// preview/detail/mutation, or left the viewer).
     void do_preview()
     {
         const std::string slug = selected_slug();
@@ -424,10 +440,16 @@ private:
             toast_unavailable("select a link first", "link.preview");
             return;
         }
-        m_context_.caller.submit(
+        cancel_preview();
+        const std::uint64_t epoch = m_preview_epoch_;
+        m_preview_token_ = m_context_.caller.submit(
             build_slug_request("link.preview", slug, m_ids_.next()),
-            [this](const commands::CommandResponse& response)
+            [this, epoch](const commands::CommandResponse& response)
             {
+                if (epoch != m_preview_epoch_) {
+                    return;  // superseded; a newer action took over
+                }
+                m_preview_token_ = 0;
                 if (!response.ok) {
                     m_toasts_.push(toast_from_response(
                         "link.preview", response.id, response));
@@ -435,6 +457,17 @@ private:
                 }
                 open_result_view(response.result_json, "link.preview");
             });
+    }
+
+    /// Cancels any in-flight `link.preview` and bumps the epoch so a late
+    /// completion is dropped (defence in depth over @ref AsyncCaller::cancel).
+    void cancel_preview()
+    {
+        if (m_preview_token_ != 0) {
+            m_context_.caller.cancel(m_preview_token_);
+            m_preview_token_ = 0;
+        }
+        ++m_preview_epoch_;
     }
 
     /// Opens the detail/stats view for the selected link.
@@ -564,6 +597,7 @@ private:
     /// Closes the viewer and returns to the table.
     void close_result()
     {
+        cancel_preview();  // a late preview must not reopen a viewer
         m_result_.reset();
         m_mode_ = Mode::table;
         m_context_.text_input_active = false;
@@ -789,6 +823,13 @@ private:
     ///< Token of the in-flight `link.list` call; `0` when none is pending.
     CallToken m_list_token_ = 0;
 
+    ///< Token of the in-flight `link.preview` call; `0` when none is pending.
+    CallToken m_preview_token_ = 0;
+
+    ///< Monotonic tag for preview submissions; a completion whose captured
+    ///< epoch no longer matches is dropped (stale-response guard).
+    std::uint64_t m_preview_epoch_ = 0;
+
     ///< `true` once a page has loaded successfully (drives the stale check).
     bool m_loaded_ = false;
 
@@ -852,6 +893,8 @@ public:
     std::vector<KeyHint> hints() const override { return {}; }
 
     void on_enter() override { m_impl_->on_enter_refresh(); }
+
+    void on_leave() override { m_impl_->on_leave_cleanup(); }
 
 private:
     ///< The Links body component (kept as the derived type so @ref on_enter can
