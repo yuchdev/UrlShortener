@@ -1,6 +1,7 @@
 #define BOOST_TEST_MODULE TuiMutationFlowTest
 
 #include <chrono>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -257,4 +258,49 @@ BOOST_AUTO_TEST_CASE(read_only_still_runs_read_command)
     BOOST_TEST(!fx.flow.awaiting_confirm());
     fx.drain();
     BOOST_TEST(fx.client.recorded_requests().size() == 1u);
+}
+
+// ---------------------------------------------------------------------------
+// T-120 / CWE-416: destroying the flow before its completion is drained drops
+// the completion - the on_result (which captures the host) never runs, so the
+// posted task cannot touch freed memory. On failure first check:
+// MutationFlow::submit_now's weak-guard capture and the destructor's cancel.
+// (ASan is not configured, so the side-effect counter is the regression anchor;
+// without the fix the raw `this` capture would run handle_response/on_result.)
+// ---------------------------------------------------------------------------
+BOOST_AUTO_TEST_CASE(destroyed_flow_drops_completion)
+{
+    MockCommandClient client;
+    InlinePoster poster;
+    ManualClock clock {std::chrono::system_clock::time_point {}};
+    tui::ToastQueue toasts {clock};
+    tui::AsyncCaller caller {client, poster, 1};
+    tui::ConfirmPolicy policy {/*assume_yes=*/true};  // skip the confirm
+    client.enqueue("link.update",
+                   commands::make_success("tui-1", "{\"slug\":\"a\"}"));
+
+    int calls = 0;
+    // The flow is heap-held so it can be destroyed before the completion is
+    // drained, while the caller/poster/toasts (declared first) outlive it - the
+    // real teardown order (App destroys screens, hence flows, before the
+    // caller), so ~MutationFlow's cancel() runs against a live caller.
+    auto flow = std::make_unique<tui::MutationFlow>(tui::MutationDeps {
+        caller, policy, toasts, tui::theme_for(tui::ThemeName::dark), false});
+    commands::CommandRequest request;
+    request.command = "link.update";
+    request.id = "tui-1";
+    request.args_json = "{\"slug\":\"a\"}";
+    tui::run_mutation(*flow,
+                      std::move(request),
+                      info("link.update", "write", true),
+                      [&calls](const commands::CommandResponse&) { ++calls; });
+
+    // --yes submitted immediately; wait until the worker posted its completion,
+    // then destroy the flow before the UI thread drains it.
+    poster.wait_for_posted(1);
+    flow.reset();
+    poster.run_pending();  // the completion must no-op (guard expired)
+
+    BOOST_TEST(calls == 0);
+    BOOST_TEST(toasts.visible().empty());  // no toast from a dead flow
 }

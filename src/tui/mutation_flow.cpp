@@ -70,6 +70,28 @@ MutationFlow::MutationFlow(MutationDeps deps)
     m_overlay_ = ftxui::Make<MutationOverlayComponent>(this);
 }
 
+MutationFlow::~MutationFlow()
+{
+    // Suppress any in-flight submit. Safe: App destroys every screen (hence
+    // every owned flow) before the AsyncCaller, so the caller is still alive
+    // here. Clearing m_alive_ (the shared_ptr member below) additionally makes
+    // the already-posted completion a no-op (its weak_ptr expires), covering
+    // the window after a worker has posted but before the UI thread drains it.
+    cancel();
+}
+
+void MutationFlow::cancel()
+{
+    if (m_token_ != 0) {
+        m_deps_.caller.cancel(m_token_);
+        m_token_ = 0;
+    }
+    // Discard any open confirm so a deferred submit is dropped, not left armed.
+    m_awaiting_ = false;
+    m_confirm_.reset();
+    m_dialog_.reset();
+}
+
 bool MutationFlow::busy() const
 {
     return m_deps_.caller.busy();
@@ -145,13 +167,24 @@ bool MutationFlow::overlay_event(const ftxui::Event& event)
 
 void MutationFlow::submit_now()
 {
-    // The handler captures `this`: the flow (owned by the screen) outlives the
-    // AsyncCaller (App destroys the caller before its screens), and the caller
-    // suppresses completions once destroyed (T-120), so the raw capture cannot
-    // run against a dead flow.
-    m_deps_.caller.submit(m_request_,
-                          [this](const commands::CommandResponse& resp)
-                          { handle_response(resp); });
+    // The completion captures `this` AND a weak_ptr to this flow's owned alive
+    // guard. A flow owned by a screen destroyed mid-session (an inline Link
+    // detail or edit form) tears the guard down, so the posted completion
+    // no-ops instead of running handle_response - and any `this`-capturing
+    // on_result it would invoke - against freed memory (threat model T-120,
+    // CWE-416). The token lets @ref cancel / the destructor suppress a pending
+    // completion before it is even delivered.
+    std::weak_ptr<bool> guard = m_alive_;
+    m_token_ = m_deps_.caller.submit(
+        m_request_,
+        [this, guard](const commands::CommandResponse& resp)
+        {
+            if (guard.expired()) {
+                return;  // the flow (and its host) is gone; drop the completion
+            }
+            m_token_ = 0;
+            handle_response(resp);
+        });
 }
 
 void MutationFlow::handle_response(const commands::CommandResponse& resp)

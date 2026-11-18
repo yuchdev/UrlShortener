@@ -85,18 +85,33 @@ tui::CommandInfo cmd(const std::string& name,
     return info;
 }
 
-/// The link.* catalog the detail screen resolves commands from.
+/// The link.* catalog the detail screen resolves commands from. link.stats
+/// carries a `bucket` arg, so the `s` toggle is offered (spec step 4).
 std::vector<tui::CommandInfo> catalog()
+{
+    const tui::ArgInfo slug = arg("slug", tui::ArgKind::string, true);
+    return {
+        cmd("link.get", "read", false, {slug}),
+        cmd("link.stats", "read", false, {slug, arg("bucket")}),
+        cmd("link.preview", "read", false, {slug}),
+        cmd("link.update",
+            "write",
+            true,
+            {slug, arg("enabled", tui::ArgKind::boolean)}),
+        cmd("link.restore", "write", true, {slug}),
+    };
+}
+
+/// A catalog whose link.stats accepts no `bucket` arg (stats bucketing not
+/// supported), so the detail hides the `s` toggle.
+std::vector<tui::CommandInfo> catalog_no_bucket()
 {
     const tui::ArgInfo slug = arg("slug", tui::ArgKind::string, true);
     return {
         cmd("link.get", "read", false, {slug}),
         cmd("link.stats", "read", false, {slug}),
         cmd("link.preview", "read", false, {slug}),
-        cmd("link.update",
-            "write",
-            true,
-            {slug, arg("enabled", tui::ArgKind::boolean)}),
+        cmd("link.update", "write", true, {slug}),
         cmd("link.restore", "write", true, {slug}),
     };
 }
@@ -173,16 +188,18 @@ struct Fixture
     tui::ScreenContext context {caller, session, router, options};
     bool closed = false;
 
-    explicit Fixture(tui::ThemeName theme = tui::ThemeName::dark)
-        : options(make_options(theme))
+    explicit Fixture(tui::ThemeName theme = tui::ThemeName::dark,
+                     bool assume_yes = false)
+        : options(make_options(theme, assume_yes))
     {
         context.pending_slug = "docs";
     }
 
-    static tui::TuiOptions make_options(tui::ThemeName theme)
+    static tui::TuiOptions make_options(tui::ThemeName theme, bool assume_yes)
     {
         tui::TuiOptions o;
         o.theme = theme;
+        o.assume_yes = assume_yes;
         return o;
     }
 
@@ -190,6 +207,13 @@ struct Fixture
     {
         return tui::make_link_detail_screen(
             context, catalog(), [this] { closed = true; });
+    }
+
+    std::unique_ptr<tui::IScreen> screen_with(
+        std::vector<tui::CommandInfo> cmds)
+    {
+        return tui::make_link_detail_screen(
+            context, std::move(cmds), [this] { closed = true; });
     }
 
     /// Waits for @p total cumulative posts, then drains the queued completions.
@@ -425,4 +449,87 @@ BOOST_AUTO_TEST_CASE(hostile_fields_never_reach_grid)
                        "display hazard in a cell for sample: " << sample.name);
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// Spec step 4: when the link.stats descriptor has no `bucket` arg, the `s`
+// toggle is hidden and the key is ignored (no refetch).
+// ---------------------------------------------------------------------------
+BOOST_AUTO_TEST_CASE(s_hidden_when_no_bucket_arg)
+{
+    Fixture fx;
+    fx.client.enqueue("link.get", ok(full_link()));
+    fx.client.enqueue("link.stats", ok(stats_week()));
+
+    std::unique_ptr<tui::IScreen> screen = fx.screen_with(catalog_no_bucket());
+    screen->on_enter();
+    fx.settle(2);
+
+    const std::string grid = render_twice(screen->component(), 80, 24);
+    BOOST_TEST(grid.find("[s]tats") == std::string::npos);  // title hint gone
+    BOOST_TEST(grid.find("s stats") == std::string::npos);  // footer hint gone
+    BOOST_TEST(grid.find("[e]dit") != std::string::npos);  // edit still shown
+
+    // Pressing `s` does nothing: no third request is issued.
+    send_events(screen->component(), {ftxui::Event::Character("s")});
+    fx.poster.run_pending();
+    BOOST_TEST(fx.client.recorded_requests().size() == 2u);
+}
+
+// ---------------------------------------------------------------------------
+// T-120: `u` restore (--yes) then destroy the detail before draining the
+// completion -> the completion no-ops (no refresh, no crash, no UAF).
+// On failure first check: MutationFlow's weak guard and LinkDetail cancel_all.
+// ---------------------------------------------------------------------------
+BOOST_AUTO_TEST_CASE(restore_then_close_before_drain_no_handler)
+{
+    Fixture fx(tui::ThemeName::dark, /*assume_yes=*/true);
+    fx.context.pending_slug = "old-blog";
+    fx.client.enqueue("link.get", ok(deleted_link()));
+    fx.client.enqueue("link.stats", ok(stats_empty()));
+    fx.client.enqueue("link.restore", ok(R"({"slug":"old-blog"})"));
+
+    std::unique_ptr<tui::IScreen> screen = fx.screen();
+    screen->on_enter();
+    fx.settle(2);
+    render_twice(screen->component(), 80, 24);
+
+    // --yes: `u` submits link.restore immediately (no confirm).
+    send_events(screen->component(), {ftxui::Event::Character("u")});
+    fx.poster.wait_for_posted(3);  // get + stats + restore posted
+
+    // Destroy the screen (hence its MutationFlow) before draining the restore.
+    screen.reset();
+    fx.poster.run_pending();  // the restore completion must no-op
+
+    // The on_result refresh never fired: no fourth/fifth request on the wire.
+    BOOST_TEST(fx.client.recorded_requests().size() == 3u);
+}
+
+// ---------------------------------------------------------------------------
+// T-120: submit the inline edit form (--yes) then destroy the detail before
+// draining -> the form's completion no-ops (no refresh, no crash, no UAF).
+// ---------------------------------------------------------------------------
+BOOST_AUTO_TEST_CASE(edit_submit_then_close_before_drain_no_handler)
+{
+    Fixture fx(tui::ThemeName::dark, /*assume_yes=*/true);
+    fx.client.enqueue("link.get", ok(full_link()));
+    fx.client.enqueue("link.stats", ok(stats_week()));
+    fx.client.enqueue("link.update", ok(R"({"slug":"docs"})"));
+
+    std::unique_ptr<tui::IScreen> screen = fx.screen();
+    screen->on_enter();
+    fx.settle(2);
+    render_twice(screen->component(), 80, 24);
+
+    send_events(screen->component(), {ftxui::Event::Character("e")});
+    render_to_text(screen->component(), 80, 24);
+    send_events(screen->component(), {ftxui::Event::CtrlS});  // submit update
+    fx.poster.wait_for_posted(3);  // get + stats + update posted
+
+    // Destroy the screen (hence the form's MutationFlow) before draining.
+    screen.reset();
+    fx.poster.run_pending();  // the update completion must no-op
+
+    BOOST_TEST(fx.client.recorded_requests().size() == 3u);
 }

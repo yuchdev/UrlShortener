@@ -92,6 +92,40 @@ public:
     explicit MutationFlow(MutationDeps deps);
 
     /**
+     * @brief Cancels any in-flight submission so a late completion is dropped.
+     *
+     * Suppresses the outstanding submit through @ref AsyncCaller::cancel (its
+     * handler never fires) and clears the shared alive guard checked by the
+     * posted completion, then runs the base destructor. This is the UAF fix
+     * (threat model T-120, CWE-416): a @ref MutationFlow owned by a screen that
+     * is destroyed mid-session (an inline Link detail / edit form) can no
+     * longer run @ref handle_response against freed memory, because the posted
+     * completion holds a `weak_ptr` to this guard and no-ops once it expires.
+     * Safe for every host: the destructor runs while the injected
+     * @ref AsyncCaller is still alive (@ref App destroys every screen, hence
+     * every flow, before the caller), so the @ref cancel call never touches a
+     * dead caller.
+     */
+    ~MutationFlow();
+
+    MutationFlow(const MutationFlow&) = delete;
+    MutationFlow& operator=(const MutationFlow&) = delete;
+    MutationFlow(MutationFlow&&) = delete;
+    MutationFlow& operator=(MutationFlow&&) = delete;
+
+    /**
+     * @brief Drops any pending confirm and suppresses any in-flight submit.
+     *
+     * A host calls this from its `on_leave` / cancel path when it is about to
+     * be hidden or torn down: the open confirm dialog is discarded (no submit)
+     * and the outstanding call is cancelled so its toast / `on_result` never
+     * fires. Idempotent and safe to call when nothing is pending. It does not
+     * clear the alive guard, so the flow may be reused afterwards (e.g. a
+     * refresh).
+     */
+    void cancel();
+
+    /**
      * @brief The choke point: decide the confirmation, then submit now or after
      * a confirm (ADR 0003 rule 4).
      *
@@ -204,6 +238,17 @@ private:
 
     ///< The per-submission result handler supplied to @ref begin.
     std::function<void(const commands::CommandResponse&)> m_on_result_;
+
+    ///< Token of the in-flight submit; `0` when none is outstanding. Cancelled
+    ///< by @ref cancel and the destructor so a late completion is suppressed.
+    CallToken m_token_ = 0;
+
+    ///< Owned alive guard shared (as a `weak_ptr`) with every posted
+    ///< completion; cleared when this flow is destroyed so the completion
+    ///< no-ops instead of running @ref handle_response against freed memory
+    ///< (threat model T-120, CWE-416). A `shared_ptr` so the completion can
+    ///< safely outlive the flow.
+    std::shared_ptr<bool> m_alive_ = std::make_shared<bool>(true);
 };
 
 /**

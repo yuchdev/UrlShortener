@@ -95,6 +95,25 @@ CommandInfo find_info(const std::vector<CommandInfo>& catalog,
     return fallback;
 }
 
+/// Reports whether the `link.stats` descriptor accepts a `bucket` argument, so
+/// the `s` bucket toggle is offered only when the server supports it (spec step
+/// 4). A missing descriptor (fail-closed fallback has no args) reports `false`.
+bool stats_has_bucket_arg(const std::vector<CommandInfo>& catalog)
+{
+    for (const CommandInfo& info : catalog) {
+        if (info.name != "link.stats") {
+            continue;
+        }
+        for (const ArgInfo& arg : info.args) {
+            if (arg.name == "bucket") {
+                return true;
+            }
+        }
+        return false;
+    }
+    return false;
+}
+
 /**
  * @brief The Link detail body: the D4 grid + stats strip, with an inline
  * `link.preview` viewer and `link.update` edit form (subtask 06.0/13).
@@ -130,6 +149,11 @@ public:
                                 m_theme_,
                                 context.options.read_only})
     {
+        // Spec step 4: the `s` bucket toggle is offered only when the live
+        // `link.stats` descriptor actually accepts a `bucket` argument; read it
+        // from the catalog at runtime so the key (and its hint) vanish when the
+        // server does not support bucketed stats.
+        m_stats_bucket_supported_ = stats_has_bucket_arg(m_catalog_);
     }
 
     /// Called when the detail becomes active: read the handed-over slug and
@@ -321,6 +345,7 @@ private:
             m_stats_token_ = 0;
         }
         cancel_preview();
+        m_flow_.cancel();  // suppress an in-flight restore before teardown
         ++m_link_epoch_;
         ++m_stats_epoch_;
     }
@@ -346,6 +371,9 @@ private:
             return true;
         }
         if (event == Event::Character("s")) {
+            if (!m_stats_bucket_supported_) {
+                return false;  // bucket toggle hidden; leave the key unhandled
+            }
             toggle_stats();
             return true;
         }
@@ -560,16 +588,19 @@ private:
         lines.push_back(separator());
         append_stats(lines, width);
 
+        const std::string stats_hint =
+            m_stats_bucket_supported_ ? "s stats  " : "";
         Element content = vbox({
             vbox(std::move(lines)) | flex,
             separator(),
-            text(fit("e edit  p preview  s stats  r refresh  u restore  "
-                     "q back",
+            text(fit("e edit  p preview  " + stats_hint
+                         + "r refresh  u restore  q back",
                      width))
                 | to_decorator(m_theme_.hint),
         });
-        const std::string title =
-            " link " + fit(m_slug_, 40) + "   [e]dit [s]tats ";
+        const std::string title_hint =
+            m_stats_bucket_supported_ ? "   [e]dit [s]tats " : "   [e]dit ";
+        const std::string title = " link " + fit(m_slug_, 40) + title_hint;
         return window(text(title) | to_decorator(m_theme_.title),
                       std::move(content));
     }
@@ -736,6 +767,10 @@ private:
 
     ///< The slug handed over by Links (consumed on @ref on_enter).
     std::string m_slug_;
+
+    ///< `true` when the `link.stats` descriptor accepts a `bucket` arg, so the
+    ///< `s` bucket toggle and its hint are shown (spec step 4).
+    bool m_stats_bucket_supported_ = false;
 
     ///< Current screen state.
     Mode m_mode_ = Mode::detail;
