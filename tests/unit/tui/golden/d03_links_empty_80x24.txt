@@ -1,0 +1,24 @@
+Links                                      status: (all) active disabled deleted
+filter: []
+ SLUG TARGET URL STATUS CLICKS EXPIRES
+no rows
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+page 1/1  (20 per page)
+Enter detail  n new  e edit  t toggle  d delete  u restore  p preview  s stats
