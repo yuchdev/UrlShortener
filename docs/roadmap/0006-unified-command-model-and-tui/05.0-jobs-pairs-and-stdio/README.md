@@ -1,7 +1,7 @@
 # Task 05.0 - Jobs, pair import/export and stdio transport
 
 **Parent milestone:** [Milestone 0006 - Unified Command Model and TUI](/docs/roadmap/0006-unified-command-model-and-tui/plan.md)
-**Status:** ⬜ Not started
+**Status:** ✅ Complete
 **Depends on:** 01.0 (envelope 03-04, registry 06-08), 03.0 (codec/link commands 05-07, list ports 01/12, `link.list` 14, table port 15, runtime builder 18); 02.0/12 (shutdown order in `main.cpp`); 04.0/02, 04.0/08, 04.0/09 only for subtask 11
 
 ## Scope
@@ -58,7 +58,7 @@ Decisions made in this task: `JobRunner` does not reuse `AnalyticsWorker`/`Bound
 | 16 | [CLI parser: serve-stdio](16-cli-parser-serve-stdio.md) | ✅ Complete | none | 17 |
 | 17 | [serve-stdio runtime wiring](17-serve-stdio-runtime-wiring.md) | ✅ Complete | 12, 15, 16, 20 | 18 |
 | 18 | [serve-stdio process tests](18-serve-stdio-process-tests.md) | ✅ Complete | 17 | 19, 07.0/07 |
-| 19 | [adding-a-transport guide](19-adding-a-transport-guide.md) | ⬜ Not started | 12, 14, 15, 18 | 08.0/04 |
+| 19 | [adding-a-transport guide](19-adding-a-transport-guide.md) | ✅ Complete | 12, 14, 15, 18 | 08.0/04 |
 | 20 | [Process-wide job runtime in `build_command_runtime`](20-process-job-runtime-composition.md) | ✅ Complete | 03, 04, 05, 08, 09, 10, 21, 02.0/12, 03.0/18 | 11, 17, 06.0/19 |
 | 21 | [`jobs` table source](21-jobs-table-source.md) | ✅ Complete | 02, 03.0/15 | 20 |
 

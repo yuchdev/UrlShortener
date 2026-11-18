@@ -10,7 +10,7 @@ Tracks progress against [plan.md](/docs/roadmap/0006-unified-command-model-and-t
 | 02.0 | Storage path unification | ✅ Complete (16/16 subtasks, incl. added 02.0/16) | 15 targets (`app__19`-`24`, `metadata__09`, `inmemory__16`, `storage__15` x2, http `30`/`31`, `cli__05`, `cli_03`/`17`/`18`, `e2e_12`) |
 | 03.0 | Link and browse commands | ✅ Complete (18/18 subtasks) | 23 targets (`commands__20`-`30`, `app__40`-`48`, `core 09`, `memory__17`, `analytics__16`, storage list-events SQLite/Postgres, contract `10`-`12`) |
 | 04.0 | REST and CLI adapters | ✅ Complete (15/15 subtasks) | 22 (`commands__40`, http `15`-`25`; `cli__06`-`12`; cli int `20`, `21`; `observability__04`; `ratelimiter__08`) |
-| 05.0 | Jobs, pair import/export, stdio | 🔶 In progress (20/21 subtasks) | 23 (`commands__50`-`65`; `app__60`; `cli__20`, `cli__21`; http `40`; cli int `40`, `41`; e2e `30`) |
+| 05.0 | Jobs, pair import/export, stdio | ✅ Complete (21/21 subtasks) | 23 (`commands__50`-`65`; `app__60`; `cli__20`, `cli__21`; http `40`; cli int `40`, `41`; e2e `30`) |
 | 06.0 | Terminal UI | ⬜ Not started | 0 |
 | 07.0 | Tests and conformance | ⬜ Not started | 0 |
 | 08.0 | Docs and registry sync | ⬜ Not started | 0 |
@@ -262,6 +262,60 @@ fallback bucket; job waiting in `cmd` deferred to 05.0/20 as specced.
 `disabled`/`expired` links (built per the 2026-11-16 decision: only
 `all|deleted` need write; the T-71 wording is stricter) - user kept
 the as-built behaviour on 2026-11-17; T-71 note added to the threat model.
+
+### Task 05.0 - Jobs, pair import/export and stdio (✅)
+
+Completed 2026-11-18 on branch `milestone/0006-unified-command-model-and-tui`.
+
+**Delivered:**
+
+- Jobs: `JobStore` (bounded retention, metadata-only `list_summaries`),
+  `JobRunner` (bounded queue/workers, cooperative cancel, `wait_*`,
+  concurrent-safe `shutdown`), registry job dispatch (dry-run always
+  synchronous), `job.get`/`job.list` (summaries, no `result`)/`job.cancel`,
+  `jobs` browse table, process-wide job runtime in `build_command_runtime`,
+  `cmd` job waiting (`--no-wait`), REST `/api/v1/jobs*` (gated; cancel
+  write + `application/json`).
+- Pairs: CSV/NDJSON line parsers with capped error list, pair file access
+  (default-deny `PathPolicy`, rooted `openat` walk, create-new atomic
+  export), `link.import` (skip/fail/overwrite via `ReplaceLinkTarget`,
+  synchronous non-mutating dry-run), `link.export` (inline <= 1 MiB or
+  file; `status=all|deleted` need write).
+- stdio: `ITransportAdapter` + factory, `NdjsonLineReader`,
+  `NdjsonSession`, `StdioAdapter` (run-once, drain, exit codes),
+  `serve-stdio` CLI + wiring (stderr-only logs, SIGPIPE ignored, active
+  backend), process tests, adding-a-transport guide.
+- Security fixes found during the task: CRITICAL CWE-113 response
+  splitting in the URL validator (`25d66be`, pre-0006, master affected);
+  `link.export` status bypass (`04dbd13`); `db.rows` links soft-deleted
+  bypass (`bf80e89`); CSRF on job cancel (`638c959`); serve-stdio split
+  store (`ba2d150`); T-96 parent-directory TOCTOU (`fecc3e7`); job list
+  result amplification (`6aa0b97`, `370ffc6`).
+- Tooling: shared build lock `cmake-build/.build.lock`, honoured by the
+  Stop hook (`5bb56b9`, user decision).
+
+**Tests / gate:**
+
+- New targets: commands `50`-`65`; app `60`; cli `20`, `21`; http `40`;
+  cli integration `40`, `41`; e2e `30`. Task-close full suite
+  (`unit|contract|integration|e2e`, serial, `gtimeout` shim for macOS
+  e2e 14-18): 381/381.
+- Every subtask: `/verify-subtask` + security review (18/19 test/doc-only:
+  verifier only); findings fixed in-task or carried with an owner.
+- Task-close `/pr-review`: feature LGTM (4 non-blocking -> 0007 list);
+  security PASS_WITH_FOLLOWUP, per-threat disposition T-86..T-109
+  appended to
+  [docs/security/0006-05.0-jobs-pairs-and-stdio-threat-model.md](/docs/security/0006-05.0-jobs-pairs-and-stdio-threat-model.md)
+
+**Spec reconciliation:** specs 07/08/09/10/20 amended before build
+(`2d99c28`: T-91, T-95, T-96); spec 05 amended for `job.list` without
+`result` (user decision 2026-11-18); spec 11 amended for the cancel
+content type; test files renumbered where slots were taken (declared per
+subtask).
+
+**Open decisions raised at close:** backport the CWE-113 fix to `master`;
+per-row audit for import overwrite (T-100) vs job-level only; sanitizer
+build of the stdio surface (needs a separately configured build dir).
 
 ## Open risks
 
