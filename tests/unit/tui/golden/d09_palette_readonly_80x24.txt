@@ -1,0 +1,24 @@
+╭ Command palette ─────────────────────────────────────────────────────────────╮
+│: [                                                                          ]│
+├──────────────────────────────────────────────────────────────────────────────┤
+│>db.tables        List logical tables                         read            │
+│ link.create      not_authorized (read-only session)          write           │
+│ link.delete      not_authorized (read-only session)          write (confirm) │
+│ link.export      Export pairs (job)                          read (jobs)     │
+│ link.get         Fetch a link by slug or id                  read            │
+│ link.import      not_authorized (read-only session)          write (jobs)    │
+│ link.list        List links (filter, page)                   read            │
+│ link.update      not_authorized (read-only session)          write           │
+│ system.info      Server configuration                        read            │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯

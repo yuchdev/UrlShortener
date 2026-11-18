@@ -1,0 +1,24 @@
+╭ Command palette ─────────────────────────────────────────────────────────────╮
+│: [                                                                          ]│
+├──────────────────────────────────────────────────────────────────────────────┤
+│>db.tables        List logical tables                         read            │
+│ link.create      Create a short link                         write           │
+│ link.delete      Soft-delete a link                          write (confirm) │
+│ link.export      Export pairs (job)                          read (jobs)     │
+│ link.get         Fetch a link by slug or id                  read            │
+│ link.import      Import pairs (job)                          write (jobs)    │
+│ link.list        List links (filter, page)                   read            │
+│ link.update      Partially update a link                     write           │
+│ system.info      Server configuration                        read            │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯

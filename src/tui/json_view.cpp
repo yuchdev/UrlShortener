@@ -272,6 +272,34 @@ std::string pretty_print(const std::string& json, int indent)
     return out;
 }
 
+std::optional<std::string> reserialize_object(const std::string& text)
+{
+    const std::vector<JsonField> members = object_fields(text);
+    if (members.empty()) {
+        // Empty members means either a verified empty object or invalid input;
+        // only a verified (whitespace-tolerant) empty object pretty-prints to
+        // exactly "{}", so malformed or non-object input is rejected here.
+        if (pretty_print(text) == "{}") {
+            return std::string("{}");
+        }
+        return std::nullopt;
+    }
+    std::string out = "{";
+    bool first = true;
+    for (const JsonField& member : members) {
+        if (!first) {
+            out += ",";
+        }
+        first = false;
+        out += url_shortener::jsonString(member.key);
+        out += ":";
+        const std::string_view value = trim_ws(member.raw_value);
+        out.append(value.data(), value.size());
+    }
+    out += "}";
+    return out;
+}
+
 std::vector<JsonField> object_fields(const std::string& json)
 {
     const commands::scan_result result =

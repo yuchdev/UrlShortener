@@ -41,6 +41,7 @@
 #include <url_shortener/security/control_set.hpp>
 #include <url_shortener/tui/app.hpp>
 #include <url_shortener/tui/in_process_client.hpp>
+#include <url_shortener/tui/screens/palette_screen.hpp>
 #include <url_shortener/tui/screens/settings_screen.hpp>
 #include <url_shortener/tui/theme.hpp>
 
@@ -195,6 +196,13 @@ int run_tui(const TuiCliOptions& cli,
     try {
         App app(client, *options);
         app.register_screen(make_settings_screen);
+        // The Command Palette lists the live catalog; it is passed in here (a
+        // screen never sees ICommandClient itself, contract C8) so a command
+        // added to the registry appears with a working form and zero TUI code
+        // (D9). Replaces the palette tab's placeholder.
+        app.register_screen(
+            [catalog = client.commands()](ScreenContext& screen_context)
+            { return make_palette_screen(screen_context, catalog); });
         rc = app.run();
     } catch (const std::exception& e) {
         // App's RAII guard has already restored the terminal; record the

@@ -41,6 +41,18 @@ bool is_scannable(const fs::path& file)
     return ext == ".cpp" || ext == ".hpp";
 }
 
+// Whether @p file lives under a `screens/` directory (a concrete screen, which
+// must reach the application only through AsyncCaller, never ICommandClient).
+bool is_screen_file(const fs::path& file)
+{
+    for (const fs::path& part : file) {
+        if (part == "screens") {
+            return true;
+        }
+    }
+    return false;
+}
+
 // Scans @p roots for include-boundary and JSON-tokenizer violations. Each
 // returned string names the offending file and the reason. An empty vector
 // means the tree is clean.
@@ -55,6 +67,9 @@ std::vector<std::string> collect_violations(const std::vector<fs::path>& roots)
     // sanctioned scanner.
     static const std::regex tokenizer_re(
         R"((scan_[A-Za-z0-9_]*|parse_json[A-Za-z0-9_]*)\s*\()");
+    // A direct ICommandClient::call under screens/ (C8): a screen must submit
+    // through AsyncCaller, never call the client itself (subtask 11).
+    static const std::regex call_re(R"((->|\.)call\s*\()");
 
     std::vector<std::string> violations;
     for (const fs::path& root : roots) {
@@ -101,6 +116,13 @@ std::vector<std::string> collect_violations(const std::vector<fs::path>& roots)
                 {
                     violations.push_back(file.string()
                                          + ": local JSON tokenizer (C9)");
+                }
+                else if (is_screen_file(file)
+                         && std::regex_search(line, call_re))
+                {
+                    violations.push_back(
+                        file.string()
+                        + ": direct ICommandClient call under screens/ (C8)");
                 }
             }
         }
@@ -225,4 +247,45 @@ BOOST_AUTO_TEST_CASE(local_json_tokenizer_is_rejected)
     BOOST_TEST(!json_view_flagged);
 
     fs::remove_all(dir);
+}
+
+// ---------------------------------------------------------------------------
+// A direct ICommandClient::call inside a screens/ file is rejected (C8,
+// subtask 11); a screen that submits through AsyncCaller is accepted.
+// On failure first check: a new screen called the client directly instead of
+// going through AsyncCaller::submit / run_mutation.
+// ---------------------------------------------------------------------------
+BOOST_AUTO_TEST_CASE(direct_client_call_under_screens_is_rejected)
+{
+    const fs::path base = fs::temp_directory_path() / "tui_boundary_screens";
+    const fs::path screens = base / "screens";
+    fs::create_directories(screens);
+
+    write_temp(screens,
+               "bad_screen.cpp",
+               "auto r = m_client_->call(request);\n"
+               "auto s = client.call(request);\n");
+    write_temp(screens,
+               "good_screen.cpp",
+               "m_context_.caller.submit(request, handler);\n"
+               "run_mutation(m_flow_, request, info, handler);\n");
+
+    const std::vector<std::string> violations = collect_violations({base});
+    bool bad_flagged = false;
+    bool good_flagged = false;
+    for (const std::string& violation : violations) {
+        if (violation.find("bad_screen.cpp") != std::string::npos
+            && violation.find("direct ICommandClient call")
+                != std::string::npos)
+        {
+            bad_flagged = true;
+        }
+        if (violation.find("good_screen.cpp") != std::string::npos) {
+            good_flagged = true;
+        }
+    }
+    BOOST_TEST(bad_flagged);
+    BOOST_TEST(!good_flagged);
+
+    fs::remove_all(base);
 }

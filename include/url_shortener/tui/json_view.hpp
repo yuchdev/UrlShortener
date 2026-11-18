@@ -119,6 +119,31 @@ std::optional<bool> get_bool(const std::string& json, const std::string& field);
 std::string pretty_print(const std::string& json, int indent = 2);
 
 /**
+ * @brief Re-serializes a raw object text into a compact, canonical object,
+ * accepting it only when it is exactly one well-formed JSON object.
+ *
+ * The one sanctioned way for TUI code to turn an operator-typed raw-JSON `args`
+ * buffer (the Command Palette's `Ctrl-J` escape hatch, subtask 06.0/11) into the
+ * `args` the registry receives, without tokenizing JSON itself (contract C9) and
+ * without a verbatim splice. It wraps @ref object_fields (which wraps
+ * `commands::scan_object`), re-escaping each verified key with
+ * `url_shortener::jsonString` and copying each value's validated raw token, so a
+ * sibling-key injection such as `{}, "status":"active"` or malformed text such
+ * as `{"a":}` is rejected rather than emitted. Mirrors the private
+ * `reserialize_object` of `form_model.cpp` (subtask 07) so both the generated
+ * object field and the palette raw-JSON path share one validator.
+ *
+ * @param text The candidate raw object text (possibly with surrounding
+ * whitespace); treated as untrusted.
+ * @return The compact re-serialized object (e.g. `{"a":1}`, or `{}` for a
+ * verified empty object); `std::nullopt` when @p text is not exactly one
+ * well-formed object within the view limits (malformed, a top-level duplicate
+ * key, trailing data after the closing brace, over-deep nesting, or not an
+ * object at all).
+ */
+std::optional<std::string> reserialize_object(const std::string& text);
+
+/**
  * @brief Lists the top-level members of a JSON object in source order.
  *
  * The one sanctioned way for TUI code to iterate an object's members without

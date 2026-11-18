@@ -42,62 +42,6 @@ void clamp_field_bytes(std::string& s)
     s.resize(cut);
 }
 
-/// Trims leading and trailing JSON whitespace so a raw value can be classified
-/// by its first significant byte.
-std::string_view trim_json_ws(const std::string& s)
-{
-    const auto is_ws = [](char c)
-    { return c == ' ' || c == '\t' || c == '\n' || c == '\r'; };
-    std::size_t begin = 0;
-    std::size_t end = s.size();
-    while (begin < end && is_ws(s[begin])) {
-        ++begin;
-    }
-    while (end > begin && is_ws(s[end - 1])) {
-        --end;
-    }
-    return std::string_view(s).substr(begin, end - begin);
-}
-
-/// Re-serializes a raw-JSON object field through the sanctioned scanner
-/// (`json_view`, contract C9 - no local tokenizing) so only a single, exactly
-/// well-formed object can ever reach `args`. Returns a compact object rebuilt
-/// from the scanner's verified members (keys re-escaped with `jsonString`,
-/// values taken from the scanner's validated tokens), or `std::nullopt` when
-/// @p text is not exactly one well-formed object: `object_fields` (which wraps
-/// `scan_object`) returns no members for malformed input, a top-level duplicate
-/// key, non-whitespace trailing data after the closing brace, or nesting past
-/// the scanner's depth cap, and `pretty_print` yields exactly `"{}"` only for a
-/// verified (whitespace-tolerant) empty object - so a payload such as
-/// `{}, "status":"active"` (sibling-key injection) or `{"a":}` (malformed) is
-/// rejected rather than emitted verbatim.
-std::optional<std::string> reserialize_object(const std::string& text)
-{
-    const std::vector<JsonField> members = object_fields(text);
-    if (members.empty()) {
-        // Empty members means either a valid empty object or invalid input;
-        // only a verified empty object pretty-prints to exactly "{}".
-        if (pretty_print(text) == "{}") {
-            return std::string("{}");
-        }
-        return std::nullopt;
-    }
-    std::string out = "{";
-    bool first = true;
-    for (const JsonField& member : members) {
-        if (!first) {
-            out += ",";
-        }
-        first = false;
-        out += url_shortener::jsonString(member.key);
-        out += ":";
-        const std::string_view value = trim_json_ws(member.raw_value);
-        out.append(value.data(), value.size());
-    }
-    out += "}";
-    return out;
-}
-
 /// Whether @p field's editing buffers exceed the per-field byte bound
 /// (@ref k_max_field_bytes), checking the main buffer and every object member
 /// buffer (threat model T-121).
