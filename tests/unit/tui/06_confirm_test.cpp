@@ -90,8 +90,9 @@ BOOST_AUTO_TEST_CASE(delete_without_slug_falls_back_to_yes_no)
 }
 
 // ---------------------------------------------------------------------------
-// --yes collapses every decision to none, including the typed-slug delete
-// (threat model T-117).
+// --yes collapses the generic confirm and the typed-slug delete to none
+// (threat model T-117), but NEVER downgrades a migrate command, which still
+// requires typing MIGRATE.
 // ---------------------------------------------------------------------------
 BOOST_AUTO_TEST_CASE(assume_yes_skips_all_confirms)
 {
@@ -105,9 +106,47 @@ BOOST_AUTO_TEST_CASE(assume_yes_skips_all_confirms)
                             "{\"slug\":\"promo\"}")
                     .kind
                 == ConfirmKind::none));
-    BOOST_TEST((policy.decide(make_info("db.migrate", true, "migrate"), "{}")
-                    .kind
+
+    // A non-mutating command needs no confirm even without --yes.
+    BOOST_TEST((policy.decide(make_info("link.get", false, "read"), "{}").kind
                 == ConfirmKind::none));
+
+    // Migrate is NOT downgraded by --yes - it stays a typed-token confirm.
+    const ConfirmRequest mig =
+        policy.decide(make_info("db.migrate", true, "migrate"), "{}");
+    BOOST_TEST((mig.kind == ConfirmKind::type_token));
+    BOOST_TEST(mig.token == "MIGRATE");
+}
+
+// ---------------------------------------------------------------------------
+// Guard: the policy keys the typed-slug flow on the exact command name
+// "link.delete" and the MIGRATE flow on permission "migrate". If the registry
+// renames link.delete, `commands__12_catalog_drift` fails first; this pins the
+// policy's own coupling so a model-level change can't silently downgrade it.
+// On failure first check: the name/permission branches in ConfirmPolicy::decide.
+// ---------------------------------------------------------------------------
+BOOST_AUTO_TEST_CASE(policy_keys_on_exact_name_and_permission)
+{
+    const ConfirmPolicy policy(false);
+
+    // The exact delete name triggers the typed-slug guard...
+    BOOST_TEST((policy
+                    .decide(make_info("link.delete", true, "write"),
+                            "{\"slug\":\"promo\"}")
+                    .kind
+                == ConfirmKind::type_token));
+    // ...while any other mutating write name is a plain yes_no (proving the
+    // delete guard is name-coupled, not permission-coupled).
+    BOOST_TEST((policy
+                    .decide(make_info("link.remove", true, "write"),
+                            "{\"slug\":\"promo\"}")
+                    .kind
+                == ConfirmKind::yes_no));
+    // MIGRATE is keyed off the permission, independent of the command name.
+    BOOST_TEST(
+        (policy.decide(make_info("anything.at_all", true, "migrate"), "{}")
+             .kind
+         == ConfirmKind::type_token));
 }
 
 // ---------------------------------------------------------------------------
@@ -195,4 +234,26 @@ BOOST_AUTO_TEST_CASE(bidi_slug_displayed_sanitized_matched_raw)
     // Only the exact raw bytes do.
     model.set_input(raw_slug);
     BOOST_TEST(model.can_submit());
+}
+
+// ---------------------------------------------------------------------------
+// A slug whose sanitized display differs from its raw bytes adds a visible
+// "hidden or control characters" warning to the prompt; a clean slug does not.
+// On failure first check: the `displayed != *slug` branch in decide().
+// ---------------------------------------------------------------------------
+BOOST_AUTO_TEST_CASE(hidden_char_slug_adds_prompt_warning)
+{
+    const ConfirmPolicy policy(false);
+
+    const std::string args =
+        "{\"slug\":\"" + bidi_override_slug() + "\"}";
+    const ConfirmRequest warned =
+        policy.decide(make_info("link.delete", true, "write"), args);
+    BOOST_TEST(warned.prompt.find("hidden or control characters")
+               != std::string::npos);
+
+    const ConfirmRequest clean = policy.decide(
+        make_info("link.delete", true, "write"), "{\"slug\":\"promo\"}");
+    BOOST_TEST(clean.prompt.find("hidden or control characters")
+               == std::string::npos);
 }

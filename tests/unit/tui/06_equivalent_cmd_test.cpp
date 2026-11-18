@@ -115,3 +115,64 @@ BOOST_AUTO_TEST_CASE(redact_worthy_value_never_echoed)
     BOOST_TEST(env.find("s3cret") == std::string::npos);
     BOOST_TEST(env.find("\"***\"") != std::string::npos);
 }
+
+// ---------------------------------------------------------------------------
+// T-125 (recursive): a redact-worthy key NESTED in an object is also redacted.
+// ---------------------------------------------------------------------------
+BOOST_AUTO_TEST_CASE(redaction_recurses_into_nested_object)
+{
+    const cmd::CommandRequest r =
+        request("x.y", "{\"meta\":{\"api_key\":\"SECRETVAL\"}}");
+
+    const std::string line = equivalent_cli(r);
+    BOOST_TEST(line.find("SECRETVAL") == std::string::npos);
+    BOOST_TEST(line.find("\"***\"") != std::string::npos);
+    BOOST_TEST(line.find("meta") != std::string::npos);  // structure kept
+    BOOST_TEST(line.back() == '\'');
+
+    BOOST_TEST(equivalent_envelope(r).find("SECRETVAL") == std::string::npos);
+}
+
+// ---------------------------------------------------------------------------
+// T-125 (recursive): a secret inside an array-of-objects is redacted while a
+// non-secret sibling element is preserved.
+// ---------------------------------------------------------------------------
+BOOST_AUTO_TEST_CASE(redaction_recurses_into_array_of_objects)
+{
+    const cmd::CommandRequest r = request(
+        "x.y", "{\"items\":[{\"token\":\"T0PSECRET\"},{\"slug\":\"keep\"}]}");
+
+    const std::string line = equivalent_cli(r);
+    BOOST_TEST(line.find("T0PSECRET") == std::string::npos);
+    BOOST_TEST(line.find("\"***\"") != std::string::npos);
+    BOOST_TEST(line.find("keep") != std::string::npos);  // non-secret kept
+}
+
+// ---------------------------------------------------------------------------
+// T-125: a mixed-case redact-worthy key is matched case-insensitively.
+// ---------------------------------------------------------------------------
+BOOST_AUTO_TEST_CASE(redaction_is_case_insensitive)
+{
+    const cmd::CommandRequest r =
+        request("x.y", "{\"API_KEY\":\"XSECRET\"}");
+    BOOST_TEST(equivalent_cli(r).find("XSECRET") == std::string::npos);
+    BOOST_TEST(equivalent_cli(r).find("\"***\"") != std::string::npos);
+}
+
+// ---------------------------------------------------------------------------
+// T-125: nesting past the depth cap fails closed - a secret buried below the
+// cap never leaks (the whole over-deep subtree is redacted).
+// ---------------------------------------------------------------------------
+BOOST_AUTO_TEST_CASE(deep_nesting_fails_closed)
+{
+    // Build ~40 levels of {"a":{"a":{...{"api_key":"DEEPSECRET"}...}}}.
+    std::string json = "{\"api_key\":\"DEEPSECRET\"}";
+    for (int i = 0; i < 40; ++i)
+    {
+        json = "{\"a\":" + json + "}";
+    }
+    const cmd::CommandRequest r = request("x.y", json);
+
+    BOOST_TEST(equivalent_cli(r).find("DEEPSECRET") == std::string::npos);
+    BOOST_TEST(equivalent_envelope(r).find("DEEPSECRET") == std::string::npos);
+}
