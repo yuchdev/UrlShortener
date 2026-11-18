@@ -744,10 +744,12 @@ set(URL_SHORTENER_SOURCES
     set(TUI_MODEL_CPP_SOURCES
         ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/in_process_client.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/json_view.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/async_caller.cpp
     )
 
     set(TUI_UI_CPP_SOURCES
         ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/ftxui_smoke.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/ftxui_poster.cpp
     )
 
     # Model unit tests link url_shortener_tui_model (no FTXUI).
@@ -755,6 +757,7 @@ set(URL_SHORTENER_SOURCES
         tests/unit/tui/02_in_process_client_test.cpp
         tests/unit/tui/02_json_view_test.cpp
         tests/unit/tui/02_include_boundary_test.cpp
+        tests/unit/tui/03_async_caller_test.cpp
     )
 
     # Render/snapshot unit tests link url_shortener_tui (FTXUI).
