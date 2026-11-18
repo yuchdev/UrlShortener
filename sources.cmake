@@ -738,17 +738,23 @@ set(URL_SHORTENER_SOURCES
   # Later 06.0 (and 07.0) subtasks append to these lists; subtask 01 seeds the
   # render pipeline (ftxui_smoke) and the render-harness self-test.
   if(URLSHORTENER_ENABLE_TUI)
+    # Pure view-model sources (FTXUI-free). Subtask 02 replaces the subtask-01
+    # placeholder with the real client seam and JSON view helpers, keeping the
+    # library non-empty.
     set(TUI_MODEL_CPP_SOURCES
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/tui_model_placeholder.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/in_process_client.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/json_view.cpp
     )
 
     set(TUI_UI_CPP_SOURCES
         ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/ftxui_smoke.cpp
     )
 
-    # Model unit tests link url_shortener_tui_model (no FTXUI); empty until a
-    # later subtask adds the first model test.
+    # Model unit tests link url_shortener_tui_model (no FTXUI).
     set(TUI_MODEL_UNIT_SOURCES
+        tests/unit/tui/02_in_process_client_test.cpp
+        tests/unit/tui/02_json_view_test.cpp
+        tests/unit/tui/02_include_boundary_test.cpp
     )
 
     # Render/snapshot unit tests link url_shortener_tui (FTXUI).

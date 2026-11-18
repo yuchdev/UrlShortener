@@ -261,6 +261,14 @@ include(CTest)
   if(URLSHORTENER_ENABLE_TUI)
     register_tui_tests(TUI_MODEL_UNIT_SOURCES  url_shortener_tui_model)
     register_tui_tests(TUI_RENDER_UNIT_SOURCES url_shortener_tui)
+
+    # The include-boundary test (subtask 02) scans src/tui and
+    # include/url_shortener/tui from the source tree, so it needs the project
+    # root at compile time.
+    if(TARGET tui__02_include_boundary_test)
+      target_compile_definitions(tui__02_include_boundary_test
+          PRIVATE URLSHORTENER_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
+    endif()
   endif()
 
   register_labeled_cpp_tests(SECURITY_UNIT_SOURCES           "unit")
