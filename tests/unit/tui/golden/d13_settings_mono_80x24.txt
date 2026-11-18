@@ -1,0 +1,24 @@
++ Settings --------------------------------------------------------------------+
+|Version  1.0.0                                           Read-only session  no|
+|                                                                              |
+|Backend                          Shortener                                    |
+|  metadata   sqlite  (persistent)  base domain           http://localhost:8000|
+|  cache      redis                 generated slug length 7                    |
+|  analytics  sqlite                default redirect type temporary            |
+|  rate limit redis                 default expiry        never                |
+|                                   allow private targets false                |
+|                                   analytics enabled     true                 |
+|                                                                              |
+|Request hardening                                                             |
+|  max request body      65536 bytes       max request target  2048 chars      |
+|  max request id length   64 chars                                            |
+|                                                                              |
+|                                                                              |
+|                                                                              |
+|                                                                              |
+|                                                                              |
+|                                                                              |
+|------------------------------------------------------------------------------|
+|Read-only view - change these with CLI flags / env vars and restart;          |
+|no settings.set command exists (ADR 0002 / ADR 0003 Non-goals).               |
++------------------------------------------------------------------------------+
