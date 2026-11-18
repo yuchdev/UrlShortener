@@ -772,6 +772,7 @@ set(URL_SHORTENER_SOURCES
         ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/link_detail_model.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/tables_model.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/import_model.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/dashboard_model.cpp
     )
 
     set(TUI_UI_CPP_SOURCES
@@ -799,6 +800,7 @@ set(URL_SHORTENER_SOURCES
         ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/screens/link_detail_screen.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/screens/tables_screen.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/screens/import_export_screen.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/screens/dashboard_screen.cpp
     )
 
     # Model unit tests link url_shortener_tui_model (no FTXUI).
@@ -834,6 +836,7 @@ set(URL_SHORTENER_SOURCES
         tests/unit/tui/14_tables_model_test.cpp
         tests/unit/tui/15_import_model_test.cpp
         tests/unit/tui/15_export_model_test.cpp
+        tests/unit/tui/17_dashboard_model_test.cpp
         tests/unit/tui/21_settings_model_test.cpp
     )
 
@@ -855,6 +858,7 @@ set(URL_SHORTENER_SOURCES
         tests/unit/tui/13_link_detail_screen_test.cpp
         tests/unit/tui/14_tables_screen_test.cpp
         tests/unit/tui/15_import_export_screen_test.cpp
+        tests/unit/tui/17_dashboard_screen_test.cpp
         tests/unit/tui/19_tui_options_test.cpp
         tests/unit/tui/19_tui_entry_boundary_test.cpp
         tests/unit/tui/21_settings_screen_test.cpp

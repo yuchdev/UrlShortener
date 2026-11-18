@@ -1,0 +1,24 @@
+╭ Dashboard ───────────────────────────────────────────────────────────────────╮
+│Links  total: 1,204  active: 1,180  disabled: 9  deleted: 15                  │
+│Redirects (24h): 24,886 (sample)   events: 48,311   success: n/a   p50: n/a   │
+│                                                                              │
+│Top slugs (24h) (sample of 200)         Recent changes                        │
+│  docs        12,044 ████████           10:42 docs2        active             │
+│  launch       8,730 ██████             10:40 promo        disabled           │
+│  promo        4,112 ███                10:31 docs         active             │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+├──────────────────────────────────────────────────────────────────────────────┤
+│Jobs: 1 running (link.import 62%)                                 Backend: n/a│
+│[Enter] open Links   [r] refresh   [j/k] select                               │
+╰──────────────────────────────────────────────────────────────────────────────╯

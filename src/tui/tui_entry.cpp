@@ -41,6 +41,7 @@
 #include <url_shortener/security/control_set.hpp>
 #include <url_shortener/tui/app.hpp>
 #include <url_shortener/tui/in_process_client.hpp>
+#include <url_shortener/tui/screens/dashboard_screen.hpp>
 #include <url_shortener/tui/screens/import_export_screen.hpp>
 #include <url_shortener/tui/screens/jobs_screen.hpp>
 #include <url_shortener/tui/screens/links_screen.hpp>
@@ -199,6 +200,13 @@ int run_tui(const TuiCliOptions& cli,
     int rc = 0;
     try {
         App app(client, *options);
+        // The Dashboard tab (D2) aggregates read commands into the landing
+        // view; it is handed the live catalog here (a screen never sees
+        // ICommandClient itself, contract C8) so it can feature-detect a
+        // stats.summary command. Replaces the Dashboard tab's placeholder.
+        app.register_screen(
+            [catalog = client.commands()](ScreenContext& screen_context)
+            { return make_dashboard_screen(screen_context, catalog); });
         app.register_screen(make_settings_screen);
         // The Links tab (D3) drives the generic link.* calls through a bespoke
         // table; it is handed the live catalog here (a screen never sees

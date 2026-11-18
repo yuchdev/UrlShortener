@@ -6,49 +6,23 @@
 #include <string>
 
 #include <url_shortener/commands/envelope.hpp>
+#include <url_shortener/tui/panel_state.hpp>
 
 namespace url_shortener::tui
 {
 
 /**
- * @brief Load state of the single Settings panel (D13).
- *
- * This mirrors the `PanelState` of the Dashboard model (subtask 06.0/17): a
- * panel is @ref loading until its one `system.info` call answers, then
- * @ref ready on success or @ref unavailable on any error. Settings has exactly
- * one panel, so the Dashboard's "degrade only the failing panel" collapses to
- * "degrade the one panel there is".
- *
- * @note 06.0/17 (the Dashboard) is the canonical owner of this enum per the 21
- * spec ("do not redefine it"), but it is not committed at the time this screen
- * lands, so the definition lives here for now. When 17 lands, both screens must
- * share one definition (e.g. a common `panel_state.hpp`) to avoid an ODR clash;
- * until then no translation unit includes both model headers, so the duplicate
- * is latent, not active.
- */
-enum class PanelState
-{
-    ///< The `system.info` call is in flight and no data is shown yet.
-    loading,
-
-    ///< The call succeeded; @ref SettingsModel::info is valid and rendered.
-    ready,
-
-    ///< The call failed; the screen shows the error message/request id instead.
-    unavailable
-};
-
-/**
- * @brief The non-secret shortener/request-hardening settings the screen renders.
+ * @brief The non-secret shortener/request-hardening settings the screen
+ * renders.
  *
  * A TUI-local mirror of the server's `app::ShortenerSettings` (03.0/17),
  * populated field-by-field from the `system.info` result's `shortener` object
  * via `json_view` (contract K7/C9). It is redeclared here rather than reusing
  * the server struct because the enforced C8 include-boundary test forbids any
  * include under `url_shortener/app/` inside the TUI tree; this struct adds no
- * field the server does not emit, so it leaks nothing beyond `system.info`'s own
- * allowlist (threat model T-126). Every string value is raw server data and is
- * sanitized at the render sink, never here.
+ * field the server does not emit, so it leaks nothing beyond `system.info`'s
+ * own allowlist (threat model T-126). Every string value is raw server data and
+ * is sanitized at the render sink, never here.
  */
 struct ShortenerConfig
 {
@@ -127,10 +101,10 @@ struct SettingsInfo
  *
  * Owns one @ref PanelState and one deserialized @ref SettingsInfo. It issues a
  * single command, `system.info`, with no arguments; it never constructs or can
- * reach a mutating command (the only command this screen's whole stack issues is
- * `system.info`, asserted at the command level). It holds no FTXUI type and does
- * no terminal sanitization: it stores raw server strings verbatim and the screen
- * sanitizes them at the render sink (threat model T-110).
+ * reach a mutating command (the only command this screen's whole stack issues
+ * is `system.info`, asserted at the command level). It holds no FTXUI type and
+ * does no terminal sanitization: it stores raw server strings verbatim and the
+ * screen sanitizes them at the render sink (threat model T-110).
  *
  * Thread-safety: not synchronized; it is mutated and read only on the UI thread
  * (the `AsyncCaller` handler and the renderer both run there).
@@ -208,13 +182,10 @@ public:
 
     /**
      * @brief Returns the correlation id of the failed call.
-     * @return `resp.id` from the last failure; empty otherwise. Sanitized by the
-     * screen before display.
+     * @return `resp.id` from the last failure; empty otherwise. Sanitized by
+     * the screen before display.
      */
-    const std::string& error_request_id() const
-    {
-        return m_error_request_id_;
-    }
+    const std::string& error_request_id() const { return m_error_request_id_; }
 
 private:
     ///< Current load state; starts at @ref PanelState::loading.
