@@ -776,7 +776,11 @@ set(URL_SHORTENER_SOURCES
         ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/column_chooser.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/toast_view.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/confirm_view.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/mutation_flow.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/form_widgets.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/form_view.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/screens/settings_screen.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/screens/form_screen.cpp
     )
 
     # Model unit tests link url_shortener_tui_model (no FTXUI).
@@ -813,6 +817,9 @@ set(URL_SHORTENER_SOURCES
         tests/unit/tui/10_table_view_render_test.cpp
         tests/unit/tui/10_table_view_keys_test.cpp
         tests/unit/tui/06_dialog_render_test.cpp
+        tests/unit/tui/08_form_widgets_render_test.cpp
+        tests/unit/tui/08_form_screen_test.cpp
+        tests/unit/tui/08_mutation_flow_test.cpp
         tests/unit/tui/21_settings_screen_test.cpp
     )
   endif()
