@@ -56,14 +56,17 @@ public:
      * where `<role>` is `Admin` for a read/write session and `User` for a
      * read-only one, and `<label>` is the backend label after
      * `sanitize_for_terminal` and `truncate_to_width` (at most 60 display
-     * columns, with a trailing `"..."` when it was longer).
+     * columns, with a trailing `"..."` when it was longer). A read-only session
+     * additionally trails a ` [READ-ONLY]` badge (from
+     * @ref CapabilityModel::badge, subtask 18); a read/write session has none.
      *
      * @return The composed title; always non-empty.
      */
     std::string title() const;
 
     /**
-     * @brief Returns the memory-store banner when the backend is not persistent.
+     * @brief Returns the memory-store banner when the backend is not
+     * persistent.
      *
      * @return `"memory store - data is lost on exit"` when the backend is
      * non-persistent; `std::nullopt` otherwise (no banner row is drawn).
@@ -73,9 +76,11 @@ public:
     /**
      * @brief Returns the D1 tab-bar labels with their active flags.
      *
-     * The eight tabs in D1 order (`[1]Dashboard` .. `[7]Settings`, `[:]Palette`)
-     * each paired with whether it is the active tab. Pass the router's
-     * @ref Router::active_tab so a nested screen still highlights its owning tab.
+     * The eight tabs in D1 order (`[1]Dashboard` .. `[7]Settings`,
+     * `[:]Palette`) each paired with whether it is the active tab. Pass the
+     * router's
+     * @ref Router::active_tab so a nested screen still highlights its owning
+     * tab.
      *
      * @param active The tab (or owning tab) currently shown.
      * @return Eight `(label, is_active)` pairs in display order; exactly one

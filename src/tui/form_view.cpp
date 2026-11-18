@@ -579,13 +579,24 @@ private:
             text(fit(cli, footer_budget)),
         });
 
-        Element content = vbox({
+        Elements content_rows {
             std::move(fields) | flex,
             text(""),
             std::move(buttons),
-            separator(),
-            std::move(footer),
-        });
+        };
+        // ADR 0003 rule 5 / subtask 18: in a read-only session a write
+        // command's disabled Create button carries the registry's
+        // not_authorized reason, so the control is disabled *and labelled*,
+        // never silently inert.
+        if (m_ctx_.read_only && !is_read_only_command(m_model_.command())) {
+            content_rows.push_back(
+                text("read-only session: " + m_model_.command().name
+                     + " needs write access (not_authorized)")
+                | to_decorator(m_ctx_.theme.disabled));
+        }
+        content_rows.push_back(separator());
+        content_rows.push_back(std::move(footer));
+        Element content = vbox(std::move(content_rows));
 
         const std::string title_text =
             (m_ctx_.title.empty() ? m_model_.command().name : m_ctx_.title)

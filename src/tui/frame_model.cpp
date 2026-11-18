@@ -1,7 +1,8 @@
-#include "url_shortener/tui/frame_model.hpp"
-
 #include <utility>
 
+#include "url_shortener/tui/frame_model.hpp"
+
+#include <url_shortener/tui/capability.hpp>
 #include <url_shortener/tui/text_fit.hpp>
 
 namespace url_shortener::tui
@@ -23,8 +24,7 @@ constexpr std::size_t k_backend_label_max = 60;
 /// label with no per-sink duplication.
 std::string safe_label(const std::string& value)
 {
-    return truncate_to_width(sanitize_for_terminal(value),
-                             k_backend_label_max);
+    return truncate_to_width(sanitize_for_terminal(value), k_backend_label_max);
 }
 
 /// One D1 tab: its label and the screen whose active tab lights it up.
@@ -52,36 +52,42 @@ FrameModel::FrameModel(SessionInfo session,
                        std::string backend_label,
                        bool persistent,
                        std::string theme_name)
-    : m_session_(std::move(session)),
-      m_backend_label_(std::move(backend_label)),
-      m_persistent_(persistent),
-      m_theme_name_(std::move(theme_name))
+    : m_session_(std::move(session))
+    , m_backend_label_(std::move(backend_label))
+    , m_persistent_(persistent)
+    , m_theme_name_(std::move(theme_name))
 {
 }
 
 std::string FrameModel::title() const
 {
     const char* role = m_session_.read_only ? "User" : "Admin";
-    return "url_shortener -- backend: " + safe_label(m_backend_label_)
-        + " -- user: local/" + role;
+    std::string title = "url_shortener -- backend: "
+        + safe_label(m_backend_label_) + " -- user: local/" + role;
+    // D1 step 4 / subtask 18: a read-only session trails a `[READ-ONLY]` badge
+    // after the role. The badge text comes from CapabilityModel so the title,
+    // the status gating and the test matrix share one source of truth.
+    const std::string badge = CapabilityModel(m_session_).badge();
+    if (!badge.empty()) {
+        title += " [" + badge + "]";
+    }
+    return title;
 }
 
 std::optional<std::string> FrameModel::banner() const
 {
-    if (m_persistent_)
-    {
+    if (m_persistent_) {
         return std::nullopt;
     }
     return std::string("memory store - data is lost on exit");
 }
 
-std::vector<std::pair<std::string, bool>>
-FrameModel::tabs(ScreenId active) const
+std::vector<std::pair<std::string, bool>> FrameModel::tabs(
+    ScreenId active) const
 {
     std::vector<std::pair<std::string, bool>> out;
     out.reserve(sizeof(k_tabs) / sizeof(k_tabs[0]));
-    for (const TabSpec& tab : k_tabs)
-    {
+    for (const TabSpec& tab : k_tabs) {
         out.emplace_back(tab.label, tab.id == active);
     }
     return out;

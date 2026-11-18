@@ -752,6 +752,7 @@ set(URL_SHORTENER_SOURCES
         ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/router.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/keymap.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/frame_model.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/capability.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/terminal_restore.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/system_info_view.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/theme.cpp
@@ -837,6 +838,7 @@ set(URL_SHORTENER_SOURCES
         tests/unit/tui/15_import_model_test.cpp
         tests/unit/tui/15_export_model_test.cpp
         tests/unit/tui/17_dashboard_model_test.cpp
+        tests/unit/tui/18_capability_test.cpp
         tests/unit/tui/21_settings_model_test.cpp
     )
 
@@ -859,6 +861,8 @@ set(URL_SHORTENER_SOURCES
         tests/unit/tui/14_tables_screen_test.cpp
         tests/unit/tui/15_import_export_screen_test.cpp
         tests/unit/tui/17_dashboard_screen_test.cpp
+        tests/unit/tui/18_readonly_matrix_test.cpp
+        tests/unit/tui/18_readonly_render_test.cpp
         tests/unit/tui/19_tui_options_test.cpp
         tests/unit/tui/19_tui_entry_boundary_test.cpp
         tests/unit/tui/21_settings_screen_test.cpp
