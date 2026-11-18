@@ -9,6 +9,24 @@ namespace url_shortener::tui
 {
 
 /**
+ * @brief One top-level object member, as a decoded key and the value's exact
+ * raw source token.
+ *
+ * Produced by @ref object_fields. The value is kept verbatim (quotes/braces
+ * included) so a caller can re-emit or classify it without re-tokenizing JSON
+ * itself (contract C9).
+ */
+struct JsonField
+{
+    ///< The member key, decoded from its JSON string token to UTF-8.
+    std::string key;
+
+    ///< The member value's exact source text (a string keeps its quotes; a
+    ///< container keeps its full brace/bracket text).
+    std::string raw_value;
+};
+
+/**
  * @brief JSON *view* helpers for reading and re-indenting command `result`
  * payloads (ADR 0003, contract C9).
  *
@@ -99,5 +117,22 @@ std::optional<bool> get_bool(const std::string& json, const std::string& field);
  * well-formed JSON value within limits.
  */
 std::string pretty_print(const std::string& json, int indent = 2);
+
+/**
+ * @brief Lists the top-level members of a JSON object in source order.
+ *
+ * The one sanctioned way for TUI code to iterate an object's members without
+ * tokenizing JSON itself (contract C9): it wraps `commands::scan_object` so a
+ * caller (e.g. the `Equivalent:` renderer) can walk `args` to redact or re-emit
+ * fields. Keys inside nested objects or string values are never surfaced as
+ * top-level members, and duplicate top-level keys yield an empty result (the
+ * scanner rejects them).
+ *
+ * @param json A JSON object text to read.
+ * @return One @ref JsonField per top-level member in source order; an empty
+ * vector when @p json is not a scannable object within limits (including `{}`
+ * and any malformed input).
+ */
+std::vector<JsonField> object_fields(const std::string& json);
 
 }  // namespace url_shortener::tui

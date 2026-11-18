@@ -272,4 +272,19 @@ std::string pretty_print(const std::string& json, int indent)
     return out;
 }
 
+std::vector<JsonField> object_fields(const std::string& json)
+{
+    const commands::scan_result result =
+        commands::scan_object(json, view_limits());
+    if (!result.ok) {
+        return {};
+    }
+    std::vector<JsonField> fields;
+    fields.reserve(result.members.size());
+    for (const commands::json_member& member : result.members) {
+        fields.push_back(JsonField {member.key, member.raw});
+    }
+    return fields;
+}
+
 }  // namespace url_shortener::tui
