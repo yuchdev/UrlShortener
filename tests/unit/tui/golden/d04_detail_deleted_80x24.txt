@@ -1,0 +1,24 @@
+╭ link old-blog   [e]dit [s]tats ──────────────────────────────────────────────╮
+│id        l-9  short url https://sho.rt/old-blog                              │
+│target    https://example.com/blog/2019/hello                                 │
+│status    deleted  redirect  permanent                                        │
+│created   2019-01-01T00:00:00Z  expires   -                                   │
+│tags      -  campaign  -                                                      │
+│metadata  -                                                                   │
+├──────────────────────────────────────────────────────────────────────────────┤
+│Stats (7d)  attempts 0  success 0  [bucket: day]                              │
+│trend                                                                         │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+├──────────────────────────────────────────────────────────────────────────────┤
+│e edit  p preview  s stats  r refresh  u restore  q back                      │
+╰──────────────────────────────────────────────────────────────────────────────╯

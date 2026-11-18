@@ -4,8 +4,9 @@
  * the generic `link.*` calls. It drives a @ref TableModel through
  * @ref AsyncCaller with `build_link_list_request`, renders the D3 filter bar,
  * status radio and table through the reusable table view, hosts the generated
- * `link.create` / `link.update` form inline for new/edit, and shows a link's
- * JSON (list detail) or `link.preview` result in a scrollable viewer.
+ * `link.create` / `link.update` form inline for new/edit, hands a selected link
+ * to the inline Link detail screen (D4, subtask 06.0/13) on `Enter` / `s`, and
+ * shows a `link.preview` result in a scrollable viewer.
  *
  * Every mutating submit (toggle / delete / restore / create / update) routes
  * through @ref run_mutation with the session read-only flag and the shared
@@ -22,6 +23,7 @@
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <string>
@@ -48,6 +50,7 @@
 #include <url_shortener/tui/mutation_flow.hpp>
 #include <url_shortener/tui/result_viewer_model.hpp>
 #include <url_shortener/tui/row_mapper.hpp>
+#include <url_shortener/tui/screens/link_detail_screen.hpp>
 #include <url_shortener/tui/table_model.hpp>
 #include <url_shortener/tui/table_view.hpp>
 #include <url_shortener/tui/text_fit.hpp>
@@ -132,8 +135,16 @@ public:
     }
 
     /// Called when the tab is left: drop any in-flight preview so its result
-    /// cannot open a viewer behind another tab.
-    void on_leave_cleanup() { cancel_preview(); }
+    /// cannot open a viewer behind another tab, and tear down an open detail
+    /// screen so re-entering the tab lands on the table (its in-flight calls
+    /// are cancelled by @ref finish_detail_close).
+    void on_leave_cleanup()
+    {
+        cancel_preview();
+        if (m_mode_ == Mode::detail) {
+            finish_detail_close();
+        }
+    }
 
     /// @copydoc ftxui::ComponentBase::OnRender
     ftxui::Element OnRender() override
@@ -142,9 +153,15 @@ public:
         if (m_form_close_pending_) {
             finish_form_close();
         }
+        if (m_detail_close_pending_) {
+            finish_detail_close();
+        }
         m_toasts_.tick();
 
         Element body;
+        if (m_mode_ == Mode::detail && m_detail_component_) {
+            return m_detail_component_->Render() | reflect(m_box_);
+        }
         if (m_mode_ == Mode::form && m_form_) {
             body = m_form_->Render();
         }
@@ -170,6 +187,16 @@ public:
     {
         if (m_form_close_pending_) {
             finish_form_close();
+        }
+        if (m_detail_close_pending_) {
+            finish_detail_close();
+        }
+        if (m_mode_ == Mode::detail && m_detail_component_) {
+            const bool consumed = m_detail_component_->OnEvent(event);
+            if (m_detail_close_pending_) {
+                finish_detail_close();
+            }
+            return consumed;
         }
         if (m_mode_ == Mode::result) {
             return result_keys(event);
@@ -209,6 +236,9 @@ public:
     /// otherwise the table view.
     ftxui::Component ActiveChild() override
     {
+        if (m_mode_ == Mode::detail && m_detail_component_) {
+            return m_detail_component_;
+        }
         if (m_mode_ == Mode::form && m_form_) {
             return m_form_;
         }
@@ -216,12 +246,14 @@ public:
     }
 
 private:
-    ///< The three screen states: the table, the new/edit form, the viewer.
+    ///< The four screen states: the table, the new/edit form, the preview
+    ///< viewer, and the inline Link detail screen (D4, subtask 06.0/13).
     enum class Mode
     {
         table,
         form,
-        result
+        result,
+        detail
     };
 
     // --- Data loading --------------------------------------------------------
@@ -470,20 +502,45 @@ private:
         ++m_preview_epoch_;
     }
 
-    /// Opens the detail/stats view for the selected link.
-    ///
-    /// Subtask 13 adds the dedicated LinkDetail screen; until then the full
-    /// `LinkView` JSON already present in the list item is shown in the viewer
-    /// (no extra call), and the slug is handed forward via
-    /// @ref ScreenContext::pending_slug so 13 can pick it up.
+    /// Opens the inline Link detail / stats screen (D4, subtask 06.0/13) for
+    /// the selected link. The slug is handed forward via
+    /// @ref ScreenContext::pending_slug, which the detail screen consumes on
+    /// enter; the detail is hosted inline (like the Jobs screen's job detail)
+    /// because the D1 frame renders only tab screens and @ref App's global Esc
+    /// pops the router before a nested component sees it. An in-flight preview
+    /// is dropped so its viewer cannot open behind the detail.
     void open_detail_selected()
     {
-        const std::string* raw = m_table_.selected_raw();
-        if (raw == nullptr) {
+        const std::string slug = selected_slug();
+        if (slug.empty()) {
             return;
         }
-        m_context_.pending_slug = selected_slug();
-        open_result_view(*raw, "link detail");
+        cancel_preview();
+        m_context_.pending_slug = slug;
+        m_detail_screen_ = make_link_detail_screen(
+            m_context_, m_catalog_, [this] { m_detail_close_pending_ = true; });
+        m_detail_component_ = m_detail_screen_->component();
+        Add(m_detail_component_);
+        m_mode_ = Mode::detail;
+        m_detail_screen_->on_enter();
+    }
+
+    /// Tears down the inline detail screen and returns to the table (deferred
+    /// from the detail's close callback to a safe point in @ref OnEvent /
+    /// @ref OnRender).
+    void finish_detail_close()
+    {
+        if (m_detail_screen_) {
+            m_detail_screen_->on_leave();  // cancels its in-flight calls
+        }
+        if (m_detail_component_) {
+            m_detail_component_->Detach();
+            m_detail_component_.reset();
+        }
+        m_detail_screen_.reset();
+        m_detail_close_pending_ = false;
+        m_mode_ = Mode::table;
+        m_context_.text_input_active = false;
     }
 
     // --- Inline form (new / edit) --------------------------------------------
@@ -854,7 +911,21 @@ private:
     ///< point in @ref OnEvent / @ref OnRender.
     bool m_form_close_pending_ = false;
 
-    ///< The detail/preview viewer while @ref Mode::result.
+    ///< The inline Link detail screen while @ref Mode::detail (subtask 13),
+    ///< held as @ref IScreen so its lifecycle hooks can be driven; null
+    ///< otherwise.
+    std::unique_ptr<IScreen> m_detail_screen_;
+
+    ///< The detail screen's component, added as a child so the focus chain
+    ///< reaches it; null when no detail is open.
+    ftxui::Component m_detail_component_;
+
+    ///< `true` when the detail asked to close (its `q`/`Esc`/auto-pop
+    ///< callback); the teardown is deferred to a safe point in @ref OnEvent /
+    ///< @ref OnRender.
+    bool m_detail_close_pending_ = false;
+
+    ///< The preview viewer while @ref Mode::result.
     std::unique_ptr<ResultViewerModel> m_result_;
 
     ///< The viewer window title (fixed text).
