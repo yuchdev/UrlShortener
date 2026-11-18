@@ -195,7 +195,8 @@ std::vector<RouteResponseDoc> responsesFor(
     if (method == "POST" && path == "/api/v1/jobs/{id}/cancel") {
         return {{200, "Cancellation requested; job record returned."},
                 {403, "Not authorized."},
-                {404, "Command API disabled or unknown job."}};
+                {404, "Command API disabled or unknown job."},
+                {415, "Content-Type must be application/json."}};
     }
     if (path == "/r/{slug}" || path == "/{slug}") {
         return {{301, "Permanent redirect."}, {302, "Temporary redirect."}, {404, "Link not found."}, {410, "Link inactive."}};

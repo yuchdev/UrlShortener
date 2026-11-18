@@ -423,6 +423,47 @@ BOOST_AUTO_TEST_CASE(cancel_role_model_user_denied_admin_loopback_allowed)
     }
 }
 
+// Type: unit (CSRF defence: cancel requires application/json; T-67 / CWE-352).
+// Scenario: POST /api/v1/jobs/{id}/cancel from a loopback admin is 415 for a
+//   missing Content-Type, text/plain, application/x-www-form-urlencoded and
+//   multipart/form-data, and the job keeps running; application/json with an
+//   empty body is 200.
+// Boundaries: the content-type gate is the only CSRF defence for the
+//   state-changing loopback-admin cancel (a cross-origin HTML form cannot send
+//   application/json, so a 415 forces a preflight the server never grants);
+//   only the media type matters (parameters ignored); the gate (404) is still
+//   checked before the content type, so this never becomes a 415 oracle.
+// On failure first check: did the cancel route stop requiring application/json,
+//   or did a rejected media type start reaching job.cancel?
+BOOST_AUTO_TEST_CASE(cancel_requires_application_json_content_type)
+{
+    const ServerConfig config = make_config(true, "admin");
+    ScopedRuntime fixture {config};
+    auto gate = std::make_shared<std::atomic<bool>>(false);
+    const std::string id = submit_running_job(fixture, gate);
+    const std::string target = "/api/v1/jobs/" + id + "/cancel";
+
+    for (const std::string& ct :
+         {std::string(""), std::string("text/plain"),
+          std::string("application/x-www-form-urlencoded"),
+          std::string("multipart/form-data; boundary=----abc123")}) {
+        const auto res =
+            dispatch(make_post(target, "", ct), config, k_loopback);
+        BOOST_TEST(res.result_int() == 415, "ct=[" + ct + "]");
+        BOOST_TEST(string_field(res.body(), "code") == "unsupported_media_type",
+                   "ct=[" + ct + "]");
+        // The 415 refusal never reached job.cancel: the job still runs.
+        BOOST_TEST(!job_is_terminal(fixture, id), "ct=[" + ct + "]");
+    }
+
+    // application/json with an empty body is accepted (200) for loopback admin.
+    const auto ok =
+        dispatch(make_post(target, "", "application/json"), config, k_loopback);
+    BOOST_TEST(ok.result_int() == 200);
+    BOOST_TEST(contains(ok.body(), "\"id\":\"" + id + "\""));
+    gate->store(true);
+}
+
 // Type: unit (process-wide runner: job submitted in one request, read in a
 //   later one).
 // Scenario: POST /api/v1/commands runs link.export (a job command) and returns a

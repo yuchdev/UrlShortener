@@ -217,31 +217,45 @@ BeastResponse handleGetJob(const BeastRequest& req,
  *
  * A resource-style route: on success the body is the `result` object of
  * `job.cancel` (the affected job record); failures use the legacy
- * `{"error":{...}}` shape produced by the bridge. Any request body is ignored
- * (an empty body is accepted).
+ * `{"error":{...}}` shape produced by the bridge. The request body is never
+ * read (an empty body or `{}` is accepted), but the `Content-Type` **is**
+ * required to be `application/json` (see the pipeline).
  *
- * Pipeline: **Gate (T-64)** — gate off answers `404 not_found "Route not
- * found"`, byte-equal to an unmatched `/api/v1` route, and the runner is
- * never read; otherwise the path `id` is forwarded as the sole `job.cancel` arg
- * and the command runs through @ref execute_resource_command as the gated
- * caller (@ref command_api_caller). `job.cancel` is a `write`, `mutating`
- * command, so `execute` denies a `User` caller `not_authorized` before the
- * handler runs (contract C7): the route cancels only as a loopback `admin`
- * caller; a `User` or a non-loopback/absent peer under role `admin` gets a
- * `403` and the job keeps running (threat model T-92; the resource-route
- * `Admin` caller is never used here, decision D4). @ref resource_response
- * renders the outcome.
+ * Pipeline (every step either answers and stops, or falls through):
+ * 1. **Gate (T-64):** gate off answers `404 not_found "Route not found"`,
+ *    byte-equal to an unmatched `/api/v1` route, and the runner is never read.
+ *    Checked first, before the content type, so a gated-off route is
+ *    indistinguishable from an unmatched one (no `415` oracle).
+ * 2. **Content type (CSRF defence, threat model T-67 / CWE-352):** the media
+ *    type must be `application/json` (parameters ignored, case-insensitive),
+ *    else `415 unsupported_media_type` — the same shape/code
+ *    `POST /api/v1/commands` returns. `job.cancel` is a state-changing write a
+ *    loopback admin runs, so without this a cross-origin HTML form POST (which
+ *    can only send `text/plain`, `application/x-www-form-urlencoded` or
+ *    `multipart/form-data`) could cancel every job by sequential id from the
+ *    admin's browser; requiring `application/json` forces a CORS preflight the
+ *    server never grants. The body itself is still never read.
+ * 3. **Execute:** the path `id` is forwarded as the sole `job.cancel` arg and
+ *    the command runs through @ref execute_resource_command as the gated caller
+ *    (@ref command_api_caller). `job.cancel` is a `write`, `mutating` command,
+ *    so `execute` denies a `User` caller `not_authorized` before the handler
+ *    runs (contract C7): the route cancels only as a loopback `admin` caller; a
+ *    `User` or a non-loopback/absent peer under role `admin` gets a `403` and
+ *    the job keeps running (threat model T-92; the resource-route `Admin`
+ *    caller is never used here, decision D4).
+ * 4. **Render:** @ref resource_response renders the outcome.
  *
- * @param req Incoming request; supplies the HTTP version and the request id.
- * Its body is never read.
+ * @param req Incoming request; supplies the HTTP version, the request id and the
+ * `Content-Type` header. Its body is never read.
  * @param config Server configuration; selects the gate and caller role.
  * @param is_tls `true` on HTTPS connections; gates HSTS/`nosniff`.
  * @param context Route context; `path_params["id"]` is the addressed job id and
  * `context.peer` is the gated caller's locality input, the sole
  * admin-escalation gate (never a header, never logged, threat model T-70/T-84).
  * @return `404 not_found` (gate off, byte-equal to an unmatched route, or an
- * unknown job id); `403 not_authorized` (caller is not a loopback `admin`);
- * otherwise a `200` whose body is the `job.cancel` result.
+ * unknown job id); `415 unsupported_media_type` (wrong/missing content type);
+ * `403 not_authorized` (caller is not a loopback `admin`); otherwise a `200`
+ * whose body is the `job.cancel` result.
  */
 BeastResponse handleCancelJob(const BeastRequest& req,
                               const ::ServerConfig& config,

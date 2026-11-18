@@ -39,13 +39,16 @@ No new classes. Route rows (catalog section 5):
 |---|---|---|---|
 | `GET /api/v1/jobs` | `job.list` | query `state`, `limit`, `offset` | read |
 | `GET /api/v1/jobs/{id}` | `job.get` | path `id` | read |
-| `POST /api/v1/jobs/{id}/cancel` | `job.cancel` | path `id`; empty body accepted | write |
+| `POST /api/v1/jobs/{id}/cancel` | `job.cancel` | path `id`; empty body accepted with `Content-Type: application/json`; other content types -> `415` (CSRF defence, threat model T-67) | write |
 
 Each handler: `if (!command_api_enabled(config)) return <unmatched-route response>;` build args with `args_builder`;
 `execute_resource_command(config, name, args, request_id, command_api_caller(config, context.peer))`; `resource_response(...)`.
 Status codes come from the shared table in 01.0/02: `ok` -> 200 with the job object as body (same JSON as `result`),
 `not_found` -> 404, `invalid_field` -> 400, `not_authorized` -> 403, `busy` not applicable. A cancelled job reads 200 with
-`error.code = job_cancelled` inside the job object (catalog error table).
+`error.code = job_cancelled` inside the job object (catalog error table). The **mutating** cancel route additionally requires
+`Content-Type: application/json` (reusing `is_application_json`, returning the same `415 unsupported_media_type` as
+`POST /api/v1/commands`) so a cross-origin HTML form POST from a loopback admin's browser cannot cancel jobs by sequential id
+(CWE-352). The gate is checked first, so gate-off stays a `404` (no `415` oracle); the body is still never read.
 
 ## Implementation steps
 
@@ -68,7 +71,7 @@ Target naming: `tests/unit/http/*` tests live in `HTTP_UNIT_SOURCES`, which feed
 
 | Test file | Target | Label | Cases |
 |---|---|---|---|
-| `tests/unit/http/40_jobs_routes.cpp` | `40_jobs_routes` | unit | **gate:** default config -> all three routes answer byte-equal to the unmatched-route response and no job is touched; enabled: three routes present in `RouteRegistry` with correct methods; `GET /api/v1/jobs?state=running&limit=10` maps to `job.list` args; `GET /api/v1/jobs/j-1` -> `job.get{id}`; `POST .../cancel` -> `job.cancel`; unknown id 404; `limit=0` and bad `state` 400; **roles:** role `user` (any peer): GET 200, cancel 403 and the job keeps running; role `admin` from a non-loopback peer: cancel 403; role `admin` from `127.0.0.1`: cancel 200; a job submitted through `POST /api/v1/commands` in one request is returned by `GET /api/v1/jobs/{id}` in a later request (process-wide runner); `DELETE /api/v1/jobs/j-1` answers as the existing method matrix does; generated docs contain the three routes (existing docs test extended) |
+| `tests/unit/http/40_jobs_routes.cpp` | `40_jobs_routes` | unit | **gate:** default config -> all three routes answer byte-equal to the unmatched-route response and no job is touched; enabled: three routes present in `RouteRegistry` with correct methods; `GET /api/v1/jobs?state=running&limit=10` maps to `job.list` args; `GET /api/v1/jobs/j-1` -> `job.get{id}`; `POST .../cancel` -> `job.cancel`; unknown id 404; `limit=0` and bad `state` 400; **roles:** role `user` (any peer): GET 200, cancel 403 and the job keeps running; role `admin` from a non-loopback peer: cancel 403; role `admin` from `127.0.0.1`: cancel 200; **CSRF (T-67):** `POST .../cancel` with a missing `Content-Type`, `text/plain`, `application/x-www-form-urlencoded` or `multipart/form-data` -> 415 and the job keeps running, `application/json` (empty body) -> 200; a job submitted through `POST /api/v1/commands` in one request is returned by `GET /api/v1/jobs/{id}` in a later request (process-wide runner); `DELETE /api/v1/jobs/j-1` answers as the existing method matrix does; generated docs contain the three routes (existing docs test extended) |
 
 Manual check: with the server running with `--command-api-enabled true --command-api-role admin` and a long import started via `POST /api/v1/commands` from localhost, `curl` the job routes and watch progress; confirm `GET /{slug}` latency/behavior unchanged; restart without the flag and confirm the routes are gone.
 

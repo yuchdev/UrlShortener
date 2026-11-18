@@ -444,18 +444,41 @@ BeastResponse handleCancelJob(const BeastRequest& req,
 {
     // 1. Gate (threat model T-64): gate off answers byte-for-byte like an
     // unmatched /api/v1 route (404 not_found "Route not found"); the runner
-    // is never touched.
+    // is never touched. Checked FIRST, before the content type, so a gated-off
+    // route is indistinguishable from an unmatched one (no 415 oracle).
     if (!command_api_enabled(config)) {
         return url_shortener::makeApiErrorResponse(
             req, config, is_tls, 404, "not_found", "Route not found");
     }
 
-    // 2/3. Forward the path id as the sole job.cancel arg and execute as the
-    // gated caller (subtask 08). The request body is never read (an empty body
-    // is accepted). job.cancel is a write/mutating command, so execute denies a
-    // User caller not_authorized before the handler (contract C7, threat model
-    // T-92): cancel runs only as a loopback admin, and a User or a
-    // non-loopback/absent peer under role admin gets 403 with the job left
+    // 2. Content-Type must be application/json (CSRF defence, threat model
+    // T-67/CWE-352). job.cancel is a state-changing write a loopback admin runs,
+    // so without this a cross-origin HTML form POST (which can only send
+    // text/plain, application/x-www-form-urlencoded or multipart/form-data)
+    // could cancel every job by sequential id from the admin's browser.
+    // Requiring application/json forces a CORS preflight the server never
+    // grants, exactly as POST /api/v1/commands does. The body itself is never
+    // read (an empty body or `{}` is accepted); only the media type is checked
+    // (parameters ignored, case-insensitive). Beast's string_view is converted
+    // via data()/size() (it is not implicitly convertible to std::string_view).
+    const auto content_type = req[bhttp::field::content_type];
+    if (!is_application_json(
+            std::string_view(content_type.data(), content_type.size())))
+    {
+        return url_shortener::makeApiErrorResponse(
+            req,
+            config,
+            is_tls,
+            415,
+            "unsupported_media_type",
+            "Content-Type must be application/json");
+    }
+
+    // 3/4. Forward the path id as the sole job.cancel arg and execute as the
+    // gated caller (subtask 08). job.cancel is a write/mutating command, so
+    // execute denies a User caller not_authorized before the handler (contract
+    // C7, threat model T-92): cancel runs only as a loopback admin, and a User
+    // or a non-loopback/absent peer under role admin gets 403 with the job left
     // running. The resource-route Admin caller is never used here (decision
     // D4). resource_response maps not_found -> 404 and not_authorized -> 403.
     commands::args_builder args;
