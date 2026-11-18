@@ -31,7 +31,7 @@ defer to implementation time. Renders no diagram itself.
 
 | Path | Action | What changes |
 |---|---|---|
-| `cmake/FetchFTXUI.cmake` | create | `fetch_ftxui()` function: `find_package(ftxui CONFIG QUIET)` first, else `FetchContent_Declare(ftxui GIT_REPOSITORY https://github.com/ArthurSonzogni/FTXUI.git GIT_TAG <pinned> GIT_SHALLOW TRUE)`; forces `FTXUI_BUILD_EXAMPLES/DOCS/TESTS/MODULES OFF`, `FTXUI_ENABLE_INSTALL OFF` (option names VERIFY AT PIN TIME) |
+| `cmake/FetchFTXUI.cmake` | create | `fetch_ftxui()` function: `find_package(ftxui CONFIG QUIET)` first, else `FetchContent_Declare(ftxui GIT_REPOSITORY https://github.com/ArthurSonzogni/FTXUI.git GIT_TAG <exact-40-hex-commit-sha>)` - an **immutable commit SHA, never a movable tag/branch** (T-122; `GIT_SHALLOW TRUE` is only safe with a full SHA, otherwise drop it), or a release tarball with `URL_HASH SHA256=...`; forces `FTXUI_BUILD_EXAMPLES/DOCS/TESTS/MODULES OFF`, `FTXUI_ENABLE_INSTALL OFF` (option names VERIFY AT PIN TIME) |
 | `CMakeLists.txt` | modify | `option(URLSHORTENER_ENABLE_TUI "Build the terminal UI (FTXUI)" ON)`; when ON: `include(cmake/FetchFTXUI.cmake)`, `fetch_ftxui()`, define targets `url_shortener_tui_model` and `url_shortener_tui` (see Classes), `target_compile_definitions(url_shortener PRIVATE URLSHORTENER_WITH_TUI=1)` and link `url_shortener_tui`; when OFF: define `URLSHORTENER_WITH_TUI=0` and nothing else; add macro `register_tui_tests(src_list link_lib)` modelled on `register_labeled_cpp_tests` (that macro links only `url_shortener_common`, so it cannot be reused) |
 | `sources.cmake` | modify | new lists `TUI_MODEL_CPP_SOURCES`, `TUI_UI_CPP_SOURCES` (empty-but-declared here, later subtasks append), `TUI_MODEL_UNIT_SOURCES`, `TUI_RENDER_UNIT_SOURCES`; all inside `if(URLSHORTENER_ENABLE_TUI)` |
 | `src/tui/ftxui_smoke.cpp` | create | `tui::render_smoke_element()` returns a `window("smoke", text("ok"))` - proves linking; deleted or kept as the harness self-test subject |
@@ -40,7 +40,7 @@ defer to implementation time. Renders no diagram itself.
 | `tests/unit/tui/golden/00_smoke_20x3.txt` | create | golden for the harness self-test |
 | `tests/unit/tui/01_render_harness_selftest.cpp` | create | harness self-test |
 | `vcpkg.json` | modify (optional) | add `ftxui` only under a vcpkg *feature* `tui` so default vcpkg installs are unchanged; FetchContent remains the fallback |
-| `docs/adr/0003-tui-framework-and-architecture.md` | modify | record the pinned tag in Decision 1 (replace "pinned at implementation time") |
+| `docs/adr/0003-tui-framework-and-architecture.md` | modify | record the pinned **commit SHA** and verification date in Decision 1's pin policy (T-122), replacing the `<pending>` placeholders |
 
 ## Classes and functions
 
@@ -107,13 +107,13 @@ Manual: configure twice (ON/OFF) and confirm only the ON tree has `tui__*` tests
 - C9: FTXUI is the only new dependency and is optional; no other third-party addition; C++17 only.
 - All new `.cpp` appear in `sources.cmake` (CLAUDE.md); nothing under `src/tui/` is added to `COMMON_CPP_SOURCES`.
 - `url_shortener_tui_model` stays FTXUI-free so model tests run even when the render library is troublesome on a platform.
-- Pin an exact tag, never a branch.
+- Pin an exact commit SHA (or a tarball `URL_HASH`), never a movable tag or branch (T-122, supply chain).
 
 ## Success criteria
 
 1. `cmake -DURLSHORTENER_ENABLE_TUI=OFF` configures and builds with no FTXUI fetch and all existing tests unchanged.
 2. `ON` build produces `url_shortener_tui_model` and `url_shortener_tui` and `tui__01_render_harness_selftest` passes.
-3. The pinned tag and verification date are recorded in ADR 0003 Decision 1.
+3. The pinned **commit SHA** (not a movable tag) and the verification date are recorded in ADR 0003 Decision 1's pin policy (T-122).
 4. `render_to_text` output contains no ESC (0x1B) characters.
 5. Existing `ctest -L unit` count is unchanged except for the added `tui__*` tests.
 

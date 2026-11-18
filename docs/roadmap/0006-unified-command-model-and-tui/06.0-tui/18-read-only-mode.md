@@ -65,7 +65,7 @@ server's `not_authorized` envelope is displayed by the normal toast (06).
 2. `CapabilityModel::can_run` is the only function screens call to enable/disable actions and palette entries; replace any ad-hoc `if (read_only)` introduced earlier (grep in test).
 3. Disabled rendering rule: control shown dim with suffix `(read-only)`; activating shows a toast with the reason and sends nothing; footer hints for disabled actions are dim.
 4. Title: `... -- user: local/User [READ-ONLY]` (D1 shows `user: local/Admin` today).
-5. Cross-screen matrix test drives every screen with a Mock client and a read-only session and asserts `requests` contains only read commands.
+5. Cross-screen matrix test drives every screen with a Mock client and a read-only session and asserts `requests` contains only read commands. It must additionally exercise the two mutation entry-points that do not enumerate as a "screen" (T-116): the palette **raw-JSON args** path (`Ctrl-J`, 11) submitting a write command, and a **no-arg mutating generic command** that otherwise skips the form - asserting both send zero write/migrate requests in read-only and that every reached mutation still passes `ConfirmPolicy` (never straight to `AsyncCaller::submit`).
 
 ## Commands
 
@@ -81,7 +81,7 @@ ctest --test-dir cmake-build -R "^tui__18_readonly_matrix" --output-on-failure
 | Test file | Target | Label | Cases |
 |---|---|---|---|
 | `18_capability_test.cpp` | `tui__18_capability_test` | unit | matrix permission (read/write/migrate/manage_users) x read_only on/off; unknown command; reason strings stable; badge text |
-| `18_readonly_matrix_test.cpp` | `tui__18_readonly_matrix_test` | unit | for each screen (Links, LinkDetail, Tables, ImportExport, Jobs, Dashboard, Palette, GenericForm) feed a scripted key sequence that tries every action key; assert Mock saw zero write/migrate requests and reads still work; plus a registry-backed variant using `InProcessClient` + `ControlSet::User` against a test registry where a write attempt yields `not_authorized` and the toast shows it |
+| `18_readonly_matrix_test.cpp` | `tui__18_readonly_matrix_test` | unit | for each screen (Links, LinkDetail, Tables, ImportExport, Jobs, Dashboard, Palette, GenericForm) feed a scripted key sequence that tries every action key; assert Mock saw zero write/migrate requests and reads still work; **T-116** additionally drive the palette `Ctrl-J` raw-JSON args path with a write command and a no-arg mutating generic command, asserting zero write/migrate requests and that `ConfirmPolicy` still runs for any reached mutation; plus a registry-backed variant using `InProcessClient` + `ControlSet::User` against a test registry where a write attempt yields `not_authorized` and the toast shows it |
 | `18_readonly_render_test.cpp` | `tui__18_readonly_render_test` | unit | goldens: frame badge, disabled Create button with reason, disabled import Start, palette dimming |
 
 ## Constraints

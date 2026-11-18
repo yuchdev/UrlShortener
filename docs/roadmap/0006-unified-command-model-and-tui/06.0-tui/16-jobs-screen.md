@@ -21,6 +21,7 @@ per second only while it is needed.
 - Internal: 06.0/03 (`AsyncCaller`, `IUiPoster`), 09-10 (table), 11 (`ResultViewer`), 06 (toast).
 - Commands (catalog 3.4): `job.list {state?, limit?, offset?}` -> `{items:[job...], total}`; `job.get {id}` -> `{id, command, state, progress{done,total}, result?, error?, created_at, finished_at?}`; `job.cancel {id}`. States `queued|running|succeeded|failed|cancelled`.
 - Field mapping: STARTED = `started_at` (catalog 3.4 job object, set when the job leaves `queued`; shown as `-` while queued); OUTCOME = `succeeded` -> summary from `result` (`rows`, `created`/`total`), `failed` -> `error.code`, `cancelled` -> `job_cancelled`.
+- Carry-forward (05.0): **`job.list` items carry no `result`/`error` body** - only `id/command/state/progress/started_at/finished_at`. So the OUTCOME cell for a `succeeded` job shows the terminal state (and, for `failed`, the `error.code` when the list provides it) from the list row, while the detailed summary (`rows`/`created`, full error envelope) is fetched on demand via `job.get` in the detail view - never assumed present in the list payload (same constraint applies to 15's post-import summary).
 - External FTXUI: via 10; timer via `std::thread` + `IUiPoster` (FTXUI has no timer). `ScreenInteractive::RequestAnimationFrame()` is not needed.
 
 ## Files affected
@@ -70,7 +71,7 @@ public:
 1. `on_enter`: `job.list {limit:50}`; start ticker (1 s). Each tick submits one `job.list` unless the previous is still in flight (skip tick, never queue).
 2. `apply_list` updates the table (via 09), tracks `any_active`; `PollSchedule::should_poll` stops the ticker when the screen is hidden and no active jobs (the Dashboard keeps its own light poll, subtask 17).
 3. `c`: `job.cancel {id}` (no typed confirm; catalog marks it `write` but not mutating-confirmed; a yes/no confirm is still used when not `--yes` because it is a state change - decision documented) then immediate refresh; cancelling a finished job returns its final state (no-op toast "already succeeded").
-4. `Enter`: push `job_detail`, call `job.get {id}` and show `pretty_print` of the **full envelope** (`ok`, `result` or `error`) in the result viewer; auto-refresh while non-terminal.
+4. `Enter`: push `job_detail`, call `job.get {id}` and show `pretty_print` of the **full envelope** (`ok`, `result` or `error`) in the result viewer; auto-refresh while non-terminal. The OUTCOME column text (`outcome_text`) and the detail envelope are untrusted stored data (a job failure `what()` may contain control bytes), so both render through `text_fit::sanitize_for_terminal` - the detail view via `ResultViewerModel` (11), the OUTCOME cell via the TableView sanitizer (10) (T-110).
 5. Progress bar uses `progress_bar(done,total, 10, ascii)`; mono uses `#`/`-`.
 6. Errors from polling: footer shows `! refresh failed (code)` and `PollSchedule` backs off; recover automatically.
 
@@ -86,13 +87,14 @@ ctest --test-dir cmake-build -R "^tui__16_" --output-on-failure
 | Test file | Target | Label | Cases |
 |---|---|---|---|
 | `16_jobs_model_test.cpp` | `tui__16_jobs_model_test` | unit | `progress_bar` 0/total, 62%, 100%, total 0, done > total, widths 3/10/40; `outcome_text` for succeeded import (`312 rows`/`created`), failed (`invalid_url`), cancelled; `can_cancel_selected` per state; D8 sample list parsed (3 jobs); `PollSchedule` backoff sequence 1s,2s,4s,5s,5s then reset; `should_poll` truth table |
-| `16_poll_ticker_test.cpp` | `tui__16_poll_ticker_test` | unit | with `InlinePoster` and 20 ms interval: >= 3 ticks in 100 ms; `stop()` prevents further posts and returns quickly; destruction while running; double `start`; tick callback runs on the "UI" thread only |
-| `16_jobs_screen_test.cpp` | `tui__16_jobs_screen_test` | unit | D8 golden; polling does not overlap (slow mock); `c` on running job sends one `job.cancel` after confirm; `c` on succeeded job sends nothing; `Enter` shows detail golden with error envelope; `focus_job("j-9")` selects the row; read-only: cancel disabled (permission `write`) but list/detail work |
+| `16_poll_ticker_test.cpp` | `tui__16_poll_ticker_test` | unit | with `InlinePoster` and 20 ms interval: >= 3 ticks in 100 ms; `stop()` prevents further posts and returns quickly; destruction while running (T-120: no post/UAF after teardown, TSan-clean where available); double `start`; tick callback runs on the "UI" thread only |
+| `16_jobs_screen_test.cpp` | `tui__16_jobs_screen_test` | unit | D8 golden; polling does not overlap (slow mock); `c` on running job sends one `job.cancel` after confirm; `c` on succeeded job sends nothing; `Enter` shows detail golden with error envelope; `focus_job("j-9")` selects the row; read-only: cancel disabled (permission `write`) but list/detail work; **T-110** a `failed` job whose `error`/`what()` holds `ESC[2J`/`U+202E` (from `support/hostile_strings.hpp`) renders sanitized in both the OUTCOME cell and the `Enter` detail envelope |
 
 ## Constraints
 
 - Rule 3 (ADR 0003): all calls via `AsyncCaller`; the ticker thread never calls `ICommandClient`, it only posts a UI-thread tick.
-- Polling must stop when idle (no busy loops while the app sits on another tab): test via `should_poll`.
+- Polling must stop when idle (no busy loops while the app sits on another tab): test via `should_poll`; poll backoff/`limit:50` caps are tested invariants (T-121).
+- OUTCOME text and the detail envelope pass through `text_fit::sanitize_for_terminal` (T-110); handlers capture tokens/`weak_ptr`, never raw screen pointers (T-120).
 - Jobs are in-memory server-side (Q8): a TUI restart shows an empty list - screen footer notes "jobs are not persistent".
 - Layout per D8; mono supported.
 

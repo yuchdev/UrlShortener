@@ -78,11 +78,11 @@ ftxui::Component confirm_dialog(ConfirmModel& model, const Theme& theme);       
 
 ## Implementation steps
 
-1. Implement `toast_from_response` from `ok`/`error.code`/`error.message` via `json_view` (messages longer than 200 chars truncated with `...` for display; raw kept intact).
+1. Implement `toast_from_response` from `ok`/`error.code`/`error.message` via `json_view` (messages longer than 200 chars truncated with `...` for display; raw kept intact). The toast title, body and the `[d]etails` raw-envelope view all carry server/stored strings, so every one of them is passed through `text_fit::sanitize_for_terminal` at the render sink (`toast_view.cpp`) before `text()` (T-110); `raw_envelope` is stored intact but is sanitized when shown.
 2. `ToastQueue` uses the injected clock; render position: bottom-right over the body, never over the footer.
-3. `ConfirmPolicy::decide` extracts `slug` for `link.delete` with `get_string(args_json, "slug")`; missing slug -> falls back to `yes_no` (the registry will reject the call anyway).
-4. `equivalent_cli` must shell-quote the JSON for the platform shown (single quotes as in D5/catalog; on Windows PowerShell docs note double-quote escaping is the user's job); never include secrets (none exist in args).
-5. Confirm dialog: `Input` for the token (single-line; set `InputOption::multiline = false` - **VERIFY AT PIN TIME** that the option exists, since newer FTXUI makes `Input` multiline by default); `[ Delete ]` button disabled (dim, ignores Enter) until `can_submit()`.
+3. `ConfirmPolicy::decide` extracts `slug` for `link.delete` with `get_string(args_json, "slug")`; missing slug -> falls back to `yes_no` (the registry will reject the call anyway). The confirm **title/prompt display `sanitize_for_terminal(slug)`**, but `ConfirmModel` keeps the raw `token` bytes: `can_submit()` compares the operator's typed input against the raw token, not the sanitized form (T-110: a bidi override or zero-width char in a slug must not make the displayed slug differ from the bytes being matched, which could delete the wrong link).
+4. `equivalent_cli` must shell-quote the JSON for the platform shown (single quotes as in D5/catalog; on Windows PowerShell docs note double-quote escaping is the user's job); never include secrets (none exist in args) and never echo a value `system.info`/handlers would redact (T-125), and its displayed text is sanitized (T-110).
+5. Confirm dialog: `Input` for the token (single-line; set `InputOption::multiline = false` - **VERIFY AT PIN TIME** that the option exists, since newer FTXUI makes `Input` multiline by default); `[ Delete ]` button disabled (dim, ignores Enter) until `can_submit()`. `--yes` collapses `decide` to `none`, which also skips the typed-slug guard for `link.delete` (T-117, safety trade-off; read-only sessions never reach confirm - 18).
 6. Screens call `ConfirmPolicy::decide`; if `kind == none` they submit directly. Confirm result continuation is a `std::function<void(bool)>`, executed on the UI thread, which then calls `AsyncCaller::submit`.
 
 ## Commands
@@ -96,17 +96,18 @@ ctest --test-dir cmake-build -R "^tui__06_" --output-on-failure
 
 | Test file | Target | Label | Cases |
 |---|---|---|---|
-| `06_toast_test.cpp` | `tui__06_toast_test` | unit | error envelope -> title `! slug_conflict`, body, raw kept; success auto-expires after ttl (ManualClock +6 s); error toast persists until dismissed; 4th toast evicts the oldest; malformed response (no `ok`) -> generic `! internal` toast, no crash |
-| `06_confirm_test.cpp` | `tui__06_confirm_test` | unit | policy matrix: non-mutating -> none; `link.create` -> yes_no; `link.delete` -> type_token(slug); `assume_yes` -> none for all; token exact match (case, trailing space rejected, empty rejected); cancel -> `result()==false`; slug with unicode/quotes handled |
-| `06_equivalent_cmd_test.cpp` | `tui__06_equivalent_cmd_test` | unit | CLI line for `link.create` equals catalog example form; args with quotes/backslashes escaped; envelope text contains `"v":1`; empty args -> `--json '{}'` |
-| `06_dialog_render_test.cpp` | `tui__06_dialog_render_test` | unit | goldens for D10 left box (Delete disabled then enabled after typing `promo`), right toast, details view; keys: Esc cancels, Enter ignored until token matches |
+| `06_toast_test.cpp` | `tui__06_toast_test` | unit | error envelope -> title `! slug_conflict`, body, raw kept; success auto-expires after ttl (ManualClock +6 s); error toast persists until dismissed; 4th toast evicts the oldest; malformed response (no `ok`) -> generic `! internal` toast, no crash; **T-110** an error `message`/`raw_envelope` from `support/hostile_strings.hpp` (`ESC[2J`, `OSC 52`, `U+202E`) renders (title, body and `[d]etails`) with no control/bidi byte in the grid |
+| `06_confirm_test.cpp` | `tui__06_confirm_test` | unit | policy matrix: non-mutating -> none; `link.create` -> yes_no; `link.delete` -> type_token(slug); `assume_yes` -> none for all incl. `link.delete` (T-117 typed-slug skip); token exact match (case, trailing space rejected, empty rejected); cancel -> `result()==false`; slug with unicode/quotes handled; **T-110** a slug carrying `U+202E`/`U+200B`: the prompt displays the sanitized slug while `can_submit()` matches only when the typed input equals the raw slug bytes (sanitized input does not satisfy it) |
+| `06_equivalent_cmd_test.cpp` | `tui__06_equivalent_cmd_test` | unit | CLI line for `link.create` equals catalog example form; args with quotes/backslashes escaped; envelope text contains `"v":1`; empty args -> `--json '{}'`; **T-125** a redact-worthy key never has its value echoed and the line stays single-quote-safe (no quote break-out) |
+| `06_dialog_render_test.cpp` | `tui__06_dialog_render_test` | unit | goldens for D10 left box (Delete disabled then enabled after typing `promo`), right toast, details view; keys: Esc cancels, Enter ignored until token matches; hostile `[d]etails` envelope renders sanitized (T-110) |
 
 ## Constraints
 
 - ADR 0003 rule 4: every `mutating = true` command confirms unless `--yes`; `link.delete` requires typing the slug.
 - Errors always show `error.code` + `message` from the envelope, never TUI-invented text (D10 note).
 - Typed-token confirmation is skipped by `--yes` (ADR wording "skippable with --yes"); document in risks.
-- No secret data in toasts or `equivalent_*` output (C6 spirit).
+- No secret data in toasts or `equivalent_*` output (C6 spirit); `equivalent_cli` never echoes a redact-worthy value (T-125).
+- Toast title/body/`[d]etails` and the displayed confirm slug pass through `text_fit::sanitize_for_terminal` at the render sink (T-110); typed-token comparison is on raw bytes.
 
 ## Success criteria
 

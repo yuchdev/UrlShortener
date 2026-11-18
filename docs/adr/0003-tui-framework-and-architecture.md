@@ -43,6 +43,17 @@ matching how `yaml-cpp`/`hiredis`/`SOCI` are already handled. The exact
 version is pinned at implementation time (Task 06.0 subtask 01); the chosen
 release must compile as C++17.
 
+**Dependency pin policy (T-122, supply chain).** FTXUI is pinned by an
+**immutable identifier** - an exact commit SHA given to `FetchContent_Declare`
+(`GIT_TAG <40-hex-sha>`), or a release tarball with `URL_HASH SHA256=...` - never
+a movable Git tag or branch: a tag can be re-pointed upstream and `GIT_SHALLOW`
+would then fetch whatever it currently references (CWE-494/CWE-829). The resolved
+SHA and the date it was verified are recorded here at pin time by subtask 01
+(fill in: pinned SHA `<pending>`, verified `<pending>`); FTXUI is included as a
+`SYSTEM` target and the vcpkg `tui` feature stays behind the checked-in baseline.
+Bumping the pin follows the subtask-01 procedure (new SHA -> re-verify the C++17
+build -> regenerate goldens with `UPDATE_GOLDEN=1` -> review diff).
+
 The TUI is built behind CMake option `URLSHORTENER_ENABLE_TUI` (default `ON`).
 Everything outside `src/tui/` compiles and runs without FTXUI.
 

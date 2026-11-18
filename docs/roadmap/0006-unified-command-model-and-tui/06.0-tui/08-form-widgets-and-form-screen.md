@@ -86,7 +86,7 @@ ctest --test-dir cmake-build -R "^tui__08_" --output-on-failure
 | Test file | Target | Label | Cases |
 |---|---|---|---|
 | `08_form_widgets_render_test.cpp` | `tui__08_form_widgets_render_test` | unit | render each `ArgKind` fixture to text; D5 golden (`link.create`) at 80x24; required `*`; error state golden; Dropdown golden for 5-value enum; form taller than screen scrolls and keeps focused row visible (80x12 golden); mono theme variant is ASCII |
-| `08_form_screen_test.cpp` | `tui__08_form_screen_test` | unit | with `MockCommandClient` and `InlinePoster`: type target URL via events, Ctrl-S -> exactly one `link.create` request with golden args; server `invalid_url` -> toast `! invalid_url`, form stays open with data preserved; success -> `on_success` once; double Ctrl-S while busy sends one request; Esc with touched fields prompts, untouched cancels immediately; read-only context disables Create and sends nothing |
+| `08_form_screen_test.cpp` | `tui__08_form_screen_test` | unit | with `MockCommandClient` and `InlinePoster`: type target URL via events, Ctrl-S -> exactly one `link.create` request with golden args; server `invalid_url` -> toast `! invalid_url`, form stays open with data preserved; success -> `on_success` once; double Ctrl-S while busy sends one request; Esc with touched fields prompts, untouched cancels immediately; read-only context disables Create and sends nothing; **T-110** editing a link whose `target_url`/`tags` hold `ESC[2J`/`U+202E` (from `support/hostile_strings.hpp`) prefills and renders the fields sanitized - no control/bidi byte reaches the grid |
 | `08_mutation_flow_test.cpp` | `tui__08_mutation_flow_test` | unit | mutating command without `--yes` shows confirm before any `call` (mock saw 0 requests until confirmed); `link.delete` needs token; `--yes` skips confirm; cancel -> 0 requests; non-mutating command bypasses confirm |
 
 Manual: D5 appearance in Windows Terminal and legacy conhost; paste of a long URL into the target field.
@@ -94,6 +94,7 @@ Manual: D5 appearance in Windows Terminal and legacy conhost; paste of a long UR
 ## Constraints
 
 - Screens never build JSON; only `FormModel::to_request` does (C1, C8).
+- Server-provided field values (edit-form prefill from fetched link JSON), any data-derived label/hint text, and the rendered `Equivalent:` footer are passed through `text_fit::sanitize_for_terminal` before display (T-110): the form must never echo raw stored `ESC`/CSI/OSC/C1/bidi bytes. Clipboard / OSC-52 output stays out of scope (T-110); `y` only shows the full line in a toast.
 - All mutating submits go through `run_mutation` (ADR 0003 rule 4).
 - `Equivalent:` footer must be byte-identical to the request actually sent (test asserts equality with the mock's recorded request).
 - No blocking calls on the UI thread (rule 3).
