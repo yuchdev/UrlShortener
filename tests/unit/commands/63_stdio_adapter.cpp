@@ -183,6 +183,38 @@ JobBody cooperative_body(std::promise<void>& running, std::uint64_t partial)
     };
 }
 
+/// A body that advances once, signals it is running, then blocks on @p gate
+/// WITHOUT ever polling its cancel flag; used to prove the EOF drain stays
+/// bounded even when a body ignores cancellation (carry-forward 3).
+JobBody uncooperative_body(Gate& gate, std::promise<void>& running)
+{
+    return [&gate, &running](IJobContext& ctx)
+    {
+        ctx.advance(1);
+        running.set_value();
+        gate.wait();  // deliberately never checks ctx.cancel_requested()
+        JobOutcome out;
+        out.ok = true;
+        out.result_json = R"({"n":1})";
+        return out;
+    };
+}
+
+/// A streambuf whose every write throws a non-`std::exception` type, driving
+/// StdioAdapter::run's trailing `catch (...)` (carry-forward 2). Paired with an
+/// ostream whose exception mask includes `badbit`, the throw propagates out of
+/// the session instead of only setting `failbit`.
+class throwing_ostreambuf final : public std::streambuf
+{
+protected:
+    int_type overflow(int_type) override { throw 42; }
+
+    std::streamsize xsputn(const char*, std::streamsize) override
+    {
+        throw 42;
+    }
+};
+
 /// A streambuf that fails every byte once @p max_lines newlines were emitted,
 /// simulating a parent that stops reading stdout (broken pipe).
 class capped_ostreambuf final : public std::streambuf
@@ -522,4 +554,78 @@ BOOST_AUTO_TEST_CASE(output_is_only_envelope_lines)
 
     BOOST_TEST(rc == 0);
     BOOST_CHECK_EQUAL(out.str(), expected_out.str());
+}
+
+// Type: unit (bounded shutdown on a non-cooperative body, carry-forward 3 / T-88).
+// Scenario: a job whose body ignores its cancel flag and blocks on a latch is
+//   running at EOF. The short drain_timeout elapses, cancel_all has no effect,
+//   the 5 s grace elapses, and run() still RETURNS (skipping the blocking join)
+//   rather than hanging forever. Only after asserting that bound does the test
+//   release the latch, so the body's termination cannot be what unblocked run().
+// Boundaries: 50 ms drain_timeout + 5 s grace; run() returns with the body still
+//   wedged; the skipped join is completed by a later shutdown().
+// On failure first check: drain_jobs' idle check — a non-idle runner must skip
+//   runner.shutdown() (the unconditional join) and warn stdio_drain_abandoned.
+BOOST_AUTO_TEST_CASE(hung_body_drain_is_bounded_returns_zero)
+{
+    ManualClock clock = make_clock();
+    auto runner =
+        std::make_shared<JobRunner>(clock, JobRunnerOptions{1, 4, 256});
+
+    Gate gate;
+    std::promise<void> running;
+    CommandRegistry registry;
+    add_commands(registry, [&] { return uncooperative_body(gate, running); });
+    registry.set_job_submitter(runner);
+
+    std::istringstream in(R"({"v":1,"id":"a","command":"test.job"})" "\n");
+    std::ostringstream out;
+    TransportOptions options;
+    options.drain_timeout = std::chrono::milliseconds(50);
+    options.job_runner = runner.get();
+    StdioAdapter adapter(in, out, options);
+
+    std::promise<int> rc_promise;
+    std::future<int> rc_future = rc_promise.get_future();
+    std::thread worker(
+        [&] { rc_promise.set_value(adapter.run(registry)); });
+
+    running.get_future().wait();  // the hung body is running, blocked on the gate
+    // The bound: run() returns after drain_timeout + the 5 s cancel grace even
+    // though the body never observes its cancel flag. A generous 60 s ceiling
+    // distinguishes "bounded" from "hung forever".
+    const std::future_status status =
+        rc_future.wait_for(std::chrono::seconds(60));
+    BOOST_REQUIRE((status == std::future_status::ready));
+    BOOST_TEST(rc_future.get() == 0);
+    worker.join();
+
+    // Release the wedged body only now, so its completion cannot have been what
+    // unblocked run(); the skipped join is then completed deterministically.
+    gate.open();
+    runner->shutdown();
+}
+
+// Type: unit (a non-std exception escaping the session is caught, carry-forward 2).
+// Scenario: the output stream's buffer throws a non-std exception type (int) on
+//   the first write, and its exception mask makes that throw propagate out of the
+//   session. run() must catch it in the trailing catch(...), not reach
+//   std::terminate, and map to exit 4.
+// Boundaries: catch(...) (not catch(std::exception&)); output exit 4.
+// On failure first check: the trailing catch(...) in StdioAdapter::run and that
+//   the ostream exception mask rethrows the original non-std exception.
+BOOST_AUTO_TEST_CASE(non_std_exception_is_caught_returns_four)
+{
+    CommandRegistry registry;
+    add_commands(registry);
+
+    std::istringstream in(R"({"v":1,"id":"a","command":"test.echo"})" "\n");
+    throwing_ostreambuf buf;
+    std::ostream out(&buf);
+    out.exceptions(std::ios::badbit);  // make the non-std throw propagate
+
+    TransportOptions options;  // no job runner
+    StdioAdapter adapter(in, out, options);
+
+    BOOST_TEST(adapter.run(registry) == 4);
 }

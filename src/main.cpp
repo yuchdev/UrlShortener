@@ -19,6 +19,7 @@
 #include <url_shortener/cli/cli_parser.hpp>
 #include <url_shortener/cli/cmd_dispatch.hpp>
 #include <url_shortener/cli/link_command_dispatch.hpp>
+#include <url_shortener/cli/serve_stdio_dispatch.hpp>
 #include <url_shortener/composition/command_runtime.hpp>
 #include <url_shortener/composition/job_runtime.hpp>
 #include <url_shortener/composition/link_backend_bootstrap.hpp>
@@ -137,14 +138,17 @@ int main(int argc, char* argv[])
         // local-operator one-shot CLI modes (`cmd`, `link <verb>`) opt in so
         // `link.import`/`link.export` may name a local file; this install serves
         // those dispatchers via acquire_command_runtime.
-        // Invariant: a one-shot CLI invocation (`link <verb>` or `cmd <name>`)
-        // short-circuits below and never constructs an HttpServer. Both the
-        // file-path capability opt-in here and the two early returns below are
-        // derived from this single predicate, so allow_paths == true always
+        // Invariant: a one-shot invocation (`link <verb>`, `cmd <name>` or
+        // `serve-stdio`) short-circuits below and never constructs an HttpServer.
+        // Both the file-path capability opt-in here and the early returns below
+        // are derived from this single predicate, so allow_paths == true always
         // implies the process never builds HttpServer (and the server/REST
-        // runtime therefore always stays deny, threat model T-95).
-        const bool one_shot_mode =
-            parsed.command.has_value() || parsed.cmd.has_value();
+        // runtime therefore always stays deny, threat model T-95). `serve-stdio`
+        // builds its own runtime with its own file-path policy (05.0/17), so the
+        // capability set here on the installed runtime is moot for that mode; it
+        // is folded in only to keep the no-HttpServer invariant explicit.
+        const bool one_shot_mode = parsed.command.has_value()
+            || parsed.cmd.has_value() || parsed.serve_stdio.has_value();
         url_shortener::composition::CommandRuntimeOptions runtime_options;
         if (one_shot_mode) {
             runtime_options.file_paths.allow_paths = true;
@@ -176,6 +180,17 @@ int main(int argc, char* argv[])
         if (parsed.cmd.has_value()) {
             const int rc = url_shortener::cli::DispatchCmdCommand(
                 *parsed.cmd, parsed.config);
+            backend.flush();  // shutdown-only; no-op on the default path.
+            return rc;
+        }
+
+        // One-shot stdio transport: `serve-stdio` runs the NDJSON stream over
+        // stdin/stdout and short-circuits here, before any io_context/HttpServer
+        // is constructed and before uri.txt is loaded, so it never starts the
+        // server (plan.md C5; subtask 17).
+        if (parsed.serve_stdio.has_value()) {
+            const int rc = url_shortener::cli::RunServeStdio(
+                parsed.config, *parsed.serve_stdio);
             backend.flush();  // shutdown-only; no-op on the default path.
             return rc;
         }

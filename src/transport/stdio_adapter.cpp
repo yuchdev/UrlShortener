@@ -41,27 +41,26 @@ constexpr int k_exit_internal = 4;
 constexpr std::chrono::seconds k_cancel_grace{5};
 
 /**
- * @brief Forces the process logger off `LogSink::Stdout` for the life of the
- * stdio session (threat model T-102).
+ * @brief Cheap debug-only guard that the process logger is not on
+ * `LogSink::Stdout` when the stdio session starts (threat model T-102,
+ * carry-forward 1).
  *
  * `serve-stdio` emits only response envelopes to stdout; a single log line on
- * the same descriptor would corrupt the wire and could leak diagnostics. If the
- * active logging configuration targets stdout, this overrides it to stderr so
- * neither the adapter's own `warn` line nor any library log can interleave with
- * the stream. `LogSink::Stderr` always passes validation, so the re-init cannot
- * fail; it is a best-effort guard regardless. The override is process-global and
- * not restored, which is correct for the single-purpose `serve-stdio` process.
- * The full CLI-driven forcing (and `sync_with_stdio(false)`) is subtask 17; this
- * guarantees the adapter in isolation can never write a log line to stdout.
+ * the same descriptor would corrupt the wire and could leak diagnostics. The
+ * forcing of the logger onto `LogSink::Stderr` is done once, at serve-stdio
+ * startup (`composition::RunServeStdio`), **before** the job runtime and its
+ * workers are built, which is the correct place for a process-global, one-time
+ * override. This adapter therefore no longer re-initializes the logger (which
+ * could race a `Logger` component already created by a worker); it only asserts
+ * that the caller honored the contract. A direct adapter user (the unit tests)
+ * leaves the logger at its default `LogSink::Stderr`, so the assertion holds;
+ * in release builds it compiles to nothing.
  */
-void force_logger_off_stdout()
+void guard_logger_off_stdout()
 {
-    namespace obs = url_shortener::observability;
-    obs::LoggingConfig cfg = obs::LoggerFactory::Config();
-    if (cfg.sink == obs::LogSink::Stdout) {
-        cfg.sink = obs::LogSink::Stderr;
-        obs::LoggerFactory::Initialize(cfg);
-    }
+    assert(url_shortener::observability::LoggerFactory::Config().sink
+               != url_shortener::observability::LogSink::Stdout
+           && "serve-stdio must force the logger off LogSink::Stdout before run");
 }
 
 } // namespace
@@ -85,10 +84,12 @@ void StdioAdapter::drain_jobs(bool graceful)
     }
     commands::JobRunner& runner = *m_options.job_runner;
 
+    bool idle = false;
     if (graceful) {
-        if (!runner.wait_idle(m_options.drain_timeout)) {
+        idle = runner.wait_idle(m_options.drain_timeout);
+        if (!idle) {
             const std::size_t cancelled = runner.cancel_all();
-            runner.wait_idle(k_cancel_grace);
+            idle = runner.wait_idle(k_cancel_grace);
             observability::LoggerFactory::Component("stdio").warn(
                 "stdio_drain_timeout",
                 {{"cancelled", std::to_string(cancelled)}});
@@ -96,12 +97,25 @@ void StdioAdapter::drain_jobs(bool graceful)
     }
     else {
         runner.cancel_all();
-        runner.wait_idle(k_cancel_grace);
+        idle = runner.wait_idle(k_cancel_grace);
     }
 
-    // wait_idle then shutdown (JobRunner has no timed join); shutdown is
-    // idempotent, so the subtask-17 process teardown may call it again.
-    runner.shutdown();
+    if (idle) {
+        // Workers are idle, so shutdown()'s unconditional join returns promptly;
+        // it is idempotent, so the subtask-17 process teardown may call it again.
+        runner.shutdown();
+    }
+    else {
+        // Carry-forward 3 / threat model T-88: a non-cooperative body ignored its
+        // cancel flag and is still running after the grace window. shutdown()'s
+        // unconditional join would block forever, so stay bounded: skip the join
+        // here and return. The worker is joined by process teardown
+        // (shutdown_process_job_runtime / ~JobRunner) once the body unblocks; a
+        // body that never unblocks is the documented hard-signal non-goal
+        // (T-106). The warn carries no request data (contract C6).
+        observability::LoggerFactory::Component("stdio").warn(
+            "stdio_drain_abandoned", {});
+    }
 }
 
 int StdioAdapter::run(commands::CommandRegistry& registry)
@@ -115,8 +129,9 @@ int StdioAdapter::run(commands::CommandRegistry& registry)
     }
     m_has_run = true;
 
-    // T-102: the adapter must never be able to log to stdout.
-    force_logger_off_stdout();
+    // T-102 (carry-forward 1): serve-stdio startup already forced the logger off
+    // stdout before the runtime was built; assert the caller honored that.
+    guard_logger_off_stdout();
 
     // T-107 / T-95: the caller role comes only from construction-time options,
     // never from the input stream; read_only downgrades Admin -> User, and no
@@ -134,9 +149,17 @@ int StdioAdapter::run(commands::CommandRegistry& registry)
         end = session.serve(registry, caller);
     }
     catch (const std::exception&) {
-        // Carry-forward 5: no exception (e.g. bad_alloc in serialize, a stream
-        // exception) may reach std::terminate. Treat as a failed session:
-        // cancel jobs, stop the runner, map to internal.
+        // Carry-forward 5: no std::exception (e.g. bad_alloc in serialize, a
+        // stream exception when masks are enabled) may reach std::terminate.
+        // Treat as a failed session: cancel jobs, stop the runner, map to
+        // internal.
+        drain_jobs(/*graceful=*/false);
+        return k_exit_internal;
+    }
+    catch (...) {
+        // Carry-forward 2: likewise for a non-std exception (e.g. a thrown
+        // non-exception type escaping a stream whose exception mask is enabled);
+        // it must not reach std::terminate. Same failed-session handling.
         drain_jobs(/*graceful=*/false);
         return k_exit_internal;
     }

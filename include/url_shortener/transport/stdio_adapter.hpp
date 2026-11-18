@@ -31,11 +31,14 @@ namespace url_shortener::transport
  * solely from construction-time options; no byte of the input stream can
  * escalate it, and the adapter grants no filesystem (`path`) capability.
  *
- * **stdout carries response envelopes only (T-102).** On entry @ref run forces
- * the process logger off `LogSink::Stdout` (overriding it to `LogSink::Stderr`)
- * so neither the adapter's own `warn` line nor any library log can interleave
- * with the wire. The full CLI-driven forcing is subtask 17; this guard ensures
- * the adapter itself can never emit a log line to stdout.
+ * **stdout carries response envelopes only (T-102).** The forcing of the process
+ * logger onto `LogSink::Stderr` is done once, at serve-stdio startup
+ * (`composition::RunServeStdio`, subtask 17), **before** the job runtime and its
+ * workers are built. On entry @ref run only asserts (debug builds) that the
+ * caller honored that contract — it no longer re-initializes the logger, which
+ * could race a `Logger` component a worker already created. A direct adapter
+ * user (the unit tests) leaves the logger at its default `LogSink::Stderr`, so
+ * the guard holds.
  *
  * **Shutdown semantics (`serve-stdio` contract, also documented in subtask
  * 19):**
@@ -107,15 +110,18 @@ public:
      * |---|---|---|
      * | `eof` | `wait_idle(drain_timeout)`; on timeout `cancel_all()` + 5 s
      *   grace + one `warn` `stdio_drain_timeout` (counts only); then
-     *   `shutdown()`. | `0` |
+     *   `shutdown()` unless a non-cooperative body is still running, in which
+     *   case the blocking join is skipped (bounded, carry-forward 3). | `0` |
      * | `input_failed` | `cancel_all()` immediately + 5 s grace + `shutdown()`
      *   (no long wait). | `4` |
      * | `output_failed` | as `input_failed`. | `4` |
      *
-     * Any `std::exception` that escapes the session (for example `bad_alloc`
-     * while serializing a response, or a stream exception if masks were ever
-     * enabled) is caught here, drained as a failure, and mapped to exit `4`;
-     * the adapter never allows an exception to reach `std::terminate`.
+     * Any exception that escapes the session — a `std::exception` (for example
+     * `bad_alloc` while serializing a response, or a stream exception if masks
+     * were ever enabled) or a non-`std::exception` thrown type (caught by a
+     * trailing `catch (...)`, carry-forward 2) — is caught here, drained as a
+     * failure, and mapped to exit `4`; the adapter never allows an exception to
+     * reach `std::terminate`.
      *
      * Must be called exactly once; a second call is a programming error
      * (asserted in debug, returns `4` otherwise).
@@ -141,11 +147,14 @@ private:
      * - non-graceful (a stream failure already stopped the session): skip the
      *   long wait, `cancel_all()` immediately, then the 5 s grace.
      *
-     * Always finishes with `JobRunner::shutdown()` so queued jobs never run and
-     * workers are joined; `shutdown()` is idempotent, so the subtask-17 caller
-     * may call it again. A cooperative body stuck ignoring its cancel flag can
-     * still block `shutdown()`'s unconditional join (documented residual risk on
-     * @ref url_shortener::commands::JobRunner::shutdown).
+     * Finishes with `JobRunner::shutdown()` (joining the now-idle workers) only
+     * when the runner reached idle; `shutdown()` is idempotent, so the subtask-17
+     * caller may call it again. **Bounded shutdown (carry-forward 3, threat model
+     * T-88):** when a non-cooperative body is still running after the grace
+     * window, the blocking join is *skipped* (one value-free `warn`
+     * `stdio_drain_abandoned`) rather than hanging the process forever; that
+     * worker is joined by process teardown once the body unblocks, and a body
+     * that never unblocks is the documented hard-signal non-goal (T-106).
      *
      * @param graceful `true` on a clean EOF (wait for the full drain window
      * first); `false` on a stream failure (cancel immediately).
