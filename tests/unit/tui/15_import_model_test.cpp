@@ -190,6 +190,32 @@ BOOST_AUTO_TEST_CASE(preview_file_source_is_zero)
 }
 
 // ---------------------------------------------------------------------------
+// append_within_cap: appends while it fits, clamps a partial fit, and is a
+// no-op once full (so the screen skips per-char work past the cap, CWE-407).
+// ---------------------------------------------------------------------------
+BOOST_AUTO_TEST_CASE(append_within_cap_behaviour)
+{
+    std::string buf;
+    BOOST_CHECK(tui::append_within_cap(buf, "abc", 10));  // fits -> changed
+    BOOST_CHECK_EQUAL(buf, "abc");
+
+    // Partial fit: only one more byte fits; returns changed and clamps.
+    BOOST_CHECK(tui::append_within_cap(buf, "xyz", 4));
+    BOOST_CHECK_EQUAL(buf, "abcx");
+
+    // Already full: an O(1) no-op that reports no change (the hot path past
+    // the cap - the screen then skips its preview/sync).
+    BOOST_CHECK(!tui::append_within_cap(buf, "more", 4));
+    BOOST_CHECK_EQUAL(buf, "abcx");
+
+    // Never splits a multibyte code point at the cut: é is 2 bytes and does
+    // not fit in the 1 remaining byte, so nothing is appended.
+    std::string u = "ab";  // 2 bytes
+    BOOST_CHECK(!tui::append_within_cap(u, "\xc3\xa9", 3));  // é
+    BOOST_CHECK_EQUAL(u, "ab");
+}
+
+// ---------------------------------------------------------------------------
 // Unicode URL bytes survive round-trip into the escaped data payload.
 // ---------------------------------------------------------------------------
 BOOST_AUTO_TEST_CASE(unicode_url_preserved)

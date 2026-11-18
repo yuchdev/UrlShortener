@@ -96,6 +96,19 @@ commands::CommandResponse job_response(const std::string& id,
     return commands::make_job_accepted(id, job);
 }
 
+/// Counts non-overlapping occurrences of @p needle in @p haystack.
+std::size_t count_occurrences(const std::string& haystack,
+                              const std::string& needle)
+{
+    std::size_t n = 0;
+    std::size_t pos = 0;
+    while ((pos = haystack.find(needle, pos)) != std::string::npos) {
+        ++n;
+        pos += needle.size();
+    }
+    return n;
+}
+
 std::size_t count_command(const std::vector<commands::CommandRequest>& reqs,
                           const std::string& name)
 {
@@ -350,6 +363,33 @@ BOOST_AUTO_TEST_CASE(oversize_blocks_and_matches_golden)
 }
 
 // ---------------------------------------------------------------------------
+// A per-keystroke paste far past the cap stays bounded: once the buffer is
+// full, each further character is an O(1) no-op (append_within_cap returns
+// false) so the screen does no preview/sync work, and the form stays blocked
+// (CWE-407 regression).
+// ---------------------------------------------------------------------------
+BOOST_AUTO_TEST_CASE(per_char_paste_past_cap_stays_blocked)
+{
+    Fixture fx(/*read_only=*/false, /*assume_yes=*/true, /*max_inline=*/8);
+    std::unique_ptr<tui::IScreen> screen = fx.screen();
+    screen->on_enter();
+    render_to_text(screen->component(), 80, 24);
+
+    // Deliver 4 x (cap+1) characters one event at a time, as a real terminal
+    // delivers a paste; only the first 9 (max_inline + 1) are retained.
+    std::vector<ftxui::Event> keys(36, ftxui::Event::Character("a"));
+    send_events(screen->component(), keys);
+
+    send_events(screen->component(), {ftxui::Event::CtrlS});
+    fx.poster.run_pending();
+
+    BOOST_TEST(count_command(fx.client.recorded_requests(), "link.import")
+               == 0u);
+    const std::string grid = render_to_text(screen->component(), 80, 24);
+    BOOST_TEST(grid.find("exceeds the inline limit") != std::string::npos);
+}
+
+// ---------------------------------------------------------------------------
 // The Export sub-tab matches its golden.
 // ---------------------------------------------------------------------------
 BOOST_AUTO_TEST_CASE(export_matches_golden)
@@ -428,6 +468,11 @@ BOOST_AUTO_TEST_CASE(export_path_conflict_value_free_toast)
     // The value-free toast carries the code and the server message only.
     BOOST_TEST(grid.find("invalid_field") != std::string::npos);
     BOOST_TEST(grid.find("invalid export path") != std::string::npos);
+    // T-118: the path must not leak into the toast/error surface. It
+    // legitimately echoes once in the input field the operator typed (and must
+    // be preserved), so a single occurrence means zero leaked into the toast;
+    // two would mean a leak.
+    BOOST_TEST(count_occurrences(grid, "/secret/out.csv") == 1u);
 }
 
 // ---------------------------------------------------------------------------
@@ -456,6 +501,9 @@ BOOST_AUTO_TEST_CASE(export_capability_denial_value_free_toast)
     const std::string grid = render_to_text(screen->component(), 80, 24);
     BOOST_TEST(grid.find("unsupported") != std::string::npos);
     BOOST_TEST(grid.find("file paths disabled") != std::string::npos);
+    // T-118: the path echoes only in the input field (once), never in the
+    // toast.
+    BOOST_TEST(count_occurrences(grid, "/etc/passwd") == 1u);
 }
 
 // ---------------------------------------------------------------------------

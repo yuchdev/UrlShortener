@@ -358,34 +358,12 @@ private:
         }
     }
 
-    /// Appends as much of @p s to @p buf as fits in @p cap bytes, never
-    /// splitting a UTF-8 sequence (T-121). A bulk paste larger than the cap is
-    /// thus clamped to the cap (which then trips @ref
-    /// ImportModel::blocking_error) rather than dropped whole.
-    static void append_capped(std::string& buf,
-                              const std::string& s,
-                              std::size_t cap)
-    {
-        if (buf.size() >= cap) {
-            return;
-        }
-        std::size_t take = cap - buf.size();
-        if (take > s.size()) {
-            take = s.size();
-        }
-        while (take > 0 && take < s.size()
-               && (static_cast<unsigned char>(s[take]) & 0xC0u) == 0x80u)
-        {
-            --take;  // do not split a multibyte code point at the cut
-        }
-        buf.append(s, 0, take);
-    }
-
-    /// Deletes the last UTF-8 code point from @p buf.
-    static void utf8_backspace(std::string& buf)
+    /// Deletes the last UTF-8 code point from @p buf; returns `true` iff @p buf
+    /// changed (so a Backspace on an empty field does no per-edit work).
+    static bool utf8_backspace(std::string& buf)
     {
         if (buf.empty()) {
-            return;
+            return false;
         }
         std::size_t cut = buf.size() - 1;
         while (cut > 0
@@ -394,6 +372,7 @@ private:
             --cut;
         }
         buf.erase(cut);
+        return true;
     }
 
     /// Routes one keyboard event to the focused text buffer; returns `true`
@@ -406,18 +385,24 @@ private:
             ? m_import_.max_inline_bytes() + 1
             : k_text_field_cap;
         if (event == Event::Backspace) {
-            utf8_backspace(buf);
-            after_text_edit(c);
+            if (utf8_backspace(buf)) {
+                after_text_edit(c);
+            }
             return true;
         }
+        // A character/newline that does not fit (buffer already at the cap)
+        // leaves the buffer unchanged, so the per-edit preview/sync is skipped
+        // - a multi-MB paste past the cap stays O(cap), not O(N) (CWE-407).
         if (c == Ctl::paste && event == Event::Return) {
-            append_capped(buf, "\n", cap);
-            after_text_edit(c);
+            if (append_within_cap(buf, "\n", cap)) {
+                after_text_edit(c);
+            }
             return true;
         }
         if (event.is_character()) {
-            append_capped(buf, event.character(), cap);
-            after_text_edit(c);
+            if (append_within_cap(buf, event.character(), cap)) {
+                after_text_edit(c);
+            }
             return true;
         }
         return false;

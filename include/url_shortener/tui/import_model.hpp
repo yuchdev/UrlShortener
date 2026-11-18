@@ -106,6 +106,29 @@ std::string format_to_wire(ImportFormat format);
 std::string on_conflict_to_wire(OnConflict on_conflict);
 
 /**
+ * @brief Appends as much of @p addition to @p buffer as fits within @p cap
+ * bytes, never splitting a UTF-8 sequence, and reports whether it changed.
+ *
+ * The paste/text-field byte bound of the Import/Export screen (threat model
+ * T-121): once @p buffer has reached @p cap it is a cheap `O(1)` no-op that
+ * leaves the buffer untouched and returns `false`, so a multi-megabyte paste
+ * delivered one code point at a time costs `O(cap)` total rather than
+ * `O(N × cap)` - the caller skips its per-edit preview/sync work when this
+ * returns `false` (CWE-407). A @p addition that only partially fits is clamped
+ * to the largest whole-code-point prefix.
+ *
+ * @param[in,out] buffer The buffer to grow in place.
+ * @param addition The bytes to append (may be empty or multibyte UTF-8).
+ * @param cap The inclusive byte ceiling for @p buffer.
+ * @return `true` iff @p buffer was modified (at least one byte appended);
+ * `false` when @p buffer was already at @p cap or @p addition contributed
+ * nothing.
+ */
+bool append_within_cap(std::string& buffer,
+                       const std::string& addition,
+                       std::size_t cap);
+
+/**
  * @brief The import form state (D7): source, format, conflict policy, the
  * inline payload or file path, and the dry-run flag.
  *

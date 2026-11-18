@@ -45,6 +45,30 @@ std::string format_to_wire(ImportFormat format)
     return format == ImportFormat::ndjson ? "ndjson" : "csv";
 }
 
+bool append_within_cap(std::string& buffer,
+                       const std::string& addition,
+                       std::size_t cap)
+{
+    if (buffer.size() >= cap) {
+        return false;  // already full: an O(1) no-op (CWE-407)
+    }
+    std::size_t take = cap - buffer.size();
+    if (take > addition.size()) {
+        take = addition.size();
+    }
+    // Do not split a multibyte code point at the cut.
+    while (take > 0 && take < addition.size()
+           && (static_cast<unsigned char>(addition[take]) & 0xC0u) == 0x80u)
+    {
+        --take;
+    }
+    if (take == 0) {
+        return false;
+    }
+    buffer.append(addition, 0, take);
+    return true;
+}
+
 std::string on_conflict_to_wire(OnConflict on_conflict)
 {
     switch (on_conflict) {
