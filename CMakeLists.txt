@@ -75,6 +75,13 @@ endif()
 include(cmake/FetchSOCI.cmake)
 fetch_soci_sqlite_and_postgres()
 
+# ---- Terminal UI (optional, FTXUI) ----
+# Default ON (decision-log Q11 / ADR 0003 Decision 1). When ON, FTXUI is
+# fetched and the two TUI libraries are built; when OFF, no FTXUI is fetched and
+# nothing under src/tui/ is compiled. The option is declared before
+# sources.cmake because the TUI source lists are guarded by it there.
+option(URLSHORTENER_ENABLE_TUI "Build the terminal UI (FTXUI)" ON)
+
 # ---- Declare executable ----
 include(sources.cmake)
 
@@ -123,6 +130,37 @@ include(CTest)
   # linking url_shortener_common sees the same definition.
   target_compile_definitions(url_shortener_common
       PUBLIC URL_SHORTENER_VERSION="${PROJECT_VERSION}")
+
+  # ---- Terminal UI libraries (Task 06.0 subtask 01) ----
+  # Built only when URLSHORTENER_ENABLE_TUI is ON. Two STATIC libraries keep the
+  # FTXUI dependency isolated: the model library is FTXUI-free so its tests run
+  # even where the render library is troublesome (ADR 0003 rule 6), and FTXUI
+  # never leaks into url_shortener_common or any non-TUI target.
+  if(URLSHORTENER_ENABLE_TUI)
+    include(cmake/FetchFTXUI.cmake)
+    fetch_ftxui()
+
+    add_library(url_shortener_tui_model STATIC ${TUI_MODEL_CPP_SOURCES})
+    target_compile_features(url_shortener_tui_model PRIVATE cxx_std_17)
+    target_include_directories(url_shortener_tui_model PUBLIC
+        ${CMAKE_CURRENT_SOURCE_DIR}/include)
+    target_link_libraries(url_shortener_tui_model PUBLIC url_shortener_common)
+
+    add_library(url_shortener_tui STATIC ${TUI_UI_CPP_SOURCES})
+    target_compile_features(url_shortener_tui PRIVATE cxx_std_17)
+    target_include_directories(url_shortener_tui PUBLIC
+        ${CMAKE_CURRENT_SOURCE_DIR}/include)
+    target_link_libraries(url_shortener_tui PUBLIC
+        url_shortener_tui_model
+        ftxui::component
+        ftxui::dom
+        ftxui::screen)
+
+    target_compile_definitions(url_shortener PRIVATE URLSHORTENER_WITH_TUI=1)
+    target_link_libraries(url_shortener PRIVATE url_shortener_tui)
+  else()
+    target_compile_definitions(url_shortener PRIVATE URLSHORTENER_WITH_TUI=0)
+  endif()
 
   add_executable(route_registry_dump
       ${CMAKE_CURRENT_SOURCE_DIR}/tools/route_registry_dump.cpp
@@ -186,6 +224,44 @@ include(CTest)
       set_tests_properties(${cpp_test_target} PROPERTIES LABELS "${label}")
     endforeach()
   endmacro()
+
+  # Register TUI tests (Task 06.0 subtask 01). Modelled on
+  # register_labeled_cpp_tests but links a TUI library (model or render) instead
+  # of url_shortener_common - the existing macro links only the common lib, so
+  # it cannot drive FTXUI-backed render tests. Each test also gets TUI_GOLDEN_DIR
+  # so golden.hpp can resolve the golden folder, and the shared render/golden
+  # helpers under tests/unit/tui/support on its include path. Target names follow
+  # the repo <parent_dir>__<stem> rule (e.g. tui__01_render_harness_selftest).
+  macro(register_tui_tests src_list link_lib)
+    foreach(tui_test_src IN LISTS ${src_list})
+      get_filename_component(tui_test_name   ${tui_test_src} NAME_WE)
+      get_filename_component(tui_test_dir    ${tui_test_src} DIRECTORY)
+      get_filename_component(tui_test_parent ${tui_test_dir} NAME)
+      set(tui_test_target "${tui_test_parent}__${tui_test_name}")
+      add_executable(${tui_test_target}
+          ${CMAKE_CURRENT_SOURCE_DIR}/${tui_test_src}
+      )
+      target_compile_features(${tui_test_target} PRIVATE cxx_std_17)
+      target_include_directories(${tui_test_target} PRIVATE
+          ${CMAKE_CURRENT_SOURCE_DIR}/include
+          ${CMAKE_CURRENT_SOURCE_DIR}/tests/unit/tui/support
+      )
+      target_link_libraries(${tui_test_target}
+        PRIVATE
+          ${link_lib}
+          Boost::unit_test_framework
+      )
+      target_compile_definitions(${tui_test_target} PRIVATE
+          TUI_GOLDEN_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/unit/tui/golden")
+      add_test(NAME ${tui_test_target} COMMAND ${tui_test_target})
+      set_tests_properties(${tui_test_target} PROPERTIES LABELS "unit")
+    endforeach()
+  endmacro()
+
+  if(URLSHORTENER_ENABLE_TUI)
+    register_tui_tests(TUI_MODEL_UNIT_SOURCES  url_shortener_tui_model)
+    register_tui_tests(TUI_RENDER_UNIT_SOURCES url_shortener_tui)
+  endif()
 
   register_labeled_cpp_tests(SECURITY_UNIT_SOURCES           "unit")
   register_labeled_cpp_tests(COMMANDS_UNIT_SOURCES       "unit")

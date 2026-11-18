@@ -730,3 +730,29 @@ set(URL_SHORTENER_SOURCES
           18_cli_link_preview
           30_serve_stdio
       )
+
+  # ---- Terminal UI sources (Task 06.0, optional behind URLSHORTENER_ENABLE_TUI)
+  # Two libraries: url_shortener_tui_model (pure view-models, FTXUI-free, ADR
+  # 0003 rule 6) and url_shortener_tui (FTXUI renderers). These lists are never
+  # added to COMMON_CPP_SOURCES; they are compiled only when the TUI is enabled.
+  # Later 06.0 (and 07.0) subtasks append to these lists; subtask 01 seeds the
+  # render pipeline (ftxui_smoke) and the render-harness self-test.
+  if(URLSHORTENER_ENABLE_TUI)
+    set(TUI_MODEL_CPP_SOURCES
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/tui_model_placeholder.cpp
+    )
+
+    set(TUI_UI_CPP_SOURCES
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/ftxui_smoke.cpp
+    )
+
+    # Model unit tests link url_shortener_tui_model (no FTXUI); empty until a
+    # later subtask adds the first model test.
+    set(TUI_MODEL_UNIT_SOURCES
+    )
+
+    # Render/snapshot unit tests link url_shortener_tui (FTXUI).
+    set(TUI_RENDER_UNIT_SOURCES
+        tests/unit/tui/01_render_harness_selftest.cpp
+    )
+  endif()

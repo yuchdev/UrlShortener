@@ -49,10 +49,19 @@ release must compile as C++17.
 a movable Git tag or branch: a tag can be re-pointed upstream and `GIT_SHALLOW`
 would then fetch whatever it currently references (CWE-494/CWE-829). The resolved
 SHA and the date it was verified are recorded here at pin time by subtask 01
-(fill in: pinned SHA `<pending>`, verified `<pending>`); FTXUI is included as a
-`SYSTEM` target and the vcpkg `tui` feature stays behind the checked-in baseline.
-Bumping the pin follows the subtask-01 procedure (new SHA -> re-verify the C++17
-build -> regenerate goldens with `UPDATE_GOLDEN=1` -> review diff).
+(pinned FTXUI **v7.0.3**, commit SHA `f921fad208912747c17d129a8ef75ec7624b6eec`,
+verified `2026-11-18`); FTXUI is included as a `SYSTEM` target (FTXUI marks its
+interface include dirs `SYSTEM` for FetchContent consumers, so its headers raise
+no warnings in our targets) and the vcpkg `tui` feature stays behind the
+checked-in baseline. Verification done at pin time: the tag commit is dated
+2026-08-06 (>2 weeks old) and GPG-signed; its `CMakeLists.txt` builds the
+`screen`/`dom`/`component` libraries as `cxx_std_17` (`cmake/ftxui_set_options.cmake`),
+the CMake option names (`FTXUI_BUILD_EXAMPLES/DOCS/TESTS/MODULES`,
+`FTXUI_ENABLE_INSTALL`) and the `ftxui::screen`/`ftxui::dom`/`ftxui::component`
+aliases match what `cmake/FetchFTXUI.cmake` relies on, and a depth-1 fetch of the
+exact SHA succeeds on GitHub (so `GIT_SHALLOW TRUE` is safe). Bumping the pin
+follows the subtask-01 procedure (new SHA -> re-verify the C++17 build ->
+regenerate goldens with `UPDATE_GOLDEN=1` -> review diff).
 
 The TUI is built behind CMake option `URLSHORTENER_ENABLE_TUI` (default `ON`).
 Everything outside `src/tui/` compiles and runs without FTXUI.
