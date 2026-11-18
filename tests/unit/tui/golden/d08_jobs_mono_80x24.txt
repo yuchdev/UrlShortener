@@ -1,0 +1,24 @@
+Jobs
+ ID   COMMAND     STATE     PROGRESS         STARTED  FINISHED OUTCOME
+>j-1  link.import queued    ----------    ?  -        -        -
+ j-2  link.import running   ######----  62%  10:00:00 -        -
+ j-3  db.rows     succeeded ##########  100% 09:00:00 09:00:03 succeeded
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+page 1/1  (50 per page)
+jobs are not persistent (in-memory; a restart clears them)

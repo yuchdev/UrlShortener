@@ -41,6 +41,7 @@
 #include <url_shortener/security/control_set.hpp>
 #include <url_shortener/tui/app.hpp>
 #include <url_shortener/tui/in_process_client.hpp>
+#include <url_shortener/tui/screens/jobs_screen.hpp>
 #include <url_shortener/tui/screens/links_screen.hpp>
 #include <url_shortener/tui/screens/palette_screen.hpp>
 #include <url_shortener/tui/screens/settings_screen.hpp>
@@ -211,6 +212,13 @@ int run_tui(const TuiCliOptions& cli,
         app.register_screen(
             [catalog = client.commands()](ScreenContext& screen_context)
             { return make_palette_screen(screen_context, catalog); });
+        // The Jobs tab (D8) polls job.list and cancels through run_mutation; it
+        // is handed the live catalog so it can recover the job.cancel
+        // permission for the read-only/confirm gate (contract C8). Replaces the
+        // Jobs tab's placeholder.
+        app.register_screen(
+            [catalog = client.commands()](ScreenContext& screen_context)
+            { return make_jobs_screen(screen_context, catalog); });
         rc = app.run();
     } catch (const std::exception& e) {
         // App's RAII guard has already restored the terminal; record the

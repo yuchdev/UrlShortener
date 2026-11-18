@@ -194,6 +194,22 @@ public:
     bool busy() const { return in_flight() > 0; }
 
     /**
+     * @brief The injected UI-thread poster this caller delivers completions
+     * through.
+     *
+     * Exposed so a screen that needs an off-FTXUI timer (the Jobs poll of
+     * subtask 16) can post a UI-thread tick through the same poster without the
+     * screen holding a second reference, keeping @ref IUiPoster out of
+     * @ref ScreenContext. The returned reference is the one injected at
+     * construction; it is owned by @ref App (it outlives this caller, which is
+     * destroyed before it) and must only be used to @ref IUiPoster::post work
+     * onto the UI thread.
+     *
+     * @return The poster reference; valid for this caller's whole lifetime.
+     */
+    IUiPoster& poster() const noexcept { return m_poster_; }
+
+    /**
      * @brief Diagnostic/testing accessor for the recorded-cancellation count.
      *
      * Exposes the size of the internal cancel set so a test can prove it does
