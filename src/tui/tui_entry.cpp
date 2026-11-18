@@ -45,6 +45,7 @@
 #include <url_shortener/tui/screens/links_screen.hpp>
 #include <url_shortener/tui/screens/palette_screen.hpp>
 #include <url_shortener/tui/screens/settings_screen.hpp>
+#include <url_shortener/tui/screens/tables_screen.hpp>
 #include <url_shortener/tui/theme.hpp>
 
 namespace url_shortener::tui
@@ -205,6 +206,14 @@ int run_tui(const TuiCliOptions& cli,
         app.register_screen(
             [catalog = client.commands()](ScreenContext& screen_context)
             { return make_links_screen(screen_context, catalog); });
+        // The Tables tab (D6) browses the db.* logical views through a two-pane
+        // table; it is handed the live catalog here (a screen never sees
+        // ICommandClient itself, contract C8) so it can resolve the link.create
+        // CommandInfo its insert form needs. Replaces the Tables tab's
+        // placeholder.
+        app.register_screen(
+            [catalog = client.commands()](ScreenContext& screen_context)
+            { return make_tables_screen(screen_context, catalog); });
         // The Command Palette lists the live catalog; it is passed in here (a
         // screen never sees ICommandClient itself, contract C8) so a command
         // added to the registry appears with a working form and zero TUI code
