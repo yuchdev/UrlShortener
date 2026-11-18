@@ -666,7 +666,9 @@ section 5 only if a nicer REST route is wanted.
 **New transport (e.g. IPC):** implement `ITransportAdapter` (frame in -> call
 `CommandRegistry::execute` -> frame out), register it in `src/composition/`.
 No command code changes. Add the transport to the conformance suite's adapter
-list; it must pass the shared corpus.
+list; it must pass the shared corpus. See the full how-to, framing rules, IPC
+design sketch, and security checklist in
+[docs/commands/adding-a-transport.md](/docs/commands/adding-a-transport.md).
 
 ## 7. Conformance
 
