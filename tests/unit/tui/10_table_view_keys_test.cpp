@@ -7,10 +7,8 @@
 #include <vector>
 
 #include <boost/test/unit_test.hpp>
-
 #include <ftxui/component/component_base.hpp>
 #include <ftxui/component/event.hpp>
-
 #include <url_shortener/tui/table_model.hpp>
 #include <url_shortener/tui/table_view.hpp>
 
@@ -78,8 +76,7 @@ PageResult make_page(std::size_t n, std::size_t total)
 {
     PageResult page;
     page.total = total;
-    for (std::size_t i = 0; i < n; ++i)
-    {
+    for (std::size_t i = 0; i < n; ++i) {
         const std::string tag = std::to_string(i);
         page.rows.push_back({"slug" + tag, "https://x/" + tag, tag});
         page.raw_rows.push_back("{\"slug\":\"slug" + tag + "\"}");
@@ -88,7 +85,10 @@ PageResult make_page(std::size_t n, std::size_t total)
 }
 
 // Loads a fresh model with one page of @p rows of @p total already applied.
-void prime(TableModel& model, QuerySpy& spy, std::size_t rows, std::size_t total)
+void prime(TableModel& model,
+           QuerySpy& spy,
+           std::size_t rows,
+           std::size_t total)
 {
     spy.attach(model);
     model.refresh();
@@ -159,9 +159,10 @@ BOOST_AUTO_TEST_CASE(filter_sets_one_query_on_enter_and_esc_clears)
 
     ftxui::Component view = make_table_view(model, TableViewOptions {});
 
-    send_events(view, {ftxui::Event::Character("/"),
-                       ftxui::Event::Character("a"),
-                       ftxui::Event::Character("b")});
+    send_events(view,
+                {ftxui::Event::Character("/"),
+                 ftxui::Event::Character("a"),
+                 ftxui::Event::Character("b")});
     // Typing emits nothing (no per-keystroke query flood).
     BOOST_TEST(spy.count() == base);
 
@@ -212,8 +213,10 @@ BOOST_AUTO_TEST_CASE(column_chooser_hides_a_column)
     BOOST_TEST(render_to_text(view, 80, 12).find("SLUG") != std::string::npos);
 
     // Open chooser, toggle the first checkbox (SLUG), close.
-    send_events(view, {ftxui::Event::Character("c"),
-                       ftxui::Event::Character(" "), ftxui::Event::Return});
+    send_events(view,
+                {ftxui::Event::Character("c"),
+                 ftxui::Event::Character(" "),
+                 ftxui::Event::Return});
 
     const std::string after = render_to_text(view, 80, 12);
     BOOST_TEST(after.find("SLUG") == std::string::npos);
@@ -234,8 +237,7 @@ BOOST_AUTO_TEST_CASE(extra_key_callback_receives_selected_row)
     options.on_extra_key =
         [&seen](const ftxui::Event& event, std::optional<std::size_t> row)
     {
-        if (event == ftxui::Event::Character("x"))
-        {
+        if (event == ftxui::Event::Character("x")) {
             seen = row;
             return true;
         }
@@ -243,8 +245,8 @@ BOOST_AUTO_TEST_CASE(extra_key_callback_receives_selected_row)
     };
     ftxui::Component view = make_table_view(model, std::move(options));
 
-    send_events(view, {ftxui::Event::Character("j"),
-                       ftxui::Event::Character("j")});
+    send_events(view,
+                {ftxui::Event::Character("j"), ftxui::Event::Character("j")});
     BOOST_TEST(model.selected().value() == 2u);
     send_events(view, {ftxui::Event::Character("x")});
     BOOST_REQUIRE(seen.has_value());
@@ -262,9 +264,114 @@ BOOST_AUTO_TEST_CASE(keys_ignored_while_filter_focused)
 
     ftxui::Component view = make_table_view(model, TableViewOptions {});
 
-    send_events(view, {ftxui::Event::Character("/"),
-                       ftxui::Event::Character("j")});
+    send_events(view,
+                {ftxui::Event::Character("/"), ftxui::Event::Character("j")});
     // 'j' became text; the selection did not advance.
     BOOST_TEST(model.selected().value() == 0u);
     BOOST_TEST(render_to_text(view, 80, 12).find("[j]") != std::string::npos);
+}
+
+namespace
+{
+
+// Every built-in movement/activation key, excluding the modal/filter openers.
+std::vector<ftxui::Event> all_movement_keys()
+{
+    return {ftxui::Event::Character("j"),
+            ftxui::Event::Character("k"),
+            ftxui::Event::ArrowDown,
+            ftxui::Event::ArrowUp,
+            ftxui::Event::Character("g"),
+            ftxui::Event::Character("G"),
+            ftxui::Event::PageDown,
+            ftxui::Event::PageUp,
+            ftxui::Event::Home,
+            ftxui::Event::End,
+            ftxui::Event::Character("<"),
+            ftxui::Event::Character(">"),
+            ftxui::Event::Character("s"),
+            ftxui::Event::Return};
+}
+
+}  // namespace
+
+// ---------------------------------------------------------------------------
+// Success criterion 2: every built-in key is safe on a 0-row model - no throw,
+// no out-of-range activation, and no selection-key emits a spurious query.
+// ---------------------------------------------------------------------------
+BOOST_AUTO_TEST_CASE(all_keys_safe_on_empty_model)
+{
+    TableModel model(three_columns(), 20);
+    QuerySpy spy;
+    spy.attach(model);
+    model.refresh();
+    model.apply_result(spy.last_gen, make_page(0, 0));  // 0 rows
+    const std::size_t base = spy.count();
+
+    int activate_calls = 0;
+    TableViewOptions options;
+    options.on_activate = [&activate_calls](std::size_t) { ++activate_calls; };
+    ftxui::Component view = make_table_view(model, std::move(options));
+
+    send_events(view, all_movement_keys());
+
+    // Enter must never activate an out-of-range row: the model can report a
+    // selected index of 0 after `s` sorts an empty page, but there is no row 0.
+    BOOST_TEST(activate_calls == 0);
+    // Only `s` (sort) legitimately queries; movement/scroll keys do not.
+    BOOST_TEST(spy.count() == base + 1);
+}
+
+// ---------------------------------------------------------------------------
+// Success criterion 2: every built-in key is safe on a single-row model, and
+// Enter activates row 0 exactly.
+// ---------------------------------------------------------------------------
+BOOST_AUTO_TEST_CASE(all_keys_safe_on_single_row_model)
+{
+    TableModel model(three_columns(), 20);
+    QuerySpy spy;
+    prime(model, spy, 1, 1);
+
+    std::vector<std::size_t> activated;
+    TableViewOptions options;
+    options.on_activate = [&activated](std::size_t row)
+    { activated.push_back(row); };
+    ftxui::Component view = make_table_view(model, std::move(options));
+
+    send_events(view, all_movement_keys());
+
+    BOOST_TEST(model.selected().value() == 0u);
+    BOOST_REQUIRE(activated.size() == 1u);
+    BOOST_TEST(activated.front() == 0u);  // Enter activated row 0, in range
+}
+
+// ---------------------------------------------------------------------------
+// The on_text_input_changed callback mirrors filter focus (review point 5), so
+// a screen can drive ScreenContext.text_input_active.
+// ---------------------------------------------------------------------------
+BOOST_AUTO_TEST_CASE(text_input_changed_callback_tracks_focus)
+{
+    TableModel model(three_columns(), 20);
+    QuerySpy spy;
+    prime(model, spy, 20, 100);
+
+    std::vector<bool> focus_events;
+    TableViewOptions options;
+    options.on_text_input_changed = [&focus_events](bool focused)
+    { focus_events.push_back(focused); };
+    ftxui::Component view = make_table_view(model, std::move(options));
+
+    send_events(view, {ftxui::Event::Character("/")});
+    BOOST_REQUIRE(focus_events.size() == 1u);
+    BOOST_TEST(focus_events.back() == true);
+
+    send_events(view, {ftxui::Event::Return});
+    BOOST_REQUIRE(focus_events.size() == 2u);
+    BOOST_TEST(focus_events.back() == false);
+
+    // Esc from focus also reports a transition back to unfocused.
+    send_events(view, {ftxui::Event::Character("/"), ftxui::Event::Escape});
+    BOOST_REQUIRE(focus_events.size() == 4u);
+    BOOST_TEST(focus_events[2] == true);
+    BOOST_TEST(focus_events[3] == false);
 }

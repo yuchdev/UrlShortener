@@ -1,10 +1,9 @@
-#include <url_shortener/tui/table_model.hpp>
-
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <utility>
 
+#include <url_shortener/tui/table_model.hpp>
 #include <url_shortener/tui/text_fit.hpp>
 
 namespace url_shortener::tui
@@ -39,8 +38,7 @@ void TableModel::emit_query()
 {
     ++m_generation_;
     m_state_ = LoadState::loading;
-    if (m_handler_)
-    {
+    if (m_handler_) {
         m_handler_(m_query_, m_generation_);
     }
 }
@@ -52,22 +50,18 @@ void TableModel::refresh()
 
 bool TableModel::apply_result(std::uint64_t generation, PageResult result)
 {
-    if (generation != m_generation_)
-    {
+    if (generation != m_generation_) {
         return false;
     }
 
     m_result_ = std::move(result);
     m_error_.clear();
 
-    if (m_result_.rows.empty())
-    {
+    if (m_result_.rows.empty()) {
         m_selected_.reset();
-        m_state_ =
-            m_result_.total == 0 ? LoadState::empty : LoadState::loaded;
+        m_state_ = m_result_.total == 0 ? LoadState::empty : LoadState::loaded;
     }
-    else
-    {
+    else {
         const std::size_t last = m_result_.rows.size() - 1;
         m_selected_ = std::min(m_selected_.value_or(0), last);
         m_state_ = LoadState::loaded;
@@ -77,8 +71,7 @@ bool TableModel::apply_result(std::uint64_t generation, PageResult result)
 
 void TableModel::apply_error(std::uint64_t generation, std::string message)
 {
-    if (generation != m_generation_)
-    {
+    if (generation != m_generation_) {
         return;
     }
     m_state_ = LoadState::error;
@@ -87,8 +80,7 @@ void TableModel::apply_error(std::uint64_t generation, std::string message)
 
 void TableModel::select_next()
 {
-    if (m_result_.rows.empty())
-    {
+    if (m_result_.rows.empty()) {
         return;
     }
     const std::size_t last = m_result_.rows.size() - 1;
@@ -97,8 +89,7 @@ void TableModel::select_next()
 
 void TableModel::select_prev()
 {
-    if (m_result_.rows.empty())
-    {
+    if (m_result_.rows.empty()) {
         return;
     }
     const std::size_t cur = m_selected_.value_or(0);
@@ -107,22 +98,20 @@ void TableModel::select_prev()
 
 void TableModel::select_first()
 {
-    m_selected_ = m_result_.rows.empty()
-                      ? std::optional<std::size_t>()
-                      : std::optional<std::size_t>(0);
+    m_selected_ = m_result_.rows.empty() ? std::optional<std::size_t>()
+                                         : std::optional<std::size_t>(0);
 }
 
 void TableModel::select_last()
 {
     m_selected_ = m_result_.rows.empty()
-                      ? std::optional<std::size_t>()
-                      : std::optional<std::size_t>(m_result_.rows.size() - 1);
+        ? std::optional<std::size_t>()
+        : std::optional<std::size_t>(m_result_.rows.size() - 1);
 }
 
 void TableModel::next_page()
 {
-    if (page_index() + 1 >= page_count())
-    {
+    if (page_index() + 1 >= page_count()) {
         return;
     }
     m_query_.offset = (page_index() + 1) * m_query_.limit;
@@ -132,8 +121,7 @@ void TableModel::next_page()
 
 void TableModel::prev_page()
 {
-    if (page_index() == 0)
-    {
+    if (page_index() == 0) {
         return;
     }
     m_query_.offset = (page_index() - 1) * m_query_.limit;
@@ -143,8 +131,7 @@ void TableModel::prev_page()
 
 void TableModel::first_page()
 {
-    if (m_query_.offset == 0)
-    {
+    if (m_query_.offset == 0) {
         return;
     }
     m_query_.offset = 0;
@@ -155,8 +142,7 @@ void TableModel::first_page()
 void TableModel::last_page()
 {
     const std::size_t last_offset = (page_count() - 1) * m_query_.limit;
-    if (m_query_.offset == last_offset)
-    {
+    if (m_query_.offset == last_offset) {
         return;
     }
     m_query_.offset = last_offset;
@@ -166,22 +152,18 @@ void TableModel::last_page()
 
 void TableModel::toggle_sort(std::size_t column_index)
 {
-    if (column_index >= m_columns_.size())
-    {
+    if (column_index >= m_columns_.size()) {
         return;
     }
     const ColumnDef& col = m_columns_[column_index];
-    if (!col.sortable)
-    {
+    if (!col.sortable) {
         return;
     }
 
-    if (m_query_.sort_key == col.key)
-    {
+    if (m_query_.sort_key == col.key) {
         m_query_.descending = !m_query_.descending;
     }
-    else
-    {
+    else {
         m_query_.sort_key = col.key;
         m_query_.descending = false;  // first sort of a column is ascending
     }
@@ -200,21 +182,17 @@ void TableModel::set_filter(std::string text)
 
 void TableModel::toggle_column(std::size_t column_index)
 {
-    if (column_index >= m_columns_.size())
-    {
+    if (column_index >= m_columns_.size()) {
         return;
     }
     ColumnDef& col = m_columns_[column_index];
-    if (col.visible)
-    {
-        if (visible_indices().size() <= 1)
-        {
+    if (col.visible) {
+        if (visible_indices().size() <= 1) {
             return;  // keep at least one column visible
         }
         col.visible = false;
     }
-    else
-    {
+    else {
         col.visible = true;
     }
     clamp_window();
@@ -223,8 +201,7 @@ void TableModel::toggle_column(std::size_t column_index)
 void TableModel::scroll_columns(int delta)
 {
     const std::size_t visible_count = visible_indices().size();
-    if (visible_count == 0)
-    {
+    if (visible_count == 0) {
         m_window_start_ = 0;
         return;
     }
@@ -237,10 +214,8 @@ void TableModel::scroll_columns(int delta)
 std::vector<std::size_t> TableModel::visible_indices() const
 {
     std::vector<std::size_t> result;
-    for (std::size_t i = 0; i < m_columns_.size(); ++i)
-    {
-        if (m_columns_[i].visible)
-        {
+    for (std::size_t i = 0; i < m_columns_.size(); ++i) {
+        if (m_columns_[i].visible) {
             result.push_back(i);
         }
     }
@@ -250,13 +225,11 @@ std::vector<std::size_t> TableModel::visible_indices() const
 void TableModel::clamp_window()
 {
     const std::size_t visible_count = visible_indices().size();
-    if (visible_count == 0)
-    {
+    if (visible_count == 0) {
         m_window_start_ = 0;
         return;
     }
-    if (m_window_start_ > visible_count - 1)
-    {
+    if (m_window_start_ > visible_count - 1) {
         m_window_start_ = visible_count - 1;
     }
 }
@@ -264,43 +237,53 @@ void TableModel::clamp_window()
 int TableModel::desired_width(std::size_t column_index) const
 {
     const ColumnDef& col = m_columns_[column_index];
-    std::size_t content = display_width(col.title);
-    for (const auto& row : m_result_.rows)
-    {
-        if (column_index < row.size())
-        {
-            content = std::max(content, display_width(row[column_index]));
-        }
-    }
     const auto lo = static_cast<std::size_t>(std::max(1, col.min_width));
     const auto hi =
         static_cast<std::size_t>(std::max(col.min_width, col.max_width));
+
+    // T-121: a column is clamped to [lo, hi], so measuring a cell beyond `hi`
+    // display columns cannot change the result. Scan only a byte prefix long
+    // enough to reach `hi + 1` columns for ordinary text (at most 4 bytes per
+    // code point) and stop the row loop once the clamp ceiling is reached, so a
+    // 64 KiB or combining-mark-flooded cell costs O(hi) per row, not O(field).
+    // A zero-width-dominated cell can under-measure, but such a cell clamps to
+    // `lo` anyway, so the allocation is unchanged.
+    const std::size_t scan_bytes = (hi + 1) * 4 + 8;
+    std::size_t content = display_width(col.title);
+    for (const auto& row : m_result_.rows) {
+        if (content >= hi) {
+            break;
+        }
+        if (column_index < row.size()) {
+            const std::string& cell = row[column_index];
+            const std::size_t width = cell.size() > scan_bytes
+                ? display_width(cell.substr(0, scan_bytes))
+                : display_width(cell);
+            content = std::max(content, width);
+        }
+    }
     content = std::min(std::max(content, lo), hi);
     return static_cast<int>(content);
 }
 
-std::vector<std::pair<std::size_t, int>>
-TableModel::compute_window(int available_width) const
+std::vector<std::pair<std::size_t, int>> TableModel::compute_window(
+    int available_width) const
 {
     std::vector<std::pair<std::size_t, int>> shown;
-    if (available_width <= 0)
-    {
+    if (available_width <= 0) {
         return shown;
     }
     const std::vector<std::size_t> visible = visible_indices();
-    if (visible.empty())
-    {
+    if (visible.empty()) {
         return shown;
     }
 
     const std::size_t start = std::min(m_window_start_, visible.size() - 1);
     int used = 0;  // columns consumed, including one-space separators
-    for (std::size_t k = start; k < visible.size(); ++k)
-    {
+    for (std::size_t k = start; k < visible.size(); ++k) {
         const std::size_t ci = visible[k];
         const int want = desired_width(ci);
-        if (shown.empty())
-        {
+        if (shown.empty()) {
             const int w = std::min(want, available_width);
             shown.emplace_back(ci, w);
             used = w;
@@ -309,8 +292,7 @@ TableModel::compute_window(int available_width) const
         const int sep = 1;
         const int remaining = available_width - used - sep;
         const int min_w = std::max(1, m_columns_[ci].min_width);
-        if (remaining < min_w)
-        {
+        if (remaining < min_w) {
             break;
         }
         const int w = std::min(want, remaining);
@@ -323,30 +305,50 @@ TableModel::compute_window(int available_width) const
 std::vector<int> TableModel::layout(int available_width) const
 {
     std::vector<int> widths;
-    for (const auto& entry : compute_window(available_width))
-    {
+    for (const auto& entry : compute_window(available_width)) {
         widths.push_back(entry.second);
     }
     return widths;
 }
 
-std::vector<const ColumnDef*>
-TableModel::shown_columns(int available_width) const
+std::vector<const ColumnDef*> TableModel::shown_columns(
+    int available_width) const
 {
     std::vector<const ColumnDef*> cols;
-    for (const auto& entry : compute_window(available_width))
-    {
+    for (const auto& entry : compute_window(available_width)) {
         cols.push_back(&m_columns_[entry.first]);
     }
     return cols;
+}
+
+WindowLayout TableModel::layout_window(int available_width) const
+{
+    WindowLayout out;
+    const std::vector<std::pair<std::size_t, int>> window =
+        compute_window(available_width);
+    out.widths.reserve(window.size());
+    out.columns.reserve(window.size());
+    out.indices.reserve(window.size());
+    for (const auto& entry : window) {
+        out.indices.push_back(entry.first);
+        out.columns.push_back(&m_columns_[entry.first]);
+        out.widths.push_back(entry.second);
+    }
+
+    const std::vector<std::size_t> visible = visible_indices();
+    if (!visible.empty()) {
+        const std::size_t start = std::min(m_window_start_, visible.size() - 1);
+        out.overflow_left = start > 0;
+        out.overflow_right = start + window.size() < visible.size();
+    }
+    return out;
 }
 
 bool TableModel::overflow_left(int available_width) const
 {
     (void)available_width;
     const std::vector<std::size_t> visible = visible_indices();
-    if (visible.empty())
-    {
+    if (visible.empty()) {
         return false;
     }
     return std::min(m_window_start_, visible.size() - 1) > 0;
@@ -355,8 +357,7 @@ bool TableModel::overflow_left(int available_width) const
 bool TableModel::overflow_right(int available_width) const
 {
     const std::vector<std::size_t> visible = visible_indices();
-    if (visible.empty())
-    {
+    if (visible.empty()) {
         return false;
     }
     const std::size_t start = std::min(m_window_start_, visible.size() - 1);
@@ -371,8 +372,7 @@ std::size_t TableModel::page_index() const
 
 std::size_t TableModel::page_count() const
 {
-    if (m_query_.limit == 0 || m_result_.total == 0)
-    {
+    if (m_query_.limit == 0 || m_result_.total == 0) {
         return 1;
     }
     return (m_result_.total + m_query_.limit - 1) / m_query_.limit;
@@ -390,9 +390,7 @@ std::optional<std::size_t> TableModel::selected() const
 
 const std::string* TableModel::selected_raw() const
 {
-    if (!m_selected_.has_value() ||
-        *m_selected_ >= m_result_.raw_rows.size())
-    {
+    if (!m_selected_.has_value() || *m_selected_ >= m_result_.raw_rows.size()) {
         return nullptr;
     }
     return &m_result_.raw_rows[*m_selected_];

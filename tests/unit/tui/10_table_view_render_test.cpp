@@ -1,15 +1,14 @@
 #define BOOST_TEST_MODULE TuiTableViewRenderTest
 
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <string>
 #include <vector>
 
 #include <boost/test/unit_test.hpp>
-
 #include <ftxui/component/component_base.hpp>
 #include <ftxui/component/event.hpp>
-
 #include <url_shortener/tui/table_model.hpp>
 #include <url_shortener/tui/table_view.hpp>
 #include <url_shortener/tui/text_fit.hpp>
@@ -66,15 +65,12 @@ std::vector<std::string> split(const std::string& text)
 {
     std::vector<std::string> lines;
     std::string line;
-    for (char ch : text)
-    {
-        if (ch == '\n')
-        {
+    for (char ch : text) {
+        if (ch == '\n') {
             lines.push_back(line);
             line.clear();
         }
-        else
-        {
+        else {
             line += ch;
         }
     }
@@ -98,16 +94,24 @@ PageResult d3_page()
     PageResult page;
     page.total = 1204;
     page.rows = {
-        {"docs", "https://example.com/docs/getting-started", "active", "12044",
+        {"docs",
+         "https://example.com/docs/getting-started",
+         "active",
+         "12044",
          "-"},
         {"launch",
          "https://example.com/launch?utm_source=twitter&utm_campaign=autumn",
-         "active", "8730", "2026-12"},
+         "active",
+         "8730",
+         "2026-12"},
         {"promo", "https://shop.example.com/promo", "disabled", "4112", "-"},
-        {"old-blog", "https://example.com/blog/2019/hello", "deleted", "7", "-"},
+        {"old-blog",
+         "https://example.com/blog/2019/hello",
+         "deleted",
+         "7",
+         "-"},
     };
-    for (std::size_t i = 0; i < page.rows.size(); ++i)
-    {
+    for (std::size_t i = 0; i < page.rows.size(); ++i) {
         page.raw_rows.push_back("{}");
     }
     return page;
@@ -118,8 +122,7 @@ TableModel primed(std::vector<ColumnDef> cols, PageResult page)
 {
     TableModel model(std::move(cols), 20);
     std::uint64_t gen = 0;
-    model.set_query_handler(
-        [&gen](const auto&, std::uint64_t g) { gen = g; });
+    model.set_query_handler([&gen](const auto&, std::uint64_t g) { gen = g; });
     model.refresh();
     model.apply_result(gen, std::move(page));
     return model;
@@ -129,10 +132,8 @@ TableModel primed(std::vector<ColumnDef> cols, PageResult page)
 std::vector<ColumnDef> many_columns()
 {
     std::vector<ColumnDef> cols;
-    for (int i = 0; i < 12; ++i)
-    {
-        const std::string n =
-            (i < 10 ? "c0" : "c1") + std::to_string(i % 10);
+    for (int i = 0; i < 12; ++i) {
+        const std::string n = (i < 10 ? "c0" : "c1") + std::to_string(i % 10);
         cols.push_back(ColumnDef {n, n, 8, 8, false, true, false});
     }
     return cols;
@@ -142,11 +143,9 @@ PageResult many_page()
 {
     PageResult page;
     page.total = 3;
-    for (int r = 0; r < 3; ++r)
-    {
+    for (int r = 0; r < 3; ++r) {
         std::vector<std::string> row;
-        for (int c = 0; c < 12; ++c)
-        {
+        for (int c = 0; c < 12; ++c) {
             row.push_back("r" + std::to_string(r) + "c" + std::to_string(c));
         }
         page.rows.push_back(row);
@@ -185,8 +184,8 @@ BOOST_AUTO_TEST_CASE(d3_body_matches_golden)
 BOOST_AUTO_TEST_CASE(page_footer_string)
 {
     TableModel model = primed(d3_columns(), d3_page());
-    BOOST_TEST(url_shortener::tui::page_footer(model) ==
-               "page 1/61  (20 per page)");
+    BOOST_TEST(url_shortener::tui::page_footer(model)
+               == "page 1/61  (20 per page)");
 }
 
 // ---------------------------------------------------------------------------
@@ -248,8 +247,7 @@ BOOST_AUTO_TEST_CASE(hscroll_right_golden)
     TableModel model = primed(many_columns(), many_page());
     ftxui::Component view = make_table_view(model, dark_options("Tables"));
     // Scroll to the far right so columns are hidden on the left.
-    for (int i = 0; i < 12; ++i)
-    {
+    for (int i = 0; i < 12; ++i) {
         send_events(view, {ftxui::Event::Character(">")});
     }
     const std::string actual = render_twice(view, 80, 12);
@@ -269,11 +267,10 @@ BOOST_AUTO_TEST_CASE(mono_theme_golden)
     ftxui::Component view = make_table_view(model, std::move(options));
     const std::string actual = render_twice(view, 80, 12);
 
-    for (unsigned char byte : actual)
-    {
-        BOOST_TEST(byte <= 0x7Eu,
-                   "non-ASCII byte in the mono table: "
-                       << static_cast<int>(byte));
+    for (unsigned char byte : actual) {
+        BOOST_TEST(
+            byte <= 0x7Eu,
+            "non-ASCII byte in the mono table: " << static_cast<int>(byte));
     }
     assert_matches_golden(actual, "table_mono_80x12.txt");
 }
@@ -301,15 +298,12 @@ BOOST_AUTO_TEST_CASE(hscroll_reveals_all_columns)
 
     bool c00_seen = false;
     bool c11_seen = false;
-    for (int step = 0; step < 12; ++step)
-    {
+    for (int step = 0; step < 12; ++step) {
         const std::string frame = render_twice(view, 80, 12);
-        if (frame.find("c00") != std::string::npos)
-        {
+        if (frame.find("c00") != std::string::npos) {
             c00_seen = true;
         }
-        if (frame.find("c11") != std::string::npos)
-        {
+        if (frame.find("c11") != std::string::npos) {
             c11_seen = true;
         }
         send_events(view, {ftxui::Event::Character(">")});
@@ -324,8 +318,7 @@ BOOST_AUTO_TEST_CASE(hscroll_reveals_all_columns)
 BOOST_AUTO_TEST_CASE(at_least_one_column_stays_visible)
 {
     TableModel model = primed(d3_columns(), d3_page());
-    for (std::size_t i = 0; i < d3_columns().size(); ++i)
-    {
+    for (std::size_t i = 0; i < d3_columns().size(); ++i) {
         model.toggle_column(i);  // the last visible column refuses to hide
     }
     BOOST_TEST(model.shown_columns(79).size() >= 1u);
@@ -345,11 +338,63 @@ BOOST_AUTO_TEST_CASE(wide_layout_within_width)
     const std::string actual = render_twice(view, 120, 30);
 
     BOOST_TEST(actual.find("SLUG") != std::string::npos);
-    for (const std::string& line : split(actual))
-    {
+    for (const std::string& line : split(actual)) {
         BOOST_TEST(display_width(line) <= 120u,
                    "line exceeds terminal width: " << line);
     }
+}
+
+// ---------------------------------------------------------------------------
+// T-110/T-121: a 2 KiB untrusted error string is width-fit, not just
+// sanitized; no rendered line exceeds the terminal width.
+// On failure first check: the error branch in append_body uses fit_cell.
+// ---------------------------------------------------------------------------
+BOOST_AUTO_TEST_CASE(long_error_text_is_width_fit)
+{
+    TableModel model(d3_columns(), 20);
+    std::uint64_t gen = 0;
+    model.set_query_handler([&gen](const auto&, std::uint64_t g) { gen = g; });
+    model.refresh();
+    model.apply_error(gen, std::string(2048, 'E'));  // 2 KiB error
+    ftxui::Component view = make_table_view(model, dark_options("Links"));
+    const std::string actual = render_twice(view, 80, 12);
+
+    for (const std::string& line : split(actual)) {
+        BOOST_TEST(display_width(line) <= 80u,
+                   "error line exceeds terminal width");
+    }
+}
+
+// ---------------------------------------------------------------------------
+// T-121: 20 rows x 64 KiB hostile cells render within a sane time bound (the
+// per-cell width estimate and the window computation are bounded, not O(field)
+// per frame).
+// On failure first check: desired_width's prefix cap and layout_window reuse.
+// ---------------------------------------------------------------------------
+BOOST_AUTO_TEST_CASE(huge_cells_render_within_bound)
+{
+    PageResult page;
+    page.total = 20;
+    for (int r = 0; r < 20; ++r) {
+        page.rows.push_back(
+            {url_shortener::tui::testing::big_field(), "x", "y", "1", "-"});
+        page.raw_rows.push_back("{}");
+    }
+    TableModel model = primed(d3_columns(), std::move(page));
+    ftxui::Component view = make_table_view(model, dark_options("Links"));
+
+    const auto start = std::chrono::steady_clock::now();
+    for (int frame = 0; frame < 10; ++frame) {
+        const std::string grid = render_to_text(view->Render(), 80, 24);
+        BOOST_TEST(!grid.empty());
+    }
+    const auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(
+                             std::chrono::steady_clock::now() - start)
+                             .count();
+    // A naive O(field) per-frame layout would take far longer than this.
+    BOOST_TEST(
+        elapsed < 5,
+        "10 frames over 20x64 KiB cells took too long: " << elapsed << "s");
 }
 
 // ---------------------------------------------------------------------------
@@ -359,8 +404,7 @@ BOOST_AUTO_TEST_CASE(wide_layout_within_width)
 // ---------------------------------------------------------------------------
 BOOST_AUTO_TEST_CASE(hostile_cell_never_reaches_grid)
 {
-    for (const auto& sample : hostile_samples())
-    {
+    for (const auto& sample : hostile_samples()) {
         PageResult page;
         page.total = 1;
         page.rows = {{sample.raw, "https://example.com/x", "active", "1", "-"}};
@@ -372,8 +416,7 @@ BOOST_AUTO_TEST_CASE(hostile_cell_never_reaches_grid)
 
         BOOST_TEST(grid.find('\x1b') == std::string::npos,
                    "ESC reached the grid for sample: " << sample.name);
-        for (const std::string& line : split(grid))
-        {
+        for (const std::string& line : split(grid)) {
             BOOST_TEST(!has_display_hazard(line),
                        "display hazard for sample: " << sample.name);
             BOOST_TEST(display_width(line) <= 80u,

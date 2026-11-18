@@ -9,7 +9,6 @@
 #include <ftxui/component/component_base.hpp>
 #include <ftxui/component/event.hpp>
 #include <ftxui/dom/elements.hpp>
-
 #include <url_shortener/tui/keymap.hpp>
 #include <url_shortener/tui/table_model.hpp>
 #include <url_shortener/tui/theme.hpp>
@@ -52,7 +51,8 @@ struct TableViewOptions
     ///< back to the dark theme.
     const Theme* theme = nullptr;
 
-    ///< `true` to show the `/`-driven filter bar above the table (Links, Tables).
+    ///< `true` to show the `/`-driven filter bar above the table (Links,
+    ///< Tables).
     bool show_filter_bar = true;
 
     ///< `true` when the built-in `s` key means "sort the sorted column"; Links
@@ -76,9 +76,19 @@ struct TableViewOptions
     std::vector<KeyHint> extra_hints;
 
     ///< Optional element rendered on the right of the title line (e.g. the D3
-    ///< status radio); empty when unused. Its content must already be safe
-    ///< (the screen builds it from composition text).
+    ///< status radio); empty when unused. **Trusted-caller boundary:** the view
+    ///< does not sanitize this element's text, so the screen must build it only
+    ///< from composition / already-sanitized strings, never raw server data
+    ///< (T-110).
     std::function<ftxui::Element()> header_extra;
+
+    ///< Called whenever the filter input gains (`true`) or loses (`false`)
+    ///< focus, so the owning screen can mirror it into
+    ///< `ScreenContext::text_input_active` and stop the global hotkeys (digits
+    ///< /
+    ///< `:` / `q`) from firing while the operator types a filter. Empty when
+    ///< the screen does not track text-input focus.
+    std::function<void(bool focused)> on_text_input_changed;
 };
 
 /**
@@ -120,11 +130,13 @@ ftxui::Component make_table_view(TableModel& model, TableViewOptions options);
  * Non-owning; must outlive the component.
  * @return A never-null component rendering the checkbox list in a titled box.
  */
-ftxui::Component
-make_column_chooser(TableModel& model, bool* open, const Theme* theme);
+ftxui::Component make_column_chooser(TableModel& model,
+                                     bool* open,
+                                     const Theme* theme);
 
 /**
- * @brief The footer page string for @p model, e.g. `"page 1/61  (20 per page)"`.
+ * @brief The footer page string for @p model, e.g. `"page 1/61  (20 per
+ * page)"`.
  *
  * A pure, FTXUI-free string derived only from the model's page index, page
  * count and page size, so it can be unit-tested without a terminal.

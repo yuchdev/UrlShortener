@@ -20,8 +20,9 @@ namespace url_shortener::tui
  */
 struct ColumnDef
 {
-    ///< Result field key this column reads (e.g. `slug`, `stats.total_redirects`
-    ///< as a dotted path); also the `sort` value sent when @ref sortable.
+    ///< Result field key this column reads (e.g. `slug`,
+    ///< `stats.total_redirects` as a dotted path); also the `sort` value sent
+    ///< when @ref sortable.
     std::string key;
 
     ///< Human column heading shown in the header row.
@@ -114,6 +115,38 @@ enum class LoadState
 
     ///< The last query failed; previous rows are kept (renderer may dim them).
     error
+};
+
+/**
+ * @brief The fully resolved horizontal window for a single render frame.
+ *
+ * Produced by @ref TableModel::layout_window in one pass so a renderer resolves
+ * widths, the shown columns and the overflow flags with a single traversal
+ * rather than calling @ref TableModel::layout, @ref TableModel::shown_columns
+ * and @ref TableModel::overflow_left / @ref TableModel::overflow_right
+ * separately (which each re-scan the rows). This bounds per-frame work on wide
+ * tables and hostile cells (threat model T-121). @ref widths, @ref columns and
+ * @ref indices are parallel and in display order.
+ */
+struct WindowLayout
+{
+    ///< Allocated display width of each shown column, in display order.
+    std::vector<int> widths;
+
+    ///< Non-owning pointers to the shown column definitions, in display order;
+    ///< valid until the column set changes.
+    std::vector<const ColumnDef*> columns;
+
+    ///< Index of each shown column into the model's full column list
+    ///< (@ref TableModel::columns), parallel to @ref columns, so a renderer can
+    ///< pick the matching cell from a row without pointer arithmetic.
+    std::vector<std::size_t> indices;
+
+    ///< `true` when visible columns exist to the left of the shown window.
+    bool overflow_left = false;
+
+    ///< `true` when visible columns exist to the right of the shown window.
+    bool overflow_right = false;
 };
 
 /**
@@ -255,9 +288,9 @@ public:
     /**
      * @brief Toggles a column's visibility (no query; layout only).
      *
-     * Hiding is refused when the column is the last visible one, so at least one
-     * column always remains. An out-of-range index is ignored. The horizontal
-     * window is re-clamped to the new visible set.
+     * Hiding is refused when the column is the last visible one, so at least
+     * one column always remains. An out-of-range index is ignored. The
+     * horizontal window is re-clamped to the new visible set.
      *
      * @param column_index Index into the model's column list.
      */
@@ -280,9 +313,9 @@ public:
      *
      * Each shown column is allocated `clamp(max content/header width over the
      * current rows, min_width, max_width)`, trimmed so the running total plus
-     * one-space separators never exceeds @p available_width. At least one column
-     * is always returned (truncated to the width if it alone is too wide). The
-     * allocation is deterministic.
+     * one-space separators never exceeds @p available_width. At least one
+     * column is always returned (truncated to the width if it alone is too
+     * wide). The allocation is deterministic.
      *
      * @param available_width The terminal width, in columns, available to the
      * table body.
@@ -296,10 +329,25 @@ public:
      * @ref layout.
      *
      * @param available_width The terminal width available to the table body.
-     * @return Non-owning pointers into the model's columns for the shown window,
-     * in display order. Valid until the column set changes.
+     * @return Non-owning pointers into the model's columns for the shown
+     * window, in display order. Valid until the column set changes.
      */
     std::vector<const ColumnDef*> shown_columns(int available_width) const;
+
+    /**
+     * @brief Resolves the whole horizontal window in a single pass.
+     *
+     * Equivalent to calling @ref layout, @ref shown_columns, @ref overflow_left
+     * and @ref overflow_right together, but computes the window once, so a
+     * renderer that needs all of them per frame does the row scan a single time
+     * (threat model T-121). The result's vectors are parallel and in display
+     * order.
+     *
+     * @param available_width The terminal width available to the table body.
+     * @return The resolved @ref WindowLayout; its vectors are empty only when
+     * @p available_width is non-positive or there are no visible columns.
+     */
+    WindowLayout layout_window(int available_width) const;
 
     /**
      * @brief Whether visible columns exist to the left of the shown window.
@@ -350,8 +398,8 @@ public:
     /// @return The model's column definitions in display order, including
     /// currently hidden ones. Valid until the model is destroyed; the column
     /// chooser (06.0/10) reads titles and visibility through it. The backing
-    /// storage is contiguous, so a pointer returned by @ref shown_columns can be
-    /// turned into an index via `ptr - columns().data()`.
+    /// storage is contiguous, so a pointer returned by @ref shown_columns can
+    /// be turned into an index via `ptr - columns().data()`.
     const std::vector<ColumnDef>& columns() const;
 
 private:
@@ -388,8 +436,8 @@ private:
      * @return Pairs of (column index into @ref m_columns_, allocated width) for
      * the shown window, in display order.
      */
-    std::vector<std::pair<std::size_t, int>>
-    compute_window(int available_width) const;
+    std::vector<std::pair<std::size_t, int>> compute_window(
+        int available_width) const;
 
     ///< Column definitions in display order.
     std::vector<ColumnDef> m_columns_;
