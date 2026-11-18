@@ -760,6 +760,8 @@ set(URL_SHORTENER_SOURCES
         ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/confirm.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/equivalent_cmd.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/settings_model.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/field_parsers.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/form_model.cpp
     )
 
     set(TUI_UI_CPP_SOURCES
@@ -797,6 +799,9 @@ set(URL_SHORTENER_SOURCES
         tests/unit/tui/06_toast_test.cpp
         tests/unit/tui/06_confirm_test.cpp
         tests/unit/tui/06_equivalent_cmd_test.cpp
+        tests/unit/tui/07_field_parsers_test.cpp
+        tests/unit/tui/07_form_model_test.cpp
+        tests/unit/tui/07_form_model_request_test.cpp
         tests/unit/tui/21_settings_model_test.cpp
     )
 
