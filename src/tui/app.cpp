@@ -21,6 +21,7 @@
 #include <url_shortener/tui/json_view.hpp>
 #include <url_shortener/tui/keymap.hpp>
 #include <url_shortener/tui/screens/placeholder_screen.hpp>
+#include <url_shortener/tui/system_info_view.hpp>
 #include <url_shortener/tui/terminal_restore.hpp>
 #include <url_shortener/tui/theme.hpp>
 #include <url_shortener/tui/theme_ftxui.hpp>
@@ -197,10 +198,10 @@ int App::run()
             }
             return;
         }
-        // UNVERIFIED: the exact system.info shape is owned by 03.0/17; read the
-        // backend label and persistence flag defensively (missing -> keep).
+        // The backend label is the nested `backend.metadata` field; the
+        // persistence flag is a top-level bool (app::serializeSystemInfoJson).
         if (std::optional<std::string> label =
-                get_string(resp.result_json, "backend"))
+                backend_label_from_system_info(resp.result_json))
         {
             m_backend_label_ = *label;
         }
