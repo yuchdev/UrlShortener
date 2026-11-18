@@ -4,6 +4,7 @@
 #include <utility>
 
 #include <url_shortener/tui/keymap.hpp>
+#include <url_shortener/tui/text_fit.hpp>
 #include <url_shortener/tui/theme_ftxui.hpp>
 
 namespace url_shortener::tui
@@ -13,7 +14,13 @@ namespace
 {
 
 /// Joins screen hints and the global hints into the one-line footer text, e.g.
-/// "q back  Ctrl-C quit". Hint labels are composition-fixed, never server data.
+/// "q back  Ctrl-C quit".
+///
+/// T-110: a screen's own hints come from @ref IScreen::hints, which
+/// `help_model.hpp` documents may be contributed from server-derived text, so
+/// every key and label is run through @ref sanitize_for_terminal before it is
+/// concatenated into the string handed to FTXUI `text()`. The caller then
+/// width-fits the result to the frame so the single footer row never overflows.
 std::string footer_text(const std::vector<KeyHint>& screen_hints)
 {
     std::vector<KeyHint> all = screen_hints;
@@ -28,7 +35,8 @@ std::string footer_text(const std::vector<KeyHint>& screen_hints)
         {
             out += "  ";
         }
-        out += all[i].keys + " " + all[i].label;
+        out += sanitize_for_terminal(all[i].keys) + " "
+            + sanitize_for_terminal(all[i].label);
     }
     return out;
 }
@@ -95,8 +103,12 @@ ftxui::Element render_frame(const FrameModel& model,
     }
     content.push_back(std::move(body) | flex);
     content.push_back(separator());
-    content.push_back(text(footer_text(footer_hints))
-                      | to_decorator(theme.hint));
+    // Width-fit the footer to the window's inner width (the two border columns)
+    // so a long or hostile set of hints keeps the footer to the single last row.
+    const auto inner_width = static_cast<std::size_t>(width - 2);
+    content.push_back(
+        text(truncate_to_width(footer_text(footer_hints), inner_width))
+        | to_decorator(theme.hint));
 
     Element frame = window(std::move(title_row), vbox(std::move(content)));
 

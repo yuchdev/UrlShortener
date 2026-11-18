@@ -253,6 +253,13 @@ int App::run()
             }
             return true;
         }
+        // F1 opens help from anywhere, including while a text Input is focused
+        // (checked before the text-input guard below); `?` stays typable.
+        if (event == Event::F1)
+        {
+            m_help_visible_ = true;
+            return true;
+        }
         // A focused text input swallows navigation keys (typing `1` in a slug
         // field must not switch tab).
         if (m_text_input_active_)
@@ -262,11 +269,6 @@ int App::run()
         if (event == Event::CtrlC)
         {
             screen.Exit();
-            return true;
-        }
-        if (event == Event::F1)
-        {
-            m_help_visible_ = true;
             return true;
         }
         if (event == Event::Escape)

@@ -17,6 +17,7 @@
 #include <url_shortener/tui/keymap.hpp>
 #include <url_shortener/tui/screen_id.hpp>
 #include <url_shortener/tui/screens/placeholder_screen.hpp>
+#include <url_shortener/tui/text_fit.hpp>
 #include <url_shortener/tui/theme.hpp>
 
 #include "golden.hpp"
@@ -46,6 +47,7 @@ using url_shortener::tui::KeyHint;
 using url_shortener::tui::placeholder_body;
 using url_shortener::tui::render_frame;
 using url_shortener::tui::render_help_overlay;
+using url_shortener::tui::display_width;
 using url_shortener::tui::ScreenId;
 using url_shortener::tui::SessionInfo;
 using url_shortener::tui::theme_for;
@@ -177,6 +179,94 @@ BOOST_AUTO_TEST_CASE(overlay_swallows_key_and_closes_on_esc)
     BOOST_TEST(!visible);
     BOOST_TEST(render_to_text(overlay, 80, 24).find("Help")
                == std::string::npos);
+}
+
+// ---------------------------------------------------------------------------
+// The overlay caps its height: 200 hints render a summary line, not 200 rows,
+// and nothing overflows the 80x24 screen.
+// ---------------------------------------------------------------------------
+BOOST_AUTO_TEST_CASE(overlay_caps_rows_for_many_hints)
+{
+    std::vector<KeyHint> many;
+    for (int i = 0; i < 200; ++i)
+    {
+        many.push_back(
+            KeyHint {"k" + std::to_string(i), "a" + std::to_string(i)});
+    }
+    const ftxui::Element overlay =
+        render_help_overlay(HelpModel({}, many), theme_for(ThemeName::dark));
+    const std::string grid = render_to_text(overlay, 80, 24);
+    const std::vector<std::string> lines = split(grid);
+
+    // The harness clamps the grid to 24 rows; the modal must fit inside it.
+    BOOST_TEST(lines.size() <= 25u);
+    // The overflow collapses to a single summary line.
+    BOOST_TEST(grid.find("more") != std::string::npos);
+    // The modal title is still visible (not pushed off the top).
+    BOOST_TEST(grid.find("Help") != std::string::npos);
+    // No rendered row exceeds the 80-column screen (byte length differs from
+    // display width because borders are multi-byte box-drawing glyphs).
+    for (const std::string& line : lines)
+    {
+        BOOST_TEST(display_width(line) <= 80u);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// T-110: a hostile footer hint (as a screen might contribute via IScreen::hints)
+// never reaches the frame grid, and a long hint set stays on the single footer
+// row within the frame width.
+// On failure first check: footer_text stopped sanitizing, or render_frame
+// stopped width-fitting the footer.
+// ---------------------------------------------------------------------------
+BOOST_AUTO_TEST_CASE(hostile_footer_hints_never_reach_grid)
+{
+    for (const auto& sample : hostile_samples())
+    {
+        const std::vector<KeyHint> hints = {KeyHint {sample.raw, sample.raw}};
+        FrameModel model(admin_session(), "sqlite", true, "dark");
+        const ftxui::Element frame = render_frame(
+            model, ScreenId::links, dashboard_body(), hints, 80, 24);
+        const std::string grid = render_to_text(frame, 80, 24);
+
+        BOOST_TEST(grid.find('\x1b') == std::string::npos,
+                   "ESC reached the footer for sample: " << sample.name);
+        for (const std::string& line : split(grid))
+        {
+            BOOST_TEST(!has_display_hazard(line),
+                       "footer hazard in a cell for sample: " << sample.name);
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// A long footer is width-fitted to a single row just above the bottom border;
+// no hint wraps onto an extra line.
+// ---------------------------------------------------------------------------
+BOOST_AUTO_TEST_CASE(long_footer_stays_on_single_last_row)
+{
+    std::vector<KeyHint> hints;
+    for (int i = 0; i < 40; ++i)
+    {
+        hints.push_back(
+            KeyHint {"key" + std::to_string(i), "action" + std::to_string(i)});
+    }
+    FrameModel model(admin_session(), "sqlite", true, "dark");
+    const ftxui::Element frame =
+        render_frame(model, ScreenId::links, dashboard_body(), hints, 80, 24);
+    const std::vector<std::string> lines = split(render_to_text(frame, 80, 24));
+
+    BOOST_REQUIRE_EQUAL(lines.size(), 24u);
+    for (const std::string& line : lines)
+    {
+        BOOST_TEST(display_width(line) <= 80u);
+    }
+    // The footer is the content row directly above the window's bottom border;
+    // it carries the first hints and was not wrapped onto another row.
+    const std::string& footer = lines[lines.size() - 2];
+    BOOST_TEST(footer.find("key0 action0") != std::string::npos);
+    // The row below it is the window's bottom border, not a wrapped footer.
+    BOOST_TEST(lines[lines.size() - 1].find("key") == std::string::npos);
 }
 
 // ---------------------------------------------------------------------------

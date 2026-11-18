@@ -22,6 +22,11 @@ namespace url_shortener::tui
  * `ascii_filter` folds this modal's border to ASCII along with the rest of the
  * frame.
  *
+ * The number of listed rows is capped to a fixed maximum that fits the 80x24
+ * minimum terminal; when @ref HelpModel::entries is longer the overflow is
+ * replaced by a single `... N more` line so the modal never grows past the
+ * screen height.
+ *
  * @param model The help content to render.
  * @param theme The active theme, used for the key-column style.
  * @return The centered, cleared-under overlay element; never null.
@@ -46,5 +51,20 @@ ftxui::Element render_help_overlay(const HelpModel& model, const Theme& theme);
  * @return The overlay component; never null.
  */
 ftxui::Component help_overlay(HelpModel model, bool* visible);
+
+/**
+ * @brief Theme-aware overload of @ref help_overlay(HelpModel, bool*).
+ *
+ * Renders with @p theme (so the key column uses the theme's hint style) and, in
+ * the @ref ThemeName::mono theme, folds the modal's borders to ASCII through
+ * @ref ascii_filter. The non-theme overload delegates here with the dark theme.
+ *
+ * @param model The help content to show; moved in and snapshotted.
+ * @param theme The active theme; copied into the component.
+ * @param visible Non-owning visibility flag; must outlive the component and not
+ * be null.
+ * @return The overlay component; never null.
+ */
+ftxui::Component help_overlay(HelpModel model, Theme theme, bool* visible);
 
 }  // namespace url_shortener::tui
