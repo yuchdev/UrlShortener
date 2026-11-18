@@ -57,7 +57,7 @@ Decisions made in this task: `JobRunner` does not reuse `AnalyticsWorker`/`Bound
 | 15 | [StdioAdapter, drain, shutdown](15-stdio-adapter-and-shutdown.md) | ✅ Complete | 03, 12, 14 | 17, 19 |
 | 16 | [CLI parser: serve-stdio](16-cli-parser-serve-stdio.md) | ✅ Complete | none | 17 |
 | 17 | [serve-stdio runtime wiring](17-serve-stdio-runtime-wiring.md) | ✅ Complete | 12, 15, 16, 20 | 18 |
-| 18 | [serve-stdio process tests](18-serve-stdio-process-tests.md) | ⬜ Not started | 17 | 19, 07.0/07 |
+| 18 | [serve-stdio process tests](18-serve-stdio-process-tests.md) | ✅ Complete | 17 | 19, 07.0/07 |
 | 19 | [adding-a-transport guide](19-adding-a-transport-guide.md) | ⬜ Not started | 12, 14, 15, 18 | 08.0/04 |
 | 20 | [Process-wide job runtime in `build_command_runtime`](20-process-job-runtime-composition.md) | ✅ Complete | 03, 04, 05, 08, 09, 10, 21, 02.0/12, 03.0/18 | 11, 17, 06.0/19 |
 | 21 | [`jobs` table source](21-jobs-table-source.md) | ✅ Complete | 02, 03.0/15 | 20 |
