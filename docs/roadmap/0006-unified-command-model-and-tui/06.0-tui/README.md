@@ -93,7 +93,7 @@ for 18 to verify - see 21's own Constraints), only 20.
 | 18 | [Read-only mode and mutation safety](18-read-only-mode.md) | ⬜ Not started | 02, 04, 06, 08, 11, 12, 13, 14, 15, 16, 17, 01.0/07 | 20 |
 | 19 | [`tui` CLI mode wiring](19-tui-cli-mode-wiring.md) | ⬜ Not started | 01, 02, 04, 05, 02.0/10, 02.0/12, 03.0/18, 05.0/20 | 20 |
 | 20 | [Manual smoke checklist and diagram sign-off](20-manual-smoke-checklist.md) | ⬜ Not started | 01-19, 21, Task 02.0, 05.0/08, 05.0/10 | 07.0/29, 08.0/10 |
-| 21 | [Settings screen (D13)](21-settings-screen.md) | ⬜ Not started | 02, 03, 04, 05, 03.0/17 | 20 |
+| 21 | [Settings screen (D13)](21-settings-screen.md) | ✅ Complete (SC4 live wiring → 19) | 02, 03, 04, 05, 03.0/17 | 20 |
 
 ## Shared conventions (apply to every subtask)
 
