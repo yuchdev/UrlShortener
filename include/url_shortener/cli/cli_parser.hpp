@@ -188,6 +188,46 @@ struct ServeStdioCliOptions
     std::optional<std::string> path_root;
 };
 
+/// Options parsed from a `tui [options]` one-shot invocation (ADR 0003
+/// "Launching", Task 06.0 subtask 19).
+///
+/// `tui` launches the interactive terminal UI over the configured storage
+/// backend; it starts no HTTP/HTTPS server, binds no socket, and never touches
+/// `uri.txt`/`UriMapSingleton` (milestone contract C5). The parser only turns
+/// `argv` into this struct and validates the theme spelling; no FTXUI type is
+/// named here (the struct lives in `url_shortener_common`, which builds even
+/// with `URLSHORTENER_ENABLE_TUI=OFF`). The concrete mapping to the TUI's own
+/// `url_shortener::tui::TuiOptions` happens in `tui_entry.cpp` via
+/// `to_tui_options`, which re-validates the theme with `parse_theme_name`.
+///
+/// Like every mode, the storage-config path is recorded on
+/// `ParseResult::config.storage_config_path` (via
+/// `extract_storage_config_flag`), never duplicated here.
+struct TuiCliOptions
+{
+    ///< `--read-only`: run the local session as `ControlSet::User` rather than
+    ///< the default `Admin`; write controls render disabled, not hidden
+    ///< (ADR 0003 rule 5). `false` when the flag was not given.
+    bool read_only = false;
+
+    ///< `--yes`: skip mutation confirmation dialogs for scripted runs
+    ///< (ADR 0003 rule 4). `false` when the flag was not given.
+    bool assume_yes = false;
+
+    ///< `--theme <dark|light|mono>`: the colour theme name, validated at parse
+    ///< time against exactly those three lower-case spellings. Defaults to
+    ///< `"dark"`. Stored as a string so this header needs no FTXUI/`ThemeName`
+    ///< dependency; `to_tui_options` maps it to a `ThemeName`.
+    std::string theme = "dark";
+
+    ///< `--log-file <path>`: when set, logs and audit lines go to this file
+    ///< (created `0600`) instead of the default `url_shortener-tui.log` in the
+    ///< current directory. Never a terminal sink while the TUI owns the screen
+    ///< (decision log D14, threat model T-119). `std::nullopt` means the flag
+    ///< was not given; when set, the path is non-empty (empty is rejected).
+    std::optional<std::string> log_file;
+};
+
 /// Result returned by CliParser::parse().
 ///
 /// When help_requested is true, help_text contains the formatted usage
@@ -215,6 +255,11 @@ struct ParseResult
     /// engaged at the same time as @ref command or @ref cmd (the top-level
     /// modes are mutually exclusive).
     std::optional<ServeStdioCliOptions> serve_stdio;
+
+    /// Set only for `tui` invocations; std::nullopt otherwise. Never engaged at
+    /// the same time as @ref command, @ref cmd or @ref serve_stdio (the
+    /// top-level modes are mutually exclusive).
+    std::optional<TuiCliOptions> tui;
 };
 
 /**

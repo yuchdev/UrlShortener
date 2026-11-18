@@ -1,5 +1,6 @@
 #pragma once
 
+#include <functional>
 #include <memory>
 #include <string>
 #include <vector>
@@ -13,22 +14,46 @@ namespace url_shortener::tui
 {
 
 /**
+ * @brief Builds one screen over the live @ref ScreenContext (subtask 19).
+ *
+ * A screen factory, not a ready-made screen: a real screen captures
+ * `ScreenContext::caller&`, and the @ref AsyncCaller behind it exists only
+ * inside @ref App::run (after the FTXUI screen is constructed). @ref App
+ * therefore stores factories and instantiates them inside `run` once the caller
+ * is alive, so every screen is built after - and destroyed before - the caller
+ * (teardown invariant, threat model T-120). The factory must return a non-null
+ * @ref IScreen and must not retain @p context beyond the returned screen's
+ * lifetime. `tui_entry.cpp` (subtask 19) and later screen subtasks register one
+ * factory per real screen; 08/11-17 slot in through this same signature.
+ *
+ * @param context The live screen context (caller, session, router, options);
+ * owned by @ref App and valid for the returned screen's whole lifetime.
+ * @return The constructed screen; never null.
+ */
+using ScreenFactory =
+    std::function<std::unique_ptr<IScreen>(ScreenContext& context)>;
+
+/**
  * @brief The TUI application shell: owns the FTXUI loop, the D1 frame and the
  * router, and hosts the registered screens (ADR 0003, D1/D11).
  *
  * @ref run builds the frame, kicks off `system.info` asynchronously, and runs
- * the FTXUI event loop until the user quits. Screens are added through
- * @ref register_screen before @ref run, so later subtasks plug in without the
- * shell knowing their concrete types. The app talks to the application only via
- * the injected @ref ICommandClient (contract C8).
+ * the FTXUI event loop until the user quits. Screen **factories** are added
+ * through @ref register_screen before @ref run, so later subtasks plug in
+ * without the shell knowing their concrete types; @ref run instantiates them
+ * once the async caller exists (subtask 19). The app talks to the application
+ * only via the injected @ref ICommandClient (contract C8).
  *
  * Teardown ordering (UAF safety, 03 security review): @ref run constructs the
  * `ScreenInteractive`, then the @ref FtxuiPoster over it, then the
- * @ref AsyncCaller over the poster, as locals in that order. They are therefore
- * destroyed in reverse - the caller first (joining its workers so no worker can
- * post afterwards), then the poster, then the screen - so a call still in
- * flight at quit can never post to a destroyed screen. Do not reorder those
- * locals.
+ * @ref AsyncCaller over the poster, as locals in that order; the
+ * @ref ScreenContext and the instantiated screens are locals declared **after**
+ * that group. They are therefore destroyed in reverse - the screens first, then
+ * the context, then the caller (joining its workers so no worker can post
+ * afterwards), then the poster, then the screen. So a screen (which holds
+ * `ScreenContext::caller&`) is always destroyed before the caller, and a call
+ * still in flight at quit can never post to a destroyed screen. Do not reorder
+ * those locals.
  */
 class App
 {
@@ -44,14 +69,17 @@ public:
     App(ICommandClient& client, TuiOptions options);
 
     /**
-     * @brief Registers a screen the frame can show.
+     * @brief Registers a screen factory the frame can instantiate.
      *
-     * Must be called before @ref run. The app takes ownership; screens are
-     * looked up by their @ref IScreen::id when the router switches tabs.
+     * Must be called before @ref run. The factory is invoked once inside
+     * @ref run, after the @ref AsyncCaller exists, with the live
+     * @ref ScreenContext; the resulting screens are looked up by their
+     * @ref IScreen::id when the router switches tabs and are destroyed before
+     * the caller (teardown invariant). A factory must return a non-null screen.
      *
-     * @param screen The screen to host; must not be null.
+     * @param factory The screen factory to host; must not be empty.
      */
-    void register_screen(std::unique_ptr<IScreen> screen);
+    void register_screen(ScreenFactory factory);
 
     /**
      * @brief Runs the frame and the FTXUI event loop until the user quits.
@@ -77,12 +105,10 @@ private:
     ///< Navigation state machine shared with every screen via its context.
     Router m_router_;
 
-    ///< The hosted screens, owned by this app; looked up by @ref IScreen::id.
-    std::vector<std::unique_ptr<IScreen>> m_screens_;
-
-    ///< `true` while a text input has focus, so the global hotkey handler
-    ///< defers digits/`:`/`q` to the input. Wired by form/filter screens later.
-    bool m_text_input_active_ = false;
+    ///< The registered screen factories, instantiated inside @ref run once the
+    ///< @ref AsyncCaller exists (subtask 19). The resulting screens are looked
+    ///< up by their @ref IScreen::id when the router switches tabs.
+    std::vector<ScreenFactory> m_factories_;
 
     ///< `true` while the F1 help overlay is open; it then owns all input and is
     ///< drawn over the frame (subtask 05). Toggled by F1/`?`, closed by Esc.

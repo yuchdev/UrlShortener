@@ -382,6 +382,7 @@ set(URL_SHORTENER_SOURCES
       tests/unit/cli/12_dispatch_null_runtime.cpp
       tests/unit/cli/20_cli_parser_serve_stdio.cpp
       tests/unit/cli/21_serve_stdio_dispatch.cpp
+      tests/unit/cli/30_cli_parser_tui_mode.cpp
   )
 
   set(ANALYTICS_INTEGRATION_SOURCES
@@ -769,6 +770,7 @@ set(URL_SHORTENER_SOURCES
         ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/ftxui_poster.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/frame_view.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/app.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/tui_entry.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/screens/placeholder_screen.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/theme_ftxui.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/help_overlay.cpp
@@ -820,6 +822,8 @@ set(URL_SHORTENER_SOURCES
         tests/unit/tui/08_form_widgets_render_test.cpp
         tests/unit/tui/08_form_screen_test.cpp
         tests/unit/tui/08_mutation_flow_test.cpp
+        tests/unit/tui/19_tui_options_test.cpp
+        tests/unit/tui/19_tui_entry_boundary_test.cpp
         tests/unit/tui/21_settings_screen_test.cpp
     )
   endif()

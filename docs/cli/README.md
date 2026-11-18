@@ -109,6 +109,30 @@ for scripting with `$?` alone:
 url_shortener link create --url https://example.com/docs --slug docs | jq '.slug'
 ```
 
+## Interactive terminal UI (`tui`)
+
+```
+url_shortener tui [--storage-config <FILE>] [--theme dark|light|mono]
+                  [--read-only] [--yes] [--log-file <PATH>]
+```
+
+Launches the interactive terminal UI over the configured storage backend. It
+runs the **same** commands as the REST API through the one shared command
+registry over the active backend, so it reads and writes the same store every
+other mode uses. No HTTP/HTTPS server is started, no socket is bound, and no
+`uri.txt` is touched. The mode requires an interactive terminal; run against a
+pipe or redirect it exits `2`.
+
+| Flag | Description |
+|------|-------------|
+| `--storage-config <FILE>` | Storage configuration YAML (the shared global flag above). Default: in-memory. |
+| `--theme dark\|light\|mono` | Colour theme; `mono` is the ASCII/no-colour fallback. Default: `dark`. An unknown theme is rejected at parse time. |
+| `--read-only` | Run the session as a read-only user; write controls render disabled, not hidden. |
+| `--yes` | Skip mutation confirmation dialogs. |
+| `--log-file <PATH>` | Write logs and audit lines to this file (created `0600`). Default: `./url_shortener-tui.log`. Logs never go to the terminal while the UI owns it. |
+
+Exit codes: `0` on a clean quit; `1` for a parse error (an unknown flag or an invalid `--theme`), the same convention as every other mode; `2` for a non-terminal stdin/stdout, a log-file open failure, or `built without TUI support` when compiled with `-DURLSHORTENER_ENABLE_TUI=OFF`; `4` on a storage/bootstrap failure. The full UI guide is in Task 08.0.
+
 ## Exit codes
 
 | Code | Condition |

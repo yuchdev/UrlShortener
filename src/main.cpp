@@ -3,15 +3,15 @@
  * @brief Application entry point for url_shortener service.
  */
 #include <chrono>
+#include <cstdlib>
 #include <filesystem>
 #include <functional>
-#include <cstdlib>
 #include <iostream>
 #include <memory>
 #include <stdexcept>
 #include <string>
-#include <vector>
 #include <string_view>
+#include <vector>
 
 #include <boost/asio.hpp>
 #include <url_shortener/app/app_error.hpp>
@@ -24,8 +24,12 @@
 #include <url_shortener/composition/job_runtime.hpp>
 #include <url_shortener/composition/link_backend_bootstrap.hpp>
 #include <url_shortener/observability/logger_factory.hpp>
-#include <url_shortener/url_shortener.hpp>
 #include <url_shortener/uri_map_singleton.hpp>
+#include <url_shortener/url_shortener.hpp>
+
+#if URLSHORTENER_WITH_TUI
+#    include <url_shortener/tui/tui_entry.hpp>
+#endif
 
 using namespace url_shortener;
 
@@ -41,8 +45,8 @@ constexpr std::string_view uri_filename = "uri.txt";
  * (installs the one store) -> install the process-wide command runtime (built
  * from the active handle) -> LinkBackend::mark_serving() -> logging ->
  * io_context + HttpServer -> uri.txt -> server.run() -> io_context.run().
- * Startup order (CLI mode): parse args -> `--help` -> InitLinkBackend -> install
- * the process-wide command runtime -> LinkBackend::mark_serving() ->
+ * Startup order (CLI mode): parse args -> `--help` -> InitLinkBackend ->
+ * install the process-wide command runtime -> LinkBackend::mark_serving() ->
  * DispatchLinkCommand -> backend.flush(). InitLinkBackend therefore runs before
  * the runtime is built and before HttpServer/DispatchLinkCommand, so redirect
  * handlers, REST handlers and the CLI all see the same installed store and the
@@ -54,8 +58,8 @@ constexpr std::string_view uri_filename = "uri.txt";
  * LinkBackend::shutdown() - stopping the installed store's background flusher
  * and resetting the holder on this thread while the logger is still alive - and
  * only then does the `backend` handle destruct, releasing the store before its
- * adapters and clock. A `RepositoryLinkStore` is thus never flushed or destroyed
- * during static destruction (carried requirement 5).
+ * adapters and clock. A `RepositoryLinkStore` is thus never flushed or
+ * destroyed during static destruction (carried requirement 5).
  *
  * @param argc Number of CLI arguments.
  * @param argv CLI argument vector.
@@ -83,7 +87,8 @@ int main(int argc, char* argv[])
         // RAII cleanup: guarantees LinkBackend::shutdown() runs once on every
         // exit path (normal return, error return, or exception during
         // unwinding) before `backend` destructs. Declared after `backend` so it
-        // destructs first (carried requirement 2; see the shutdown order above).
+        // destructs first (carried requirement 2; see the shutdown order
+        // above).
         struct link_backend_cleanup
         {
             ~link_backend_cleanup()
@@ -94,9 +99,10 @@ int main(int argc, char* argv[])
         // RAII cleanup for the process-wide command runtime. Declared AFTER
         // backend_cleanup so it destructs FIRST: the runtime's link service
         // references LinkBackend::store() and its lister holds the active
-        // metadata repository, so drop the runtime (reset_process_command_runtime)
-        // before LinkBackend::shutdown() retires the store and before `backend`
-        // destructs its adapters. A no-op when nothing was installed.
+        // metadata repository, so drop the runtime
+        // (reset_process_command_runtime) before LinkBackend::shutdown()
+        // retires the store and before `backend` destructs its adapters. A
+        // no-op when nothing was installed.
         struct process_runtime_cleanup
         {
             ~process_runtime_cleanup()
@@ -106,15 +112,13 @@ int main(int argc, char* argv[])
         } runtime_cleanup;
         try {
             backend = url_shortener::app::InitLinkBackend(parsed.config);
-        }
-        catch (const std::runtime_error& e) {
+        } catch (const std::runtime_error& e) {
             // e.what() is a fixed, value-free message: never a DSN, a path, or
             // raw yaml-cpp output (sanitized in InitLinkBackend, subtask 11).
             std::cerr << e.what() << '\n';
             return url_shortener::cli::ExitCodeForAppError(
                 url_shortener::app::AppErrorCode::storage_failure);
-        }
-        catch (const std::exception&) {
+        } catch (const std::exception&) {
             // Any other bootstrap failure (e.g. std::logic_error from a
             // malformed redis_address port) still maps to the storage exit
             // code; its what() is not known to be value-free, so print a
@@ -130,24 +134,26 @@ int main(int argc, char* argv[])
         // command. Every transport (REST now, CLI `cmd` in subtask 13) then
         // shares this one registry over the one installed store, so link.list /
         // db.rows read exactly what link CRUD writes — no split brain under
-        // --storage-config. `parsed.config` outlives the runtime: runtime_cleanup
-        // resets it on every exit path before `parsed` destructs.
+        // --storage-config. `parsed.config` outlives the runtime:
+        // runtime_cleanup resets it on every exit path before `parsed`
+        // destructs.
         //
-        // File-path capability (threat model T-95, default-deny): the server/REST
-        // runtime stays deny, so POST /api/v1/commands refuses a `path`. The
-        // local-operator one-shot CLI modes (`cmd`, `link <verb>`) opt in so
-        // `link.import`/`link.export` may name a local file; this install serves
-        // those dispatchers via acquire_command_runtime.
+        // File-path capability (threat model T-95, default-deny): the
+        // server/REST runtime stays deny, so POST /api/v1/commands refuses a
+        // `path`. The local-operator one-shot CLI modes (`cmd`, `link <verb>`)
+        // opt in so `link.import`/`link.export` may name a local file; this
+        // install serves those dispatchers via acquire_command_runtime.
         // Invariant: a one-shot invocation (`link <verb>`, `cmd <name>` or
-        // `serve-stdio`) short-circuits below and never constructs an HttpServer.
+        // `serve-stdio`) short-circuits below and never constructs an
+        // HttpServer.
         const bool one_shot_mode = parsed.command.has_value()
             || parsed.cmd.has_value() || parsed.serve_stdio.has_value();
 
         // File-path capability on the INSTALLED runtime (threat model T-95,
         // default-deny): only the one-shot CLI modes that execute file-naming
-        // commands THROUGH the installed runtime opt in — `link <verb>` and `cmd`
-        // reach `link.import`/`link.export` via acquire_command_runtime. The
-        // server/REST runtime stays deny (POST /api/v1/commands refuses a
+        // commands THROUGH the installed runtime opt in — `link <verb>` and
+        // `cmd` reach `link.import`/`link.export` via acquire_command_runtime.
+        // The server/REST runtime stays deny (POST /api/v1/commands refuses a
         // `path`). `serve-stdio` builds its OWN runtime with its own file-path
         // policy (05.0/17) and never uses this installed one, so it is
         // deliberately excluded here; allow_paths == true still implies the
@@ -190,9 +196,9 @@ int main(int argc, char* argv[])
         }
 
         // One-shot stdio transport: `serve-stdio` runs the NDJSON stream over
-        // stdin/stdout and short-circuits here, before any io_context/HttpServer
-        // is constructed and before uri.txt is loaded, so it never starts the
-        // server (plan.md C5; subtask 17).
+        // stdin/stdout and short-circuits here, before any
+        // io_context/HttpServer is constructed and before uri.txt is loaded, so
+        // it never starts the server (plan.md C5; subtask 17).
         if (parsed.serve_stdio.has_value()) {
             // Pass the ACTIVE backend handle so serve-stdio's runtime lister
             // reads the configured repository `main` installed (no split store
@@ -203,18 +209,41 @@ int main(int argc, char* argv[])
             return rc;
         }
 
+        // tui-mode-begin
+        // One-shot interactive terminal UI: `tui` short-circuits here, after
+        // the backend bootstrap and before any network listener or data file is
+        // touched, so it never starts the server (plan.md C5). run_tui builds
+        // the one command runtime from the ACTIVE backend handle (plan.md C11,
+        // threat model T-114) - the registry is never built here. With the TUI
+        // compiled out the word still parses and fails with a clear message.
+        if (parsed.tui.has_value()) {
+#if URLSHORTENER_WITH_TUI
+            const int rc = url_shortener::tui::run_tui(
+                *parsed.tui, parsed.config, backend);
+            backend.flush();  // shutdown-only; no-op on the default path.
+            return rc;
+#else
+            std::cerr << "built without TUI support "
+                         "(URLSHORTENER_ENABLE_TUI=OFF)\n";
+            return 2;
+#endif
+        }
+        // tui-mode-end
+
         auto& config = parsed.config;
         // Fail closed if logging cannot be initialized: never start the server
         // with an audit/log sink that silently discards or misroutes output.
         // The diagnostic is value-free (it never contains a configured path).
         std::string log_init_error;
         if (!url_shortener::observability::LoggerFactory::Initialize(
-                {}, &log_init_error)) {
+                {}, &log_init_error))
+        {
             std::cerr << "fatal: logging initialization failed: "
                       << log_init_error << '\n';
             return 1;
         }
-        auto logger = url_shortener::observability::LoggerFactory::Component("main");
+        auto logger =
+            url_shortener::observability::LoggerFactory::Component("main");
         logger.info("startup_begin");
         if (backend.active()) {
             logger.info("storage_backend", {{"summary", backend.summary()}});
@@ -222,18 +251,20 @@ int main(int argc, char* argv[])
         // Non-secret visibility of the opt-in command API gate (subtask 08/09):
         // never logs peers, tokens or DSNs. When enabled with role admin, warn
         // that admin is granted to loopback peers only - and that behind a
-        // same-host reverse proxy every request is loopback, so such deployments
-        // should keep role user (threat model T-64/T-65).
+        // same-host reverse proxy every request is loopback, so such
+        // deployments should keep role user (threat model T-64/T-65).
         {
             const std::vector<url_shortener::observability::LogField> fields = {
                 {"enabled", config.command_api_enabled ? "true" : "false"},
                 {"role", config.command_api_role}};
             if (config.command_api_enabled
-                && config.command_api_role == "admin") {
-                logger.warn("command_api: admin role grants admin to loopback "
-                            "peers only; behind a same-host reverse proxy every "
-                            "request is loopback, so keep role user there",
-                            fields);
+                && config.command_api_role == "admin")
+            {
+                logger.warn(
+                    "command_api: admin role grants admin to loopback "
+                    "peers only; behind a same-host reverse proxy every "
+                    "request is loopback, so keep role user there",
+                    fields);
             }
             else {
                 logger.info("command_api", fields);
@@ -243,11 +274,13 @@ int main(int argc, char* argv[])
         HttpServer server(io_context, config);
 
         if (fs::exists(uri_filename)) {
-            UriMapSingleton::getInstance().deserialize(std::string(uri_filename));
+            UriMapSingleton::getInstance().deserialize(
+                std::string(uri_filename));
             logger.info("data_loaded", {{"path", std::string(uri_filename)}});
         }
         else {
-            logger.info("data_file_missing", {{"path", std::string(uri_filename)}});
+            logger.info("data_file_missing",
+                        {{"path", std::string(uri_filename)}});
         }
 
         server.run();
@@ -257,8 +290,11 @@ int main(int argc, char* argv[])
 #else
         net::signal_set signals(io_context, SIGINT, SIGTERM);
 #endif
-        auto signal_handler = std::make_shared<std::function<void(const boost::system::error_code&, int)>>();
-        *signal_handler = [&](const boost::system::error_code& ec, int signal_number) {
+        auto signal_handler = std::make_shared<
+            std::function<void(const boost::system::error_code&, int)>>();
+        *signal_handler =
+            [&](const boost::system::error_code& ec, int signal_number)
+        {
             if (ec) {
                 return;
             }
@@ -266,8 +302,7 @@ int main(int argc, char* argv[])
             if (signal_number == SIGHUP) {
                 try {
                     server.reloadTlsContext();
-                }
-                catch (const std::exception& ex) {
+                } catch (const std::exception& ex) {
                     logger.error("tls_reload_failed", {{"error", ex.what()}});
                 }
                 signals.async_wait(*signal_handler);
@@ -288,9 +323,10 @@ int main(int argc, char* argv[])
         signals.async_wait(*signal_handler);
 
         io_context.run();
-    }
-    catch (const std::exception& e) {
-        auto logger = url_shortener::observability::LoggerFactory::Component("main"); logger.fatal("unhandled_exception", {{"error", e.what()}});
+    } catch (const std::exception& e) {
+        auto logger =
+            url_shortener::observability::LoggerFactory::Component("main");
+        logger.fatal("unhandled_exception", {{"error", e.what()}});
         return 1;
     }
 

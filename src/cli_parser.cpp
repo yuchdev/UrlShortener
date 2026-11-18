@@ -899,6 +899,108 @@ ServeStdioCliOptions parse_serve_stdio(std::vector<std::string>& tokens,
     return options;
 }
 
+/**
+ * @brief Render the static usage text for `url_shortener tui --help`.
+ *
+ * Documents the flags and states plainly that no server is started (contract
+ * C5). No supplied value is ever interpolated (threat model T-77).
+ *
+ * @return std::string The multi-line usage listing.
+ */
+std::string buildTuiHelpText()
+{
+    return "Usage: url_shortener tui [options]\n\n"
+           "Launch the interactive terminal UI over the configured storage\n"
+           "backend. No HTTP/HTTPS server is started and no socket is bound; "
+           "the\n"
+           "UI runs the same commands as the REST API through the shared "
+           "command\n"
+           "registry. Requires an interactive terminal.\n\n"
+           "Options:\n"
+           "  --storage-config <FILE>\n"
+           "                       Storage configuration YAML. Default: "
+           "in-memory.\n"
+           "  --theme <NAME>       Colour theme: dark, light, or mono "
+           "(default: dark).\n"
+           "  --read-only          Run the session as a read-only user; write\n"
+           "                       controls render disabled, not hidden.\n"
+           "  --yes                Skip mutation confirmation dialogs.\n"
+           "  --log-file <PATH>    Write logs and audit lines to this file "
+           "(created\n"
+           "                       0600). Default: ./url_shortener-tui.log.\n"
+           "  --help, -h           Print this message.\n";
+}
+
+/**
+ * @brief Parse a `tui [options]` invocation into TuiCliOptions.
+ *
+ * Runs a single token loop like the `cmd`/`serve-stdio` paths (no
+ * Boost.ProgramOptions, no sub-verb): every token is a known flag or an error,
+ * and no positional is accepted - so a stray server flag such as `--http-port`
+ * is rejected as an unknown `tui` option rather than silently parsed. The
+ * global `--storage-config` flag is stripped first (recorded in @p config).
+ * `--theme` is validated against exactly `dark|light|mono` here (the string
+ * check keeps this `url_shortener_common` translation unit free of the TUI
+ * `parse_theme_name`, which `tui_entry.cpp` applies again). Error messages echo
+ * only a flag's stem before any `'='`, never an operand value (threat model
+ * T-77).
+ *
+ * @param tokens The tokens after the leading `tui` positional (argv[2..]);
+ *        consumed in place by `--storage-config` stripping.
+ * @param config ServerConfig receiving `--storage-config`.
+ * @return TuiCliOptions The parsed launch options.
+ * @throws std::invalid_argument If an option is unknown or missing its value,
+ *         `--theme` is not one of `dark|light|mono`, `--log-file` is empty, or
+ *         a non-flag positional appears.
+ */
+TuiCliOptions parseTuiCommand(std::vector<std::string>& tokens,
+                              ServerConfig& config)
+{
+    // Strip the global --storage-config flag (any position) before the flag
+    // loop, exactly as the `link`/`cmd`/`serve-stdio` paths do.
+    extract_storage_config_flag(tokens, config);
+
+    TuiCliOptions options;
+
+    for (std::size_t i = 0; i < tokens.size(); ++i) {
+        const std::string& token = tokens[i];
+
+        if (token == "--read-only") {
+            options.read_only = true;
+        }
+        else if (token == "--yes") {
+            options.assume_yes = true;
+        }
+        else if (token == "--theme") {
+            const std::string& value = cmdFlagValue(tokens, i, "--theme");
+            if (value != "dark" && value != "light" && value != "mono") {
+                throw std::invalid_argument(
+                    "--theme must be dark, light, or mono.");
+            }
+            options.theme = value;
+        }
+        else if (token == "--log-file") {
+            const std::string& value = cmdFlagValue(tokens, i, "--log-file");
+            if (value.empty()) {
+                throw std::invalid_argument("Empty value for --log-file flag.");
+            }
+            options.log_file = value;
+        }
+        else if (token.rfind("--", 0) == 0) {
+            // Flags match by exact token; the GNU `--opt=value` form is unknown
+            // here. Echo only the stem before the first '=', never the value.
+            throw std::invalid_argument("Unknown tui option: "
+                                        + token.substr(0, token.find('=')));
+        }
+        else {
+            throw std::invalid_argument(
+                "Unexpected positional argument for tui.");
+        }
+    }
+
+    return options;
+}
+
 }  // namespace
 
 /**
@@ -1027,6 +1129,24 @@ ParseResult CliParser::parse(int argc, char* argv[]) const
             }
         }
         result.serve_stdio = parse_serve_stdio(stdio_args, result.config);
+        return result;
+    }
+
+    // Top-level `tui` one-shot mode: mirrors the `link`/`cmd`/`serve-stdio`
+    // branches (no server-flag parsing). `tui --help`/`-h` yields the static
+    // usage text; otherwise the launch options are returned via
+    // `ParseResult::tui`. `tui` is recognized only as argv[1], so a trailing
+    // `tui` in server mode stays a server-flag error (contract C4).
+    if (argc >= 2 && std::string(argv[1]) == "tui") {
+        std::vector<std::string> tui_args(argv + 2, argv + argc);
+        for (const auto& token : tui_args) {
+            if (token == "--help" || token == "-h") {
+                result.help_text = buildTuiHelpText();
+                result.help_requested = true;
+                return result;
+            }
+        }
+        result.tui = parseTuiCommand(tui_args, result.config);
         return result;
     }
 

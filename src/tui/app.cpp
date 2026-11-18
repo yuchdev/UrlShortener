@@ -1,8 +1,10 @@
-#include "url_shortener/tui/app.hpp"
-
 #include <cstdio>
+#include <iterator>
+#include <optional>
 #include <utility>
 #include <vector>
+
+#include "url_shortener/tui/app.hpp"
 
 #include <ftxui/component/component.hpp>
 #include <ftxui/component/component_base.hpp>
@@ -10,7 +12,6 @@
 #include <ftxui/component/screen_interactive.hpp>
 #include <ftxui/dom/elements.hpp>
 #include <ftxui/screen/terminal.hpp>
-
 #include <url_shortener/commands/envelope.hpp>
 #include <url_shortener/tui/async_caller.hpp>
 #include <url_shortener/tui/frame_model.hpp>
@@ -116,7 +117,9 @@ struct LoopRuntime
      * @param client The command transport the caller runs; must outlive this.
      */
     LoopRuntime(ftxui::ScreenInteractive s, ICommandClient& client)
-        : screen(std::move(s)), poster(screen), caller(client, poster)
+        : screen(std::move(s))
+        , poster(screen)
+        , caller(client, poster)
     {
     }
 };
@@ -124,51 +127,61 @@ struct LoopRuntime
 }  // namespace
 
 App::App(ICommandClient& client, TuiOptions options)
-    : m_client_(client), m_options_(std::move(options))
+    : m_client_(client)
+    , m_options_(std::move(options))
 {
 }
 
-void App::register_screen(std::unique_ptr<IScreen> screen)
+void App::register_screen(ScreenFactory factory)
 {
-    m_screens_.push_back(std::move(screen));
+    m_factories_.push_back(std::move(factory));
 }
 
 int App::run()
 {
     using namespace ftxui;
 
-    // Fill in a placeholder for any tab a real screen has not registered, so
-    // the frame and navigation work before subtasks 11-17/21 land.
-    for (const TabSlot& slot : k_tab_slots)
-    {
-        bool present = false;
-        for (const std::unique_ptr<IScreen>& screen : m_screens_)
-        {
-            if (screen->id() == slot.id)
-            {
-                present = true;
-                break;
-            }
-        }
-        if (!present)
-        {
-            register_screen(make_placeholder_screen(slot.id, slot.message));
-        }
-    }
-
     // Teardown ordering (UAF safety) is encoded by LoopRuntime's member order:
-    // the caller is destroyed before the poster and screen (see its doc).
+    // the caller is destroyed before the poster and screen (see its doc). The
+    // ScreenContext and the instantiated screens below are declared AFTER
+    // `runtime`, so they are destroyed BEFORE the caller: a screen holds
+    // ScreenContext::caller& and must never outlive it (subtask 19, T-120).
     LoopRuntime runtime(ScreenInteractive::Fullscreen(), m_client_);
     ScreenInteractive& screen = runtime.screen;
     AsyncCaller& caller = runtime.caller;
     screen.TrackMouse(false);  // mouse is an ADR 0003 non-goal (T-124)
 
+    // The live context every screen reaches the application through (contract
+    // C8). Declared after `runtime` (so it is destroyed before the caller it
+    // references) and before `screens` (so it outlives them).
+    ScreenContext context {caller, m_client_.session(), m_router_, m_options_};
+
+    // Instantiate the registered real screens now the caller exists, then fill
+    // a placeholder for any tab a real screen did not register, so the frame
+    // and navigation work before subtasks 11-17 land (21 Settings wired in 19).
+    std::vector<std::unique_ptr<IScreen>> screens;
+    screens.reserve(m_factories_.size() + std::size(k_tab_slots));
+    for (const ScreenFactory& factory : m_factories_) {
+        screens.push_back(factory(context));
+    }
+    for (const TabSlot& slot : k_tab_slots) {
+        bool present = false;
+        for (const std::unique_ptr<IScreen>& s : screens) {
+            if (s->id() == slot.id) {
+                present = true;
+                break;
+            }
+        }
+        if (!present) {
+            screens.push_back(make_placeholder_screen(slot.id, slot.message));
+        }
+    }
+
     // Map a screen id to its index in the tab container.
-    const auto index_for = [this](ScreenId id) -> int {
-        for (std::size_t i = 0; i < m_screens_.size(); ++i)
-        {
-            if (m_screens_[i]->id() == id)
-            {
+    const auto index_for = [&screens](ScreenId id) -> int
+    {
+        for (std::size_t i = 0; i < screens.size(); ++i) {
+            if (screens[i]->id() == id) {
                 return static_cast<int>(i);
             }
         }
@@ -176,9 +189,8 @@ int App::run()
     };
 
     std::vector<Component> components;
-    components.reserve(m_screens_.size());
-    for (const std::unique_ptr<IScreen>& s : m_screens_)
-    {
+    components.reserve(screens.size());
+    for (const std::unique_ptr<IScreen>& s : screens) {
         components.push_back(s->component());
     }
     int active_index = 0;
@@ -189,112 +201,144 @@ int App::run()
     commands::CommandRequest info;
     info.command = "system.info";
     info.id = ids.next();
-    caller.submit(info, [this](const commands::CommandResponse& resp) {
-        if (!resp.ok)
-        {
-            if (m_backend_label_ == "connecting...")
-            {
-                m_backend_label_ = "unknown";
-            }
-            return;
-        }
-        // The backend label is the nested `backend.metadata` field; the
-        // persistence flag is a top-level bool (app::serializeSystemInfoJson).
-        if (std::optional<std::string> label =
-                backend_label_from_system_info(resp.result_json))
-        {
-            m_backend_label_ = *label;
-        }
-        if (std::optional<bool> persistent =
-                get_bool(resp.result_json, "persistent"))
-        {
-            m_persistent_ = *persistent;
-        }
-    });
+    caller.submit(info,
+                  [this](const commands::CommandResponse& resp)
+                  {
+                      if (!resp.ok) {
+                          if (m_backend_label_ == "connecting...") {
+                              m_backend_label_ = "unknown";
+                          }
+                          return;
+                      }
+                      // The backend label is the nested `backend.metadata`
+                      // field; the persistence flag is a top-level bool
+                      // (app::serializeSystemInfoJson).
+                      if (std::optional<std::string> label =
+                              backend_label_from_system_info(resp.result_json))
+                      {
+                          m_backend_label_ = *label;
+                      }
+                      if (std::optional<bool> persistent =
+                              get_bool(resp.result_json, "persistent"))
+                      {
+                          m_persistent_ = *persistent;
+                      }
+                  });
 
-    Component root = Renderer(tabs, [&] {
-        const Dimensions size = Terminal::Size();
-        active_index = index_for(m_router_.active_tab());
-        FrameModel model(m_client_.session(), m_backend_label_, m_persistent_,
-                         std::string());
-        std::vector<KeyHint> hints;
-        if (active_index >= 0
-            && static_cast<std::size_t>(active_index) < m_screens_.size())
-        {
-            hints = m_screens_[active_index]->hints();
-        }
-        const Theme& theme = theme_for(m_options_.theme);
-        Element frame = render_frame(model, m_router_.active_tab(),
-                                     tabs->Render(), hints, size.dimx,
-                                     size.dimy, theme);
-        if (m_help_visible_)
-        {
-            HelpModel help(help_global_hints(), hints);
-            Element overlay = render_help_overlay(help, theme);
-            // The frame root folds its own glyphs in mono; the overlay is
-            // composited on top afterwards, so fold it too (idempotent).
-            if (theme.ascii_only)
-            {
-                overlay = ascii_filter(std::move(overlay));
-            }
-            frame = dbox({std::move(frame), std::move(overlay)});
-        }
-        return frame;
-    });
+    // The tab whose screen last received on_enter; drives the on_leave/on_enter
+    // hand-off when the active tab changes (and the initial Dashboard enter).
+    std::optional<ScreenId> entered_tab;
 
-    root = CatchEvent(root, [&](const Event& event) -> bool {
-        // While the help overlay is open it owns all input: Esc/F1/`?` close it,
-        // everything else is swallowed so no key leaks to the screen beneath.
-        if (m_help_visible_)
+    Component root = Renderer(
+        tabs,
+        [&]
         {
-            if (event == Event::Escape || event == Event::F1
-                || event == Event::Character("?"))
-            {
-                m_help_visible_ = false;
+            const Dimensions size = Terminal::Size();
+            const ScreenId active = m_router_.active_tab();
+            active_index = index_for(active);
+
+            // Fire on_leave/on_enter once per tab change so a data-backed
+            // screen (e.g. Settings) refreshes when shown (subtask 19). The
+            // render callback runs on the UI thread and on_enter only submits
+            // async work, so this never blocks the loop.
+            if (!entered_tab.has_value() || *entered_tab != active) {
+                if (entered_tab.has_value()) {
+                    const int prev = index_for(*entered_tab);
+                    if (prev >= 0
+                        && static_cast<std::size_t>(prev) < screens.size())
+                    {
+                        screens[prev]->on_leave();
+                    }
+                }
+                if (active_index >= 0
+                    && static_cast<std::size_t>(active_index) < screens.size())
+                {
+                    screens[active_index]->on_enter();
+                }
+                entered_tab = active;
             }
-            return true;
-        }
-        // F1 opens help from anywhere, including while a text Input is focused
-        // (checked before the text-input guard below); `?` stays typable.
-        if (event == Event::F1)
-        {
-            m_help_visible_ = true;
-            return true;
-        }
-        // A focused text input swallows navigation keys (typing `1` in a slug
-        // field must not switch tab).
-        if (m_text_input_active_)
-        {
-            return false;
-        }
-        if (event == Event::CtrlC)
-        {
-            screen.Exit();
-            return true;
-        }
-        if (event == Event::Escape)
-        {
-            return m_router_.pop();
-        }
-        if (event.is_character() && event.character().size() == 1)
-        {
-            const char key = event.character()[0];
-            if (key == '?')
+
+            FrameModel model(m_client_.session(),
+                             m_backend_label_,
+                             m_persistent_,
+                             std::string());
+            std::vector<KeyHint> hints;
+            if (active_index >= 0
+                && static_cast<std::size_t>(active_index) < screens.size())
             {
+                hints = screens[active_index]->hints();
+            }
+            const Theme& theme = theme_for(m_options_.theme);
+            Element frame = render_frame(model,
+                                         m_router_.active_tab(),
+                                         tabs->Render(),
+                                         hints,
+                                         size.dimx,
+                                         size.dimy,
+                                         theme);
+            if (m_help_visible_) {
+                HelpModel help(help_global_hints(), hints);
+                Element overlay = render_help_overlay(help, theme);
+                // The frame root folds its own glyphs in mono; the overlay is
+                // composited on top afterwards, so fold it too (idempotent).
+                if (theme.ascii_only) {
+                    overlay = ascii_filter(std::move(overlay));
+                }
+                frame = dbox({std::move(frame), std::move(overlay)});
+            }
+            return frame;
+        });
+
+    root = CatchEvent(
+        root,
+        [&](const Event& event) -> bool
+        {
+            // While the help overlay is open it owns all input: Esc/F1/`?`
+            // close it, everything else is swallowed so no key leaks to the
+            // screen beneath.
+            if (m_help_visible_) {
+                if (event == Event::Escape || event == Event::F1
+                    || event == Event::Character("?"))
+                {
+                    m_help_visible_ = false;
+                }
+                return true;
+            }
+            // F1 opens help from anywhere, including while a text Input is
+            // focused (checked before the text-input guard below); `?` stays
+            // typable.
+            if (event == Event::F1) {
                 m_help_visible_ = true;
                 return true;
             }
-            if ((key >= '1' && key <= '7') || key == ':')
-            {
-                return m_router_.navigate_tab(key);
+            // A focused text input swallows navigation keys (typing `1` in a
+            // slug field must not switch tab). A form/filter screen mirrors its
+            // focus into ScreenContext::text_input_active.
+            if (context.text_input_active) {
+                return false;
             }
-            if (key == 'q')
-            {
+            if (event == Event::CtrlC) {
+                screen.Exit();
+                return true;
+            }
+            if (event == Event::Escape) {
                 return m_router_.pop();
             }
-        }
-        return false;
-    });
+            if (event.is_character() && event.character().size() == 1) {
+                const char key = event.character()[0];
+                if (key == '?') {
+                    m_help_visible_ = true;
+                    return true;
+                }
+                if ((key >= '1' && key <= '7') || key == ':') {
+                    return m_router_.navigate_tab(key);
+                }
+                if (key == 'q') {
+                    return m_router_.pop();
+                }
+            }
+            return false;
+        });
 
     // FTXUI (v7.0.3) already restores termios + escapes on every exit path
     // including exceptions (its Loop destructor) and SIGINT/SIGTERM/SIGQUIT/
