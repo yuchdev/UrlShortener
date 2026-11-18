@@ -176,6 +176,60 @@ private:
 };
 
 /**
+ * @brief A focusable `[x] label` / `[ ] label` checkbox toggled with Space.
+ *
+ * Used for the form's dry-run toggle (offered only when the command supports
+ * `options.dry_run`, D5 step / FormOptions::include_dry_run_toggle). Inverted
+ * when focused so its state reads without colour (mono-safe); the label is
+ * composition text, sanitized at the sink for defence in depth.
+ */
+class CheckToggle final : public ftxui::ComponentBase
+{
+public:
+    /**
+     * @brief Builds the toggle.
+     * @param label The fixed control label (e.g. `"dry-run"`).
+     * @param is_on Returns the current on/off state.
+     * @param on_toggle Flips the state (Space).
+     */
+    CheckToggle(std::string label,
+                std::function<bool()> is_on,
+                std::function<void()> on_toggle)
+        : m_label_(std::move(label))
+        , m_is_on_(std::move(is_on))
+        , m_on_toggle_(std::move(on_toggle))
+    {
+    }
+
+    /// @copydoc ftxui::ComponentBase::OnRender
+    ftxui::Element OnRender() override
+    {
+        using namespace ftxui;
+        Element e = text((m_is_on_() ? "[x] " : "[ ] ")
+                         + sanitize_for_terminal(m_label_));
+        return Focused() ? (e | inverted) : e;
+    }
+
+    /// @copydoc ftxui::ComponentBase::OnEvent
+    bool OnEvent(ftxui::Event event) override
+    {
+        if (event == ftxui::Event::Character(" ")) {
+            m_on_toggle_();
+            return true;
+        }
+        return false;
+    }
+
+    /// @copydoc ftxui::ComponentBase::Focusable
+    bool Focusable() const override { return true; }
+
+private:
+    std::string m_label_;  ///< Fixed control label.
+    std::function<bool()> m_is_on_;  ///< Current state provider.
+    std::function<void()> m_on_toggle_;  ///< Space action.
+};
+
+/**
  * @brief The complete D5 form: fields, buttons, validation line, footer and the
  * confirm/submit flow (subtask 06.0/08).
  *
@@ -196,7 +250,8 @@ public:
     FormComponent(FormModel& model, FormViewContext& ctx)
         : m_model_(model)
         , m_ctx_(ctx)
-        , m_flow_(MutationDeps {ctx.caller, ctx.policy, ctx.toasts, ctx.theme})
+        , m_flow_(MutationDeps {
+              ctx.caller, ctx.policy, ctx.toasts, ctx.theme, ctx.read_only})
     {
         using namespace ftxui;
 
@@ -205,6 +260,16 @@ public:
             Component w = make_field_widget(m_model_, i, m_ctx_.theme);
             m_field_widgets_.push_back(w);
             children.push_back(w);
+        }
+
+        // Offer the dry-run toggle only when the command honors it (D5 /
+        // FormOptions::include_dry_run_toggle), between the fields and buttons.
+        if (m_model_.dry_run_available()) {
+            m_dry_run_ = Make<CheckToggle>(
+                "dry-run",
+                [this] { return m_model_.dry_run(); },
+                [this] { m_model_.set_dry_run(!m_model_.dry_run()); });
+            children.push_back(m_dry_run_);
         }
 
         m_create_ = Make<ActionButton>(
@@ -453,8 +518,16 @@ private:
                 text(fit(*f.error, 34)) | to_decorator(m_ctx_.theme.error);
         }
         else {
-            hint_el = text(fit(hint_for(f.spec), 34))
-                | to_decorator(m_ctx_.theme.hint);
+            // A nullable field shows a visible `[x] clear` / `[ ] clear` box
+            // (bound to FormModel::clear_field, toggled with Delete) ahead of
+            // its hint, in the fixed hint column so it is never clipped.
+            std::string hint = hint_for(f.spec);
+            if (f.spec.nullable) {
+                const std::string box =
+                    f.state == FieldState::cleared ? "[x] clear" : "[ ] clear";
+                hint = hint.empty() ? box : box + "  " + hint;
+            }
+            hint_el = text(fit(hint, 34)) | to_decorator(m_ctx_.theme.hint);
         }
 
         Element row = hbox({
@@ -483,14 +556,19 @@ private:
         Element fields = yframe(vbox(std::move(rows)));
 
         const std::string summary = m_model_.validation_summary();
-        Element buttons = hbox({
+        Elements button_cells {
             m_create_->Render(),
             text("  "),
             m_cancel_->Render(),
-            filler(),
-            text("validation: " + fit(summary, 36))
-                | to_decorator(m_ctx_.theme.hint),
-        });
+        };
+        if (m_dry_run_) {
+            button_cells.push_back(text("   "));
+            button_cells.push_back(m_dry_run_->Render());
+        }
+        button_cells.push_back(filler());
+        button_cells.push_back(text("validation: " + fit(summary, 36))
+                               | to_decorator(m_ctx_.theme.hint));
+        Element buttons = hbox(std::move(button_cells));
 
         const std::size_t footer_budget =
             width > 14 ? static_cast<std::size_t>(width - 14) : 0u;
@@ -542,6 +620,9 @@ private:
 
     ///< The cancel button.
     ftxui::Component m_cancel_;
+
+    ///< The dry-run toggle, or null when the command does not support dry-run.
+    ftxui::Component m_dry_run_;
 
     ///< The horizontal button row (create + cancel).
     ftxui::Component m_buttons_;

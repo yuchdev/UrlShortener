@@ -55,6 +55,13 @@ struct MutationDeps
     ///< Styles the confirm dialog's disabled button (mono-safe). Must outlive
     ///< the flow.
     const Theme& theme;
+
+    ///< `true` when the session runs as `ControlSet::User` (`--read-only`): a
+    ///< non-`read` command is refused in @ref MutationFlow::begin with a toast
+    ///< and zero submits, so no write leaves the TUI even through a direct
+    ///< @ref run_mutation caller (threat model T-116, defence in depth over the
+    ///< registry's own `AccessGuard`).
+    bool read_only = false;
 };
 
 /**
@@ -88,7 +95,10 @@ public:
      * @brief The choke point: decide the confirmation, then submit now or after
      * a confirm (ADR 0003 rule 4).
      *
-     * Consults @ref ConfirmPolicy::decide with @p info and @p request's
+     * When @ref MutationDeps::read_only is set and @p info is not a `read`
+     * command, the submission is refused up front: a `not_authorized` toast is
+     * shown and nothing reaches the caller (threat model T-116). Otherwise it
+     * consults @ref ConfirmPolicy::decide with @p info and @p request's
      * `args_json`. On @ref ConfirmKind::none it submits @p request straight
      * away; otherwise it opens the confirm dialog and defers the submit until
      * the operator confirms (a cancel discards the submission with zero calls).

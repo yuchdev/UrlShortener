@@ -84,6 +84,22 @@ void MutationFlow::begin(
     m_command_name_ = info.name;
     m_on_result_ = std::move(on_result);
 
+    // T-116 (defence in depth): a read-only session must never submit a
+    // non-`read` command, even through a direct run_mutation caller. Refuse up
+    // front with a toast and zero submits; the registry's AccessGuard would
+    // deny it too, but we never put the write on the wire.
+    if (m_deps_.read_only && info.permission != "read") {
+        m_awaiting_ = false;
+        m_confirm_.reset();
+        Toast t;
+        t.kind = ToastKind::error;
+        t.title = "! not_authorized";
+        t.body = "read-only session: " + info.name + " needs write access";
+        t.source_command = info.name;
+        m_deps_.toasts.push(std::move(t));
+        return;
+    }
+
     ConfirmRequest decision = m_deps_.policy.decide(info, m_request_.args_json);
     if (decision.kind == ConfirmKind::none) {
         // No friction (non-mutating command, or a --yes session): submit now.

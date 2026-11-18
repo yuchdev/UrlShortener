@@ -10,6 +10,7 @@
  */
 #include <cstddef>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include <ftxui/component/component.hpp>
@@ -34,9 +35,22 @@ constexpr std::size_t k_text_inner = 40;
 constexpr std::size_t k_member_inner = 10;
 
 /// Sanitize (T-110) then truncate then pad @p raw to exactly @p width columns.
+///
+/// Only ~@p width columns are shown, so a bounded prefix of @p raw is sanitized
+/// rather than the whole (up to 64 KiB) buffer: `width * 4` bytes yields at
+/// least @p width display columns even for 4-byte code points, plus slack for
+/// control/combining bytes the sanitizer drops (threat model T-121). The prefix
+/// may split a UTF-8 sequence at its tail, but the sanitizer maps the partial
+/// bytes to U+FFFD and truncation discards them, so the visible cell is
+/// unaffected.
 std::string fit(const std::string& raw, std::size_t width)
 {
-    return pad_to_width(truncate_to_width(sanitize_for_terminal(raw), width),
+    const std::size_t bound = width * 4u + 16u;
+    std::string_view view(raw);
+    if (view.size() > bound) {
+        view = view.substr(0, bound);
+    }
+    return pad_to_width(truncate_to_width(sanitize_for_terminal(view), width),
                         width);
 }
 
@@ -118,6 +132,13 @@ public:
     {
         if (!valid() || field().locked) {
             return false;
+        }
+        // A nullable field's visible `[x] clear` box toggles with Delete; the
+        // model keeps the raw bytes, we only flip the cleared state (T-110
+        // safe).
+        if (field().spec.nullable && event == ftxui::Event::Delete) {
+            toggle_clear();
+            return true;
         }
         switch (field().spec.kind) {
             case ArgKind::boolean:
@@ -218,6 +239,36 @@ private:
 
     // -- Event handlers ----------------------------------------------------
 
+    /// Toggles a nullable field between cleared (emit explicit `null`) and
+    /// un-cleared (back to an empty / untouched buffer per kind). The raw
+    /// buffer bytes are preserved; only the cleared flag flips.
+    void toggle_clear()
+    {
+        if (field().state == FieldState::cleared) {
+            switch (field().spec.kind) {
+                case ArgKind::enumeration:
+                    m_model_.set_choice(m_index_, -1);
+                    break;
+                case ArgKind::object:
+                    if (!field().spec.members.empty()) {
+                        for (std::size_t m = 0; m < field().spec.members.size();
+                             ++m)
+                        {
+                            m_model_.set_member(m_index_, m, std::string());
+                        }
+                        break;
+                    }
+                    m_model_.set_text(m_index_, std::string());
+                    break;
+                default:
+                    m_model_.set_text(m_index_, std::string());
+                    break;
+            }
+            return;
+        }
+        m_model_.clear_field(m_index_);
+    }
+
     /// Edits a text/integer/timestamp/list/map/raw-object buffer.
     bool on_text(const ftxui::Event& event)
     {
@@ -228,11 +279,10 @@ private:
             m_model_.set_text(m_index_, std::move(t));
             return true;
         }
-        if (event == Event::Delete && field().spec.nullable) {
-            m_model_.clear_field(m_index_);
-            return true;
-        }
         if (event.is_character()) {
+            if (field().text.size() >= FormModel::k_max_field_bytes) {
+                return true;  // at the byte cap: swallow further input (T-121)
+            }
             const std::string c = event.character();
             if (field().spec.kind == ArgKind::integer) {
                 const bool sign = c == "-" && field().text.empty();
@@ -275,10 +325,6 @@ private:
             m_model_.set_choice(m_index_, field().choice - 1);  // -1 unsets
             return true;
         }
-        if (event == Event::Delete && field().spec.nullable) {
-            m_model_.clear_field(m_index_);
-            return true;
-        }
         return false;
     }
 
@@ -313,6 +359,9 @@ private:
             return true;
         }
         if (event.is_character()) {
+            if (cur.size() >= FormModel::k_max_field_bytes) {
+                return true;  // at the byte cap: swallow further input (T-121)
+            }
             m_model_.set_member(m_index_, m_member_, cur + event.character());
             return true;
         }

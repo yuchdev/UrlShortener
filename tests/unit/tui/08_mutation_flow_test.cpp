@@ -63,10 +63,13 @@ struct FlowFixture
     tui::ConfirmPolicy policy;
     tui::MutationFlow flow;
 
-    explicit FlowFixture(bool assume_yes = false)
+    explicit FlowFixture(bool assume_yes = false, bool read_only = false)
         : policy(assume_yes)
-        , flow(tui::MutationDeps {
-              caller, policy, toasts, tui::theme_for(tui::ThemeName::dark)})
+        , flow(tui::MutationDeps {caller,
+                                  policy,
+                                  toasts,
+                                  tui::theme_for(tui::ThemeName::dark),
+                                  read_only})
     {
     }
 
@@ -216,4 +219,42 @@ BOOST_AUTO_TEST_CASE(success_pushes_toast_and_result)
     BOOST_TEST(results == 1);
     BOOST_REQUIRE(!fx.toasts.visible().empty());
     BOOST_TEST(fx.toasts.visible().back().title == "link.create ok");
+}
+
+// ---------------------------------------------------------------------------
+// T-116: a read-only session refuses a mutating command through run_mutation -
+// zero submits, a not_authorized toast, no confirm dialog.
+// ---------------------------------------------------------------------------
+BOOST_AUTO_TEST_CASE(read_only_refuses_mutation_with_toast)
+{
+    FlowFixture fx(/*assume_yes=*/false, /*read_only=*/true);
+    fx.client.enqueue("link.delete", commands::make_success("tui-1", "{}"));
+
+    tui::run_mutation(fx.flow,
+                      fx.request("link.delete", "{\"slug\":\"promo\"}"),
+                      info("link.delete", "write", true),
+                      nullptr);
+
+    BOOST_TEST(!fx.flow.awaiting_confirm());
+    BOOST_TEST(fx.client.recorded_requests().empty());  // nothing on the wire
+    BOOST_REQUIRE(!fx.toasts.visible().empty());
+    BOOST_TEST(fx.toasts.visible().back().title == "! not_authorized");
+}
+
+// ---------------------------------------------------------------------------
+// T-116: a read-only session still runs a read command normally.
+// ---------------------------------------------------------------------------
+BOOST_AUTO_TEST_CASE(read_only_still_runs_read_command)
+{
+    FlowFixture fx(/*assume_yes=*/false, /*read_only=*/true);
+    fx.client.enqueue("link.list", commands::make_success("tui-1", "{}"));
+
+    tui::run_mutation(fx.flow,
+                      fx.request("link.list"),
+                      info("link.list", "read", false),
+                      nullptr);
+
+    BOOST_TEST(!fx.flow.awaiting_confirm());
+    fx.drain();
+    BOOST_TEST(fx.client.recorded_requests().size() == 1u);
 }

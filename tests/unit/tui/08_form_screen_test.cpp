@@ -10,6 +10,7 @@
 #include <url_shortener/commands/error_codes.hpp>
 #include <url_shortener/tui/async_caller.hpp>
 #include <url_shortener/tui/command_client.hpp>
+#include <url_shortener/tui/equivalent_cmd.hpp>
 #include <url_shortener/tui/form_screen.hpp>
 #include <url_shortener/tui/router.hpp>
 #include <url_shortener/tui/screen.hpp>
@@ -341,6 +342,78 @@ BOOST_AUTO_TEST_CASE(read_only_sends_nothing)
     fx.poster.run_pending();
 
     BOOST_TEST(fx.client.recorded_requests().empty());
+}
+
+// ---------------------------------------------------------------------------
+// Success criterion 3: the rendered Equivalent footer equals
+// equivalent_cli(recorded request) byte-for-byte.
+// ---------------------------------------------------------------------------
+BOOST_AUTO_TEST_CASE(footer_matches_recorded_request)
+{
+    ScreenFixture fx;
+    fx.client.enqueue("link.create", commands::make_success("tui-1", "{}"));
+
+    tui::FormScreenConfig config;
+    config.command = link_create_info();
+    std::unique_ptr<tui::IScreen> screen = fx.make(std::move(config));
+
+    render_to_text(screen->component(), 80, 24);
+    // A short value so the whole CLI line fits the footer's column budget and
+    // appears un-truncated in the grid (the footer source is byte-identical to
+    // the request either way; truncation is only a display concern).
+    send_events(screen->component(), type("https://e"));
+    const std::string grid = render_to_text(screen->component(), 80, 24);
+
+    send_events(screen->component(), {ftxui::Event::CtrlS});
+    fx.poster.wait_for_posted(1);
+    fx.poster.run_pending();
+
+    const std::vector<commands::CommandRequest> requests =
+        fx.client.recorded_requests();
+    BOOST_REQUIRE_EQUAL(requests.size(), 1u);
+    const std::string cli = tui::equivalent_cli(requests[0]);
+    BOOST_TEST(cli
+               == "url_shortener cmd link.create --json "
+                  "'{\"target_url\":\"https://e\"}'");
+    // The footer rendered the equivalent of the exact request sent; the line is
+    // benign (sanitize is identity) and fits the 80-col budget, so it appears
+    // verbatim in the grid.
+    BOOST_TEST(grid.find(cli) != std::string::npos);
+}
+
+// ---------------------------------------------------------------------------
+// The dry-run toggle (offered for a supports_dry_run command) sets
+// options.dry_run on the submitted request.
+// ---------------------------------------------------------------------------
+BOOST_AUTO_TEST_CASE(dry_run_toggle_sets_option)
+{
+    ScreenFixture fx;
+    fx.client.enqueue("link.create", commands::make_success("tui-1", "{}"));
+
+    tui::FormScreenConfig config;
+    config.command = link_create_info();  // supports_dry_run = true
+    std::unique_ptr<tui::IScreen> screen = fx.make(std::move(config));
+
+    render_to_text(screen->component(), 80, 24);
+    send_events(screen->component(), type("https://e.com"));
+    // Tab past the four fields to the dry-run toggle, then Space to enable it.
+    send_events(screen->component(),
+                {ftxui::Event::Tab,
+                 ftxui::Event::Tab,
+                 ftxui::Event::Tab,
+                 ftxui::Event::Tab,
+                 ftxui::Event::Character(" ")});
+    const std::string grid = render_to_text(screen->component(), 80, 24);
+    BOOST_TEST(grid.find("[x] dry-run") != std::string::npos);
+
+    send_events(screen->component(), {ftxui::Event::CtrlS});
+    fx.poster.wait_for_posted(1);
+    fx.poster.run_pending();
+
+    const std::vector<commands::CommandRequest> requests =
+        fx.client.recorded_requests();
+    BOOST_REQUIRE_EQUAL(requests.size(), 1u);
+    BOOST_TEST(requests[0].options.dry_run);
 }
 
 // ---------------------------------------------------------------------------

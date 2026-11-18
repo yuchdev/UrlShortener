@@ -15,6 +15,7 @@
 #include <url_shortener/tui/confirm.hpp>
 #include <url_shortener/tui/form_model.hpp>
 #include <url_shortener/tui/form_view.hpp>
+#include <url_shortener/tui/text_fit.hpp>
 #include <url_shortener/tui/theme.hpp>
 #include <url_shortener/tui/toast.hpp>
 
@@ -348,5 +349,38 @@ BOOST_AUTO_TEST_CASE(hostile_prefill_never_reaches_grid)
                            "form hazard: " << sample.name);
             }
         }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// T-121: a runaway buffer is clamped at input (<= k_max_field_bytes, UTF-8
+// safe), the widget swallows further keystrokes at the cap, and the whole form
+// still renders bounded and clean.
+// ---------------------------------------------------------------------------
+BOOST_AUTO_TEST_CASE(oversized_buffer_is_bounded)
+{
+    const Theme& theme = theme_for(ThemeName::dark);
+    FormModel model(link_create_info());
+    const std::size_t ti = index_of(model, "target_url");
+
+    model.set_text(ti, std::string(70u * 1024u, 'x'));  // > 64 KiB
+    BOOST_TEST(model.fields()[ti].text.size() <= FormModel::k_max_field_bytes);
+
+    // Keystrokes at the cap are swallowed, so the buffer stays bounded.
+    ftxui::Component widget = make_field_widget(model, ti, theme);
+    for (int i = 0; i < 16; ++i) {
+        widget->OnEvent(ftxui::Event::Character("y"));
+    }
+    BOOST_TEST(model.fields()[ti].text.size() <= FormModel::k_max_field_bytes);
+
+    // Rendering stays bounded (no line wider than the terminal) and
+    // hazard-free.
+    FormHarness h(ThemeName::dark);
+    FormViewContext ctx = h.context("New link");
+    const std::string grid =
+        render_twice(make_form_component(model, ctx), 80, 24);
+    for (const std::string& line : split_lines(grid)) {
+        BOOST_TEST(url_shortener::tui::display_width(line) <= 80u);
+        BOOST_TEST(!has_display_hazard(line));
     }
 }

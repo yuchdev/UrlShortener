@@ -2,11 +2,11 @@
 │target_url*   [                                        ]                      │
 │slug          [                                        ]     blank = generated│
 │redirect_type ( ) permanent  ( ) temporary                                    │
-│expires_at    [                                        ISO-8601, blank = never│
+│expires_at    [                             [ ] clear  ISO-8601, blank = never│
 │enabled       [ ]                                                             │
 │tags          [                                        ]       comma separated│
 │metadata      [                                     key=value, comma separated│
-│campaign      [name      ] [source    ] [medium    ]                          │
+│campaign      [name      ] [source    ] [medium    ]                 [ ] clear│
 │                                                                              │
 │                                                                              │
 │                                                                              │
@@ -18,7 +18,7 @@
 │                                                                              │
 │                                                                              │
 │                                                                              │
-│[ Create ]  [ Cancel ]                                            validation: │
+│[ Create ]  [ Cancel ]   [ ] dry-run                              validation: │
 ├──────────────────────────────────────────────────────────────────────────────┤
 │Equivalent: url_shortener cmd link.create --json '{}'                         │
 ╰──────────────────────────────────────────────────────────────────────────────╯

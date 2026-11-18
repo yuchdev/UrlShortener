@@ -142,6 +142,15 @@ class FormModel
 {
 public:
     /**
+     * @brief Maximum bytes accepted in any one editing buffer (main text or an
+     * object member) before input is truncated and the field is flagged
+     * (threat model T-121). Exposed so the view can stop accepting keystrokes
+     * at the same bound. A field that needs more than this is a hostile or
+     * runaway paste, not a hand-typed value.
+     */
+    static constexpr std::size_t k_max_field_bytes = 64u * 1024u;
+
+    /**
      * @brief Builds a form for @p command.
      *
      * Creates one @ref FormField per @ref CommandInfo::args entry, in
@@ -185,10 +194,14 @@ public:
      * field to the empty string returns it to @ref FieldState::untouched (so an
      * emptied optional is omitted, preserving PATCH semantics). A required
      * field emptied to `""` stays @ref FieldState::set so @ref validate can
-     * flag it. A locked field (identity) is a no-op.
+     * flag it. A locked field (identity) is a no-op. @p text is truncated at a
+     * UTF-8 boundary to at most @ref k_max_field_bytes bytes before storing, so
+     * a runaway paste neither grows the buffer unbounded nor splits a code
+     * point (threat model T-121); a buffer that hits the cap is still flagged
+     * "too large" by @ref validate and omitted by @ref to_args_json.
      *
      * @param i Field index; out-of-range indices are ignored.
-     * @param text The new buffer contents.
+     * @param text The new buffer contents; capped to @ref k_max_field_bytes.
      */
     void set_text(std::size_t i, std::string text);
 
@@ -226,7 +239,9 @@ public:
      * @param i Field index; out-of-range indices are ignored.
      * @param m Member index within @ref FormField::members_text; out-of-range
      * member indices are ignored.
-     * @param text The new member buffer contents.
+     * @param text The new member buffer contents; truncated at a UTF-8 boundary
+     * to at most @ref k_max_field_bytes bytes before storing (threat model
+     * T-121).
      */
     void set_member(std::size_t i, std::size_t m, std::string text);
 
@@ -261,13 +276,27 @@ public:
     bool dry_run() const;
 
     /**
+     * @brief Whether a dry-run toggle should be offered for this form.
+     *
+     * True only when the form was built with
+     * @ref FormOptions::include_dry_run_toggle *and* the command honors
+     * `options.dry_run` (@ref CommandInfo::supports_dry_run). The view shows
+     * the dry-run control exactly when this is `true`, so a command that
+     * ignores dry-run never presents a toggle that would do nothing.
+     *
+     * @return `true` when the view should render a dry-run toggle.
+     */
+    bool dry_run_available() const;
+
+    /**
      * @brief Runs cheap, advisory client-side validation and fills
      * @ref FormField::error.
      *
      * Checks only what is cheap and type-local: a required field must be
-     * present (not @ref FieldState::untouched); no field's buffer may exceed
-     * the model's size bounds (64 KiB per buffer, 1000 list/map elements -
-     * threat model T-121); an integer field must parse and fit `long long`; an
+     * present (not @ref FieldState::untouched); no field's buffer may reach
+     * the model's size bounds (@ref k_max_field_bytes per buffer, 1000 list/map
+     * elements - threat model T-121); an integer field must parse and fit
+     * `long long`; an
      * enumeration choice must be in range; a timestamp must parse as strict RFC
      * 3339 Zulu; a string-map field must parse as `k=v` pairs; and a
      * member-less object field's raw buffer must be exactly one well-formed

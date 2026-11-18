@@ -20,15 +20,27 @@ namespace
 /// list/map value contains a `,`/`=` and cannot be edited in the comma form.
 constexpr char k_use_json_form[] = "use the JSON form (palette -> cmd)";
 
-/// Maximum bytes accepted in any one field's editing buffer (and in each object
-/// member buffer) before the model flags it and refuses to emit it (threat
-/// model T-121). A field that needs more than this is a hostile or runaway
-/// paste, not a hand-typed value.
-constexpr std::size_t k_max_field_bytes = 64u * 1024u;
-
 /// Maximum number of list items or map entries the model will emit for one
 /// field before flagging it over-limit (threat model T-121).
 constexpr std::size_t k_max_elements = 1000u;
+
+/// Truncates @p s to at most @ref FormModel::k_max_field_bytes bytes without
+/// splitting a UTF-8 code point: if the cap lands inside a multibyte sequence
+/// it backs up to the sequence's lead byte, so the stored buffer is always
+/// valid UTF-8 and bounded (threat model T-121). A buffer forced to the cap is
+/// still flagged "too large" and omitted (see @ref exceeds_byte_limit), so
+/// truncation bounds memory without silently sending a partial paste.
+void clamp_field_bytes(std::string& s)
+{
+    if (s.size() <= FormModel::k_max_field_bytes) {
+        return;
+    }
+    std::size_t cut = FormModel::k_max_field_bytes;
+    while (cut > 0 && (static_cast<unsigned char>(s[cut]) & 0xC0u) == 0x80u) {
+        --cut;  // back up off a continuation byte to the lead byte
+    }
+    s.resize(cut);
+}
 
 /// Trims leading and trailing JSON whitespace so a raw value can be classified
 /// by its first significant byte.
@@ -91,11 +103,14 @@ std::optional<std::string> reserialize_object(const std::string& text)
 /// buffer (threat model T-121).
 bool exceeds_byte_limit(const FormField& field)
 {
-    if (field.text.size() > k_max_field_bytes) {
+    // `>=` (not `>`): input is clamped to k_max_field_bytes, so a buffer that
+    // reached the cap is a truncated runaway paste and is still flagged and
+    // omitted rather than silently sent partial (threat model T-121).
+    if (field.text.size() >= FormModel::k_max_field_bytes) {
         return true;
     }
     for (const std::string& member : field.members_text) {
-        if (member.size() > k_max_field_bytes) {
+        if (member.size() >= FormModel::k_max_field_bytes) {
             return true;
         }
     }
@@ -152,6 +167,7 @@ void FormModel::set_text(std::size_t i, std::string text)
         return;
     }
     field.text = std::move(text);
+    clamp_field_bytes(field.text);  // bound the buffer (T-121)
     if (field.text.empty() && !field.spec.required) {
         field.state = FieldState::untouched;
     }
@@ -202,6 +218,7 @@ void FormModel::set_member(std::size_t i, std::size_t m, std::string text)
         return;
     }
     field.members_text[m] = std::move(text);
+    clamp_field_bytes(field.members_text[m]);  // bound the buffer (T-121)
     bool any = false;
     for (const std::string& member : field.members_text) {
         if (!member.empty()) {
@@ -234,6 +251,11 @@ void FormModel::set_dry_run(bool v)
 bool FormModel::dry_run() const
 {
     return m_dry_run_;
+}
+
+bool FormModel::dry_run_available() const
+{
+    return m_options_.include_dry_run_toggle && m_command_.supports_dry_run;
 }
 
 std::optional<std::string> FormModel::encode_field(const FormField& field) const
