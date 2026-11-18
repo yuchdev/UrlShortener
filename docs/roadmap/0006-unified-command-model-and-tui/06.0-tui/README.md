@@ -80,7 +80,7 @@ for 18 to verify - see 21's own Constraints), only 20.
 | 05 | [Theme (dark/light/mono) and help overlay](05-theme-and-help-overlay.md) | ✅ Complete | 04 | 06, 08, 10, 11, 14, 17, 19, 20 |
 | 06 | [Toast and confirm components (D10)](06-toast-and-confirm-components.md) | ✅ Complete | 02, 03, 04, 05 | 07, 08, 11, 12, 13, 15, 16, 17, 18, 20 |
 | 07 | [FormModel: ArgSpec to request](07-form-model.md) | ✅ Complete | 02, 06 | 08, 11, 20 |
-| 08 | [Form widgets and form screen (D5)](08-form-widgets-and-form-screen.md) | ⬜ Not started | 03, 04, 05, 06, 07 | 11, 12, 13, 14, 15, 18, 20 |
+| 08 | [Form widgets and form screen (D5)](08-form-widgets-and-form-screen.md) | ✅ Complete | 03, 04, 05, 06, 07 | 11, 12, 13, 14, 15, 18, 20 |
 | 09 | [TableModel (paging, sort, filter, hscroll)](09-table-model.md) | ✅ Complete | 02, 03 | 10, 12, 14, 16, 20 |
 | 10 | [TableView renderer (D3/D6/D8 body)](10-table-view.md) | ✅ Complete | 04, 05, 09 | 12, 14, 16, 20 |
 | 11 | [Command Palette (D9) and generic command screen](11-command-palette-and-generic-command-screen.md) | ⬜ Not started | 02, 03, 04, 05, 06, 07, 08 | 12, 13, 14, 15, 16, 18, 20 |
