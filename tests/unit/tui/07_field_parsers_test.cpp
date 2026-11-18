@@ -6,7 +6,6 @@
 #include <vector>
 
 #include <boost/test/unit_test.hpp>
-
 #include <url_shortener/tui/field_parsers.hpp>
 
 /**
@@ -15,15 +14,15 @@
  * formatters (FTXUI-free model library).
  *
  * Type: unit (model library, links url_shortener_tui_model).
- * Scenario: `parse_string_list` trims items and drops empties; `parse_string_map`
- *           splits `k=v` pairs, rejects a missing `=` or empty key and keeps the
- *           last value for a duplicate key; `parse_integer` is strict and
- *           overflow-safe; and `format_*` round-trips representable values while
- *           flagging any value that embeds a `,`/`=`.
- * Boundaries: empty string, single item, surrounding spaces, trailing comma,
- *           multibyte UTF-8, missing `=`, empty key, duplicate key, INT64 min/max
- *           and overflow, and a 200-input generated round-trip.
- * On failure first check: the split/trim loops in `src/tui/field_parsers.cpp`.
+ * Scenario: `parse_string_list` trims items and drops empties;
+ * `parse_string_map` splits `k=v` pairs, rejects a missing `=` or empty key and
+ * keeps the last value for a duplicate key; `parse_integer` is strict and
+ *           overflow-safe; and `format_*` round-trips representable values
+ * while flagging any value that embeds a `,`/`=`. Boundaries: empty string,
+ * single item, surrounding spaces, trailing comma, multibyte UTF-8, missing
+ * `=`, empty key, duplicate key, INT64 min/max and overflow, and a 200-input
+ * generated round-trip. On failure first check: the split/trim loops in
+ * `src/tui/field_parsers.cpp`.
  */
 
 using url_shortener::tui::format_string_list;
@@ -124,12 +123,22 @@ BOOST_AUTO_TEST_CASE(map_empty_key_is_rejected)
 
 BOOST_AUTO_TEST_CASE(map_duplicate_key_last_wins_position_kept)
 {
-    const auto parsed = parse_string_map("a=1, b=2, a=3");
+    std::vector<std::string> duplicates;
+    const auto parsed = parse_string_map("a=1, b=2, a=3", &duplicates);
     BOOST_REQUIRE(parsed.has_value());
     BOOST_REQUIRE_EQUAL(parsed->size(), 2u);
     BOOST_CHECK_EQUAL((*parsed)[0].first, "a");
     BOOST_CHECK_EQUAL((*parsed)[0].second, "3");  // last value wins
     BOOST_CHECK_EQUAL((*parsed)[1].first, "b");
+
+    // The duplicate key is reported on the warning channel ("last wins").
+    BOOST_REQUIRE_EQUAL(duplicates.size(), 1u);
+    BOOST_CHECK_EQUAL(duplicates[0], "a");
+
+    // No duplicates -> the channel is left untouched.
+    std::vector<std::string> none;
+    parse_string_map("a=1, b=2", &none);
+    BOOST_CHECK(none.empty());
 }
 
 BOOST_AUTO_TEST_CASE(map_splits_on_first_equals_only)
@@ -179,8 +188,7 @@ BOOST_AUTO_TEST_CASE(integer_range_limits)
 BOOST_AUTO_TEST_CASE(format_list_flags_embedded_comma)
 {
     bool representable = true;
-    const std::string text =
-        format_string_list({"ok", "a,b"}, representable);
+    const std::string text = format_string_list({"ok", "a,b"}, representable);
     BOOST_CHECK(!representable);
     BOOST_CHECK_EQUAL(text, "ok, a,b");
 }

@@ -1,8 +1,8 @@
-#include "url_shortener/tui/field_parsers.hpp"
-
 #include <cstddef>
 #include <limits>
 #include <string>
+
+#include "url_shortener/tui/field_parsers.hpp"
 
 namespace url_shortener::tui
 {
@@ -48,8 +48,8 @@ std::vector<std::string> parse_string_list(const std::string& s)
     return out;
 }
 
-std::optional<std::vector<std::pair<std::string, std::string>>> parse_string_map(
-    const std::string& s)
+std::optional<std::vector<std::pair<std::string, std::string>>>
+parse_string_map(const std::string& s, std::vector<std::string>* duplicate_keys)
 {
     std::vector<std::pair<std::string, std::string>> out;
     std::size_t start = 0;
@@ -74,6 +74,9 @@ std::optional<std::vector<std::pair<std::string, std::string>>> parse_string_map
                 if (pair.first == key) {
                     pair.second = value;  // last value wins, position kept
                     found = true;
+                    if (duplicate_keys != nullptr) {
+                        duplicate_keys->push_back(key);
+                    }
                     break;
                 }
             }
@@ -109,8 +112,7 @@ std::optional<long long> parse_integer(const std::string& s)
     // Accumulate the magnitude unsigned so INT64_MIN is representable, and
     // reject anything that would exceed the signed range before it wraps.
     const unsigned long long limit = negative
-        ? static_cast<unsigned long long>(
-              std::numeric_limits<long long>::max())
+        ? static_cast<unsigned long long>(std::numeric_limits<long long>::max())
             + 1ULL
         : static_cast<unsigned long long>(
               std::numeric_limits<long long>::max());
@@ -120,7 +122,8 @@ std::optional<long long> parse_integer(const std::string& s)
         if (c < '0' || c > '9') {
             return std::nullopt;
         }
-        const unsigned long long digit = static_cast<unsigned long long>(c - '0');
+        const unsigned long long digit =
+            static_cast<unsigned long long>(c - '0');
         if (acc > (limit - digit) / 10ULL) {
             return std::nullopt;  // would overflow the signed range
         }
@@ -128,9 +131,11 @@ std::optional<long long> parse_integer(const std::string& s)
     }
 
     if (negative) {
-        if (acc == static_cast<unsigned long long>(
-                std::numeric_limits<long long>::max())
-                + 1ULL) {
+        if (acc
+            == static_cast<unsigned long long>(
+                   std::numeric_limits<long long>::max())
+                + 1ULL)
+        {
             return std::numeric_limits<long long>::min();
         }
         return -static_cast<long long>(acc);
@@ -168,7 +173,8 @@ std::string format_string_map(
         if (pair.first.find(',') != std::string::npos
             || pair.first.find('=') != std::string::npos
             || pair.second.find(',') != std::string::npos
-            || pair.second.find('=') != std::string::npos) {
+            || pair.second.find('=') != std::string::npos)
+        {
             representable = false;
         }
         if (!first) {

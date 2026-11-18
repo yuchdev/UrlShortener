@@ -243,6 +243,137 @@ BOOST_AUTO_TEST_CASE(object_without_members_accepts_only_valid_object)
 }
 
 // ---------------------------------------------------------------------------
+// Raw-object field is re-serialized through the scanner: no sibling-key
+// injection, no malformed/duplicate/trailing/over-deep input ever reaches args.
+// ---------------------------------------------------------------------------
+namespace
+{
+FormModel raw_object_with(const std::string& text)
+{
+    FormModel model(one_arg_command(arg("raw", ArgKind::object)));
+    model.set_text(0, text);
+    return model;
+}
+}  // namespace
+
+BOOST_AUTO_TEST_CASE(raw_object_rejects_sibling_key_injection)
+{
+    FormModel model = raw_object_with("{}, \"status\":\"active\", \"z\":{}");
+    BOOST_CHECK(!model.validate());
+    BOOST_CHECK_EQUAL(model.to_args_json(), "{}");  // injection neutralized
+}
+
+BOOST_AUTO_TEST_CASE(raw_object_rejects_malformed)
+{
+    FormModel model = raw_object_with("{\"a\":}");
+    BOOST_CHECK(!model.validate());
+    BOOST_CHECK_EQUAL(model.to_args_json(), "{}");
+}
+
+BOOST_AUTO_TEST_CASE(raw_object_rejects_duplicate_keys)
+{
+    FormModel model = raw_object_with("{\"a\":1,\"a\":2}");
+    BOOST_CHECK(!model.validate());
+    BOOST_CHECK_EQUAL(model.to_args_json(), "{}");
+}
+
+BOOST_AUTO_TEST_CASE(raw_object_rejects_trailing_garbage)
+{
+    FormModel model = raw_object_with("{\"a\":1} junk");
+    BOOST_CHECK(!model.validate());
+    BOOST_CHECK_EQUAL(model.to_args_json(), "{}");
+}
+
+BOOST_AUTO_TEST_CASE(raw_object_rejects_deep_nesting)
+{
+    std::string deep;
+    const int levels = 20;  // beyond the json_view depth cap (16)
+    for (int i = 0; i < levels; ++i) {
+        deep += "{\"a\":";
+    }
+    deep += "1";
+    for (int i = 0; i < levels; ++i) {
+        deep += "}";
+    }
+    FormModel model = raw_object_with(deep);
+    BOOST_CHECK(!model.validate());
+    BOOST_CHECK_EQUAL(model.to_args_json(), "{}");
+}
+
+BOOST_AUTO_TEST_CASE(raw_object_valid_nested_roundtrip)
+{
+    FormModel model = raw_object_with("{\"a\":{\"b\":2},\"c\":[1,2]}");
+    BOOST_CHECK(model.validate());
+    BOOST_CHECK_EQUAL(model.to_args_json(),
+                      "{\"raw\":{\"a\":{\"b\":2},\"c\":[1,2]}}");
+}
+
+BOOST_AUTO_TEST_CASE(raw_object_accepts_empty_object)
+{
+    FormModel model = raw_object_with("{}");
+    BOOST_CHECK(model.validate());
+    BOOST_CHECK_EQUAL(model.to_args_json(), "{\"raw\":{}}");
+}
+
+// ---------------------------------------------------------------------------
+// Size bounds (T-121): an over-long buffer or over-count list is a blocking
+// error and is not emitted.
+// ---------------------------------------------------------------------------
+BOOST_AUTO_TEST_CASE(oversized_string_field_rejected)
+{
+    FormModel model(one_arg_command(arg("s", ArgKind::string)));
+    model.set_text(0, std::string(70u * 1024u, 'x'));  // > 64 KiB
+    BOOST_CHECK(!model.validate());
+    BOOST_REQUIRE(model.fields()[0].error.has_value());
+    BOOST_CHECK_EQUAL(model.to_args_json(), "{}");  // over-limit not emitted
+}
+
+BOOST_AUTO_TEST_CASE(too_many_list_items_rejected)
+{
+    FormModel model(one_arg_command(arg("tags", ArgKind::string_list)));
+    std::string many;
+    for (int i = 0; i < 1001; ++i) {
+        if (i != 0) {
+            many += ",";
+        }
+        many += "x";
+    }
+    model.set_text(0, many);
+    BOOST_CHECK(!model.validate());
+    BOOST_CHECK_EQUAL(model.to_args_json(), "{}");  // over 1000 items not emitted
+}
+
+BOOST_AUTO_TEST_CASE(too_many_map_entries_rejected)
+{
+    FormModel model(one_arg_command(arg("meta", ArgKind::string_map)));
+    std::string many;
+    for (int i = 0; i < 1001; ++i) {
+        if (i != 0) {
+            many += ",";
+        }
+        many += "k" + std::to_string(i) + "=v";
+    }
+    model.set_text(0, many);
+    BOOST_CHECK(!model.validate());
+    BOOST_CHECK_EQUAL(model.to_args_json(), "{}");
+}
+
+// ---------------------------------------------------------------------------
+// A string-map with a duplicate key is still valid (last wins) but surfaces a
+// non-blocking hint in FormField::error.
+// ---------------------------------------------------------------------------
+BOOST_AUTO_TEST_CASE(map_duplicate_key_is_non_blocking_hint)
+{
+    FormModel model(one_arg_command(arg("meta", ArgKind::string_map)));
+    model.set_text(0, "a=1, a=2");
+    BOOST_CHECK(model.validate());  // not blocked
+    BOOST_REQUIRE(model.fields()[0].error.has_value());
+    BOOST_CHECK(model.fields()[0].error->find("duplicate")
+                != std::string::npos);
+    BOOST_CHECK_EQUAL(model.to_args_json(), "{\"meta\":{\"a\":\"2\"}}");
+}
+
+// ---------------------------------------------------------------------------
 // Unknown/future ArgKind degrades to a string field (never crashes).
 // ---------------------------------------------------------------------------
 BOOST_AUTO_TEST_CASE(unknown_argkind_degrades_to_string)

@@ -1,10 +1,10 @@
-#include "url_shortener/tui/form_model.hpp"
-
 #include <cstddef>
 #include <string>
 #include <string_view>
 #include <utility>
 #include <vector>
+
+#include "url_shortener/tui/form_model.hpp"
 
 #include <url_shortener/core/utils.hpp>
 #include <url_shortener/tui/field_parsers.hpp>
@@ -19,6 +19,16 @@ namespace
 /// The advisory message pointing an operator at the JSON escape hatch when a
 /// list/map value contains a `,`/`=` and cannot be edited in the comma form.
 constexpr char k_use_json_form[] = "use the JSON form (palette -> cmd)";
+
+/// Maximum bytes accepted in any one field's editing buffer (and in each object
+/// member buffer) before the model flags it and refuses to emit it (threat
+/// model T-121). A field that needs more than this is a hostile or runaway
+/// paste, not a hand-typed value.
+constexpr std::size_t k_max_field_bytes = 64u * 1024u;
+
+/// Maximum number of list items or map entries the model will emit for one
+/// field before flagging it over-limit (threat model T-121).
+constexpr std::size_t k_max_elements = 1000u;
 
 /// Trims leading and trailing JSON whitespace so a raw value can be classified
 /// by its first significant byte.
@@ -37,12 +47,59 @@ std::string_view trim_json_ws(const std::string& s)
     return std::string_view(s).substr(begin, end - begin);
 }
 
-/// Whether @p raw, trimmed, is a JSON object (`{...}`) usable as a raw-object
-/// field value.
-bool looks_like_object(const std::string& raw)
+/// Re-serializes a raw-JSON object field through the sanctioned scanner
+/// (`json_view`, contract C9 - no local tokenizing) so only a single, exactly
+/// well-formed object can ever reach `args`. Returns a compact object rebuilt
+/// from the scanner's verified members (keys re-escaped with `jsonString`,
+/// values taken from the scanner's validated tokens), or `std::nullopt` when
+/// @p text is not exactly one well-formed object: `object_fields` (which wraps
+/// `scan_object`) returns no members for malformed input, a top-level duplicate
+/// key, non-whitespace trailing data after the closing brace, or nesting past
+/// the scanner's depth cap, and `pretty_print` yields exactly `"{}"` only for a
+/// verified (whitespace-tolerant) empty object - so a payload such as
+/// `{}, "status":"active"` (sibling-key injection) or `{"a":}` (malformed) is
+/// rejected rather than emitted verbatim.
+std::optional<std::string> reserialize_object(const std::string& text)
 {
-    const std::string_view trimmed = trim_json_ws(raw);
-    return !trimmed.empty() && trimmed.front() == '{' && trimmed.back() == '}';
+    const std::vector<JsonField> members = object_fields(text);
+    if (members.empty()) {
+        // Empty members means either a valid empty object or invalid input;
+        // only a verified empty object pretty-prints to exactly "{}".
+        if (pretty_print(text) == "{}") {
+            return std::string("{}");
+        }
+        return std::nullopt;
+    }
+    std::string out = "{";
+    bool first = true;
+    for (const JsonField& member : members) {
+        if (!first) {
+            out += ",";
+        }
+        first = false;
+        out += url_shortener::jsonString(member.key);
+        out += ":";
+        const std::string_view value = trim_json_ws(member.raw_value);
+        out.append(value.data(), value.size());
+    }
+    out += "}";
+    return out;
+}
+
+/// Whether @p field's editing buffers exceed the per-field byte bound
+/// (@ref k_max_field_bytes), checking the main buffer and every object member
+/// buffer (threat model T-121).
+bool exceeds_byte_limit(const FormField& field)
+{
+    if (field.text.size() > k_max_field_bytes) {
+        return true;
+    }
+    for (const std::string& member : field.members_text) {
+        if (member.size() > k_max_field_bytes) {
+            return true;
+        }
+    }
+    return false;
 }
 
 /// Decodes one raw JSON string token (quotes included) into its UTF-8 value by
@@ -58,7 +115,8 @@ std::string decode_json_string(const std::string& token)
 }  // namespace
 
 FormModel::FormModel(const CommandInfo& command, FormOptions options)
-    : m_command_(command), m_options_(std::move(options))
+    : m_command_(command)
+    , m_options_(std::move(options))
 {
     m_fields_.reserve(m_command_.args.size());
     for (const ArgInfo& spec : m_command_.args) {
@@ -151,8 +209,8 @@ void FormModel::set_member(std::size_t i, std::size_t m, std::string text)
             break;
         }
     }
-    field.state = (any || field.spec.required) ? FieldState::set
-                                               : FieldState::untouched;
+    field.state =
+        (any || field.spec.required) ? FieldState::set : FieldState::untouched;
 }
 
 bool FormModel::clear_field(std::size_t i)
@@ -188,6 +246,9 @@ std::optional<std::string> FormModel::encode_field(const FormField& field) const
     }
 
     // field.state == FieldState::set
+    if (exceeds_byte_limit(field)) {
+        return std::nullopt;  // over the model's size bound; validate flags it
+    }
     switch (field.spec.kind) {
         case ArgKind::integer: {
             const std::optional<long long> value = parse_integer(field.text);
@@ -204,10 +265,11 @@ std::optional<std::string> FormModel::encode_field(const FormField& field) const
         case ArgKind::enumeration: {
             if (field.choice >= 0
                 && static_cast<std::size_t>(field.choice)
-                    < field.spec.enum_values.size()) {
+                    < field.spec.enum_values.size())
+            {
                 return url_shortener::jsonString(
-                    field.spec.enum_values[
-                        static_cast<std::size_t>(field.choice)]);
+                    field.spec
+                        .enum_values[static_cast<std::size_t>(field.choice)]);
             }
             return std::nullopt;
         }
@@ -215,6 +277,10 @@ std::optional<std::string> FormModel::encode_field(const FormField& field) const
         case ArgKind::string_list: {
             const std::vector<std::string> items =
                 parse_string_list(field.text);
+            if (items.size() > k_max_elements) {
+                return std::nullopt;  // over the element bound; validate flags
+                                      // it
+            }
             std::string out = "[";
             bool first = true;
             for (const std::string& item : items) {
@@ -230,6 +296,10 @@ std::optional<std::string> FormModel::encode_field(const FormField& field) const
 
         case ArgKind::string_map: {
             const auto pairs = parse_string_map(field.text);
+            if (pairs.has_value() && pairs->size() > k_max_elements) {
+                return std::nullopt;  // over the element bound; validate flags
+                                      // it
+            }
             std::string out = "{";
             if (pairs.has_value()) {
                 bool first = true;
@@ -249,12 +319,9 @@ std::optional<std::string> FormModel::encode_field(const FormField& field) const
 
         case ArgKind::object: {
             if (field.spec.members.empty()) {
-                // Raw-JSON object field: emit verbatim only when it is a JSON
-                // object, else omit so the envelope cannot be corrupted.
-                if (looks_like_object(field.text)) {
-                    return std::string(trim_json_ws(field.text));
-                }
-                return std::nullopt;
+                // Raw-JSON object field: re-serialize through the scanner so a
+                // sibling-key injection or malformed text can never reach args.
+                return reserialize_object(field.text);
             }
             std::string out = "{";
             bool first = true;
@@ -318,8 +385,8 @@ commands::CommandRequest FormModel::to_request(
     request.id = request_id;
     request.command = m_command_.name;
     request.args_json = to_args_json();
-    request.options.dry_run = m_dry_run_
-        && m_options_.include_dry_run_toggle && m_command_.supports_dry_run;
+    request.options.dry_run = m_dry_run_ && m_options_.include_dry_run_toggle
+        && m_command_.supports_dry_run;
     return request;
 }
 
@@ -337,6 +404,11 @@ bool FormModel::validate()
         if (field.state != FieldState::set) {
             continue;  // untouched optional / explicit null needs no check
         }
+        if (exceeds_byte_limit(field)) {
+            field.error = "too large for the form";
+            ok = false;
+            continue;  // T-121: a runaway buffer is a hard, blocking error
+        }
 
         switch (field.spec.kind) {
             case ArgKind::integer:
@@ -349,7 +421,8 @@ bool FormModel::validate()
             case ArgKind::enumeration:
                 if (field.choice < 0
                     || static_cast<std::size_t>(field.choice)
-                        >= field.spec.enum_values.size()) {
+                        >= field.spec.enum_values.size())
+                {
                     field.error = "not a valid choice";
                     ok = false;
                 }
@@ -362,16 +435,42 @@ bool FormModel::validate()
                 }
                 break;
 
-            case ArgKind::string_map:
-                if (!parse_string_map(field.text).has_value()) {
-                    field.error = "expected key=value pairs";
+            case ArgKind::string_list:
+                if (parse_string_list(field.text).size() > k_max_elements) {
+                    field.error = "too many items";
                     ok = false;
                 }
                 break;
 
+            case ArgKind::string_map: {
+                std::vector<std::string> duplicate_keys;
+                const auto pairs =
+                    parse_string_map(field.text, &duplicate_keys);
+                if (!pairs.has_value()) {
+                    field.error = "expected key=value pairs";
+                    ok = false;
+                }
+                else if (pairs->size() > k_max_elements) {
+                    field.error = "too many items";
+                    ok = false;
+                }
+                else if (!duplicate_keys.empty()) {
+                    // Non-blocking hint: the registry accepts the merged map,
+                    // so validate() still returns true for this field.
+                    std::string hint = "duplicate key merged (last wins):";
+                    for (const std::string& key : duplicate_keys) {
+                        hint += " ";
+                        hint += key;
+                    }
+                    field.error = hint;
+                }
+                break;
+            }
+
             case ArgKind::object:
                 if (field.spec.members.empty()
-                    && !looks_like_object(field.text)) {
+                    && !reserialize_object(field.text).has_value())
+                {
                     field.error = "expected a JSON object";
                     ok = false;
                 }
@@ -379,7 +478,6 @@ bool FormModel::validate()
 
             case ArgKind::string:
             case ArgKind::boolean:
-            case ArgKind::string_list:
             default:
                 break;  // no cheap client-side check
         }
@@ -440,7 +538,8 @@ void FormModel::prefill_from_result(const std::string& result_json)
                 const auto value = get_string(result_json, name);
                 if (value.has_value()) {
                     for (std::size_t e = 0; e < field.spec.enum_values.size();
-                         ++e) {
+                         ++e)
+                    {
                         if (field.spec.enum_values[e] == *value) {
                             field.choice = static_cast<int>(e);
                             got_value = true;
@@ -495,7 +594,9 @@ void FormModel::prefill_from_result(const std::string& result_json)
                     else {
                         for (const JsonField& member : object_fields(*raw)) {
                             for (std::size_t m = 0;
-                                 m < field.spec.members.size(); ++m) {
+                                 m < field.spec.members.size();
+                                 ++m)
+                            {
                                 if (field.spec.members[m] == member.key) {
                                     field.members_text[m] =
                                         decode_json_string(member.raw_value);

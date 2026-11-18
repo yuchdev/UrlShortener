@@ -15,14 +15,14 @@ namespace url_shortener::tui
  * (Task 06.0 subtask 07).
  *
  * These helpers belong to `url_shortener_tui_model`: they are pure, do no I/O,
- * and never tokenize JSON (contract C9) - a list is a comma-separated line and a
- * map is a `k=v` line, both edited as plain text. The `parse_*` functions turn a
- * user-typed line into values; the `format_*` functions turn values back into a
- * line for the edit-prefill flow and report whether the values are *faithfully*
- * representable in the comma/equals form (a value containing `,` or `=` is not,
- * and the caller surfaces the "use the JSON form" escape hatch rather than
- * silently corrupting data). None of these functions sanitizes for a terminal;
- * the text they produce is echoed by the view, which applies
+ * and never tokenize JSON (contract C9) - a list is a comma-separated line and
+ * a map is a `k=v` line, both edited as plain text. The `parse_*` functions
+ * turn a user-typed line into values; the `format_*` functions turn values back
+ * into a line for the edit-prefill flow and report whether the values are
+ * *faithfully* representable in the comma/equals form (a value containing `,`
+ * or `=` is not, and the caller surfaces the "use the JSON form" escape hatch
+ * rather than silently corrupting data). None of these functions sanitizes for
+ * a terminal; the text they produce is echoed by the view, which applies
  * `sanitize_for_terminal` at the render sink (threat model T-110).
  */
 
@@ -32,8 +32,8 @@ namespace url_shortener::tui
  * Each comma-delimited field has its leading and trailing ASCII spaces and tabs
  * removed; an item that is empty after trimming is dropped. So `"a, b ,c"`
  * yields `{"a","b","c"}`, `"a,,b,"` yields `{"a","b"}`, and an empty or
- * whitespace-only line yields an empty vector. Commas cannot be escaped: a value
- * that must contain a comma is not representable in this form (see
+ * whitespace-only line yields an empty vector. Commas cannot be escaped: a
+ * value that must contain a comma is not representable in this form (see
  * @ref format_string_list).
  *
  * @param s The raw, user-typed line; interpreted as UTF-8 but split on ASCII
@@ -54,20 +54,25 @@ std::vector<std::string> parse_string_list(const std::string& s);
  *
  * @param s The raw, user-typed line; interpreted as UTF-8 but split on ASCII
  * `,` and `=` only.
+ * @param duplicate_keys When non-null, each key that appeared more than once
+ * (and whose earlier value was overwritten by a later one) is appended here, in
+ * first-seen order, so a caller can surface a non-blocking "last wins" warning;
+ * left untouched when there are no duplicates. Optional; defaults to `nullptr`.
  * @return The ordered, de-duplicated pairs; `std::nullopt` when any entry is
  * missing its `=` or has an empty key. Never throws.
  */
-std::optional<std::vector<std::pair<std::string, std::string>>> parse_string_map(
-    const std::string& s);
+std::optional<std::vector<std::pair<std::string, std::string>>>
+parse_string_map(const std::string& s,
+                 std::vector<std::string>* duplicate_keys = nullptr);
 
 /**
  * @brief Parses a user-typed line as a signed 64-bit integer.
  *
  * The line is ASCII-trimmed, then read as an optional `+`/`-` sign followed by
  * one or more decimal digits with no other characters. Overflow of the
- * `long long` range is rejected rather than wrapped, and `INT64_MIN` is accepted
- * exactly. Leading zeros are accepted and normalized away by the caller when it
- * re-emits the value with `std::to_string`.
+ * `long long` range is rejected rather than wrapped, and `INT64_MIN` is
+ * accepted exactly. Leading zeros are accepted and normalized away by the
+ * caller when it re-emits the value with `std::to_string`.
  *
  * @param s The raw, user-typed line.
  * @return The parsed value; `std::nullopt` for an empty line, a non-digit
@@ -100,9 +105,9 @@ std::string format_string_list(const std::vector<std::string>& items,
  * The inverse of @ref parse_string_map for faithfully representable input:
  * `parse_string_map(format_string_map(x, r)) == x` whenever every key is
  * non-empty and no key or value carries surrounding whitespace or contains a
- * `,` or `=` (in which case @p representable is set `true`). A pair whose key or
- * value contains `,` or `=` is still written verbatim, but @p representable is
- * set `false` so the caller can surface the JSON escape hatch.
+ * `,` or `=` (in which case @p representable is set `true`). A pair whose key
+ * or value contains `,` or `=` is still written verbatim, but @p representable
+ * is set `false` so the caller can surface the JSON escape hatch.
  *
  * @param pairs The key/value pairs to render.
  * @param representable Set to `true` when the produced line round-trips through

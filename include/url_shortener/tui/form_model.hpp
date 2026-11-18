@@ -101,9 +101,12 @@ struct FormField
     ///< locked field disabled and the mutators treat it as a no-op.
     bool locked = false;
 
-    ///< Advisory, client-side validation message, or a server `invalid_field`
-    ///< message the view assigned; `std::nullopt` when the field is valid. A
-    ///< display string; sanitized at the render sink (T-110).
+    ///< Advisory, client-side validation message (blocking, e.g. "required"),
+    ///< a non-blocking hint (e.g. the string-map "duplicate key merged" note,
+    ///< which leaves @ref FormModel::validate returning `true`), or a server
+    ///< `invalid_field` message the view assigned; `std::nullopt` when the
+    ///< field is valid and un-hinted. A display string; sanitized at the render
+    ///< sink (T-110).
     std::optional<std::string> error;
 };
 
@@ -131,9 +134,9 @@ struct FormOptions
  * re-implements the registry's `ArgSpec` validation (that stays authoritative);
  * its @ref validate is cheap, client-side and advisory, and its
  * @ref to_args_json / @ref to_request build the one request the TUI submits.
- * Documented defaults are surfaced to the view through @ref ArgInfo::default_value
- * and are never pre-filled into a buffer, so an untouched default is never sent
- * (the handler applies it).
+ * Documented defaults are surfaced to the view through @ref
+ * ArgInfo::default_value and are never pre-filled into a buffer, so an
+ * untouched default is never sent (the handler applies it).
  */
 class FormModel
 {
@@ -144,8 +147,8 @@ public:
      * Creates one @ref FormField per @ref CommandInfo::args entry, in
      * descriptor order, every field @ref FieldState::untouched with an empty
      * buffer (an object field's @ref FormField::members_text is sized to its
-     * @ref ArgInfo::members). An unrecognized @ref ArgInfo::kind is handled as a
-     * string field so a future argument type never crashes the form (D9).
+     * @ref ArgInfo::members). An unrecognized @ref ArgInfo::kind is handled as
+     * a string field so a future argument type never crashes the form (D9).
      *
      * @param command The command whose schema drives the form; copied, so the
      * model stays valid after the client that produced it is gone.
@@ -175,13 +178,14 @@ public:
     const std::vector<FormField>& fields() const;
 
     /**
-     * @brief Sets a string/integer/timestamp/list/map/raw-object field's buffer.
+     * @brief Sets a string/integer/timestamp/list/map/raw-object field's
+     * buffer.
      *
      * Marks the field @ref FieldState::set, except that clearing an *optional*
      * field to the empty string returns it to @ref FieldState::untouched (so an
-     * emptied optional is omitted, preserving PATCH semantics). A required field
-     * emptied to `""` stays @ref FieldState::set so @ref validate can flag it. A
-     * locked field (identity) is a no-op.
+     * emptied optional is omitted, preserving PATCH semantics). A required
+     * field emptied to `""` stays @ref FieldState::set so @ref validate can
+     * flag it. A locked field (identity) is a no-op.
      *
      * @param i Field index; out-of-range indices are ignored.
      * @param text The new buffer contents.
@@ -191,9 +195,9 @@ public:
     /**
      * @brief Sets a boolean field's checkbox and marks it touched.
      *
-     * Marks the field @ref FieldState::set so the value is emitted; an untouched
-     * boolean is never sent (it is not emitted as `false`). A locked field is a
-     * no-op.
+     * Marks the field @ref FieldState::set so the value is emitted; an
+     * untouched boolean is never sent (it is not emitted as `false`). A locked
+     * field is a no-op.
      *
      * @param i Field index; out-of-range indices are ignored.
      * @param v The checkbox value to store.
@@ -216,8 +220,8 @@ public:
      * @brief Sets one member buffer of an object field.
      *
      * Marks the object field @ref FieldState::set when any member is non-empty,
-     * otherwise returns it to @ref FieldState::untouched (an all-empty object is
-     * omitted). A locked field is a no-op.
+     * otherwise returns it to @ref FieldState::untouched (an all-empty object
+     * is omitted). A locked field is a no-op.
      *
      * @param i Field index; out-of-range indices are ignored.
      * @param m Member index within @ref FormField::members_text; out-of-range
@@ -235,9 +239,9 @@ public:
      * the view can keep the clear affordance hidden for non-nullable fields.
      *
      * @param i Field index.
-     * @return `true` when the field was set to @ref FieldState::cleared; `false`
-     * when the index is out of range, the field is not nullable, or the field is
-     * locked.
+     * @return `true` when the field was set to @ref FieldState::cleared;
+     * `false` when the index is out of range, the field is not nullable, or the
+     * field is locked.
      */
     bool clear_field(std::size_t i);
 
@@ -260,37 +264,54 @@ public:
      * @brief Runs cheap, advisory client-side validation and fills
      * @ref FormField::error.
      *
-     * Checks only what is cheap and type-local: a required field must be present
-     * (not @ref FieldState::untouched); an integer field must parse and fit
-     * `long long`; an enumeration choice must be in range; a timestamp must
-     * parse as strict RFC 3339 Zulu; a string-map field must parse as `k=v`
-     * pairs; and a member-less object field's raw buffer must look like a JSON
-     * object. It never duplicates the registry's authoritative `ArgSpec` checks
-     * (bounds, `one_of` groups, domain rules) - those come back as server
-     * `invalid_field` errors the view assigns into @ref FormField::error
-     * (C1/C7). Every field's previous advisory error is cleared first.
+     * Checks only what is cheap and type-local: a required field must be
+     * present (not @ref FieldState::untouched); no field's buffer may exceed
+     * the model's size bounds (64 KiB per buffer, 1000 list/map elements -
+     * threat model T-121); an integer field must parse and fit `long long`; an
+     * enumeration choice must be in range; a timestamp must parse as strict RFC
+     * 3339 Zulu; a string-map field must parse as `k=v` pairs; and a
+     * member-less object field's raw buffer must be exactly one well-formed
+     * JSON object (rejecting trailing data, duplicate top-level keys and
+     * over-deep nesting via the sanctioned scanner). It never duplicates the
+     * registry's authoritative `ArgSpec` checks (bounds, `one_of` groups,
+     * domain rules) - those come back as server `invalid_field` errors the view
+     * assigns into
+     * @ref FormField::error (C1/C7). Every field's previous advisory error is
+     * cleared first.
      *
-     * @return `true` when no field has an advisory error; `false` otherwise.
+     * A string-map with duplicate keys is still valid (the registry accepts the
+     * last-wins merge): such a field receives a *non-blocking* hint in
+     * @ref FormField::error but does not fail validation.
+     *
+     * @return `true` when no field has a blocking error (a duplicate-key hint
+     * is not blocking); `false` otherwise.
      */
     bool validate();
 
     /**
      * @brief Builds the `args` object text the registry expects.
      *
-     * Emits members in @ref ArgInfo descriptor order, including only fields that
-     * are @ref FieldState::set (their encoded value) or @ref FieldState::cleared
-     * (explicit `null`); @ref FieldState::untouched fields are omitted so the
-     * handler applies defaults / leaves values unchanged. Strings, enum values,
-     * timestamps and object members are escaped with `url_shortener::jsonEscape`
-     * (every byte, including control characters and invalid UTF-8, is made
-     * safe); integers are emitted unquoted; a set list/map is emitted as a JSON
-     * array/object (empty `[]`/`{}` when the buffer parses to nothing, an
-     * explicit replace-with-empty); an object is emitted with only its non-empty
-     * members and omitted entirely when all members are empty. The result is
-     * always well-formed JSON; callers should @ref validate first, as an invalid
-     * integer buffer is emitted as a JSON string (so the server returns a clean
-     * `invalid_field`) and an unparseable map/raw-object degrades to `{}` / is
-     * omitted rather than corrupting the envelope.
+     * Emits members in @ref ArgInfo descriptor order, including only fields
+     * that are @ref FieldState::set (their encoded value) or @ref
+     * FieldState::cleared (explicit `null`); @ref FieldState::untouched fields
+     * are omitted so the handler applies defaults / leaves values unchanged.
+     * Strings, enum values, timestamps and object members are escaped with
+     * `url_shortener::jsonEscape` (every byte, including control characters and
+     * invalid UTF-8, is made safe); integers are emitted unquoted; a set
+     * list/map is emitted as a JSON array/object (empty `[]`/`{}` when the
+     * buffer parses to nothing, an explicit replace-with-empty); a member-based
+     * object is emitted with only its non-empty members and omitted entirely
+     * when all members are empty; a member-less (raw-JSON) object is
+     * re-serialized through the sanctioned scanner and emitted only when it is
+     * exactly one well-formed object (so a sibling-key injection such as `{},
+     * "k":1` or malformed text can never reach `args`), otherwise omitted. Any
+     * field whose buffer exceeds the model's size bounds (64 KiB, or 1000
+     * list/map elements - threat model T-121) is omitted. The result is always
+     * well-formed JSON; callers should
+     * @ref validate first, as an invalid integer buffer is emitted as a JSON
+     * string (so the server returns a clean `invalid_field`) and an unparseable
+     * or over-limit map/raw-object is omitted rather than corrupting the
+     * envelope.
      *
      * @return The `args` object as compact JSON text, e.g. `{"slug":"docs"}`.
      */
@@ -301,43 +322,44 @@ public:
      *
      * @param request_id Correlation id to echo; placed verbatim in
      * @ref commands::CommandRequest::id.
-     * @return A request with `v == 1`, this form's @ref CommandInfo::name as the
-     * command, @ref to_args_json as the args, and `options.dry_run` set only
-     * when the dry-run toggle is on and the command supports it.
+     * @return A request with `v == 1`, this form's @ref CommandInfo::name as
+     * the command, @ref to_args_json as the args, and `options.dry_run` set
+     * only when the dry-run toggle is on and the command supports it.
      */
     commands::CommandRequest to_request(const std::string& request_id) const;
 
     /**
      * @brief Builds the D5 footer summary of touched fields' validity.
      *
-     * Lists each touched field (@ref FieldState::set or @ref FieldState::cleared)
-     * as `"<name> ok"` when it has no advisory error or `"<name>: <message>"`
-     * when it does, joined with `" - "` (e.g. `"target_url ok - slug ok"`). The
-     * values embedded are server-supplied argument names, so the whole line must
-     * be sanitized at the render sink (T-110). Call @ref validate first to
-     * populate the messages.
+     * Lists each touched field (@ref FieldState::set or @ref
+     * FieldState::cleared) as `"<name> ok"` when it has no advisory error or
+     * `"<name>: <message>"` when it does, joined with `" - "` (e.g.
+     * `"target_url ok - slug ok"`). The values embedded are server-supplied
+     * argument names, so the whole line must be sanitized at the render sink
+     * (T-110). Call @ref validate first to populate the messages.
      *
      * @return The summary line; empty when no field is touched.
      */
     std::string validation_summary() const;
 
     /**
-     * @brief Prefills the form from a command `result` payload for the edit flow.
+     * @brief Prefills the form from a command `result` payload for the edit
+     * flow.
      *
      * Reads each field's value out of @p result_json by its @ref ArgInfo::name
      * using the sanctioned `json_view` accessors (no JSON tokenizing here,
      * contract C9) and loads it into the matching buffer: strings/timestamps
      * directly, integers via decimal text, booleans into the checkbox, enum
      * values by matching an index, string lists joined with `", "`, string maps
-     * as `k=v` pairs, and object members by name. A required identity field that
-     * is present (e.g. the `slug`) is marked @ref FieldState::set and
+     * as `k=v` pairs, and object members by name. A required identity field
+     * that is present (e.g. the `slug`) is marked @ref FieldState::set and
      * @ref FormField::locked so it is shown read-only and re-sent; every other
      * prefilled field is left @ref FieldState::untouched, so an unchanged field
      * is not re-sent and PATCH semantics are preserved. A list/map value that
      * contains a `,`/`=` and so cannot round-trip through the comma/equals form
      * gets an advisory @ref FormField::error pointing at the JSON escape hatch
-     * rather than a corrupted buffer. Values are copied verbatim (not sanitized);
-     * the view sanitizes them at the render sink (T-110).
+     * rather than a corrupted buffer. Values are copied verbatim (not
+     * sanitized); the view sanitizes them at the render sink (T-110).
      *
      * @param result_json The command `result` object text (e.g. a `LinkView`);
      * malformed or missing fields are simply skipped.
@@ -350,8 +372,8 @@ private:
      *
      * @param field The field to encode.
      * @return The field's JSON value text (e.g. `"docs"`, `42`, `null`,
-     * `["a"]`), or `std::nullopt` when the field is omitted entirely (untouched,
-     * or an object whose members are all empty).
+     * `["a"]`), or `std::nullopt` when the field is omitted entirely
+     * (untouched, or an object whose members are all empty).
      */
     std::optional<std::string> encode_field(const FormField& field) const;
 
