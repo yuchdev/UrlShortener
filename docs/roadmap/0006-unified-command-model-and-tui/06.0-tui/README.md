@@ -89,7 +89,7 @@ for 18 to verify - see 21's own Constraints), only 20.
 | 14 | [Tables browser (D6)](14-tables-browser-screen.md) | ✅ Complete | 03, 04, 05, 08, 09, 10, 11, 03.0/15, 03.0/16 | 18, 20 |
 | 15 | [Import / export pairs (D7)](15-import-export-screen.md) | ✅ Complete | 03, 04, 06, 08, 11, 05.0/05, 05.0/08, 05.0/10 | 18, 20 |
 | 16 | [Jobs screen and polling (D8)](16-jobs-screen.md) | ✅ Complete | 03, 04, 06, 09, 10, 11, 05.0/05 | 17, 18, 20 |
-| 17 | [Dashboard (D2)](17-dashboard-screen.md) | ⬜ Not started | 03, 04, 05, 06, 12, 16, 03.0/14, 03.0/15, 03.0/17, 05.0/05 | 18, 20 |
+| 17 | [Dashboard (D2)](17-dashboard-screen.md) | ✅ Complete | 03, 04, 05, 06, 12, 16, 03.0/14, 03.0/15, 03.0/17, 05.0/05 | 18, 20 |
 | 18 | [Read-only mode and mutation safety](18-read-only-mode.md) | ⬜ Not started | 02, 04, 06, 08, 11, 12, 13, 14, 15, 16, 17, 01.0/07 | 20 |
 | 19 | [`tui` CLI mode wiring](19-tui-cli-mode-wiring.md) | ✅ Complete | 01, 02, 04, 05, 02.0/10, 02.0/12, 03.0/18, 05.0/20 | 20 |
 | 20 | [Manual smoke checklist and diagram sign-off](20-manual-smoke-checklist.md) | ⬜ Not started | 01-19, 21, Task 02.0, 05.0/08, 05.0/10 | 07.0/29, 08.0/10 |
