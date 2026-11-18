@@ -755,6 +755,9 @@ set(URL_SHORTENER_SOURCES
         ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/theme.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/ascii.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/help_model.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/toast.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/confirm.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/equivalent_cmd.cpp
     )
 
     set(TUI_UI_CPP_SOURCES
@@ -765,6 +768,10 @@ set(URL_SHORTENER_SOURCES
         ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/screens/placeholder_screen.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/theme_ftxui.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/help_overlay.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/table_view.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/column_chooser.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/toast_view.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/confirm_view.cpp
     )
 
     # Model unit tests link url_shortener_tui_model (no FTXUI).
@@ -783,6 +790,9 @@ set(URL_SHORTENER_SOURCES
         tests/unit/tui/05_theme_test.cpp
         tests/unit/tui/05_ascii_test.cpp
         tests/unit/tui/05_help_model_test.cpp
+        tests/unit/tui/06_toast_test.cpp
+        tests/unit/tui/06_confirm_test.cpp
+        tests/unit/tui/06_equivalent_cmd_test.cpp
     )
 
     # Render/snapshot unit tests link url_shortener_tui (FTXUI).
@@ -790,5 +800,8 @@ set(URL_SHORTENER_SOURCES
         tests/unit/tui/01_render_harness_selftest.cpp
         tests/unit/tui/04_frame_render_test.cpp
         tests/unit/tui/05_theme_render_test.cpp
+        tests/unit/tui/10_table_view_render_test.cpp
+        tests/unit/tui/10_table_view_keys_test.cpp
+        tests/unit/tui/06_dialog_render_test.cpp
     )
   endif()
