@@ -752,6 +752,7 @@ set(URL_SHORTENER_SOURCES
         ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/keymap.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/frame_model.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/terminal_restore.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/system_info_view.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/theme.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/ascii.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/help_model.cpp
@@ -789,6 +790,7 @@ set(URL_SHORTENER_SOURCES
         tests/unit/tui/04_frame_model_test.cpp
         tests/unit/tui/04_terminal_restore_test.cpp
         tests/unit/tui/04_app_teardown_test.cpp
+        tests/unit/tui/04_system_info_view_test.cpp
         tests/unit/tui/05_theme_test.cpp
         tests/unit/tui/05_ascii_test.cpp
         tests/unit/tui/05_help_model_test.cpp
