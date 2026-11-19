@@ -664,3 +664,16 @@ pending a ruling unless marked:
    vcpkg baseline for ftxui 7.0.3, 0002 constraints T-92/T-100/T-108, the
    SME transcript in `adding-a-transport.md`, the Y2038 SQLite read, and the
    co-author trailer variance in branch history.
+
+**User rulings (2026-11-19):**
+
+- (1) Add `--path-root` / `--no-file-paths` to `tui` in Task 07.0, wired
+  into the runtime `file_paths`, with regression tests.
+- (2) Ratified deferral: 06.0 stays ✅; the Windows Terminal, conhost, Linux
+  and tmux rows of `docs/testing/tui_manual_smoke.md` are a deferred human
+  pass.
+- (3) The `e2e` 14-18 scripts get a portable timeout fallback (`timeout`,
+  else `gtimeout`, else a watchdog) in Task 07.0.
+- (4) `SettingsInfo` mirror ratified: it mirrors the `system.info` wire
+  contract, not a code dependency.
+- Items 5-7 stay recorded follow-ups.
