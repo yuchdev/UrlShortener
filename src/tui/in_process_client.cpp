@@ -181,4 +181,13 @@ SessionInfo InProcessClient::session() const
     return info;
 }
 
+std::string InProcessClient::required_permission(
+    const commands::CommandRequest& request) const
+{
+    // Single source of truth: the registry's own resolver (D16). No handler
+    // runs and no AccessGuard is checked; we only learn which permission the
+    // request would require, then map it to its wire string.
+    return permission_name(m_registry.resolve_permission(request));
+}
+
 }  // namespace url_shortener::tui

@@ -232,6 +232,48 @@ public:
      * transport of this client.
      */
     virtual SessionInfo session() const = 0;
+
+    /**
+     * @brief Resolves the effective permission @p request would require,
+     * WITHOUT executing it - the pre-call capability oracle the TUI mirror
+     * needs (decision log D16, threat model T-116).
+     *
+     * A command's required permission can depend on its arguments
+     * (`permission_for`: e.g. `link.list` with `status=all|deleted`, or
+     * `link.export` with a `path`), so the descriptor's base permission alone
+     * is not enough to decide whether a read-only session may run a *specific*
+     * request. @ref CapabilityModel and @ref MutationFlow consult this so a
+     * read-only session never submits a request whose resolved permission is
+     * not `read`.
+     *
+     * The default implementation returns the base permission of the matching
+     * entry in @ref commands, or `"manage_users"` (the strictest) for an
+     * unknown command. That is correct only for a catalog with no
+     * argument-dependent permissions; the in-process default (@ref
+     * InProcessClient) overrides it to reproduce the registry's real `max(base,
+     * permission_for(args))` from a single code path. **Any client whose
+     * catalog has an argument-dependent permission - including a future remote
+     * client - MUST override this to resolve the effective permission (or fail
+     * closed to a non-`read` value); returning the base `read` for a request
+     * the server would raise to `write` would let a read-only session put a
+     * write on the wire.**
+     *
+     * @param request The request whose effective permission to resolve; only
+     * its `command` and `args_json` need be read.
+     * @return The wire permission string (`"read"`, `"write"`, `"migrate"` or
+     * `"manage_users"`) the request would require; fails closed to a non-`read`
+     * value when it cannot be resolved.
+     */
+    virtual std::string required_permission(
+        const commands::CommandRequest& request) const
+    {
+        for (const CommandInfo& info : commands()) {
+            if (info.name == request.command) {
+                return info.permission;
+            }
+        }
+        return "manage_users";  // unknown command -> strictest (fail closed)
+    }
 };
 
 }  // namespace url_shortener::tui

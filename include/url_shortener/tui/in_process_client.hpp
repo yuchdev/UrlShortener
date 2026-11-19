@@ -107,6 +107,24 @@ public:
      */
     SessionInfo session() const override;
 
+    /**
+     * @brief Resolves @p request's effective permission from the registry's own
+     * `max(base, permission_for(args))` rule, without executing it (D16,
+     * T-116).
+     *
+     * Forwards to `CommandRegistry::resolve_permission` - the exact computation
+     * @ref call's authorization uses - and maps the resulting `Permission` to
+     * its wire string, so the pre-call UI gate and the server's enforcement can
+     * never drift. Fails closed: an unknown command or non-validating arguments
+     * resolve to `"manage_users"`. Non-executing and safe to call on the UI
+     * thread.
+     *
+     * @param request The request whose effective permission to resolve.
+     * @return The wire permission string the request would require.
+     */
+    std::string required_permission(
+        const commands::CommandRequest& request) const override;
+
 private:
     ///< The registry commands execute against; not owned, must outlive this
     ///< client (see the class lifetime contract).

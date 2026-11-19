@@ -210,6 +210,25 @@ public:
     IUiPoster& poster() const noexcept { return m_poster_; }
 
     /**
+     * @brief Resolves the effective permission a request would require, without
+     * executing it (forwards to @ref ICommandClient::required_permission).
+     *
+     * Non-executing and cheap, so unlike @ref submit it is safe to call
+     * synchronously on the UI thread: a screen uses it (through
+     * @ref CapabilityModel) to decide, before building a request, whether a
+     * read-only session may send it (decision log D16, threat model T-116). The
+     * injected client resolves the registry's real `max(base, permission_for)`.
+     *
+     * @param request The request whose effective permission to resolve.
+     * @return The wire permission string the request would require.
+     */
+    std::string required_permission(
+        const commands::CommandRequest& request) const
+    {
+        return m_client_.required_permission(request);
+    }
+
+    /**
      * @brief Diagnostic/testing accessor for the recorded-cancellation count.
      *
      * Exposes the size of the internal cancel set so a test can prove it does

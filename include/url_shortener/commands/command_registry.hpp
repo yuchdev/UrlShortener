@@ -206,6 +206,32 @@ public:
                                  const envelope_limits& limits = {}) const;
 
     /**
+     * @brief Resolves the effective permission a request would require, WITHOUT
+     * executing it or checking the caller (the single source of truth a
+     * transport client mirrors for pre-call UI gating, decision log D16).
+     *
+     * Reproduces exactly the permission computation of @ref execute steps 3-4a
+     * via the same internal helper, so the two can never drift: the base
+     * `descriptor.permission`, raised to `max(base, permission_for(view))` when
+     * the descriptor has an argument-dependent hook and the arguments validate.
+     * It evaluates the hook on the validated argument view but runs no handler,
+     * no job, and no `AccessGuard`, so it is a cheap, side-effect-free query
+     * safe to call on the UI thread.
+     *
+     * Fails closed: an unknown command, arguments that do not validate (so the
+     * hook cannot be evaluated), or a throwing hook all resolve to the
+     * strictest permission (`manage_users`), so a mirror can never
+     * under-estimate and let a would-be-denied request through. `const` and
+     * never throws.
+     *
+     * @param request The request whose effective permission to resolve; only
+     * its `command` name and `args_json` are read.
+     * @return The effective @ref Permission the request would require, or
+     * `Permission::manage_users` on any failure to resolve it.
+     */
+    Permission resolve_permission(const CommandRequest& request) const;
+
+    /**
      * @brief Installs the one process-wide job submitter the registry hands
      * accepted job bodies to (decision log D13).
      *

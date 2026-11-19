@@ -75,6 +75,43 @@ bool permission_check(const CallerContext& caller, Permission permission)
 }
 
 /**
+ * @brief Computes a command's effective required permission from its validated
+ * argument view (decision log D16, threat model T-09).
+ *
+ * The single definition of the `max(base, permission_for(view))` rule, shared
+ * by
+ * @ref CommandRegistry::execute (step 4a) and
+ * @ref CommandRegistry::resolve_permission so the enforced permission and the
+ * one a transport client mirrors can never drift. A command with no raise hook
+ * keeps its base permission. A throwing hook is reported via @p hook_threw and
+ * mapped to the strictest permission (`manage_users`) so neither caller can
+ * ever under-estimate on a hook failure.
+ *
+ * @param descriptor The resolved descriptor whose base permission and optional
+ * `permission_for` hook are read.
+ * @param view The validated argument view the hook is evaluated against.
+ * @param hook_threw Set to `true` when the hook threw (and the return is forced
+ * to `manage_users`); `false` otherwise.
+ * @return `max(descriptor.permission, permission_for(view))`, or
+ * `Permission::manage_users` when the hook threw.
+ */
+Permission effective_permission(const CommandDescriptor& descriptor,
+                                const ArgsView& view,
+                                bool& hook_threw)
+{
+    hook_threw = false;
+    if (!descriptor.permission_for) {
+        return descriptor.permission;
+    }
+    try {
+        return std::max(descriptor.permission, descriptor.permission_for(view));
+    } catch (...) {
+        hook_threw = true;
+        return Permission::manage_users;  // fail closed
+    }
+}
+
+/**
  * @brief How `execute` must dispatch a request once authorization and argument
  * validation have passed, given the request options and the descriptor.
  *
@@ -602,20 +639,14 @@ CommandResponse CommandRegistry::execute(const CallerContext& caller,
         // max(base, hook) over the contractual order, so it can only tighten
         // (threat model T-09). A throwing hook maps to internal.
         if (descriptor->permission_for) {
-            Permission required = descriptor->permission;
-            try {
-                const Permission hinted = descriptor->permission_for(view);
-                required = std::max(descriptor->permission, hinted);
-            } catch (const std::exception&) {
-                return make_failure(
-                    request.id,
-                    make_error(CommandErrorCode::internal, "internal error"));
-            } catch (...) {
+            bool hook_threw = false;
+            const Permission required =
+                effective_permission(*descriptor, view, hook_threw);
+            if (hook_threw) {
                 return make_failure(
                     request.id,
                     make_error(CommandErrorCode::internal, "internal error"));
             }
-
             if (!permission_check(caller, required)) {
                 return make_failure(request.id,
                                     make_error(CommandErrorCode::not_authorized,
@@ -733,6 +764,36 @@ CommandResponse CommandRegistry::execute_json(
         return make_failure(std::move(parsed.id), std::move(parsed.error));
     }
     return execute(caller, *parsed.request);
+}
+
+Permission CommandRegistry::resolve_permission(
+    const CommandRequest& request) const
+{
+    // Fail closed: an unknown command resolves to the strictest permission, so
+    // a mirror never under-estimates (and the server would answer
+    // unknown_command on the real call anyway).
+    const CommandDescriptor* descriptor = find(request.command);
+    if (descriptor == nullptr) {
+        return Permission::manage_users;
+    }
+    if (!descriptor->permission_for) {
+        return descriptor->permission;
+    }
+
+    // The hook runs only on a validated view (same as execute step 4a). If the
+    // arguments do not validate we cannot evaluate the hook, so fail closed to
+    // the strictest permission rather than report the (lower) base permission.
+    ArgsView view;
+    CommandError arg_error;
+    if (!validate_args(descriptor->args, request.args_json, &view, &arg_error))
+    {
+        return Permission::manage_users;
+    }
+
+    bool hook_threw = false;
+    const Permission required =
+        effective_permission(*descriptor, view, hook_threw);
+    return hook_threw ? Permission::manage_users : required;
 }
 
 }  // namespace url_shortener::commands
