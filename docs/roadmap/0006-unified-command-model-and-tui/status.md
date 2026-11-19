@@ -11,7 +11,7 @@ Tracks progress against [plan.md](/docs/roadmap/0006-unified-command-model-and-t
 | 03.0 | Link and browse commands | ✅ Complete (18/18 subtasks) | 23 targets (`commands__20`-`30`, `app__40`-`48`, `core 09`, `memory__17`, `analytics__16`, storage list-events SQLite/Postgres, contract `10`-`12`) |
 | 04.0 | REST and CLI adapters | ✅ Complete (15/15 subtasks) | 22 (`commands__40`, http `15`-`25`; `cli__06`-`12`; cli int `20`, `21`; `observability__04`; `ratelimiter__08`) |
 | 05.0 | Jobs, pair import/export, stdio | ✅ Complete (21/21 subtasks) | 23 (`commands__50`-`65`; `app__60`; `cli__20`, `cli__21`; http `40`; cli int `40`, `41`; e2e `30`) |
-| 06.0 | Terminal UI | 🔶 In progress (21/21 subtasks; Task close pending) | 58 (`tui__01`, `tui__02_*` x3, `tui__03`, `tui__04_*` x6, `tui__05_*` x4, `tui__06_*` x4, `tui__07_*` x3, `tui__08_*` x3, `tui__09_*` x3, `tui__10_*` x2, `tui__11_*` x4, `tui__12_*` x3, `tui__13_*` x2, `tui__14_*` x2, `tui__15_*` x3, `tui__16_*` x3, `tui__17_*` x2, `tui__18_*` x3, `tui__19_*` x2, `tui__20_app_navigation_test`, `tui__21_*` x2, `cli__30`) |
+| 06.0 | Terminal UI | ✅ Complete | 58 (`tui__01`, `tui__02_*` x3, `tui__03`, `tui__04_*` x6, `tui__05_*` x4, `tui__06_*` x4, `tui__07_*` x3, `tui__08_*` x3, `tui__09_*` x3, `tui__10_*` x2, `tui__11_*` x4, `tui__12_*` x3, `tui__13_*` x2, `tui__14_*` x2, `tui__15_*` x3, `tui__16_*` x3, `tui__17_*` x2, `tui__18_*` x3, `tui__19_*` x2, `tui__20_app_navigation_test`, `tui__21_*` x2, `cli__30`) |
 | 07.0 | Tests and conformance | ⬜ Not started | 0 |
 | 08.0 | Docs and registry sync | ⬜ Not started | 0 |
 
@@ -317,6 +317,73 @@ subtask).
 per-row audit for import overwrite (T-100) vs job-level only; sanitizer
 build of the stdio surface (needs a separately configured build dir).
 
+### Task 06.0 - Terminal UI (✅)
+
+Completed 2026-11-19 on branch `milestone/0006-unified-command-model-and-tui`.
+
+**Delivered:**
+
+- Foundation: FTXUI 7.0.3 (pinned commit) behind `URLSHORTENER_ENABLE_TUI`;
+  FTXUI-free `url_shortener_tui_model` plus `url_shortener_tui` libraries
+  (C8 include boundary test); render harness and golden files; `json_view`;
+  `InProcessClient` over the command registry; `AsyncCaller` (cancellable
+  tokens, epoch stale-drop, alive guard); `App`/`Router`/frame, terminal
+  restore (RAII + SIGTERM), theme incl. `--theme mono`, help overlay,
+  toast/confirm (typed-slug delete), form model/widgets/screen with
+  `MutationFlow` as the single mutating-submit choke point, table
+  model/view with `sanitize_for_terminal` before `truncate_to_width`.
+- Screens: Dashboard (D2), Links (D3) with inline detail/stats (D4) and
+  forms (D5), Tables (D6) with inline row JSON, Import/Export (D7), Jobs (D8)
+  with `PollTicker`, command palette and generic command screen (D9),
+  Settings (D13); `tui` CLI mode wiring (C5: no listener, no `uri.txt`;
+  file paths opted in for the local operator).
+- Read-only mode (06.0/18): `CapabilityModel` is the only enable/disable
+  gate; argument-aware preflight `ICommandClient::required_permission` ->
+  `CommandRegistry::resolve_permission`, sharing `effective_permission` with
+  `execute()` (fail closed); `[READ-ONLY]` badge never clipped (user ruling
+  2026-11-19).
+- Manual smoke checklist `docs/testing/tui_manual_smoke.md` (S1-S21, D1-D13
+  matrix) and ADR 0003 "As-built amendments".
+- Defects found and fixed in-task: `MutationFlow` use-after-free guard
+  (`b3b23df`); arg-blind read-only mirror, HIGH (`c770499`, `ec1cfe7`);
+  smoke bugs - tab navigation dead at launch from a leaked shared
+  `text_input_active`, Ctrl-C exit 130, stray non-TTY stderr line
+  (`69114b5`), Ctrl-C swallowed while typing (`57cbc39`), `q` at a tab root
+  (`47ac255`); `/pr-review` polish incl. a deterministic render-cost test
+  replacing a wall-clock bound (`93bf324`).
+
+**Tests / gate:**
+
+- New targets: 58 (`tui__01`..`tui__21`, `cli__30`; see the row above).
+- Task-close full suite (all labels): 433/440 at `f336f5c`; the 7 failures
+  were environmental - e2e 14-18 (no GNU `timeout`; 19/19 e2e pass with the
+  `gtimeout` shim), `hiredis-test` (third-party, needs `redis-server`), and
+  `tui__10` (wall-clock bound under load; 3/3 in isolation; replaced by a
+  deterministic byte-count check in `93bf324`). Unit 307/307 at `93bf324`.
+  The `commands__14`/`commands__29`/`tui__19` concurrency flakes did not
+  recur.
+- ThreadSanitizer (new `cmake-build-tsan`, `tui__*` x57): no data races;
+  `tui__10` green under TSan after `93bf324`.
+- Every subtask: `/verify-subtask` + security review, findings fixed in one
+  follow-up commit. Task-close `/pr-review`: security PASS (T-110..T-126
+  hold end-to-end); feature REQUEST_CHANGES (1 blocking) -> fixed in
+  `93bf324`.
+- Manual smoke (macOS pty): all runnable items PASS; S8 limited (no
+  cross-process analytics); S15/S19 not run; Windows Terminal, conhost,
+  Linux and tmux rows NOT RUN (no such host).
+
+**Spec reconciliation:** detail views, row JSON and forms are hosted
+inline in the parent screen (ratified): spec 14's
+`src/tui/screens/row_json_screen.cpp` is *superseded by inline hosting in
+`tables_screen.cpp`*; specs 12/13/08 are *consumed* with inline hosting.
+Raw-JSON toggle is `Ctrl-R` (not `Ctrl-J`), import submit is `Ctrl-S`,
+Dashboard issues 4 `link.list` count calls (all ratified, recorded in
+ADR 0003 "As-built amendments"). All other 06.0 subtask specs are
+*consumed* as written.
+
+**Open decisions raised at close:** see the 2026-11-19 "06.0 close"
+entry in Notes & decisions.
+
 ## Open risks
 
 - **Storage unification (02.0)** touches the path every link command and the
@@ -571,3 +638,29 @@ no decision D1-D16 or contract C1-C11 reversed. Amended specs:
 - **Display ruling (user):** in read-only, Links defaults to status `active`; `all` /
   `deleted` choices render disabled with the `not_authorized` reason. Dashboard total /
   deleted counts show `n/a (read-only)`; active / disabled still load. Nothing hidden.
+
+### 2026-11-19 - 06.0 close: open decisions and follow-ups
+
+Task 06.0 closed (see per-task detail). Raised to the user at close,
+pending a ruling unless marked:
+
+1. `tui` has no `--path-root` / `--no-file-paths` (serve-stdio has both);
+   a non-read-only local operator gets unconfined import/export paths.
+   Read-only sessions cannot use paths (both path forms require `write`).
+   LOW; parity recommended.
+2. Manual smoke on Windows Terminal, legacy conhost, Linux and tmux needs a
+   human run of `docs/testing/tui_manual_smoke.md` (criterion 1 of
+   06.0/20); macOS pty pass is complete.
+3. e2e 14-18 depend on GNU `timeout` (macOS needs a `gtimeout` shim).
+4. `SettingsInfo` is a TUI-local mirror of `app::SystemInfo` because the
+   C8 boundary forbids `url_shortener/app/` includes: ratify, or carve out
+   `app/system_info.hpp`.
+5. A future remote `ICommandClient` must override `required_permission`
+   (base default under-estimates argument-dependent permission; the server
+   still enforces). Carry to the remote-client work.
+6. LOW: Ctrl-C needs a live UI thread (raw mode); a wedged loop leaves only
+   SIGTERM. INFO: SIGHUP restore relies on FTXUI's handler only.
+7. Carried from earlier tasks, still open: clang-format version pinning,
+   vcpkg baseline for ftxui 7.0.3, 0002 constraints T-92/T-100/T-108, the
+   SME transcript in `adding-a-transport.md`, the Y2038 SQLite read, and the
+   co-author trailer variance in branch history.
