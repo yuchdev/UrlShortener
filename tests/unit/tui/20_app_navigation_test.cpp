@@ -309,3 +309,92 @@ BOOST_AUTO_TEST_CASE(ctrl_c_exits_cleanly_while_text_input_focused)
     BOOST_TEST((fx.router.active_tab() == before));
     BOOST_TEST(!help_visible);  // `?` did not open help while typing
 }
+
+// ---------------------------------------------------------------------------
+// D11 / spec S21: `q` at a non-Dashboard tab root returns to the Dashboard
+// (edge `Settings --> Dashboard: q`). Before the fix Router::pop was a no-op at
+// a tab root, so `q` did nothing.
+// On failure first check: the `q` branch of handle_global_key.
+// ---------------------------------------------------------------------------
+BOOST_AUTO_TEST_CASE(q_at_non_dashboard_tab_root_returns_to_dashboard)
+{
+    AppNavFixture fx;
+    tui::sync_active_screen(fx.screens, fx.router, fx.context, fx.entered_tab);
+
+    BOOST_TEST(fx.press('7').handled);  // Settings tab root
+    BOOST_TEST((fx.router.active_tab() == tui::ScreenId::settings));
+
+    const tui::GlobalKeyOutcome outcome = fx.press('q');
+    BOOST_TEST(outcome.handled);
+    BOOST_TEST(!outcome.exit_requested);
+    BOOST_TEST((fx.router.active_tab() == tui::ScreenId::dashboard));
+}
+
+// ---------------------------------------------------------------------------
+// D11: `q` on a nested route pops (unchanged). Switch to Links, push the nested
+// Link detail, then `q` pops back to the Links root - not the Dashboard.
+// ---------------------------------------------------------------------------
+BOOST_AUTO_TEST_CASE(q_on_a_nested_route_pops)
+{
+    AppNavFixture fx;
+    tui::sync_active_screen(fx.screens, fx.router, fx.context, fx.entered_tab);
+
+    BOOST_TEST(fx.press('2').handled);  // Links tab root
+    BOOST_TEST(fx.router.push(tui::ScreenId::link_detail));  // nested route
+    BOOST_TEST((fx.router.current() == tui::ScreenId::link_detail));
+
+    const tui::GlobalKeyOutcome outcome = fx.press('q');
+    BOOST_TEST(outcome.handled);
+    BOOST_TEST(!outcome.exit_requested);
+    BOOST_TEST((fx.router.current() == tui::ScreenId::links));  // popped
+    BOOST_TEST((fx.router.active_tab() == tui::ScreenId::links));
+}
+
+// ---------------------------------------------------------------------------
+// D11: `q` at the Dashboard root is a no-op and never quits the app.
+// ---------------------------------------------------------------------------
+BOOST_AUTO_TEST_CASE(q_at_dashboard_root_is_a_noop)
+{
+    AppNavFixture fx;
+    tui::sync_active_screen(fx.screens, fx.router, fx.context, fx.entered_tab);
+    BOOST_TEST((fx.router.active_tab() == tui::ScreenId::dashboard));
+
+    const tui::GlobalKeyOutcome outcome = fx.press('q');
+    BOOST_TEST(!outcome.handled);
+    BOOST_TEST(!outcome.exit_requested);
+    BOOST_TEST((fx.router.active_tab() == tui::ScreenId::dashboard));
+}
+
+// ---------------------------------------------------------------------------
+// D11: `q` stays typable in a focused Input - it falls through (no back, no
+// nav, no exit) so it reaches the field. Also confirms Esc is still a no-op
+// back key at a tab root (unchanged by the `q` fix).
+// ---------------------------------------------------------------------------
+BOOST_AUTO_TEST_CASE(q_in_a_focused_input_is_typed_and_esc_is_unchanged)
+{
+    AppNavFixture fx;
+    tui::sync_active_screen(fx.screens, fx.router, fx.context, fx.entered_tab);
+
+    // Focus a text field (Import/Export paste area).
+    BOOST_TEST(fx.press('4').handled);
+    tui::sync_active_screen(fx.screens, fx.router, fx.context, fx.entered_tab);
+    BOOST_TEST(fx.context.text_input_active);
+
+    const tui::ScreenId before = fx.router.active_tab();
+    const tui::GlobalKeyOutcome typed = fx.press('q');
+    BOOST_TEST(!typed.handled);  // falls through to the Input
+    BOOST_TEST(!typed.exit_requested);
+    BOOST_TEST((fx.router.active_tab() == before));
+
+    // Esc behavior is unchanged by the `q` fix: unlike `q`, Esc is a plain
+    // no-op at a non-Dashboard tab root (it does not return to the Dashboard).
+    fx.context.text_input_active = false;  // leave the field so keys dispatch
+    BOOST_TEST(fx.press('7').handled);  // Settings tab root
+    BOOST_TEST((fx.router.active_tab() == tui::ScreenId::settings));
+    bool help_visible = false;
+    const tui::GlobalKeyOutcome esc = tui::handle_global_key(
+        ftxui::Event::Escape, fx.router, fx.context, help_visible);
+    BOOST_TEST(!esc.handled);  // pop() is a no-op at a tab root
+    BOOST_TEST(
+        (fx.router.active_tab() == tui::ScreenId::settings));  // unchanged
+}

@@ -107,7 +107,19 @@ GlobalKeyOutcome handle_global_key(const ftxui::Event& event,
             return {router.navigate_tab(key), false};
         }
         if (key == 'q') {
-            return {router.pop(), false};
+            // `q` is the back action (ADR 0003 D11). On a nested route it pops;
+            // on a non-Dashboard tab root it returns to the Dashboard (D11 edge
+            // `Settings --> Dashboard: q`, spec S21) through the same
+            // navigate-tab hand-off a digit uses; on the Dashboard root it is a
+            // no-op. `pop` is a documented no-op at a tab root, so a `false`
+            // result distinguishes the two root cases without extra state.
+            if (router.pop()) {
+                return {true, false};
+            }
+            if (router.active_tab() != ScreenId::dashboard) {
+                return {router.navigate_tab('1'), false};
+            }
+            return {false, false};
         }
     }
     return {false, false};

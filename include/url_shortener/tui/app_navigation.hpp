@@ -91,6 +91,12 @@ struct GlobalKeyOutcome
  * a confirm - otherwise FTXUI's `!handled` path latches SIGINT and the process
  * exits 130 instead of 0 (06.0/20 review, D1/S1).
  *
+ * The back action differs between the two back keys at a tab root (ADR 0003
+ * D11): `Esc` only pops a nested route and is a no-op at any tab root, while
+ * `q` pops a nested route, returns from a non-Dashboard tab root to the
+ * Dashboard (D11 `Settings --> Dashboard: q`, spec S21), and is a no-op at the
+ * Dashboard root. `q` never quits the app and stays typable inside an `Input`.
+ *
  * @param event The event to dispatch.
  * @param router The navigation state machine; `navigate_tab`/`pop` are applied
  * for the recognized keys.
