@@ -400,6 +400,56 @@ settings, listener ports and `analytics_client_hash_salt` are deliberately never
 `system.info` at all, not merely hidden): see 03.0/17's Dependencies section for the exact, named exclusion
 list.
 
+## As-built amendments (Task 06.0 implementation)
+
+The diagrams above are the design intent; implementation (subtasks 06.0/01-21)
+intentionally deviated in the places below. Each is listed with its reason, per
+the ADR rule "deviations amend the ADR". The deviations were verified rendering
+in the manual smoke checklist
+([`docs/testing/tui_manual_smoke.md`](/docs/testing/tui_manual_smoke.md), D1-D13
+matrix); non-rendering/wire deviations already recorded in the milestone
+`status.md` "Notes & decisions" are cross-referenced, not duplicated.
+
+1. **Inline hosting of detail, forms and row-JSON (D4, D5, D6).** The link
+   detail/stats view (D4), the new/edit and generic command forms (D5), and the
+   Tables row-JSON view (D6) are hosted **inline inside their parent screen**
+   (Links, Tables, Palette), not as separate screen nodes on the D11 stack.
+   *Reason:* FTXUI focus and teardown are simpler and UAF-safe when a transient
+   child is `Add`-ed to and `Detach`-ed from its parent component than when a
+   new screen is pushed on the router stack; the parent already owns the
+   `ScreenContext` lifetime the child needs. D11's `LinkDetail`/`RowJson`/
+   `LinkForm`/`GenericForm` nodes are therefore sub-modes of their parent, not
+   independent screens.
+
+2. **Key bindings for the generic command flow and import (D7, D9).** In the
+   generic command/palette flow, **`Ctrl-R`** toggles the raw-JSON args editor
+   and **`Ctrl-S`** runs the command; in Import/Export, **`Ctrl-S`** starts the
+   import. *Reason:* FTXUI's `Input` consumes `Enter`/`Tab` for text entry and
+   field/button activation, so a plain-key submit would be ambiguous while a
+   field is focused; a `Ctrl-` chord is unambiguous and never collides with
+   typing. (The D9 sketch did not pin a submit key; this records the chosen one.)
+
+3. **Read-only display rules (D2, D3).** Ratified 2026-11-19 (see `status.md`).
+   Because `link.list`/`link.export` raise their required permission to `write`
+   for `status=all|deleted` (and export `path`) via `permission_for`, a
+   `--read-only` (`ControlSet::User`) session cannot run those argument shapes.
+   The TUI therefore: on the **Dashboard (D2)** renders `total` and `deleted`
+   counts and the redirects line as `n/a (read-only)` while `active`/`disabled`
+   still load; on the **Links table (D3)** defaults the status filter to
+   `active` and renders the `all`/`deleted` radios disabled with the
+   `not_authorized` reason. Nothing is hidden (ADR rule 5). *Reason:* issuing a
+   request the server will refuse would surface a confusing error toast on the
+   landing screen; the client preflight (`ICommandClient::required_permission`,
+   contract C8 extension) evaluates the real `max(base, permission_for(args))`
+   and dims the un-runnable choices instead.
+
+4. **Dashboard count sourcing (D2).** The Dashboard issues **four** `link.list`
+   calls (`status = all | active | disabled | deleted`, each `limit:1`, reading
+   only `total`) for the counts line, and renders redirects-24h / success% / p50
+   / "Top slugs" as `n/a` or a bounded sample, because no `stats.summary`
+   command exists in Milestone 0006. *Reason:* already noted as aspirational in
+   D2; this records the concrete as-built sourcing.
+
 ## Alternatives Considered
 
 (Library alternatives in Decision 1.) For architecture: **bespoke screens

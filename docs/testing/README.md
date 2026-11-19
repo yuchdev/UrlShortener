@@ -142,6 +142,10 @@ Companion documents:
   runtime assertion helper.
 - [`e2e_testing/AGENTIC_QA.md`](./e2e_testing/AGENTIC_QA.md) documents the e2e
   scenario execution model.
+- [`cli_link_commands.md`](./cli_link_commands.md) is the manual checklist for
+  the `link` one-shot CLI subcommands.
+- [`tui_manual_smoke.md`](./tui_manual_smoke.md) is the manual smoke checklist
+  (S1-S21) and D1-D13 diagram sign-off for the interactive `tui` mode.
 - Category plans:
   - [`testplans/unit.md`](./testplans/unit.md)
   - [`testplans/contract.md`](./testplans/contract.md)
