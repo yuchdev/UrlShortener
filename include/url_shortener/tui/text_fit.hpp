@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
 #include <string>
 #include <string_view>
 
@@ -13,10 +14,13 @@ namespace url_shortener::tui
  * sanitizer for the TUI model layer (ADR 0003 Decision 2, threat model T-110).
  *
  * These helpers are FTXUI-free (they belong to `url_shortener_tui_model`) and
- * pure: no threads, no clocks, no I/O. @ref sanitize_for_terminal is the single
- * terminal-control choke point every render sink must apply to server/stored
- * strings *before* width fitting; @ref display_width and @ref truncate_to_width
- * then fit the already-safe text into a cell.
+ * pure: no clocks, no I/O, and their output depends only on their arguments.
+ * @ref sanitize_for_terminal is the single terminal-control choke point every
+ * render sink must apply to server/stored strings *before* width fitting;
+ * @ref display_width and @ref truncate_to_width then fit the already-safe text
+ * into a cell. The only state here is a thread-local test-instrumentation
+ * counter (@ref sanitize_input_bytes_scanned_for_testing) that never affects
+ * any result and is read only by tests.
  */
 
 /**
@@ -127,5 +131,31 @@ std::string pad_to_width(const std::string& utf8,
  */
 std::string sanitize_for_terminal(std::string_view in,
                                   std::size_t max_bytes = 64 * 1024);
+
+/**
+ * @brief Test-only instrumentation: input bytes consumed by
+ * @ref sanitize_for_terminal on the calling thread since the last reset.
+ *
+ * @ref sanitize_for_terminal stops scanning once its output reaches `max_bytes`
+ * (it breaks rather than splitting a code point), so for benign content the
+ * input it consumes is bounded by the cap, independent of how large the field
+ * is. Because it is the single per-cell terminal-control choke point every
+ * table/render sink applies, this counter lets a test prove deterministically -
+ * with no flaky wall-clock bound - that the layout is not `O(field-bytes)` per
+ * frame: growing a cell past the cap must not increase the bytes scanned.
+ *
+ * The counter is a thread-local that is incremented inside
+ * @ref sanitize_for_terminal; it never changes the sanitized result and
+ * production code never reads it.
+ *
+ * @return The accumulated input-byte count on the current thread.
+ */
+std::uint64_t sanitize_input_bytes_scanned_for_testing() noexcept;
+
+/**
+ * @brief Resets the @ref sanitize_input_bytes_scanned_for_testing counter for
+ * the calling thread to zero.
+ */
+void reset_sanitize_input_bytes_scanned_for_testing() noexcept;
 
 }  // namespace url_shortener::tui

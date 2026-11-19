@@ -94,6 +94,9 @@ void MutationFlow::cancel()
 
 bool MutationFlow::busy() const
 {
+    // The caller's in-flight count is process-global (shared by every screen),
+    // not this flow's token, so this is deliberately conservative - see the
+    // header. It gates duplicate submits only, so over-reporting busy is safe.
     return m_deps_.caller.busy();
 }
 

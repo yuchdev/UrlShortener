@@ -170,9 +170,17 @@ public:
     /**
      * @brief Whether a submitted call is still outstanding.
      *
-     * @return `true` when the injected @ref AsyncCaller reports work in flight;
-     * used by callers to refuse a duplicate submit (double Ctrl-S sends one
-     * request).
+     * Reflects the injected @ref AsyncCaller's GLOBAL in-flight count, not this
+     * flow's own token: `busy()` is `true` whenever *any* command submitted
+     * through the same caller (any screen, including a background refresh) is
+     * still running, even if this particular flow has submitted nothing. This
+     * is deliberately conservative - it is used only to refuse a duplicate
+     * submit (a double Ctrl-S sends one request), so erring toward "busy" at
+     * worst makes the operator press again once the shared caller drains; it
+     * never drops or misattributes a request.
+     *
+     * @return `true` when the injected @ref AsyncCaller reports any work in
+     * flight; `false` when the caller is idle.
      */
     bool busy() const;
 

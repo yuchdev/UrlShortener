@@ -1,6 +1,5 @@
 #define BOOST_TEST_MODULE TuiTableViewRenderTest
 
-#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <string>
@@ -366,35 +365,49 @@ BOOST_AUTO_TEST_CASE(long_error_text_is_width_fit)
 }
 
 // ---------------------------------------------------------------------------
-// T-121: 20 rows x 64 KiB hostile cells render within a sane time bound (the
-// per-cell width estimate and the window computation are bounded, not O(field)
-// per frame).
-// On failure first check: desired_width's prefix cap and layout_window reuse.
+// T-121: rendering 20 rows of hostile cells is not O(field-bytes) per frame.
+// Deterministic (load- and sanitizer-independent, replacing a flaky wall-clock
+// bound): sanitize_for_terminal is the single per-cell terminal-control choke
+// point every table cell passes through, and it stops scanning once its output
+// reaches the byte cap, so growing a cell past the cap must add ZERO extra
+// bytes scanned. Count the input bytes it consumes for cap-sized vs 4x-cap
+// cells and assert they are equal - a naive O(field) layout would scan 4x more.
+// On failure first check: sanitize_for_terminal's cap break and that the table
+// body still routes every cell through fit_cell (not a raw, unbounded scan).
 // ---------------------------------------------------------------------------
-BOOST_AUTO_TEST_CASE(huge_cells_render_within_bound)
+BOOST_AUTO_TEST_CASE(huge_cells_render_in_bounded_work_independent_of_size)
 {
-    PageResult page;
-    page.total = 20;
-    for (int r = 0; r < 20; ++r) {
-        page.rows.push_back(
-            {url_shortener::tui::testing::big_field(), "x", "y", "1", "-"});
-        page.raw_rows.push_back("{}");
-    }
-    TableModel model = primed(d3_columns(), std::move(page));
-    ftxui::Component view = make_table_view(model, dark_options("Links"));
+    const auto scan_for_cell_size = [](std::size_t cell_bytes) -> std::uint64_t
+    {
+        PageResult page;
+        page.total = 20;
+        for (int r = 0; r < 20; ++r) {
+            page.rows.push_back(
+                {std::string(cell_bytes, 'A'), "x", "y", "1", "-"});
+            page.raw_rows.push_back("{}");
+        }
+        TableModel model = primed(d3_columns(), std::move(page));
+        ftxui::Component view = make_table_view(model, dark_options("Links"));
+        url_shortener::tui::reset_sanitize_input_bytes_scanned_for_testing();
+        for (int frame = 0; frame < 10; ++frame) {
+            const std::string grid = render_to_text(view->Render(), 80, 24);
+            BOOST_TEST(!grid.empty());
+        }
+        return url_shortener::tui::sanitize_input_bytes_scanned_for_testing();
+    };
 
-    const auto start = std::chrono::steady_clock::now();
-    for (int frame = 0; frame < 10; ++frame) {
-        const std::string grid = render_to_text(view->Render(), 80, 24);
-        BOOST_TEST(!grid.empty());
-    }
-    const auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(
-                             std::chrono::steady_clock::now() - start)
-                             .count();
-    // A naive O(field) per-frame layout would take far longer than this.
-    BOOST_TEST(
-        elapsed < 5,
-        "10 frames over 20x64 KiB cells took too long: " << elapsed << "s");
+    // 64 KiB cells == the sanitizer's default byte cap; 256 KiB cells are 4x
+    // it.
+    const std::uint64_t at_cap = scan_for_cell_size(64u * 1024u);
+    const std::uint64_t past_cap = scan_for_cell_size(256u * 1024u);
+
+    // Field 4x larger, zero extra bytes scanned: the per-cell scan is bounded
+    // by the cap, so the render is not O(field-bytes) per frame.
+    BOOST_TEST(past_cap == at_cap);
+    // Sanity: the bounded work stays far below a single naive full scan of the
+    // larger cells (20 cells * 256 KiB * 10 frames).
+    BOOST_TEST(past_cap < 20ull * 256ull * 1024ull * 10ull);
+    BOOST_TEST(past_cap > 0ull);
 }
 
 // ---------------------------------------------------------------------------

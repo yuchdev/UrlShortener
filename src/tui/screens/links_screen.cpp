@@ -78,6 +78,22 @@ constexpr char k_items_field[] = "items";
 /**
  * @brief The Links tab body: the D3 table plus the inline new/edit form and the
  * link detail / preview viewer (subtask 06.0/12).
+ *
+ * Lifetime: this top-level screen component lives for the whole of `App::run`
+ * (the `Container::Tab` keeps every screen alive; tab switches never destroy
+ * it), so a completion that captures `this` is safe for the whole session. It
+ * needs no separate per-screen alive guard: every async call routes through the
+ * injected @ref AsyncCaller (its submits via the member @ref MutationFlow,
+ * whose own `m_alive_` drops a late completion when an inline detail/edit
+ * sub-screen is torn down), and `App::run` declares the `LoopRuntime` - hence
+ * the caller - before the screens, so the caller is destroyed AFTER them: at
+ * shutdown `AsyncCaller`'s own `m_alive_` marks it dead and joins its workers,
+ * so a call in flight at teardown is dropped, never delivered to a destroyed
+ * screen (T-120). If this screen ever adds a poll timer or posts directly
+ * through
+ * @ref IUiPoster (bypassing the caller's completion guard), that handler MUST
+ * capture a `std::weak_ptr` alive-guard, as JobsComponent and
+ * DashboardComponent do.
  */
 class LinksComponent final : public ftxui::ComponentBase
 {
@@ -160,6 +176,14 @@ public:
     /// cannot open a viewer behind another tab, and tear down an open detail
     /// screen so re-entering the tab lands on the table (its in-flight calls
     /// are cancelled by @ref finish_detail_close).
+    ///
+    /// An open new/edit FORM (@ref Mode::form) is deliberately NOT closed here:
+    /// half-entered form input must survive a tab switch so the operator can
+    /// consult another tab (e.g. Tables) and return to the still-populated
+    /// form, rather than losing their typing. Only the read-only preview and
+    /// the detail viewer - which hold in-flight reads or a transient result and
+    /// have no unsaved input - are cleaned up. A regression test
+    /// (`form_survives_leave_enter_while_detail_closed`) pins this.
     void on_leave_cleanup()
     {
         cancel_preview();

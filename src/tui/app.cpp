@@ -74,17 +74,20 @@ struct TabSlot
     const char* message;
 };
 
-/// Default placeholder bodies for the eight D1 tabs. Analytics is permanent
-/// (ADR 0003 non-goal); the rest are temporary until subtasks 11-17/21 land.
+/// Default placeholder bodies for the eight D1 tabs. Analytics is a permanent
+/// placeholder (ADR 0003 non-goal, provided by Milestone 0002). Every other tab
+/// now ships a real screen registered by `tui_entry`, so its placeholder should
+/// never be seen: it is a fallback that only renders if that factory was not
+/// registered, hence the explicit "(bug)" wording.
 const TabSlot k_tab_slots[] = {
-    {ScreenId::dashboard, "Dashboard: not implemented"},
-    {ScreenId::links, "Links: not implemented"},
-    {ScreenId::tables, "Tables: not implemented"},
-    {ScreenId::import_export, "Import/Export: not implemented"},
-    {ScreenId::jobs, "Jobs: not implemented"},
+    {ScreenId::dashboard, "Dashboard: factory not registered (bug)"},
+    {ScreenId::links, "Links: factory not registered (bug)"},
+    {ScreenId::tables, "Tables: factory not registered (bug)"},
+    {ScreenId::import_export, "Import/Export: factory not registered (bug)"},
+    {ScreenId::jobs, "Jobs: factory not registered (bug)"},
     {ScreenId::analytics, "Analytics: provided by Milestone 0002"},
-    {ScreenId::settings, "Settings: not implemented"},
-    {ScreenId::palette, "Command palette: not implemented"},
+    {ScreenId::settings, "Settings: factory not registered (bug)"},
+    {ScreenId::palette, "Command palette: factory not registered (bug)"},
 };
 
 /**

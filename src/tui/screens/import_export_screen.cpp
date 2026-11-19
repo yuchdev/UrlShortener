@@ -118,6 +118,22 @@ ImportFormat other_format(ImportFormat f)
 /**
  * @brief The Import / Export body: two job-backed forms over one mutation
  * choke point (subtask 06.0/15).
+ *
+ * Lifetime: this top-level screen component lives for the whole of `App::run`
+ * (the `Container::Tab` keeps every screen alive; tab switches never destroy
+ * it), so a completion that captures `this` is safe for the whole session. Its
+ * submits route through the member @ref MutationFlow, whose own `m_alive_`
+ * already drops a late completion; and `App::run` declares the `LoopRuntime` -
+ * hence the @ref AsyncCaller - before the screens, so the caller is destroyed
+ * AFTER them and `AsyncCaller`'s own `m_alive_` drops any call in flight at
+ * teardown rather than delivering it to a destroyed screen (T-120). So no
+ * separate per-screen guard is strictly required here. It nonetheless keeps its
+ * own @ref m_alive_ weak-guard, captured by @ref make_on_result, as defence in
+ * depth around the post-submit navigation that touches @ref m_context_. If this
+ * screen ever adds a poll timer or posts directly through @ref IUiPoster
+ * (bypassing the caller's completion guard), such a handler MUST likewise
+ * capture that `std::weak_ptr` alive-guard, as JobsComponent and
+ * DashboardComponent do.
  */
 class ImportExportComponent final : public ftxui::ComponentBase
 {

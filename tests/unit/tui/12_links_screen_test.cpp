@@ -271,6 +271,38 @@ BOOST_AUTO_TEST_CASE(n_opens_create_form)
 }
 
 // ---------------------------------------------------------------------------
+// D11 regression: an open new/edit form survives a tab leave/enter (on_leave ->
+// on_enter) while no detail view is open, so half-entered input is not lost
+// when the operator consults another tab and returns. on_leave_cleanup tears
+// down only the preview and the detail viewer, never the form. On failure first
+// check: on_leave_cleanup closing Mode::form.
+// ---------------------------------------------------------------------------
+BOOST_AUTO_TEST_CASE(form_survives_leave_enter_while_detail_closed)
+{
+    Fixture fx;
+    fx.client.enqueue("link.list", ok(list_four()));
+
+    std::unique_ptr<tui::IScreen> screen = fx.screen();
+    screen->on_enter();
+    fx.settle(1);
+    render_twice(screen->component(), 80, 24);
+
+    // Open the create form (Mode::form), detail viewer closed.
+    send_events(screen->component(), {ftxui::Event::Character("n")});
+    const std::string opened = render_to_text(screen->component(), 80, 24);
+    BOOST_TEST(opened.find("(command: link.create") != std::string::npos);
+
+    // Leave and re-enter the tab. A stale re-entry may refresh, so keep a
+    // response ready but do not require it - the form must survive either way.
+    fx.client.enqueue("link.list", ok(list_four()));
+    screen->on_leave();
+    screen->on_enter();
+
+    const std::string back = render_to_text(screen->component(), 80, 24);
+    BOOST_TEST(back.find("(command: link.create") != std::string::npos);
+}
+
+// ---------------------------------------------------------------------------
 // `t` on an active row sends link.disable after a confirm.
 // ---------------------------------------------------------------------------
 BOOST_AUTO_TEST_CASE(t_on_active_sends_link_disable_after_confirm)

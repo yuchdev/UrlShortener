@@ -1,15 +1,21 @@
-#include <url_shortener/tui/text_fit.hpp>
-
 #include <cstddef>
 #include <cstdint>
 #include <string>
 #include <string_view>
+
+#include <url_shortener/tui/text_fit.hpp>
 
 namespace url_shortener::tui
 {
 
 namespace
 {
+
+///< Test-only instrumentation: input bytes consumed by the most recent
+///< @ref sanitize_for_terminal calls on this thread. Thread-local so the
+///< single-threaded render tests read a deterministic count without locking;
+///< never read by production code and it never affects the sanitized result.
+thread_local std::uint64_t g_sanitize_input_bytes_scanned = 0;
 
 ///< Unicode scalar value of the replacement character U+FFFD.
 constexpr std::uint32_t k_replacement = 0xFFFDu;
@@ -31,8 +37,7 @@ void decode_utf8(std::string_view s,
                  std::size_t& len)
 {
     const auto byte = static_cast<unsigned char>(s[pos]);
-    if (byte < 0x80u)
-    {
+    if (byte < 0x80u) {
         cp = byte;
         len = 1;
         return;
@@ -41,43 +46,36 @@ void decode_utf8(std::string_view s,
     std::size_t need = 0;
     std::uint32_t value = 0;
     std::uint32_t lowest = 0;
-    if ((byte & 0xE0u) == 0xC0u)
-    {
+    if ((byte & 0xE0u) == 0xC0u) {
         need = 1;
         value = byte & 0x1Fu;
         lowest = 0x80u;
     }
-    else if ((byte & 0xF0u) == 0xE0u)
-    {
+    else if ((byte & 0xF0u) == 0xE0u) {
         need = 2;
         value = byte & 0x0Fu;
         lowest = 0x800u;
     }
-    else if ((byte & 0xF8u) == 0xF0u)
-    {
+    else if ((byte & 0xF8u) == 0xF0u) {
         need = 3;
         value = byte & 0x07u;
         lowest = 0x10000u;
     }
-    else
-    {
+    else {
         cp = k_replacement;
         len = 1;
         return;
     }
 
-    if (pos + need >= s.size())
-    {
+    if (pos + need >= s.size()) {
         cp = k_replacement;
         len = 1;
         return;
     }
 
-    for (std::size_t k = 1; k <= need; ++k)
-    {
+    for (std::size_t k = 1; k <= need; ++k) {
         const auto cont = static_cast<unsigned char>(s[pos + k]);
-        if ((cont & 0xC0u) != 0x80u)
-        {
+        if ((cont & 0xC0u) != 0x80u) {
             cp = k_replacement;
             len = 1;
             return;
@@ -85,8 +83,8 @@ void decode_utf8(std::string_view s,
         value = (value << 6) | (cont & 0x3Fu);
     }
 
-    if (value < lowest || value > 0x10FFFFu ||
-        (value >= 0xD800u && value <= 0xDFFFu))
+    if (value < lowest || value > 0x10FFFFu
+        || (value >= 0xD800u && value <= 0xDFFFu))
     {
         cp = k_replacement;
         len = 1;
@@ -113,11 +111,9 @@ constexpr std::size_t k_max_combining_marks = 4;
  */
 bool is_combining_mark(std::uint32_t cp)
 {
-    return (cp >= 0x0300u && cp <= 0x036Fu) ||
-           (cp >= 0x1AB0u && cp <= 0x1AFFu) ||
-           (cp >= 0x1DC0u && cp <= 0x1DFFu) ||
-           (cp >= 0x20D0u && cp <= 0x20FFu) ||
-           (cp >= 0xFE20u && cp <= 0xFE2Fu);
+    return (cp >= 0x0300u && cp <= 0x036Fu) || (cp >= 0x1AB0u && cp <= 0x1AFFu)
+        || (cp >= 0x1DC0u && cp <= 0x1DFFu) || (cp >= 0x20D0u && cp <= 0x20FFu)
+        || (cp >= 0xFE20u && cp <= 0xFE2Fu);
 }
 
 /**
@@ -134,69 +130,56 @@ bool is_combining_mark(std::uint32_t cp)
 bool is_forbidden_codepoint(std::uint32_t cp)
 {
     // C1 controls as code points (e.g. encoded as 0xC2 0x80..0xC2 0x9F).
-    if (cp >= 0x0080u && cp <= 0x009Fu)
-    {
+    if (cp >= 0x0080u && cp <= 0x009Fu) {
         return true;
     }
     // Soft hyphen (invisible unless line-wrapped).
-    if (cp == 0x00ADu)
-    {
+    if (cp == 0x00ADu) {
         return true;
     }
     // Combining grapheme joiner (invisible format control).
-    if (cp == 0x034Fu)
-    {
+    if (cp == 0x034Fu) {
         return true;
     }
     // Arabic letter mark.
-    if (cp == 0x061Cu)
-    {
+    if (cp == 0x061Cu) {
         return true;
     }
     // Mongolian vowel separator (zero-width in modern Unicode).
-    if (cp == 0x180Eu)
-    {
+    if (cp == 0x180Eu) {
         return true;
     }
     // Zero-width space / non-joiner / joiner.
-    if (cp >= 0x200Bu && cp <= 0x200Du)
-    {
+    if (cp >= 0x200Bu && cp <= 0x200Du) {
         return true;
     }
     // Left-to-right / right-to-left marks.
-    if (cp == 0x200Eu || cp == 0x200Fu)
-    {
+    if (cp == 0x200Eu || cp == 0x200Fu) {
         return true;
     }
     // Bidi embeddings / overrides / pop.
-    if (cp >= 0x202Au && cp <= 0x202Eu)
-    {
+    if (cp >= 0x202Au && cp <= 0x202Eu) {
         return true;
     }
     // Word joiner.
-    if (cp == 0x2060u)
-    {
+    if (cp == 0x2060u) {
         return true;
     }
     // Bidi isolates.
-    if (cp >= 0x2066u && cp <= 0x2069u)
-    {
+    if (cp >= 0x2066u && cp <= 0x2069u) {
         return true;
     }
     // Variation selectors (alter the rendering of the preceding glyph).
-    if (cp >= 0xFE00u && cp <= 0xFE0Fu)
-    {
+    if (cp >= 0xFE00u && cp <= 0xFE0Fu) {
         return true;
     }
     // Zero-width no-break space / byte-order mark.
-    if (cp == 0xFEFFu)
-    {
+    if (cp == 0xFEFFu) {
         return true;
     }
     // Tag characters and the variation-selector supplement (both invisible and
     // abusable for hidden payloads / spoofing).
-    if (cp >= 0xE0000u && cp <= 0xE01EFu)
-    {
+    if (cp >= 0xE0000u && cp <= 0xE01EFu) {
         return true;
     }
     return false;
@@ -212,8 +195,7 @@ bool is_forbidden_codepoint(std::uint32_t cp)
 std::size_t codepoint_width(std::uint32_t cp)
 {
     // Combining diacritical marks (best-effort zero-width set).
-    if (is_combining_mark(cp))
-    {
+    if (is_combining_mark(cp)) {
         return 0;
     }
 
@@ -246,23 +228,19 @@ std::size_t codepoint_width(std::uint32_t cp)
  */
 void append_utf8(std::uint32_t cp, std::string& out)
 {
-    if (cp < 0x80u)
-    {
+    if (cp < 0x80u) {
         out.push_back(static_cast<char>(cp));
     }
-    else if (cp < 0x800u)
-    {
+    else if (cp < 0x800u) {
         out.push_back(static_cast<char>(0xC0u | (cp >> 6)));
         out.push_back(static_cast<char>(0x80u | (cp & 0x3Fu)));
     }
-    else if (cp < 0x10000u)
-    {
+    else if (cp < 0x10000u) {
         out.push_back(static_cast<char>(0xE0u | (cp >> 12)));
         out.push_back(static_cast<char>(0x80u | ((cp >> 6) & 0x3Fu)));
         out.push_back(static_cast<char>(0x80u | (cp & 0x3Fu)));
     }
-    else
-    {
+    else {
         out.push_back(static_cast<char>(0xF0u | (cp >> 18)));
         out.push_back(static_cast<char>(0x80u | ((cp >> 12) & 0x3Fu)));
         out.push_back(static_cast<char>(0x80u | ((cp >> 6) & 0x3Fu)));
@@ -284,8 +262,7 @@ std::size_t skip_escape_sequence(std::string_view s, std::size_t pos)
 {
     const std::size_t n = s.size();
     std::size_t i = pos + 1;  // past ESC
-    if (i >= n)
-    {
+    if (i >= n) {
         return i;
     }
 
@@ -293,8 +270,7 @@ std::size_t skip_escape_sequence(std::string_view s, std::size_t pos)
     if (intro == 0x5Bu)  // CSI: ESC [
     {
         ++i;
-        while (i < n)
-        {
+        while (i < n) {
             const auto b = static_cast<unsigned char>(s[i]);
             if (b >= 0x20u && b <= 0x3Fu)  // params / intermediates
             {
@@ -303,8 +279,7 @@ std::size_t skip_escape_sequence(std::string_view s, std::size_t pos)
             }
             break;
         }
-        if (i < n)
-        {
+        if (i < n) {
             const auto b = static_cast<unsigned char>(s[i]);
             if (b >= 0x40u && b <= 0x7Eu)  // final byte
             {
@@ -317,8 +292,7 @@ std::size_t skip_escape_sequence(std::string_view s, std::size_t pos)
     if (intro == 0x5Du)  // OSC: ESC ] ... (BEL or ST terminated)
     {
         ++i;
-        while (i < n)
-        {
+        while (i < n) {
             const auto b = static_cast<unsigned char>(s[i]);
             if (b == 0x07u)  // BEL
             {
@@ -328,8 +302,8 @@ std::size_t skip_escape_sequence(std::string_view s, std::size_t pos)
             {
                 return i + 1;
             }
-            if (b == 0x1Bu && i + 1 < n &&
-                static_cast<unsigned char>(s[i + 1]) == 0x5Cu)  // ESC \ ST
+            if (b == 0x1Bu && i + 1 < n
+                && static_cast<unsigned char>(s[i + 1]) == 0x5Cu)  // ESC \ ST
             {
                 return i + 2;
             }
@@ -338,19 +312,18 @@ std::size_t skip_escape_sequence(std::string_view s, std::size_t pos)
         return i;
     }
 
-    if (intro == 0x50u || intro == 0x5Fu || intro == 0x5Eu ||
-        intro == 0x58u)  // DCS / APC / PM / SOS: ST terminated
+    if (intro == 0x50u || intro == 0x5Fu || intro == 0x5Eu
+        || intro == 0x58u)  // DCS / APC / PM / SOS: ST terminated
     {
         ++i;
-        while (i < n)
-        {
+        while (i < n) {
             const auto b = static_cast<unsigned char>(s[i]);
             if (b == 0x9Cu)  // 8-bit ST
             {
                 return i + 1;
             }
-            if (b == 0x1Bu && i + 1 < n &&
-                static_cast<unsigned char>(s[i + 1]) == 0x5Cu)  // ESC \ ST
+            if (b == 0x1Bu && i + 1 < n
+                && static_cast<unsigned char>(s[i + 1]) == 0x5Cu)  // ESC \ ST
             {
                 return i + 2;
             }
@@ -360,21 +333,17 @@ std::size_t skip_escape_sequence(std::string_view s, std::size_t pos)
     }
 
     // Short escape: optional intermediates then one final byte.
-    while (i < n)
-    {
+    while (i < n) {
         const auto b = static_cast<unsigned char>(s[i]);
-        if (b >= 0x20u && b <= 0x2Fu)
-        {
+        if (b >= 0x20u && b <= 0x2Fu) {
             ++i;
             continue;
         }
         break;
     }
-    if (i < n)
-    {
+    if (i < n) {
         const auto b = static_cast<unsigned char>(s[i]);
-        if (b >= 0x30u && b <= 0x7Eu)
-        {
+        if (b >= 0x30u && b <= 0x7Eu) {
             ++i;
         }
     }
@@ -387,8 +356,7 @@ std::size_t display_width(const std::string& utf8)
 {
     std::size_t width = 0;
     std::size_t i = 0;
-    while (i < utf8.size())
-    {
+    while (i < utf8.size()) {
         std::uint32_t cp = 0;
         std::size_t len = 0;
         decode_utf8(utf8, i, cp, len);
@@ -400,8 +368,7 @@ std::size_t display_width(const std::string& utf8)
 
 std::string truncate_to_width(const std::string& utf8, std::size_t width)
 {
-    if (width == 0)
-    {
+    if (width == 0) {
         return utf8.empty() ? utf8 : std::string();
     }
 
@@ -419,22 +386,19 @@ std::string truncate_to_width(const std::string& utf8, std::size_t width)
         std::size_t i = 0;
         std::size_t cp_count = 0;
         bool fits = true;
-        while (i < utf8.size())
-        {
+        while (i < utf8.size()) {
             std::uint32_t cp = 0;
             std::size_t len = 0;
             decode_utf8(utf8, i, cp, len);
             w += codepoint_width(cp);
             ++cp_count;
-            if (w > width || cp_count > max_codepoints)
-            {
+            if (w > width || cp_count > max_codepoints) {
                 fits = false;
                 break;
             }
             i += len;
         }
-        if (fits)
-        {
+        if (fits) {
             return utf8;
         }
     }
@@ -448,14 +412,12 @@ std::string truncate_to_width(const std::string& utf8, std::size_t width)
     std::size_t w = 0;
     std::size_t i = 0;
     std::size_t cp_count = 0;
-    while (i < utf8.size())
-    {
+    while (i < utf8.size()) {
         std::uint32_t cp = 0;
         std::size_t len = 0;
         decode_utf8(utf8, i, cp, len);
         const std::size_t cw = codepoint_width(cp);
-        if (w + cw > budget || cp_count >= max_codepoints)
-        {
+        if (w + cw > budget || cp_count >= max_codepoints) {
             break;
         }
         out.append(utf8, i, len);
@@ -472,8 +434,7 @@ std::string pad_to_width(const std::string& utf8,
                          bool right_align)
 {
     const std::size_t have = display_width(utf8);
-    if (have >= width)
-    {
+    if (have >= width) {
         return utf8;
     }
     const std::string pad(width - have, ' ');
@@ -490,8 +451,7 @@ std::string sanitize_for_terminal(std::string_view in, std::size_t max_bytes)
     // Consecutive combining marks emitted since the last base character; capped
     // at k_max_combining_marks so a Zalgo flood cannot survive the byte cap.
     std::size_t combining_run = 0;
-    while (i < n)
-    {
+    while (i < n) {
         const auto byte = static_cast<unsigned char>(in[i]);
 
         if (byte == 0x1Bu)  // ESC and the whole sequence it introduces
@@ -506,8 +466,7 @@ std::string sanitize_for_terminal(std::string_view in, std::size_t max_bytes)
         }
         if (byte < 0x20u)  // remaining C0 controls -> single space
         {
-            if (out.size() + 1 > max_bytes)
-            {
+            if (out.size() + 1 > max_bytes) {
                 break;
             }
             out.push_back(' ');
@@ -527,8 +486,7 @@ std::string sanitize_for_terminal(std::string_view in, std::size_t max_bytes)
 
         if (cp == k_replacement && len == 1)  // invalid UTF-8 byte
         {
-            if (out.size() + 3 > max_bytes)
-            {
+            if (out.size() + 3 > max_bytes) {
                 break;
             }
             append_utf8(k_replacement, out);
@@ -537,10 +495,10 @@ std::string sanitize_for_terminal(std::string_view in, std::size_t max_bytes)
             continue;
         }
 
-        if (cp == 0x2028u || cp == 0x2029u)  // line/paragraph separator -> space
+        if (cp == 0x2028u
+            || cp == 0x2029u)  // line/paragraph separator -> space
         {
-            if (out.size() + 1 > max_bytes)
-            {
+            if (out.size() + 1 > max_bytes) {
                 break;
             }
             out.push_back(' ');
@@ -557,13 +515,11 @@ std::string sanitize_for_terminal(std::string_view in, std::size_t max_bytes)
 
         if (is_combining_mark(cp))  // cap a combining run per base character
         {
-            if (combining_run >= k_max_combining_marks)
-            {
+            if (combining_run >= k_max_combining_marks) {
                 i += len;  // drop the excess; do not reset the run
                 continue;
             }
-            if (out.size() + len > max_bytes)
-            {
+            if (out.size() + len > max_bytes) {
                 break;
             }
             out.append(in.data() + i, len);
@@ -581,7 +537,21 @@ std::string sanitize_for_terminal(std::string_view in, std::size_t max_bytes)
         i += len;
     }
 
+    // Record the input bytes consumed for the deterministic render-bound test.
+    // `i` is where the scan stopped - the whole input when it fits, or the cut
+    // point when the output cap was hit - so it is exactly the bytes examined.
+    g_sanitize_input_bytes_scanned += i;
     return out;
+}
+
+std::uint64_t sanitize_input_bytes_scanned_for_testing() noexcept
+{
+    return g_sanitize_input_bytes_scanned;
+}
+
+void reset_sanitize_input_bytes_scanned_for_testing() noexcept
+{
+    g_sanitize_input_bytes_scanned = 0;
 }
 
 }  // namespace url_shortener::tui

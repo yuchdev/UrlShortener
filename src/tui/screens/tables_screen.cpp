@@ -116,6 +116,20 @@ std::vector<std::string> wrap_words(const std::string& text, std::size_t width)
 
 /**
  * @brief The Database tables browser body (D6, subtask 06.0/14).
+ *
+ * Lifetime: this top-level screen component lives for the whole of `App::run`
+ * (the `Container::Tab` keeps every screen alive; tab switches never destroy
+ * it), so a completion that captures `this` is safe for the whole session. It
+ * needs no separate per-screen alive guard: every async call routes through the
+ * injected @ref AsyncCaller (its submits via the member @ref MutationFlow,
+ * whose own `m_alive_` covers an inline insert form torn down mid-session), and
+ * `App::run` declares the `LoopRuntime` - hence the caller - before the
+ * screens, so the caller is destroyed AFTER them: at shutdown `AsyncCaller`'s
+ * own `m_alive_` marks it dead and joins its workers, so a call in flight at
+ * teardown is dropped, never delivered to a destroyed screen (T-120). If this
+ * screen ever adds a poll timer or posts directly through @ref IUiPoster
+ * (bypassing the caller's completion guard), that handler MUST capture a
+ * `std::weak_ptr` alive-guard, as JobsComponent and DashboardComponent do.
  */
 class TablesComponent final : public ftxui::ComponentBase
 {
