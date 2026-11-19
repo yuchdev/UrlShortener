@@ -84,7 +84,7 @@ fixed in `57cbc39`. Results below are the final re-tested state.
 | S1 | Start/quit (D1) | **PASS** (fixed `69114b5`) | Frame matches D1; Ctrl-C now exits `0`; SIGTERM restores echo/canonical. First pass FAILed (Ctrl-C exited 130 - BUG-1). |
 | S1b | Ctrl-C while typing | **PASS** (fixed `57cbc39`) | Ctrl-C exits `0` + termios restored with the Links filter, a form field, and the Import paste focused. First seen after `69114b5`: filter **hung** (force-killed), form/paste exited 130 (BUG-4). |
 | S2 | Min size (D1) | **PASS** | 79x23 -> "terminal too small (need 80x24)"; 80x24 and 140x40 reflow; live `SIGWINCH` resize reflows; no crash. |
-| S3 | Navigation (D11) | **PASS** (fixed `69114b5`) | `1`-`7` and `:` switch tabs; `q`/Esc pops nested screens. First pass FAILed (nav dead - BUG-2). Tab-level `q`->Dashboard is a no-op by design (minor D11 note). |
+| S3 | Navigation (D11) | **PASS** (fixed `69114b5`) | `1`-`7` and `:` switch tabs; `q`/Esc pops nested screens; `q` at a non-Dashboard tab root returns to Dashboard (fixed `47ac255`). First pass FAILed (nav dead - BUG-2). |
 | S4 | Typing vs hotkeys | **PASS** | In the Links filter, typing `1 2 : q` yields `filter: [12:q]`; no navigation. |
 | F1 | Help while typing | **PASS** | F1 opens the help overlay even while an Input is focused; `?` stays typable. |
 | S5 | Dashboard (D2) | **PASS** | Counts match `link.list` totals (30 / 28 / 1 / 1); 4 count calls issued; labels visible; no freeze. |
@@ -291,15 +291,15 @@ nested screen; Analytics (`6`) shows the placeholder.
 
 **Result:** **PASS** (after BUG-2 fix). `1`-`7` switch tabs (Dashboard, Links,
 Tables, Import, Jobs, Analytics placeholder, Settings), `:` opens the palette;
-`q`/Esc pops nested screens (e.g. Links detail -> table). Tab-level `q`->Dashboard
-is a no-op by design (`Router::pop` is a no-op at a tab root; tabs are navigated
-by number) - a minor divergence from D11's `Settings --> Dashboard: q` edge,
-noted below, not a regression. First pass FAILed (nav dead - BUG-2).
+`q`/Esc pops nested screens (e.g. Links detail -> table). `q` at a
+non-Dashboard tab root returns to Dashboard per D11's `Settings --> Dashboard: q`
+edge (fixed in `47ac255`; Esc at a tab root stays a no-op). First pass FAILed
+(nav dead - BUG-2).
 
 | Date | Terminal | Build | Pass/Fail | Notes |
 |---|---|---|---|---|
 | 2026-11-19 | macOS pty 80x24 | 6660172 | FAIL | digits/`:`/`q` swallowed by a shared `text_input_active` (BUG-2) |
-| 2026-11-19 | macOS pty 80x24 | 69114b5 | PASS | all tabs navigate; nested `q`/Esc back works; tab-level `q`->Dashboard is a no-op (minor D11 note) |
+| 2026-11-19 | macOS pty 80x24 | 69114b5 | PASS | all tabs navigate; nested `q`/Esc back works; tab-level `q`->Dashboard initially a no-op, fixed in `47ac255` (pty: `7` then `q` shows Dashboard) |
 
 ### S4. Typing vs hotkeys
 
@@ -674,7 +674,7 @@ and the automated golden(s) under `tests/unit/tui/golden/`.
 | **D8** Jobs | S10, S11 | - | `d08_jobs_80x24`, `d08_jobs_empty_80x24`, `d08_jobs_mono_80x24`, `d08_job_detail_failed_80x24` |
 | **D9** Command palette | S12 | Generic command flow: `Ctrl-S` run, `Ctrl-R` toggles raw-JSON (not `Ctrl-J`) | `d09_palette_empty_80x24`, `d09_palette_link_prefix_80x24`, `d09_palette_readonly_80x24`, `d09_result_view_80x24` |
 | **D10** Confirm / toast | S7 | - | `d10_confirm_delete_80x24`, `d10_confirm_yesno_80x24`, `d10_toast_error_80x24`, `d10_toast_details_80x24` |
-| **D11** Screen state machine | S3 | Live transitions PASS after the BUG-2 fix (tabs by `1`-`7`/`:`; nested `q`/Esc back). One intentional divergence: tab-level `q`->Dashboard is a no-op (`Router::pop` no-ops at a tab root). | (no single golden; router unit tests `tui__04_*`) |
+| **D11** Screen state machine | S3 | Live transitions PASS after the BUG-2 fix (tabs by `1`-`7`/`:`; nested `q`/Esc back). Tab-level `q`->Dashboard edge implemented in `47ac255` (`tui__20_app_navigation_test`). | (no single golden; router unit tests `tui__04_*`) |
 | **D12** Sequence (one create) | S5, S7 | **Snapshot-only** (justified): a wire sequence, not a screen. The request envelope is pinned by the in-process-client request goldens | `07_request_link_create.json`, `07_request_link_list_all.json`, `07_request_link_update_clear.json`, `12_request_link_list_active.json`, `12_request_link_list_all.json` |
 | **D13** Settings | S21 | Always read-only (even for Admin) by design; TLS/ports/salt never read; data source `system.info` | `d13_settings_80x24`, `d13_settings_readonly_80x24`, `d13_settings_mono_80x24`, `d13_settings_unavailable_80x24` |
 
@@ -698,7 +698,7 @@ be re-checked once that is fixed.
 - **BUG-2 blast radius (resolved):** the first pass could not exercise
   S9/S10/S11/S12/S21 live because global navigation was dead; after the
   `69114b5` fix all were re-run and pass. The tab-level `q`->Dashboard edge in
-  D11 remains an intentional no-op (navigate tabs by number).
+  D11 was implemented in `47ac255`.
 - **S8 analytics:** no cross-process analytics store exists in Milestone 0006
   (`noop`/`inmemory` only), so a TUI process cannot observe a separate server
   process's redirect counts. S8's stats path is not fully runnable here.
