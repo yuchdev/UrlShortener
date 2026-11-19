@@ -23,7 +23,7 @@ manual pass is recorded.
 | Item | Value |
 |------|-------|
 | Built binary | `cmake-build/url_shortener` |
-| Build hash | `6660172` (`git rev-parse --short HEAD`) |
+| Build hash | first pass `6660172`; re-run after fixes `69114b5` then `57cbc39` (`git rev-parse --short HEAD`) |
 | Host | macOS (Darwin), `TERM=xterm-256color` |
 | Driver | Python `pty` harness (scratch-only, not in the repo): opens a real pty, sets the window size with `fcntl`/`TIOCSWINSZ`, streams keystrokes, and checks `stty -a` (echo/canonical) before and after exit |
 | Storage | disposable SQLite config in a scratch dir (`metadata: sqlite`, `cache: inmemory`, `analytics: inmemory`); never production data |
@@ -68,50 +68,66 @@ cmake --build cmake-build
 ctest --test-dir cmake-build -L unit -R "^tui__" --output-on-failure
 ```
 
-Recorded: **56/56 passed** at `6660172`.
+Recorded: **56/56 passed** at `6660172` (first pass); **57/57 passed** at
+`57cbc39` (after the fixes, which added a Ctrl-C-while-typing regression test).
 
 ---
 
 ## Results summary
 
+The three bugs found in the first pass (BUG-1/2/3) were fixed in `69114b5`; a
+fourth, a Ctrl-C-while-typing regression introduced by that fix (BUG-4), was
+fixed in `57cbc39`. Results below are the final re-tested state.
+
 | # | Area (diagram) | Result | Note |
 |---|---|---|---|
-| S1 | Start/quit (D1) | **FAIL** | Frame renders and termios is restored, but Ctrl-C exits via **SIGINT (130)**, not `0` (see BUG-1 below). SIGTERM sub-check **PASS** (echo/canonical restored). |
+| S1 | Start/quit (D1) | **PASS** (fixed `69114b5`) | Frame matches D1; Ctrl-C now exits `0`; SIGTERM restores echo/canonical. First pass FAILed (Ctrl-C exited 130 - BUG-1). |
+| S1b | Ctrl-C while typing | **PASS** (fixed `57cbc39`) | Ctrl-C exits `0` + termios restored with the Links filter, a form field, and the Import paste focused. First seen after `69114b5`: filter **hung** (force-killed), form/paste exited 130 (BUG-4). |
 | S2 | Min size (D1) | **PASS** | 79x23 -> "terminal too small (need 80x24)"; 80x24 and 140x40 reflow; live `SIGWINCH` resize reflows; no crash. |
-| S3 | Navigation (D11) | **FAIL** | Global tab keys `1`-`7`, `:` and `q`-back are dead from a fresh launch (see **BUG-2**). |
+| S3 | Navigation (D11) | **PASS** (fixed `69114b5`) | `1`-`7` and `:` switch tabs; `q`/Esc pops nested screens. First pass FAILed (nav dead - BUG-2). Tab-level `q`->Dashboard is a no-op by design (minor D11 note). |
 | S4 | Typing vs hotkeys | **PASS** | In the Links filter, typing `1 2 : q` yields `filter: [12:q]`; no navigation. |
 | F1 | Help while typing | **PASS** | F1 opens the help overlay even while an Input is focused; `?` stays typable. |
 | S5 | Dashboard (D2) | **PASS** | Counts match `link.list` totals (30 / 28 / 1 / 1); 4 count calls issued; labels visible; no freeze. |
 | S6 | Links (D3) | **PASS** | Filter bar, status radio, `PgDn` -> `page 2/2 (20 per page)`, selection stays visible. (Links sort key is off by design - `s` = stats.) |
 | S7 | Create/delete (D5,D10) | **PASS** | `n` opens the D5 create form with the `Equivalent:` footer; `d` opens a D10 confirm that requires typing the slug. |
 | S8 | Detail/stats (D4) | **LIMITED** | Server redirect returns `302`, but the TUI (separate process) cannot observe another process's analytics - only `noop`/`inmemory` analytics backends exist, neither shared cross-process. Not a TUI defect. |
-| S9 | Tables (D6) | **BLOCKED** | Unreachable live because of BUG-2 (needs tab `3`). Rendering covered by goldens `d06_tables_*`. |
-| S10 | Import/export (D7,D8) | **BLOCKED** | Unreachable live because of BUG-2 (needs tab `4`). Rendering covered by goldens `d07_*`. |
-| S11 | Jobs (D8) | **NOT RUN** | Needs a running import job (Import is blocked by BUG-2); a >=5,000-line import is out of scope for this run. |
-| S12 | Palette (D9) | **BLOCKED** | Unreachable live because of BUG-2 (needs `:`). Rendering covered by goldens `d09_palette_*`. |
+| S9 | Tables (D6) | **PASS** (unblocked `69114b5`) | `3` opens Tables showing only `links`/`click_events`/`jobs`; columns `id`/`slug`/`url`, no hash/token/secret columns. |
+| S10 | Import/export (D7,D8) | **PASS** (unblocked `69114b5`) | `4` opens the D7 import form (source/format/on-conflict/paste, `Ctrl-S` starts). |
+| S11 | Jobs (D8) | **PASS** | A ~5,000-row file-path import, cancelled mid-run via Jobs, reaches `state: cancelled` with partial effects (`done: 972`, 972 links created). (CPU-idle-when-done sub-check not measured.) |
+| S12 | Palette (D9) | **PASS** (unblocked `69114b5`) | `:` opens the palette; typing `link.` lists the `link.*` catalog with permission labels. |
 | S13 | Read-only | **PASS** | `[READ-ONLY]` badge; Dashboard `total`/`deleted`/redirects show `n/a (read-only)`; `active`/`disabled` still load. |
 | S14 | Mono/ASCII | **PASS** | `--theme mono` renders pure ASCII, overlay included. |
 | S15 | Slow backend | **NOT RUN** | Requires a slow/unavailable Postgres or a sleep-injecting test backend; none available on this host. |
 | S16 | C5 - no listener | **PASS** | `lsof` shows no LISTEN socket for the TUI pid; no `uri.txt` in cwd (only the expected `url_shortener-tui.log`). |
 | S17 | Persistence | **PASS** | Two SQLite restarts both read the persisted store (30 -> 30); a new write is visible after restart (-> 31). In-memory launch shows the `memory store - data is lost on exit` banner. |
-| S18 | Non-TTY | **PASS** | `tui < /dev/null` and `tui | cat` exit `2`; one-line refusal on stderr; stdout empty. (Minor: one extra benign `job_runner_shutdown` INFO line on stderr - BUG-3.) |
+| S18 | Non-TTY | **PASS** (fixed `69114b5`) | `tui < /dev/null` and `tui | cat` exit `2`; stdout empty; **exactly one** stderr line. First pass had an extra `job_runner_shutdown` INFO line (BUG-3). |
 | S19 | OFF build | **NOT RUN** | Optional. Message/exit verified in source (`src/main.cpp:226-228`: "built without TUI support (URLSHORTENER_ENABLE_TUI=OFF)", exit `2`); a separate `cmake-build-notui` OFF build was not performed. |
 | S20 | Unicode | **PASS** | CJK target `https://example.com/世界/café` renders in the table with the `STATUS`/`CLICKS` columns aligned to the ASCII row above; no multibyte truncation garbage. CJK **tags** are rejected by validation (expected). |
-| S21 | Settings (D13) | **PARTIAL** | Live screen unreachable (BUG-2, needs tab `7`). Its data source `system.info` contains only non-secret fields - a secret-scan for `salt`/`dsn`/`password`/TLS/ports returns nothing; rendering covered by goldens `d13_settings_*`. |
+| S21 | Settings (D13) | **PASS** (unblocked `69114b5`) | `7` opens the D13 Settings screen; every field matches the startup config; no TLS path, port, or salt appears (a secret-scan of its `system.info` source is empty). |
 
 **Carry-forward checks**
 
 | Check | Result | Note |
 |---|---|---|
-| termios restored after Ctrl-C | **PASS** | `stty -a` echo/icanon restored (checked before/after each run). |
+| termios restored after Ctrl-C | **PASS** | `stty -a` echo/icanon restored (checked before/after each run), including with a text input focused (S1b). |
 | termios restored after `kill -TERM` | **PASS** | echo/canonical restored; process exits via SIGTERM (`-15`) with a clean terminal. |
 | TUI/server separation (C5) | **PASS** | S16; also the redirect server's listen socket is gone after stop. |
 
 ---
 
-## Findings (route to `cpp-expert`; do not fix in this change)
+## Findings
 
-### BUG-1 (S1) - Ctrl-C exits via SIGINT (130), not exit code 0
+All four bugs below were found by this manual smoke pass and fixed by
+`cpp-expert`; each was re-tested green against the fix (see the result rows).
+
+| Bug | Items | Found at | Fixed in | Re-test |
+|---|---|---|---|---|
+| BUG-1 | S1 | 6660172 | `69114b5` | Ctrl-C exits 0 |
+| BUG-2 | S3, S9, S10, S12, S21 | 6660172 | `69114b5` | all tabs navigate; screens reachable |
+| BUG-3 | S18 | 6660172 | `69114b5` | exactly one stderr line |
+| BUG-4 | S1b | 69114b5 (regression) | `57cbc39` | Ctrl-C exits 0 while typing |
+
+### BUG-1 (S1) - FIXED in `69114b5` - Ctrl-C exited via SIGINT (130), not 0
 
 - **Repro:** launch `url_shortener tui`, press `Ctrl-C`. **Expected** (ADR D1 /
   S1): clean exit code `0`. **Actual:** process terminates via **SIGINT**
@@ -123,12 +139,11 @@ Recorded: **56/56 passed** at `6660172`.
   app handler. `src/tui/app.cpp:320-323` handles `Event::CtrlC` with
   `screen.Exit()` intending a `return 0`, but that path cannot win while
   `force_handle_ctrl_c_` is true; the app never calls `ForceHandleCtrlC(false)`.
-- **Suggested fix (for cpp-expert):** either call `ScreenInteractive::
-  ForceHandleCtrlC(false)` so the app's `screen.Exit()` produces exit `0`, or
-  amend the D1/S1 acceptance to accept SIGINT/130 as the conventional
-  interactive-quit code. Either way the diagram and behavior must agree.
+- **Fix (`69114b5`):** `ForceHandleCtrlC(false)` is set so the app's
+  `Event::CtrlC -> screen.Exit()` path produces exit `0`. Re-tested: plain
+  Ctrl-C exits `0`, termios restored.
 
-### BUG-2 (S3, blocks S9/S10/S12/S21) - global tab navigation dead at launch
+### BUG-2 (S3, blocked S9/S10/S12/S21) - FIXED in `69114b5` - global tab navigation dead at launch
 
 - **Repro:** launch `url_shortener tui --storage-config <cfg>`; press `2`
   (or `3`/`4`/`5`/`7` or `:`). **Expected:** switch tab (D11). **Actual:**
@@ -151,18 +166,38 @@ Recorded: **56/56 passed** at `6660172`.
   `router.navigate_tab(...)` directly (`src/tui/screens/dashboard_screen.cpp:
   134-138`), bypassing the guard, so Links (and Jobs, by `j/k` selection) are
   still reachable; Tables/Import/Export/Settings/Palette are not.
-- **Suggested fix (for cpp-expert):** derive `text_input_active` from the
-  **active** screen only (e.g. reset it on tab entry in the App loop, or have
-  each screen's `on_enter`/`on_leave` own it), rather than letting any
-  constructed-but-inactive screen write the shared flag.
+- **Fix (`69114b5`):** `text_input_active` is now per-screen and reset on tab
+  entry, so a constructed-but-inactive screen no longer poisons the active
+  screen's navigation. Re-tested: `1`-`7` and `:` all switch tabs.
 
-### BUG-3 (S18, minor) - extra INFO line on the non-TTY refusal
+### BUG-3 (S18, minor) - FIXED in `69114b5` - extra INFO line on the non-TTY refusal
 
 - On `tui < /dev/null`, stdout is empty and stderr carries the one-line refusal,
   but also one `ts=... level=INFO component=job_runner msg=job_runner_shutdown`
   line (the global job runtime logs to the default stderr sink because the
   early non-TTY refusal returns before logging is initialized to a File sink).
   stdout - the screen-corruption-risk stream - stays clean. Low severity.
+- **Fix (`69114b5`):** the non-TTY refusal now happens before the job runtime
+  is built, so no shutdown line is logged. Re-tested: exactly one stderr line.
+
+### BUG-4 (S1b) - FIXED in `57cbc39` - Ctrl-C while typing did not exit cleanly (regression from `69114b5`)
+
+- **Repro (against `69114b5`):** launch `url_shortener tui`; focus a text input;
+  press `Ctrl-C`. **Expected:** exit `0`, terminal restored. **Actual:** depends
+  on the Input:
+  - Links filter (`2` then `/`, then Ctrl-C): the TUI **did not quit at all** -
+    the filter Input consumed Ctrl-C and the loop kept running (confirmed twice;
+    the harness had to SIGKILL it).
+  - New-link form field (`2` then `n`, then Ctrl-C) and Import paste (`4`, then
+    Ctrl-C): the process **died by SIGINT (shell 130)**, not `0`.
+- **Mechanism:** `69114b5` set `ForceHandleCtrlC(false)` and let the global key
+  handler fall Ctrl-C through to the focused Input while `text_input_active` is
+  true (`src/tui/app_navigation.cpp`). The Input either swallowed Ctrl-C (filter
+  -> hang) or ignored it (`handled=false`), so FTXUI's now-un-forced
+  `if (CtrlC && !handled)` path re-raised SIGINT (-> 130).
+- **Fix (`57cbc39`):** the global handler intercepts Ctrl-C to exit even while a
+  text input is focused. Re-tested green in all three contexts: exit `0`,
+  termios restored.
 
 ---
 
@@ -191,16 +226,36 @@ Also: from another shell, `kill -TERM <pid>` and confirm the terminal recovers
 local/Admin [F1 Help]`, the tab row, body, footer); on quit a clean exit code
 `0`; shell prompt, cursor and scrollback intact.
 
-**Result:** **FAIL.** Frame matches D1; termios restored after both Ctrl-C and
-SIGTERM. Ctrl-C exit code is **130 (SIGINT)**, not `0` - see BUG-1.
+**Result:** **PASS** (after BUG-1 fix). Frame matches D1; termios restored after
+both Ctrl-C and SIGTERM; Ctrl-C now exits `0`.
 
 | Date | Terminal | Build | Pass/Fail | Notes |
 |---|---|---|---|---|
-| 2026-11-19 | macOS pty 80x24 | 6660172 | FAIL | D1 frame + termios restore OK; Ctrl-C exits 130 (BUG-1); SIGTERM restores echo/canonical |
+| 2026-11-19 | macOS pty 80x24 | 6660172 | FAIL | Ctrl-C exited 130 (BUG-1); D1 frame + termios restore OK |
+| 2026-11-19 | macOS pty 80x24 | 69114b5 | PASS | Ctrl-C exits 0; termios restored; SIGTERM restores echo/canonical |
 | - | Windows Terminal | - | NOT RUN - requires Windows | |
 | - | legacy conhost | - | NOT RUN - requires Windows | |
 | - | Linux terminal | - | NOT RUN - requires Linux | |
 | - | tmux | - | NOT RUN - `which tmux` empty on this host | |
+
+### S1b. Ctrl-C while a text input is focused
+
+```bash
+url_shortener tui --storage-config ./storage.sqlite.yaml
+# focus a text input (Links filter via /, a New-link form field, or the
+# Import paste area), then press Ctrl-C
+```
+
+**Expected:** the TUI exits with code `0` and termios is restored.
+
+**Result:** **PASS** (after BUG-4 fix). Exit `0` + termios restored in all three
+contexts. Against `69114b5` this FAILed: the Links filter **hung** (no quit,
+force-killed) and the form/paste contexts exited 130 - see BUG-4.
+
+| Date | Terminal | Build | Pass/Fail | Notes |
+|---|---|---|---|---|
+| 2026-11-19 | macOS pty 80x24 | 69114b5 | FAIL | filter: no quit (force-killed); form/paste: exit 130 (BUG-4) |
+| 2026-11-19 | macOS pty 80x24 | 57cbc39 | PASS | filter + form + paste: Ctrl-C exits 0, termios restored |
 
 ### S2. Minimum size (D1)
 
@@ -234,12 +289,17 @@ url_shortener tui --storage-config ./storage.sqlite.yaml
 **Expected:** `1`-`7` switch tabs per D11, `:` opens the palette, `q` pops a
 nested screen; Analytics (`6`) shows the placeholder.
 
-**Result:** **FAIL.** From a fresh launch, `1`-`7`, `:` and `q`-back do nothing
-(the view stays on the Dashboard). F1/`?`/Ctrl-C work. Root cause in BUG-2.
+**Result:** **PASS** (after BUG-2 fix). `1`-`7` switch tabs (Dashboard, Links,
+Tables, Import, Jobs, Analytics placeholder, Settings), `:` opens the palette;
+`q`/Esc pops nested screens (e.g. Links detail -> table). Tab-level `q`->Dashboard
+is a no-op by design (`Router::pop` is a no-op at a tab root; tabs are navigated
+by number) - a minor divergence from D11's `Settings --> Dashboard: q` edge,
+noted below, not a regression. First pass FAILed (nav dead - BUG-2).
 
 | Date | Terminal | Build | Pass/Fail | Notes |
 |---|---|---|---|---|
-| 2026-11-19 | macOS pty 80x24 | 6660172 | FAIL | digits/`:`/`q` swallowed by a shared `text_input_active` set true at startup (BUG-2) |
+| 2026-11-19 | macOS pty 80x24 | 6660172 | FAIL | digits/`:`/`q` swallowed by a shared `text_input_active` (BUG-2) |
+| 2026-11-19 | macOS pty 80x24 | 69114b5 | PASS | all tabs navigate; nested `q`/Esc back works; tab-level `q`->Dashboard is a no-op (minor D11 note) |
 
 ### S4. Typing vs hotkeys
 
@@ -342,13 +402,15 @@ TUI/server separation themselves pass.
 **Expected:** browse `links`/`click_events`/`jobs`; search; `Enter` shows row
 JSON; `n` on `links` opens the create form; no auth/secret tables or columns.
 
-**Result:** **BLOCKED** by BUG-2 (the Tables tab needs key `3`). Rendering and
-the no-secret-tables rule are covered by goldens `d06_tables_*` and the
-`db.*` handler tests. Re-run once BUG-2 is fixed.
+**Result:** **PASS** (after BUG-2 fix). `3` opens Tables showing exactly
+`links` (32 rows), `click_events` (0), `jobs` (0) - no auth/secret tables; the
+row columns are `id`/`slug`/`url` with no hash/token/secret columns. (Search,
+row-JSON and insert sub-flows covered by goldens `d06_tables_*`.)
 
 | Date | Terminal | Build | Pass/Fail | Notes |
 |---|---|---|---|---|
-| 2026-11-19 | macOS pty | 6660172 | BLOCKED (BUG-2) | goldens cover layout |
+| 2026-11-19 | macOS pty 80x24 | 6660172 | BLOCKED (BUG-2) | goldens cover layout |
+| 2026-11-19 | macOS pty 80x24 | 69114b5 | PASS | only links/click_events/jobs; no secret tables/columns |
 
 ### S10. Import / export (D7, D8)
 
@@ -356,36 +418,47 @@ the no-secret-tables rule are covered by goldens `d06_tables_*` and the
 overwrite conflict modes; export CSV; a job appears in Jobs with progress;
 `Ctrl-S` starts the import.
 
-**Result:** **BLOCKED** by BUG-2 (Import tab needs key `4`). Layout and the
-`Ctrl-S` submit binding are covered by goldens `d07_import_*`/`d07_export_*`.
+**Result:** **PASS** (after BUG-2 fix). `4` opens the D7 import form - source
+(paste / file path), format (CSV / NDJSON), on-conflict (skip / fail /
+overwrite), the paste box with the example rows (one blank slug), dry-run and
+Start; `F2` toggles to Export; `Ctrl-S` starts (see S11). Conflict-mode and
+export sub-flows covered by goldens `d07_*`.
 
 | Date | Terminal | Build | Pass/Fail | Notes |
 |---|---|---|---|---|
-| 2026-11-19 | macOS pty | 6660172 | BLOCKED (BUG-2) | goldens cover layout; Ctrl-S submit is the as-built binding |
+| 2026-11-19 | macOS pty | 6660172 | BLOCKED (BUG-2) | goldens cover layout |
+| 2026-11-19 | macOS pty 80x24 | 69114b5 | PASS | D7 import form renders; Ctrl-S submit is the as-built binding |
 
 ### S11. Jobs (D8)
 
 **Expected:** cancel a running large import (>= 5,000 lines); state `cancelled`;
 partial effects reported; polling stops when idle (CPU ~0).
 
-**Result:** **NOT RUN.** Needs a running import job (Import is blocked by
-BUG-2), and a >=5,000-line import run is out of scope for this pass.
+**Result:** **PASS.** A ~5,000-row CSV takes ~14.5 s to import (measured), so it
+is cancellable. Driving the TUI (Import tab -> file-path source -> path ->
+`Ctrl-S`; then Jobs tab -> `c` cancel) produced job `j-1 link.import` with
+`state: cancelled`, `done: 972`, and 972 links actually created - partial
+effects reported, matching D8. The "polling stops / CPU ~0 when idle" sub-check
+was not measured here.
 
 | Date | Terminal | Build | Pass/Fail | Notes |
 |---|---|---|---|---|
-| 2026-11-19 | - | 6660172 | NOT RUN | depends on S10; large import deferred |
+| 2026-11-19 | macOS pty 80x24 | 69114b5 | PASS | 5,000-row file-path import cancelled -> `cancelled`, 972/5000 partial |
 
 ### S12. Command palette (D9)
 
 **Expected:** `:` opens the palette; typing `link.` lists catalog commands;
 `system.info`/`command.list`/a write command run and show in a viewer.
 
-**Result:** **BLOCKED** by BUG-2 (`:` is a navigation key, swallowed at launch).
-Palette layout is covered by goldens `d09_palette_*`/`d09_result_view`.
+**Result:** **PASS** (after BUG-2 fix). `:` opens the palette; typing `link.`
+filters to the `link.*` catalog (`link.create ... write`, `link.delete ... write
+(confirm)`, `link.export ... read (jobs)`, etc.) with permission labels. Running
+a command and the result viewer are covered by goldens `d09_result_view`.
 
 | Date | Terminal | Build | Pass/Fail | Notes |
 |---|---|---|---|---|
 | 2026-11-19 | macOS pty | 6660172 | BLOCKED (BUG-2) | goldens cover layout |
+| 2026-11-19 | macOS pty 80x24 | 69114b5 | PASS | `:` opens palette; `link.` filters the catalog with permission labels |
 
 ### S13. Read-only mode
 
@@ -504,13 +577,15 @@ url_shortener tui | cat ; echo "exit=${PIPESTATUS[0]}"
 
 **Expected:** exit `2` with a one-line message, no garbage.
 
-**Result:** **PASS.** Both exit `2`; stderr carries `tui: refusing to start
-without an interactive terminal`; **stdout is empty** (0 bytes). Minor: one
-extra benign `job_runner_shutdown` INFO line follows on stderr (BUG-3).
+**Result:** **PASS** (after BUG-3 fix). Both exit `2`; stdout empty (0 bytes);
+stderr carries **exactly one** line, `tui: refusing to start without an
+interactive terminal`. First pass had an extra `job_runner_shutdown` INFO line
+(BUG-3).
 
 | Date | Terminal | Build | Pass/Fail | Notes |
 |---|---|---|---|---|
-| 2026-11-19 | macOS | 6660172 | PASS | exit 2; clean stdout; BUG-3 note on stderr |
+| 2026-11-19 | macOS | 6660172 | PASS* | exit 2; clean stdout; extra INFO line on stderr (BUG-3) |
+| 2026-11-19 | macOS | 69114b5 | PASS | exit 2; stdout empty; exactly one stderr line |
 
 ### S19. Built without TUI (OFF build)
 
@@ -564,17 +639,20 @@ url_shortener tui --storage-config ./storage.sqlite.yaml
 `analytics_client_hash_salt` appears; `q` returns to the Dashboard; no write
 control on this screen.
 
-**Result:** **PARTIAL.** The live screen is unreachable (BUG-2 blocks key `7`).
-Its data source `system.info` was validated directly: it exposes only
-`version`, backend kinds, `persistent`, `read_only`, and the non-secret
-`shortener` block (base_domain, generated_slug_length, default_redirect_type,
-default_expiry, allow_private_targets, analytics_enabled, and the three request-
-hardening limits). A secret-scan for `salt`/`dsn`/`password`/TLS/ports/`listen`
-returns nothing. Screen rendering is covered by goldens `d13_settings_*`.
+**Result:** **PASS** (after BUG-2 fix). `7` opens the live D13 Settings screen:
+Version 1.0.0, `Read-only session no`, Backend (metadata sqlite persistent, cache
+inmemory, analytics inmemory, rate limit disabled), Shortener (base domain,
+generated slug length 7, default redirect type temporary, default expiry never,
+allow private targets false, analytics enabled true), Request hardening (body
+65536 / target 2048 / id 64) - every value matches the startup config. No TLS
+path, port, or `analytics_client_hash_salt` appears; a secret-scan of its
+`system.info` data source is empty. `q`/digits leave the screen; it has no write
+control.
 
 | Date | Terminal | Build | Pass/Fail | Notes |
 |---|---|---|---|---|
-| 2026-11-19 | macOS + cmd | 6660172 | PARTIAL | live screen blocked by BUG-2; data source secret-free and config-accurate; golden-covered |
+| 2026-11-19 | macOS + cmd | 6660172 | PARTIAL | live blocked by BUG-2; data source secret-free |
+| 2026-11-19 | macOS pty 80x24 | 69114b5 | PASS | live D13 screen; fields match config; no secrets |
 
 ---
 
@@ -596,7 +674,7 @@ and the automated golden(s) under `tests/unit/tui/golden/`.
 | **D8** Jobs | S10, S11 | - | `d08_jobs_80x24`, `d08_jobs_empty_80x24`, `d08_jobs_mono_80x24`, `d08_job_detail_failed_80x24` |
 | **D9** Command palette | S12 | Generic command flow: `Ctrl-S` run, `Ctrl-R` toggles raw-JSON (not `Ctrl-J`) | `d09_palette_empty_80x24`, `d09_palette_link_prefix_80x24`, `d09_palette_readonly_80x24`, `d09_result_view_80x24` |
 | **D10** Confirm / toast | S7 | - | `d10_confirm_delete_80x24`, `d10_confirm_yesno_80x24`, `d10_toast_error_80x24`, `d10_toast_details_80x24` |
-| **D11** Screen state machine | S3 | **Snapshot-only** for the graph itself; **live transitions FAIL** - see BUG-2. Transitions are otherwise exercised by the router unit tests | (no single golden; router `tui__04_*` tests; see BUG-2) |
+| **D11** Screen state machine | S3 | Live transitions PASS after the BUG-2 fix (tabs by `1`-`7`/`:`; nested `q`/Esc back). One intentional divergence: tab-level `q`->Dashboard is a no-op (`Router::pop` no-ops at a tab root). | (no single golden; router unit tests `tui__04_*`) |
 | **D12** Sequence (one create) | S5, S7 | **Snapshot-only** (justified): a wire sequence, not a screen. The request envelope is pinned by the in-process-client request goldens | `07_request_link_create.json`, `07_request_link_list_all.json`, `07_request_link_update_clear.json`, `12_request_link_list_active.json`, `12_request_link_list_all.json` |
 | **D13** Settings | S21 | Always read-only (even for Admin) by design; TLS/ports/salt never read; data source `system.info` | `d13_settings_80x24`, `d13_settings_readonly_80x24`, `d13_settings_mono_80x24`, `d13_settings_unavailable_80x24` |
 
@@ -617,10 +695,10 @@ be re-checked once that is fixed.
   keys, and verifies termios restoration via `stty -a` before/after. It is a
   faithful but not identical substitute for a hands-on terminal; conhost/tmux
   rendering quirks are out of its reach.
-- **BUG-2 blast radius:** because global tab navigation is dead at launch,
-  S9/S10/S12/S21 cannot be exercised live and S11 depends on S10. These are
-  recorded as BLOCKED/NOT RUN (not failures of those screens themselves, whose
-  layouts are golden-covered) and must be re-run after BUG-2 is fixed.
+- **BUG-2 blast radius (resolved):** the first pass could not exercise
+  S9/S10/S11/S12/S21 live because global navigation was dead; after the
+  `69114b5` fix all were re-run and pass. The tab-level `q`->Dashboard edge in
+  D11 remains an intentional no-op (navigate tabs by number).
 - **S8 analytics:** no cross-process analytics store exists in Milestone 0006
   (`noop`/`inmemory` only), so a TUI process cannot observe a separate server
   process's redirect counts. S8's stats path is not fully runnable here.
