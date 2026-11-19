@@ -86,7 +86,10 @@ struct GlobalKeyOutcome
  * close it); otherwise `F1` opens it. When @ref
  * ScreenContext::text_input_active is set every navigation key falls through
  * (`handled == false`) so it reaches the focused `Input` instead of switching
- * tabs (BUG-2 S4), while `F1` is still honored above the guard.
+ * tabs (BUG-2 S4); `F1` and `Ctrl-C` are honored above the guard, so `Ctrl-C`
+ * always requests a clean quit (reported `handled`) even while typing or during
+ * a confirm - otherwise FTXUI's `!handled` path latches SIGINT and the process
+ * exits 130 instead of 0 (06.0/20 review, D1/S1).
  *
  * @param event The event to dispatch.
  * @param router The navigation state machine; `navigate_tab`/`pop` are applied

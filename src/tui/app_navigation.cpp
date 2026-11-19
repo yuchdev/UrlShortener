@@ -79,14 +79,20 @@ GlobalKeyOutcome handle_global_key(const ftxui::Event& event,
         help_visible = true;
         return {true, false};
     }
+    // Ctrl-C always requests a clean quit, including while a text Input or a
+    // typed-slug confirm has focus (checked BEFORE the text-input guard, like
+    // F1). Ctrl-C has no text-editing meaning, so this takes away no typing; it
+    // must stay above the guard so the handler reports `handled`, otherwise
+    // FTXUI's `!handled` path (app.cpp) latches SIGINT and the process exits
+    // 130 instead of 0 (06.0/20 review, D1/S1).
+    if (event == Event::CtrlC) {
+        return {true, true};
+    }
     // A focused text input swallows navigation keys (typing `1` in a slug field
     // must not switch tab). A form/filter screen mirrors its focus into
     // ScreenContext::text_input_active.
     if (context.text_input_active) {
         return {false, false};
-    }
-    if (event == Event::CtrlC) {
-        return {true, true};
     }
     if (event == Event::Escape) {
         return {router.pop(), false};

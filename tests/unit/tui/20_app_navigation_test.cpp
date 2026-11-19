@@ -267,3 +267,45 @@ BOOST_AUTO_TEST_CASE(ctrl_c_requests_a_clean_exit)
     BOOST_TEST(outcome.handled);
     BOOST_TEST(outcome.exit_requested);
 }
+
+// ---------------------------------------------------------------------------
+// BUG-1 (06.0/20 review): Ctrl-C must exit cleanly even while a text Input (or
+// a typed-slug confirm) has focus. It is handled ABOVE the text-input guard, so
+// it still reports `handled` + an exit request; if it fell through unhandled,
+// FTXUI's `!handled` path would latch SIGINT and the process would exit 130,
+// not 0 (D1/S1). Navigation keys typed into the Input still fall through.
+// On failure first check: the Ctrl-C branch ordering in handle_global_key
+// (must precede the text_input_active guard, like F1).
+// ---------------------------------------------------------------------------
+BOOST_AUTO_TEST_CASE(ctrl_c_exits_cleanly_while_text_input_focused)
+{
+    AppNavFixture fx;
+    tui::sync_active_screen(fx.screens, fx.router, fx.context, fx.entered_tab);
+
+    // Enter Import/Export so a text field (the paste area) holds focus.
+    BOOST_TEST(fx.press('4').handled);
+    tui::sync_active_screen(fx.screens, fx.router, fx.context, fx.entered_tab);
+    BOOST_TEST(fx.context.text_input_active);
+
+    // Ctrl-C is still handled and requests a clean exit.
+    bool help_visible = false;
+    const tui::GlobalKeyOutcome ctrl_c = tui::handle_global_key(
+        ftxui::Event::CtrlC, fx.router, fx.context, help_visible);
+    BOOST_TEST(ctrl_c.handled);
+    BOOST_TEST(ctrl_c.exit_requested);
+
+    // The navigation keys still fall through to the focused Input (no nav, no
+    // exit) while typing.
+    const tui::ScreenId before = fx.router.active_tab();
+    for (const char key : {'2', ':', '?'}) {
+        const tui::GlobalKeyOutcome fall_through =
+            tui::handle_global_key(ftxui::Event::Character(std::string(1, key)),
+                                   fx.router,
+                                   fx.context,
+                                   help_visible);
+        BOOST_TEST(!fall_through.handled);
+        BOOST_TEST(!fall_through.exit_requested);
+    }
+    BOOST_TEST((fx.router.active_tab() == before));
+    BOOST_TEST(!help_visible);  // `?` did not open help while typing
+}
