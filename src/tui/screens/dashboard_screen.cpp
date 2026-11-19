@@ -211,6 +211,19 @@ private:
              m_model_.refresh_requests([this] { return m_ids_.next(); }))
         {
             const std::string panel = DashboardModel::panel_of(request.id);
+            // Review A: a request the session may not run (link.list status=all
+            // / deleted raises to write, D16) is never issued in a read-only
+            // session; its panel renders `n/a (read-only)` instead.
+            CommandInfo probe;
+            probe.name = request.command;
+            probe.permission = "read";
+            if (!capability_for(m_context_)
+                     .can_run(probe, request.args_json)
+                     .allowed)
+            {
+                m_model_.mark_restricted(panel);
+                continue;
+            }
             ++m_pending_;
             const CallToken token = m_context_.caller.submit(
                 std::move(request),
@@ -279,10 +292,15 @@ private:
                             width))
                 | to_decorator(m_theme_.error);
         }
-        std::string line = "Links  total: " + format_count(c.total)
-            + "  active: " + format_count(c.active)
-            + "  disabled: " + format_count(c.disabled)
-            + "  deleted: " + format_count(c.deleted);
+        // Review A: a count withheld in a read-only session (status=all /
+        // deleted raises to write) shows `n/a (read-only)`, not a stale 0.
+        const std::string total =
+            c.total_restricted ? "n/a (read-only)" : format_count(c.total);
+        const std::string deleted =
+            c.deleted_restricted ? "n/a (read-only)" : format_count(c.deleted);
+        std::string line = "Links  total: " + total + "  active: "
+            + format_count(c.active) + "  disabled: " + format_count(c.disabled)
+            + "  deleted: " + deleted;
         if (!m_model_.persistent()) {
             line += "  (this session)";
         }
@@ -294,6 +312,12 @@ private:
     {
         using namespace ftxui;
         const RedirectsPanel& r = m_model_.redirects();
+        // Review A: the sample feed is link.list {status:all}, which raises to
+        // a write; a read-only session withholds it and shows n/a (read-only).
+        if (m_model_.restricted("redirects")) {
+            return text(fit("Redirects (24h): n/a (read-only)", width))
+                | to_decorator(m_theme_.hint);
+        }
         if (r.state == PanelState::loading) {
             return text(fit("Redirects (24h): loading...", width))
                 | to_decorator(m_theme_.hint);
@@ -353,6 +377,11 @@ private:
         std::vector<Element> lines;
         lines.push_back(text(pad_col(header))
                         | to_decorator(m_theme_.header_row));
+        if (m_model_.restricted("redirects")) {
+            lines.push_back(text(pad_col("  n/a (read-only)"))
+                            | to_decorator(m_theme_.hint));
+            return lines;
+        }
         if (r.state == PanelState::loading) {
             lines.push_back(text(pad_col("  loading..."))
                             | to_decorator(m_theme_.hint));
@@ -387,6 +416,11 @@ private:
         std::vector<Element> lines;
         lines.push_back(text(fit("Recent changes", width))
                         | to_decorator(m_theme_.header_row));
+        if (m_model_.restricted("recent")) {
+            lines.push_back(text(fit("  n/a (read-only)", width))
+                            | to_decorator(m_theme_.hint));
+            return lines;
+        }
         const PanelState state = m_model_.recent_state();
         if (state == PanelState::loading) {
             lines.push_back(text(fit("  loading...", width))

@@ -1,8 +1,10 @@
 #pragma once
 
+#include <functional>
 #include <string>
 #include <vector>
 
+#include <url_shortener/commands/envelope.hpp>
 #include <url_shortener/tui/command_client.hpp>
 
 namespace url_shortener::tui
@@ -64,13 +66,42 @@ class CapabilityModel
 {
 public:
     /**
-     * @brief Builds the model for @p session.
+     * @brief Resolves a request's effective wire permission without executing
+     * it, typically bound to @ref AsyncCaller::required_permission.
+     *
+     * Lets @ref can_run(const CommandInfo&, const std::string&) honor the
+     * registry's argument-dependent permission raise (`permission_for`, D16) so
+     * a read-only session's gate agrees with what the server would enforce for
+     * the *specific* arguments.
+     */
+    using PermissionResolver =
+        std::function<std::string(const commands::CommandRequest&)>;
+
+    /**
+     * @brief Builds the model for @p session with no argument-aware resolver.
+     *
+     * @ref can_run(const CommandInfo&) uses the descriptor's base permission;
+     * the argument-aware @ref can_run(const CommandInfo&, const std::string&)
+     * then also falls back to the base permission (correct only for commands
+     * with no `permission_for` hook - construct with a resolver otherwise).
      *
      * @param session The session whose @ref SessionInfo::read_only flag and
      * identity drive every decision; copied, so the model does not
      * outlive-share any reference.
      */
     explicit CapabilityModel(SessionInfo session);
+
+    /**
+     * @brief Builds the model for @p session with an argument-aware resolver.
+     *
+     * @param session The session driving every decision; copied.
+     * @param resolver Resolves a request's effective permission (D16); used by
+     * @ref can_run(const CommandInfo&, const std::string&). Copied; a screen
+     * typically binds it to @ref AsyncCaller::required_permission, whose owner
+     * (@ref App) outlives the screen. An empty resolver degrades to base-
+     * permission behaviour.
+     */
+    CapabilityModel(SessionInfo session, PermissionResolver resolver);
 
     /**
      * @brief Decides whether the session may run @p command.
@@ -84,6 +115,27 @@ public:
      * unrecognized permission, since the classifier fails closed).
      */
     Capability can_run(const CommandInfo& command) const;
+
+    /**
+     * @brief Decides whether the session may run @p command with @p args_json,
+     * honoring the argument-dependent permission raise (D16, T-116).
+     *
+     * Resolves the request's *effective* permission through the resolver passed
+     * at construction (e.g. `link.list` with `status=all` resolves to `write`
+     * even though its base permission is `read`) and applies the read-only rule
+     * to that. With no resolver it falls back to the base permission of
+     * @p command.
+     *
+     * @param command The command to classify; its @ref CommandInfo::name is
+     * used to build the probe request.
+     * @param args_json The exact `args` object text the screen would submit.
+     * @return @ref Capability::allowed `true` with an empty reason when the
+     * session may run the request; `false` with reason
+     * `"not_authorized: read-only session"` when the session is read-only and
+     * the resolved effective permission is not `"read"`.
+     */
+    Capability can_run(const CommandInfo& command,
+                       const std::string& args_json) const;
 
     /**
      * @brief Decides whether the session may run the command named
@@ -116,6 +168,10 @@ public:
 private:
     ///< The session this model mirrors; copied at construction.
     SessionInfo m_session_;
+
+    ///< Resolves a request's argument-dependent effective permission (D16);
+    ///< empty when the model was built without one.
+    PermissionResolver m_resolver_;
 };
 
 }  // namespace url_shortener::tui

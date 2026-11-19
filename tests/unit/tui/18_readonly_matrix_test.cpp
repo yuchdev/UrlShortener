@@ -3,6 +3,8 @@
 #include <chrono>
 #include <functional>
 #include <memory>
+#include <mutex>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -208,19 +210,41 @@ std::vector<ftxui::Event> action_battery()
     return events;
 }
 
-/// Asserts every recorded request names a command that resolves, in the shared
-/// catalog, to a `read` permission - i.e. no write/migrate ever left the TUI.
-void assert_only_reads(const MockCommandClient& client,
-                       const std::vector<tui::CommandInfo>& cat)
+/// Emulates the registry's `permission_for` raises (D16) against the mock, so
+/// the arg-aware gate the screens consult sees `link.list {status:all|deleted}`
+/// and `link.export {path|status:all|deleted}` as `write`.
+std::optional<std::string> link_permission_hook(
+    const commands::CommandRequest& request)
+{
+    const auto has = [&](const char* needle)
+    { return request.args_json.find(needle) != std::string::npos; };
+    if (request.command == "link.list") {
+        if (has("\"status\":\"all\"") || has("\"status\":\"deleted\"")) {
+            return std::string("write");
+        }
+        return std::string("read");
+    }
+    if (request.command == "link.export") {
+        if (has("\"path\"") || has("\"status\":\"all\"")
+            || has("\"status\":\"deleted\""))
+        {
+            return std::string("write");
+        }
+        return std::string("read");
+    }
+    return std::nullopt;  // fall back to the catalog base permission
+}
+
+/// Asserts every recorded request's *resolved effective permission* (arg-aware,
+/// the registry's own rule emulated by the mock) is `read` - B review: assert
+/// on the resolved permission of each request's args, not the command name.
+void assert_only_reads(const MockCommandClient& client)
 {
     for (const commands::CommandRequest& request : client.recorded_requests()) {
-        const tui::CommandInfo* info = find(cat, request.command);
-        BOOST_TEST_REQUIRE(info != nullptr,
-                           "a request named a command not in the catalog: "
-                               << request.command);
-        BOOST_TEST(tui::is_read_only_command(*info),
-                   "a read-only session submitted a non-read command: "
-                       << request.command);
+        BOOST_TEST(client.required_permission(request) == "read",
+                   "a read-only session submitted a request whose resolved "
+                   "permission is not read: "
+                       << request.command << " args=" << request.args_json);
     }
 }
 
@@ -235,12 +259,18 @@ struct Fixture
     tui::SessionInfo session;
     tui::ScreenContext context {caller, session, router, options};
 
-    explicit Fixture(bool read_only = true)
+    explicit Fixture(bool read_only = true, bool assume_yes = false)
     {
         options.read_only = read_only;
+        options.assume_yes = assume_yes;
         session.read_only = read_only;
         context.options = options;
         context.session = session;
+        // The mock emulates the registry's argument-dependent permission raise,
+        // so the screens' arg-aware gate resolves link.list/link.export exactly
+        // as the server would (B review).
+        client.set_commands(catalog());
+        client.set_permission_hook(&link_permission_hook);
     }
 
     void settle()
@@ -302,6 +332,19 @@ BOOST_AUTO_TEST_CASE(every_screen_sends_no_write_in_read_only)
          "",  // lists the catalog; issues nothing on entry
          [&cat](Fixture& fx)
          { return tui::make_palette_screen(fx.context, cat); }},
+        {"generic_form",
+         "",  // a write command's generated form; D review adds it to the sweep
+         [](Fixture& fx)
+         {
+             tui::GenericCommandConfig cfg;
+             cfg.command = mk("link.create",
+                              "write",
+                              true,
+                              false,
+                              {arg("target_url", true)});
+             return tui::make_generic_command_screen(fx.context,
+                                                     std::move(cfg));
+         }},
     };
 
     for (const ScreenCase& sc : cases) {
@@ -321,7 +364,7 @@ BOOST_AUTO_TEST_CASE(every_screen_sends_no_write_in_read_only)
             render_to_text(screen->component(), 80, 24);
 
             // No write/migrate ever reached the client, from any key or path.
-            assert_only_reads(fx.client, cat);
+            assert_only_reads(fx.client);
 
             // Reads still work: the screen's entry read was issued.
             if (!sc.expected_initial_read.empty()) {
@@ -337,6 +380,63 @@ BOOST_AUTO_TEST_CASE(every_screen_sends_no_write_in_read_only)
                            "expected the entry read "
                                << sc.expected_initial_read << " to be issued");
             }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// D review: `--yes` must not weaken the read-only guarantee. A read-only
+// session that is also `--yes` (ConfirmPolicy collapses to no confirm) still
+// submits zero non-read requests from the write-capable screens.
+// ---------------------------------------------------------------------------
+BOOST_AUTO_TEST_CASE(assume_yes_does_not_bypass_read_only)
+{
+    const std::vector<tui::CommandInfo> cat = catalog();
+
+    struct ScreenCase
+    {
+        std::string name;
+        std::function<std::unique_ptr<tui::IScreen>(Fixture&)> make;
+    };
+    const std::vector<ScreenCase> cases = {
+        {"links",
+         [&cat](Fixture& fx)
+         { return tui::make_links_screen(fx.context, cat); }},
+        {"import_export",
+         [&cat](Fixture& fx)
+         { return tui::make_import_export_screen(fx.context, cat); }},
+        {"palette",
+         [&cat](Fixture& fx)
+         { return tui::make_palette_screen(fx.context, cat); }},
+        {"generic_form",
+         [](Fixture& fx)
+         {
+             tui::GenericCommandConfig cfg;
+             cfg.command = mk("link.create",
+                              "write",
+                              true,
+                              false,
+                              {arg("target_url", true)});
+             return tui::make_generic_command_screen(fx.context,
+                                                     std::move(cfg));
+         }},
+    };
+
+    for (const ScreenCase& sc : cases) {
+        BOOST_TEST_CONTEXT("screen=" << sc.name)
+        {
+            Fixture fx(/*read_only=*/true, /*assume_yes=*/true);
+            script_reads(fx.client);
+
+            std::unique_ptr<tui::IScreen> screen = sc.make(fx);
+            screen->on_enter();
+            fx.settle();
+            render_to_text(screen->component(), 80, 24);
+            render_to_text(screen->component(), 80, 24);
+            send_events(screen->component(), action_battery());
+            fx.settle();
+
+            assert_only_reads(fx.client);
         }
     }
 }
@@ -375,7 +475,7 @@ BOOST_AUTO_TEST_CASE(palette_raw_json_write_sends_nothing_in_read_only)
     fx.settle();
 
     BOOST_TEST(fx.client.recorded_requests().empty());
-    assert_only_reads(fx.client, cat);
+    assert_only_reads(fx.client);
 
     const std::string grid = render_to_text(palette->component(), 80, 24);
     BOOST_TEST(grid.find("not_authorized") != std::string::npos);
@@ -434,12 +534,67 @@ BOOST_AUTO_TEST_CASE(no_arg_mutating_generic_read_only_and_confirm_gate)
 namespace
 {
 
+using commands::ArgSpec;
 using commands::ArgsView;
+using commands::ArgType;
 using commands::CommandContext;
 using commands::CommandDescriptor;
 using commands::CommandRegistry;
 using commands::CommandResult;
 using commands::Permission;
+
+/// Records every (request, response) pair while delegating to a real client, so
+/// a registry-backed drive can assert on the server's actual answers (B
+/// review).
+class RecordingClient final : public tui::ICommandClient
+{
+public:
+    explicit RecordingClient(tui::ICommandClient& inner)
+        : m_inner_(inner)
+    {
+    }
+
+    commands::CommandResponse call(
+        const commands::CommandRequest& request) override
+    {
+        commands::CommandResponse response = m_inner_.call(request);
+        std::lock_guard<std::mutex> lock(m_mutex_);
+        m_requests_.push_back(request);
+        m_responses_.push_back(response);
+        return response;
+    }
+
+    std::vector<tui::CommandInfo> commands() const override
+    {
+        return m_inner_.commands();
+    }
+
+    tui::SessionInfo session() const override { return m_inner_.session(); }
+
+    std::string required_permission(
+        const commands::CommandRequest& request) const override
+    {
+        return m_inner_.required_permission(request);
+    }
+
+    std::vector<commands::CommandResponse> responses() const
+    {
+        std::lock_guard<std::mutex> lock(m_mutex_);
+        return m_responses_;
+    }
+
+    std::vector<commands::CommandRequest> requests() const
+    {
+        std::lock_guard<std::mutex> lock(m_mutex_);
+        return m_requests_;
+    }
+
+private:
+    tui::ICommandClient& m_inner_;
+    mutable std::mutex m_mutex_;
+    std::vector<commands::CommandRequest> m_requests_;
+    std::vector<commands::CommandResponse> m_responses_;
+};
 
 /// A tiny registry with one read and one write command, mirroring the live
 /// authorization rule the TUI only presents.
@@ -482,6 +637,109 @@ commands::CommandRequest request(const std::string& command,
     return r;
 }
 
+ArgSpec opt_str(const std::string& name)
+{
+    ArgSpec spec;
+    spec.name = name;
+    spec.type = ArgType::string;
+    spec.required = false;
+    return spec;
+}
+
+ArgSpec opt_int(const std::string& name)
+{
+    ArgSpec spec;
+    spec.name = name;
+    spec.type = ArgType::integer;
+    spec.required = false;
+    return spec;
+}
+
+/// The argument-dependent raise the real link.list / link.export share (D16):
+/// status=all|deleted (and, for export, a path) raise the base read to write.
+Permission status_raise(const ArgsView& args)
+{
+    if (const std::optional<std::string> status = args.get_string("status")) {
+        if (*status == "all" || *status == "deleted") {
+            return Permission::write;
+        }
+    }
+    if (args.get_string("path").has_value()) {
+        return Permission::write;
+    }
+    return Permission::read;
+}
+
+CommandResult ok_result(const char* json)
+{
+    CommandResult result;
+    result.result_json = json;
+    return result;
+}
+
+/// A registry with the read commands the Dashboard, Links and Export screens
+/// issue, each carrying the real argument-dependent permission raise, so an
+/// InProcessClient(User) answers exactly as production would.
+void populate_full(CommandRegistry& registry)
+{
+    CommandDescriptor list;
+    list.name = "link.list";
+    list.summary = "List links";
+    list.permission = Permission::read;
+    list.permission_for = status_raise;
+    list.args = {opt_str("status"),
+                 opt_str("q"),
+                 opt_str("tag"),
+                 opt_str("campaign"),
+                 opt_str("sort"),
+                 opt_str("order"),
+                 opt_int("offset"),
+                 opt_int("limit")};
+    list.handler = [](CommandContext&, const ArgsView&)
+    { return ok_result(R"({"items":[],"offset":0,"limit":20,"total":0})"); };
+    registry.add(std::move(list));
+
+    CommandDescriptor exp;
+    exp.name = "link.export";
+    exp.summary = "Export pairs";
+    exp.permission = Permission::read;
+    exp.permission_for = status_raise;
+    exp.args = {opt_str("format"),
+                opt_str("status"),
+                opt_str("q"),
+                opt_str("tag"),
+                opt_str("campaign"),
+                opt_str("path")};
+    exp.handler = [](CommandContext&, const ArgsView&)
+    { return ok_result(R"({"exported":0})"); };
+    registry.add(std::move(exp));
+
+    CommandDescriptor tables;
+    tables.name = "db.tables";
+    tables.summary = "List tables";
+    tables.permission = Permission::read;
+    tables.handler = [](CommandContext&, const ArgsView&)
+    { return ok_result(R"({"tables":["links"]})"); };
+    registry.add(std::move(tables));
+
+    CommandDescriptor jobs;
+    jobs.name = "job.list";
+    jobs.summary = "List jobs";
+    jobs.permission = Permission::read;
+    jobs.args = {opt_str("state")};
+    jobs.handler = [](CommandContext&, const ArgsView&)
+    { return ok_result(R"({"items":[]})"); };
+    registry.add(std::move(jobs));
+
+    CommandDescriptor info;
+    info.name = "system.info";
+    info.summary = "System info";
+    info.permission = Permission::read;
+    info.handler = [](CommandContext&, const ArgsView&)
+    { return ok_result(R"({"persistent":true})"); };
+    registry.add(std::move(info));
+}
+
 }  // namespace
 
 BOOST_AUTO_TEST_CASE(registry_denies_write_even_if_client_guard_bypassed)
@@ -518,12 +776,16 @@ BOOST_AUTO_TEST_CASE(registry_denies_write_even_if_client_guard_bypassed)
     ManualClock clock {std::chrono::system_clock::time_point {}};
     tui::ToastQueue toasts {clock};
     tui::ConfirmPolicy policy(/*assume_yes=*/true);  // no confirm friction
+    // A non-read-only capability: the client-side guard is deliberately OFF so
+    // the write reaches the server, which must still deny it (C7).
+    tui::SessionInfo bypass;
+    bypass.read_only = false;
     tui::MutationFlow flow(
         tui::MutationDeps {caller,
                            policy,
                            toasts,
                            tui::theme_for(tui::ThemeName::dark),
-                           /*read_only=*/false});
+                           tui::CapabilityModel(bypass)});
 
     const tui::CommandInfo info =
         mk("link.create", "write", true, false, {arg("target_url", true)});
@@ -538,4 +800,85 @@ BOOST_AUTO_TEST_CASE(registry_denies_write_even_if_client_guard_bypassed)
     const tui::Toast& toast = toasts.visible().back();
     BOOST_TEST((toast.kind == tui::ToastKind::error));
     BOOST_TEST(toast.title.find("not_authorized") != std::string::npos);
+}
+
+// ---------------------------------------------------------------------------
+// B review (end-to-end): drive the real Dashboard, Links and Export screens
+// read-only over a registry-backed InProcessClient(ControlSet::User) and assert
+// the server never answers not_authorized and no recorded request resolves to a
+// non-read permission. This FAILS on cdfacd1, where the default Links view
+// (status=all), the Dashboard total/deleted counts and the default Export view
+// all sent requests the registry raised to write and refused.
+// ---------------------------------------------------------------------------
+BOOST_AUTO_TEST_CASE(registry_backed_screens_issue_no_raised_requests)
+{
+    CommandRegistry registry;
+    populate_full(registry);
+
+    commands::CallerContext user;
+    user.principal = "local-operator";
+    user.transport = "tui";
+    user.control_set = ControlSet::User;
+    tui::InProcessClient inner(registry, user);
+
+    const std::vector<tui::CommandInfo> cat = inner.commands();
+
+    struct ScreenCase
+    {
+        std::string name;
+        std::function<std::unique_ptr<tui::IScreen>(tui::ScreenContext&)> make;
+    };
+    const std::vector<ScreenCase> cases = {
+        {"links",
+         [&cat](tui::ScreenContext& ctx)
+         { return tui::make_links_screen(ctx, cat); }},
+        {"dashboard",
+         [&cat](tui::ScreenContext& ctx)
+         { return tui::make_dashboard_screen(ctx, cat); }},
+        {"import_export",
+         [&cat](tui::ScreenContext& ctx)
+         { return tui::make_import_export_screen(ctx, cat); }},
+    };
+
+    for (const ScreenCase& sc : cases) {
+        BOOST_TEST_CONTEXT("screen=" << sc.name)
+        {
+            RecordingClient client(inner);
+            InlinePoster poster;
+            tui::AsyncCaller caller {client, poster, 1};
+            tui::Router router;
+            tui::TuiOptions options;
+            options.read_only = true;
+            tui::SessionInfo session = inner.session();  // read_only == true
+            tui::ScreenContext context {caller, session, router, options};
+
+            std::unique_ptr<tui::IScreen> screen = sc.make(context);
+            screen->on_enter();
+            for (int i = 0; i < 12; ++i) {
+                poster.run_pending();
+            }
+            render_to_text(screen->component(), 80, 24);
+            render_to_text(screen->component(), 80, 24);
+            send_events(screen->component(), action_battery());
+            for (int i = 0; i < 12; ++i) {
+                poster.run_pending();
+            }
+
+            // The server never refused a request (no raised request was sent).
+            for (const commands::CommandResponse& response : client.responses())
+            {
+                BOOST_TEST((response.error.code
+                            != commands::CommandErrorCode::not_authorized),
+                           "a read-only screen drew a not_authorized answer");
+            }
+            // Every recorded request resolves to a read permission.
+            for (const commands::CommandRequest& request : client.requests()) {
+                BOOST_TEST(inner.required_permission(request) == "read",
+                           "a read-only screen sent a request resolving to a "
+                           "non-read permission: "
+                               << request.command
+                               << " args=" << request.args_json);
+            }
+        }
+    }
 }

@@ -565,8 +565,14 @@ private:
     /// Opens the `link.create` form for the selected writable table (step 4).
     void start_insert()
     {
-        if (m_context_.options.read_only) {
-            toast_unavailable("read-only session", "link.create");
+        // The one capability decision (subtask 18): insert is link.create (a
+        // write), so a read-only session is refused here with the reason.
+        CommandInfo create_probe;
+        create_probe.name = "link.create";
+        create_probe.permission = "write";
+        const Capability cap = capability_for(m_context_).can_run(create_probe);
+        if (!cap.allowed) {
+            toast_unavailable(cap.reason, "link.create");
             return;
         }
         if (!m_tables_.can_insert()) {
@@ -600,7 +606,7 @@ private:
             m_policy_,
             m_toasts_,
             m_theme_,
-            m_context_.options.read_only,
+            capability_for(m_context_),
             title,
             [this](const commands::CommandResponse& response)
             { on_form_success(response); },
@@ -777,10 +783,17 @@ private:
         hint("c cols");
         if (m_tables_.can_insert()) {
             cells.push_back(text("  "));
+            // Insert is link.create (a write); dim its hint when the capability
+            // denies writes (subtask 18).
+            CommandInfo create_probe;
+            create_probe.name = "link.create";
+            create_probe.permission = "write";
+            const bool insert_disabled =
+                !capability_for(m_context_).can_run(create_probe).allowed;
             Element insert = text("n insert");
             insert = insert
-                | to_decorator(m_context_.options.read_only ? m_theme_.disabled
-                                                            : m_theme_.hint);
+                | to_decorator(insert_disabled ? m_theme_.disabled
+                                               : m_theme_.hint);
             cells.push_back(std::move(insert));
         }
         cells.push_back(text("  "));

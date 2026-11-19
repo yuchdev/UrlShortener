@@ -209,6 +209,29 @@ BOOST_AUTO_TEST_CASE(palette_dimming_matches_golden)
 }
 
 // ---------------------------------------------------------------------------
+// Review E: a 60-column backend label must not clip the badge - both
+// `[READ-ONLY]` and `local/User` stay fully visible at 80 columns (only the
+// backend label shrinks).
+// ---------------------------------------------------------------------------
+BOOST_AUTO_TEST_CASE(long_label_does_not_clip_badge)
+{
+    const std::string long_label(60, 'x');
+    tui::FrameModel model(user_session(), long_label, true, "dark");
+    const ftxui::Element frame =
+        tui::render_frame(model,
+                          tui::ScreenId::dashboard,
+                          tui::placeholder_body("Dashboard: not implemented"),
+                          {},
+                          80,
+                          24);
+    const std::string grid = render_to_text(frame, 80, 24);
+
+    BOOST_TEST(grid.find("[READ-ONLY]") != std::string::npos);
+    BOOST_TEST(grid.find("local/User") != std::string::npos);
+    BOOST_TEST(grid.find("[F1 Help]") != std::string::npos);
+}
+
+// ---------------------------------------------------------------------------
 // T-110: a hostile backend label never reaches the grid even with the badge
 // appended to the read-only title.
 // ---------------------------------------------------------------------------

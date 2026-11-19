@@ -3,6 +3,7 @@
 #include <string>
 #include <vector>
 
+#include <url_shortener/tui/capability.hpp>
 #include <url_shortener/tui/table_model.hpp>
 
 namespace url_shortener::tui
@@ -88,16 +89,16 @@ class LinksModel
 {
 public:
     /**
-     * @brief Builds the model for a session.
+     * @brief Builds the model for a session's capability.
      *
-     * @param read_only `true` when the session runs as `ControlSet::User`
-     * (`--read-only`): every write action (@ref LinkAction::create,
+     * @param capability The single capability decision (subtask 18): when the
+     * session is read-only every write action (@ref LinkAction::create,
      * @ref LinkAction::edit, @ref LinkAction::toggle, @ref LinkAction::remove,
-     * @ref LinkAction::restore) is reported unavailable with the read-only
+     * @ref LinkAction::restore) is reported unavailable with the capability's
      * reason, so no mutation leaves the screen even though the registry also
-     * enforces it (defence in depth, threat model T-116).
+     * enforces it (defence in depth, threat model T-116). Moved in.
      */
-    explicit LinksModel(bool read_only);
+    explicit LinksModel(CapabilityModel capability);
 
     /**
      * @brief Decides whether an action is available for the selected link.
@@ -186,9 +187,9 @@ public:
         const std::string& link_json) const;
 
 private:
-    ///< `true` when every write action is reported unavailable (read-only
-    ///< session).
-    bool m_read_only_;
+    ///< The single capability decision; write actions are refused when it
+    ///< denies them (subtask 18).
+    CapabilityModel m_capability_;
 };
 
 }  // namespace url_shortener::tui

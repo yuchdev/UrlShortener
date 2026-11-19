@@ -7,6 +7,7 @@
 #include <ftxui/component/component_base.hpp>
 #include <url_shortener/commands/envelope.hpp>
 #include <url_shortener/tui/async_caller.hpp>
+#include <url_shortener/tui/capability.hpp>
 #include <url_shortener/tui/command_client.hpp>
 #include <url_shortener/tui/confirm.hpp>
 #include <url_shortener/tui/theme.hpp>
@@ -56,12 +57,14 @@ struct MutationDeps
     ///< the flow.
     const Theme& theme;
 
-    ///< `true` when the session runs as `ControlSet::User` (`--read-only`): a
-    ///< non-`read` command is refused in @ref MutationFlow::begin with a toast
-    ///< and zero submits, so no write leaves the TUI even through a direct
-    ///< @ref run_mutation caller (threat model T-116, defence in depth over the
-    ///< registry's own `AccessGuard`).
-    bool read_only = false;
+    ///< The single capability decision (subtask 18). In a read-only session a
+    ///< request whose resolved effective permission is not `read` (the model's
+    ///< resolver honors argument-dependent raises, D16) is refused in
+    ///< @ref MutationFlow::begin with a toast and zero submits, so no write
+    ///< leaves the TUI even through a direct @ref run_mutation caller (threat
+    ///< model T-116, defence in depth over the registry's own `AccessGuard`).
+    ///< Built by the screen from @ref capability_for; moved in.
+    CapabilityModel capability;
 };
 
 /**
@@ -129,15 +132,17 @@ public:
      * @brief The choke point: decide the confirmation, then submit now or after
      * a confirm (ADR 0003 rule 4).
      *
-     * When @ref MutationDeps::read_only is set and @p info is not a `read`
-     * command, the submission is refused up front: a `not_authorized` toast is
-     * shown and nothing reaches the caller (threat model T-116). Otherwise it
-     * consults @ref ConfirmPolicy::decide with @p info and @p request's
-     * `args_json`. On @ref ConfirmKind::none it submits @p request straight
-     * away; otherwise it opens the confirm dialog and defers the submit until
-     * the operator confirms (a cancel discards the submission with zero calls).
-     * A new @ref begin while a confirm is still open or a call is still in
-     * flight replaces the pending submission.
+     * When @ref MutationDeps::read_only is set and @p request's resolved
+     * effective permission (via @ref AsyncCaller::required_permission, so an
+     * argument-dependent raise is honored, D16) is not `read`, the submission
+     * is refused up front: a `not_authorized` toast is shown and nothing
+     * reaches the caller (threat model T-116). Otherwise it consults @ref
+     * ConfirmPolicy::decide with @p info and @p request's `args_json`. On @ref
+     * ConfirmKind::none it submits @p request straight away; otherwise it opens
+     * the confirm dialog and defers the submit until the operator confirms (a
+     * cancel discards the submission with zero calls). A new @ref begin while a
+     * confirm is still open or a call is still in flight replaces the pending
+     * submission.
      *
      * @param request The fully-built request to submit; its `id` is echoed
      * back. Moved in.

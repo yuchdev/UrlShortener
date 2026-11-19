@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -138,6 +139,26 @@ struct Fixture
         : options(make_options(read_only, assume_yes, max_inline))
         , context {caller, session, router, options}
     {
+        // The arg-aware read-only gate resolves each request's permission
+        // through the client; emulate the registry's link.export raise (D16) so
+        // an inline export (no path, status active) resolves to read and
+        // submits, while a path / all / deleted export resolves to write.
+        client.set_commands(catalog());
+        client.set_permission_hook(
+            [](const commands::CommandRequest& request)
+                -> std::optional<std::string>
+            {
+                if (request.command == "link.export"
+                    && (request.args_json.find("\"path\"") != std::string::npos
+                        || request.args_json.find("\"status\":\"all\"")
+                            != std::string::npos
+                        || request.args_json.find("\"status\":\"deleted\"")
+                            != std::string::npos))
+                {
+                    return std::string("write");
+                }
+                return std::nullopt;
+            });
     }
 
     static tui::TuiOptions make_options(bool read_only,

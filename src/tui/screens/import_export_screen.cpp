@@ -141,10 +141,16 @@ public:
                                 m_policy_,
                                 m_toasts_,
                                 m_theme_,
-                                context.options.read_only})
+                                capability_for(context)})
         , m_import_(context.options.max_inline_bytes)
     {
         reset_focus();
+        // Review A (display): the all/deleted export views raise link.export to
+        // a write (D16), so a read-only session cannot query them. Default to
+        // active rather than offering a view the server would refuse.
+        if (!status_queryable(StatusFilter::all)) {
+            m_export_status_ = StatusFilter::active;
+        }
     }
 
     /// Called when the tab becomes active: ensure the focus is valid.
@@ -270,7 +276,9 @@ private:
         }
         std::vector<Ctl> v = {
             Ctl::exp_fmt, Ctl::status, Ctl::exp_q, Ctl::exp_tag, Ctl::exp_camp};
-        if (!m_context_.options.read_only) {
+        // The path field raises link.export to a write (D16); omit it from the
+        // focus ring when the session cannot write it (subtask 18).
+        if (!writes_denied()) {
             v.push_back(Ctl::exp_path);
         }
         v.push_back(Ctl::exp_start);
@@ -456,13 +464,47 @@ private:
         m_import_.set_on_conflict(static_cast<OnConflict>(idx));
     }
 
-    /// Advances the export status radio all -> active -> disabled -> deleted.
-    void cycle_status(int dir)
+    /// Whether this session is denied writes - the one capability decision
+    /// (subtask 18). In a read-only session link.import, path export and the
+    /// all/deleted export views are all refused.
+    bool writes_denied() const
+    {
+        CommandInfo write_probe;
+        write_probe.permission = "write";
+        return !capability_for(m_context_).can_run(write_probe).allowed;
+    }
+
+    /// Whether this session may run an export of the given status view: the
+    /// all/deleted views raise link.export to a write (D16), so a read-only
+    /// session cannot. Arg-aware via the one capability decision.
+    bool status_queryable(StatusFilter status) const
+    {
+        CommandInfo exp;
+        exp.name = "link.export";
+        exp.permission = "read";
+        const std::string args =
+            "{\"status\":\"" + status_to_wire(status) + "\"}";
+        return capability_for(m_context_).can_run(exp, args).allowed;
+    }
+
+    /// The next export status in cyclic radio order for @p dir.
+    static StatusFilter step_status(StatusFilter status, int dir)
     {
         const int n = 4;
-        int idx = static_cast<int>(m_export_status_);
+        int idx = static_cast<int>(status);
         idx = ((idx + dir) % n + n) % n;
-        m_export_status_ = static_cast<StatusFilter>(idx);
+        return static_cast<StatusFilter>(idx);
+    }
+
+    /// Advances the export status radio, skipping views this session cannot
+    /// query (all/deleted in a read-only session; review A display).
+    void cycle_status(int dir)
+    {
+        StatusFilter candidate = step_status(m_export_status_, dir);
+        for (int i = 0; i < 4 && !status_queryable(candidate); ++i) {
+            candidate = step_status(candidate, dir);
+        }
+        m_export_status_ = candidate;
     }
 
     // --- Submit --------------------------------------------------------------
@@ -549,8 +591,7 @@ private:
         filter.tag = m_tag_;
         filter.campaign = m_campaign_;
         m_export_.set_filter(filter);
-        m_export_.set_path(m_context_.options.read_only ? std::string()
-                                                        : m_exp_path_);
+        m_export_.set_path(writes_denied() ? std::string() : m_exp_path_);
         const CommandInfo* info = find_command("link.export");
         if (info == nullptr) {
             toast_unavailable("link.export");
@@ -670,7 +711,7 @@ private:
     {
         using namespace ftxui;
         const std::size_t w = inner_width();
-        const bool read_only = m_context_.options.read_only;
+        const bool import_disabled = writes_denied();
 
         Elements rows;
         rows.push_back(tab_line());
@@ -699,13 +740,13 @@ private:
         rows.push_back(paste_area(w));
         rows.push_back(preview_line(w));
         rows.push_back(text(""));
-        rows.push_back(action_line(read_only));
+        rows.push_back(action_line(import_disabled));
 
         if (!m_inline_message_.empty()) {
             rows.push_back(text(fit("! " + m_inline_message_, w))
                            | to_decorator(m_theme_.error));
         }
-        if (read_only) {
+        if (import_disabled) {
             rows.push_back(
                 text(fit("read-only session: import needs write access "
                          "(not_authorized)",
@@ -812,11 +853,11 @@ private:
     }
 
     /// The dry-run checkbox and the Start / Cancel buttons.
-    ftxui::Element action_line(bool read_only) const
+    ftxui::Element action_line(bool start_disabled) const
     {
         using namespace ftxui;
         Element start = text("[ Start import ]");
-        if (read_only) {
+        if (start_disabled) {
             start = start | to_decorator(m_theme_.disabled);
         }
         return hbox({
@@ -833,7 +874,7 @@ private:
     ftxui::Element render_export()
     {
         using namespace ftxui;
-        const bool read_only = m_context_.options.read_only;
+        const bool path_disabled = writes_denied();
 
         Elements rows;
         rows.push_back(tab_line());
@@ -852,7 +893,7 @@ private:
             "File path:  ",
             m_exp_path_,
             "(inline; blank = return data)",
-            read_only,
+            path_disabled,
             "disabled (read-only: path export needs write, not_authorized)"));
         rows.push_back(text(""));
         rows.push_back(text("[ Start export ]"));
@@ -888,14 +929,26 @@ private:
         Elements cells;
         cells.push_back(text("Status:  "));
         bool first = true;
+        bool any_disabled = false;
         for (const Item& it : items) {
             if (!first) {
                 cells.push_back(text("   "));
             }
             first = false;
             const bool sel = it.status == m_export_status_;
-            cells.push_back(
-                text((sel ? "(*) " : "( ) ") + std::string(it.label)));
+            Element cell =
+                text((sel ? "(*) " : "( ) ") + std::string(it.label));
+            // Review A (display): all/deleted raise export to a write, so a
+            // read-only session renders them disabled, not hidden.
+            if (!status_queryable(it.status)) {
+                cell = cell | to_decorator(m_theme_.disabled);
+                any_disabled = true;
+            }
+            cells.push_back(std::move(cell));
+        }
+        if (any_disabled) {
+            cells.push_back(text("   (all/deleted: not_authorized, read-only)")
+                            | to_decorator(m_theme_.disabled));
         }
         return hbox(std::move(cells));
     }

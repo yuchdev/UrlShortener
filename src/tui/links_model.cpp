@@ -1,6 +1,7 @@
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <url_shortener/tui/json_view.hpp>
@@ -14,9 +15,6 @@ namespace
 
 ///< Placeholder for a missing, null or non-scalar cell value (D3).
 constexpr char k_empty_cell[] = "-";
-
-///< Reason shown when a write action is refused in a read-only session.
-constexpr char k_read_only_reason[] = "read-only session";
 
 /**
  * @brief Resolves one (possibly dotted) key against a link element's JSON to a
@@ -60,8 +58,8 @@ std::string cell_value(const std::string& element_json, const std::string& key)
 
 }  // namespace
 
-LinksModel::LinksModel(bool read_only)
-    : m_read_only_(read_only)
+LinksModel::LinksModel(CapabilityModel capability)
+    : m_capability_(std::move(capability))
 {
 }
 
@@ -79,9 +77,13 @@ ActionAvailability LinksModel::availability(
             break;
     }
 
-    // Every write action is refused in a read-only session (defence in depth).
-    if (m_read_only_) {
-        return ActionAvailability {false, k_read_only_reason};
+    // Every write action is refused when the capability denies writes (the one
+    // decision point, subtask 18; defence in depth over the registry).
+    CommandInfo write_probe;
+    write_probe.permission = "write";
+    const Capability cap = m_capability_.can_run(write_probe);
+    if (!cap.allowed) {
+        return ActionAvailability {false, cap.reason};
     }
 
     const bool deleted = status_of_selected == "deleted";

@@ -65,6 +65,24 @@ public:
     std::string title() const;
 
     /**
+     * @brief Returns the title fitted so it occupies at most @p max_cols
+     * display columns, shrinking only the backend label (subtask 18 review E).
+     *
+     * Same format as @ref title, but the fixed prefix, the `local/<role>`
+     * segment and the read-only `[READ-ONLY]` badge are reserved first and the
+     * backend label is width-fitted into the remaining budget (never past the
+     * 60-column cap). The role and badge are therefore never the part that gets
+     * clipped when the backend label is long; the render sink
+     * (`frame_view.cpp`) calls this with the budget left after the `[F1 Help]`
+     * hint so the badge stays visible at 80 columns.
+     *
+     * @param max_cols The maximum display width the whole title may occupy; a
+     * value at or below the fixed overhead still yields a one-column label.
+     * @return The composed, width-fitted title; always non-empty.
+     */
+    std::string title_within(std::size_t max_cols) const;
+
+    /**
      * @brief Returns the memory-store banner when the backend is not
      * persistent.
      *

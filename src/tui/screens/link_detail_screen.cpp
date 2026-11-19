@@ -147,7 +147,7 @@ public:
                                 m_policy_,
                                 m_toasts_,
                                 m_theme_,
-                                context.options.read_only})
+                                capability_for(context)})
     {
         // Spec step 4: the `s` bucket toggle is offered only when the live
         // `link.stats` descriptor actually accepts a `bucket` argument; read it
@@ -478,7 +478,7 @@ private:
             m_policy_,
             m_toasts_,
             m_theme_,
-            m_context_.options.read_only,
+            capability_for(m_context_),
             "Edit link",
             [this](const commands::CommandResponse& response)
             { on_form_success(response); },

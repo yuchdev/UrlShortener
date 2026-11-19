@@ -7,6 +7,7 @@
 #include <ftxui/component/component_base.hpp>
 #include <url_shortener/commands/envelope.hpp>
 #include <url_shortener/tui/async_caller.hpp>
+#include <url_shortener/tui/capability.hpp>
 #include <url_shortener/tui/confirm.hpp>
 #include <url_shortener/tui/form_model.hpp>
 #include <url_shortener/tui/theme.hpp>
@@ -60,10 +61,12 @@ struct FormViewContext
     ///< Non-owning; must outlive the component.
     const Theme& theme;
 
-    ///< `true` to run as `ControlSet::User` (subtask 18): the submit button is
-    ///< disabled and dim for a command whose permission is not `"read"`, and
-    ///< the form sends nothing (ADR 0003 rule 5).
-    bool read_only = false;
+    ///< The single capability decision (subtask 18): in a read-only session the
+    ///< submit button is disabled and dim for a request whose effective
+    ///< permission is not `"read"` (honoring argument-dependent raises, D16)
+    ///< and the form sends nothing (ADR 0003 rule 5). Built by the screen from
+    ///< @ref capability_for.
+    CapabilityModel capability;
 
     ///< Title shown on the form window, e.g. `"New link"`; the command name is
     ///< appended in parentheses. Composition text; empty falls back to the

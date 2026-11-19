@@ -31,6 +31,15 @@ using url_shortener::tui::LinksModel;
 namespace
 {
 
+/// Builds a base CapabilityModel for a session of the given read-only mode (the
+/// links write actions use base permissions, so no resolver is needed).
+url_shortener::tui::CapabilityModel cap(bool read_only)
+{
+    url_shortener::tui::SessionInfo session;
+    session.read_only = read_only;
+    return url_shortener::tui::CapabilityModel(session);
+}
+
 /// The four link statuses the row column can carry.
 const std::vector<std::string> k_statuses = {
     "active", "disabled", "expired", "deleted"};
@@ -76,7 +85,7 @@ const std::vector<LinkAction> k_actions = {LinkAction::detail,
 // ---------------------------------------------------------------------------
 BOOST_AUTO_TEST_CASE(availability_matrix_full_session)
 {
-    LinksModel model(/*read_only=*/false);
+    LinksModel model(cap(false));
     for (const std::string& status : k_statuses) {
         for (LinkAction action : k_actions) {
             const ActionAvailability avail = model.availability(action, status);
@@ -99,7 +108,7 @@ BOOST_AUTO_TEST_CASE(availability_matrix_full_session)
 // ---------------------------------------------------------------------------
 BOOST_AUTO_TEST_CASE(availability_matrix_read_only_session)
 {
-    LinksModel model(/*read_only=*/true);
+    LinksModel model(cap(true));
     for (const std::string& status : k_statuses) {
         for (LinkAction action : k_actions) {
             const ActionAvailability avail = model.availability(action, status);
@@ -111,7 +120,7 @@ BOOST_AUTO_TEST_CASE(availability_matrix_read_only_session)
                 BOOST_TEST(
                     !avail.enabled,
                     "write action enabled in read-only for status=" << status);
-                BOOST_TEST(avail.reason == "read-only session");
+                BOOST_TEST(avail.reason == "not_authorized: read-only session");
             }
         }
     }
@@ -122,7 +131,7 @@ BOOST_AUTO_TEST_CASE(availability_matrix_read_only_session)
 // ---------------------------------------------------------------------------
 BOOST_AUTO_TEST_CASE(toggle_command_by_status)
 {
-    LinksModel model(/*read_only=*/false);
+    LinksModel model(cap(false));
     BOOST_TEST(model.toggle_command("active") == "link.disable");
     BOOST_TEST(model.toggle_command("expired") == "link.disable");
     BOOST_TEST(model.toggle_command("disabled") == "link.enable");
@@ -135,7 +144,7 @@ BOOST_AUTO_TEST_CASE(toggle_command_by_status)
 // ---------------------------------------------------------------------------
 BOOST_AUTO_TEST_CASE(no_selection_disables_row_writes)
 {
-    LinksModel model(/*read_only=*/false);
+    LinksModel model(cap(false));
     BOOST_TEST(!model.availability(LinkAction::edit, "").enabled);
     BOOST_TEST(!model.availability(LinkAction::toggle, "").enabled);
     BOOST_TEST(!model.availability(LinkAction::remove, "").enabled);
@@ -148,7 +157,7 @@ BOOST_AUTO_TEST_CASE(no_selection_disables_row_writes)
 // ---------------------------------------------------------------------------
 BOOST_AUTO_TEST_CASE(columns_and_keys)
 {
-    LinksModel model(/*read_only=*/false);
+    LinksModel model(cap(false));
     const std::vector<ColumnDef> columns = model.columns();
     BOOST_REQUIRE_EQUAL(columns.size(), 5u);
     BOOST_TEST(columns[0].title == "SLUG");
@@ -169,7 +178,7 @@ BOOST_AUTO_TEST_CASE(columns_and_keys)
 // ---------------------------------------------------------------------------
 BOOST_AUTO_TEST_CASE(row_from_full_link_json)
 {
-    LinksModel model(/*read_only=*/false);
+    LinksModel model(cap(false));
     const std::string json =
         R"({"id":"l-1","slug":"docs",)"
         R"("url":"https://example.com/docs/getting-started",)"
@@ -195,7 +204,7 @@ BOOST_AUTO_TEST_CASE(row_from_full_link_json)
 // ---------------------------------------------------------------------------
 BOOST_AUTO_TEST_CASE(row_from_minimal_link_json)
 {
-    LinksModel model(/*read_only=*/false);
+    LinksModel model(cap(false));
     const std::string json =
         R"({"slug":"promo","url":"https://x","status":"disabled"})";
     const std::vector<std::string> row = model.row_from_link_json(json);

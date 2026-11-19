@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -154,6 +155,24 @@ struct Fixture
         , session(make_session(read_only))
         , context {caller, session, router, options}
     {
+        // Emulate the registry's status raise (D16) so the arg-aware read-only
+        // gate resolves link.list {status:all|deleted} to write, matching the
+        // server: the screen then defaults to active and disables all/deleted.
+        client.set_commands(catalog());
+        client.set_permission_hook(
+            [](const commands::CommandRequest& request)
+                -> std::optional<std::string>
+            {
+                if (request.command == "link.list"
+                    && (request.args_json.find("\"status\":\"all\"")
+                            != std::string::npos
+                        || request.args_json.find("\"status\":\"deleted\"")
+                            != std::string::npos))
+                {
+                    return std::string("write");
+                }
+                return std::nullopt;
+            });
     }
 
     static tui::TuiOptions make_options(bool read_only)

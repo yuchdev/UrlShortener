@@ -106,11 +106,17 @@ void MutationFlow::begin(
     m_command_name_ = info.name;
     m_on_result_ = std::move(on_result);
 
-    // T-116 (defence in depth): a read-only session must never submit a
-    // non-`read` command, even through a direct run_mutation caller. Refuse up
-    // front with a toast and zero submits; the registry's AccessGuard would
-    // deny it too, but we never put the write on the wire.
-    if (m_deps_.read_only && !is_read_only_command(info)) {
+    // T-116 (defence in depth): the one capability decision refuses a request
+    // whose *effective* permission is not `read` in a read-only session, even
+    // through a direct run_mutation caller. The capability resolves the
+    // permission for the exact submitted request (its args_json), so an
+    // argument-dependent raise (D16: link.export with a path, link.list with
+    // status=all) is caught even when the descriptor's base permission is
+    // `read`. Refuse up front with a toast and zero submits; the registry's
+    // AccessGuard would deny it too, but we never put the write on the wire.
+    const Capability cap =
+        m_deps_.capability.can_run(info, m_request_.args_json);
+    if (!cap.allowed) {
         m_awaiting_ = false;
         m_confirm_.reset();
         Toast t;

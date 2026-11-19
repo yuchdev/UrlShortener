@@ -157,6 +157,47 @@ void DashboardModel::start_refresh()
         status = SubStatus::pending;
     }
     m_counts_error_.clear();
+    m_restricted_.clear();
+    m_counts_.total_restricted = false;
+    m_counts_.deleted_restricted = false;
+}
+
+void DashboardModel::mark_restricted(const std::string& panel)
+{
+    m_restricted_.insert(panel);
+    // A restricted count no longer blocks the counts panel from going ready and
+    // is rendered `n/a (read-only)` instead of a stale 0 (review A).
+    if (panel == "counts.total") {
+        m_counts_status_[counts_total] = SubStatus::restricted;
+        m_counts_.total_restricted = true;
+    }
+    else if (panel == "counts.deleted") {
+        m_counts_status_[counts_deleted] = SubStatus::restricted;
+        m_counts_.deleted_restricted = true;
+    }
+    // Once every surviving count has resolved, the panel may already be ready;
+    // recompute so a batch of only active/disabled still reaches ready.
+    bool any_failed = false;
+    bool all_done = true;
+    for (const SubStatus status : m_counts_status_) {
+        if (status == SubStatus::failed) {
+            any_failed = true;
+        }
+        if (status == SubStatus::pending) {
+            all_done = false;
+        }
+    }
+    if (any_failed) {
+        m_counts_.state = PanelState::unavailable;
+    }
+    else if (all_done) {
+        m_counts_.state = PanelState::ready;
+    }
+}
+
+bool DashboardModel::restricted(const std::string& panel) const
+{
+    return m_restricted_.count(panel) != 0;
 }
 
 std::string DashboardModel::panel_of(const std::string& request_id)
@@ -259,19 +300,22 @@ void DashboardModel::apply_counts(CountsIndex slot,
     }
 
     bool any_failed = false;
-    bool all_ok = true;
+    bool all_resolved = true;
     for (const SubStatus status : m_counts_status_) {
         if (status == SubStatus::failed) {
             any_failed = true;
         }
-        if (status != SubStatus::ok) {
-            all_ok = false;
+        // A restricted sub counts as resolved (review A): it is withheld, not
+        // pending, so the panel becomes ready once every non-restricted sub is
+        // in and renders `n/a (read-only)` for the withheld ones.
+        if (status == SubStatus::pending) {
+            all_resolved = false;
         }
     }
     if (any_failed) {
         m_counts_.state = PanelState::unavailable;
     }
-    else if (all_ok) {
+    else if (all_resolved) {
         m_counts_.state = PanelState::ready;
     }
     // Otherwise keep the current state so an auto-refresh never flashes

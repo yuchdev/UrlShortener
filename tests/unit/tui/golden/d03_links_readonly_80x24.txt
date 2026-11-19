@@ -1,4 +1,4 @@
-Links                                      status: (all) active disabled deleted
+Linksstatus: all (active) disabled deleted  (all/deleted: not_authorized, read-o
 filter: []
  SLUG     TARGET URL                               STATUS   CLICKS EXPIRES
 >docs     https://example.com/docs/getting-started active    12044 -

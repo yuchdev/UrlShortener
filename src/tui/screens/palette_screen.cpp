@@ -5,8 +5,8 @@
  * flow for the chosen command. FTXUI renderer over the model; it issues no
  * command directly (contract C8), sanitizes every command name/summary/tag
  * before width fitting (threat model T-110), and sets
- * @ref url_shortener::tui::ScreenContext::text_input_active while the filter has
- * focus so digit keys type into the query instead of switching tabs.
+ * @ref url_shortener::tui::ScreenContext::text_input_active while the filter
+ * has focus so digit keys type into the query instead of switching tabs.
  */
 #include <algorithm>
 #include <cstddef>
@@ -23,7 +23,6 @@
 #include <ftxui/component/event.hpp>
 #include <ftxui/dom/elements.hpp>
 #include <ftxui/screen/box.hpp>
-
 #include <url_shortener/core/clock.hpp>
 #include <url_shortener/tui/keymap.hpp>
 #include <url_shortener/tui/palette_model.hpp>
@@ -79,7 +78,7 @@ public:
         : m_context_(context)
         , m_theme_(theme_for(context.options.theme))
         , m_toasts_(m_clock_)
-        , m_model_(std::move(commands), context.options.read_only)
+        , m_model_(std::move(commands), capability_for(context))
     {
         ftxui::InputOption opt;
         opt.content = &m_filter_buffer_;
@@ -96,8 +95,8 @@ public:
             return m_command_screen_->component()->Render() | reflect(m_box_);
         }
         m_context_.text_input_active = true;  // the filter owns the keyboard
-        Element base = dbox(
-            {render_list(), render_toasts(m_toasts_, false, m_theme_)});
+        Element base =
+            dbox({render_list(), render_toasts(m_toasts_, false, m_theme_)});
         if (m_theme_.ascii_only) {
             base = ascii_filter(std::move(base));
         }
@@ -265,11 +264,12 @@ private:
     /// Builds the empty-query compaction (D9): commands sharing a top-level
     /// name prefix (`db.*`, `job.*`, `link.*`, ...) are packed onto one or more
     /// `name / name / ...` lines, driven entirely by the prefix (no hard-coded
-    /// group list). Selection is still per-command: the selected command's token
-    /// is marked `>` and highlighted, and a disabled command's token is dim, so
-    /// every command stays reachable with the arrows and the read-only state
-    /// still reads. Per-command summaries/tags are shown when the operator
-    /// filters (the full-row view); the compaction trades them for density.
+    /// group list). Selection is still per-command: the selected command's
+    /// token is marked `>` and highlighted, and a disabled command's token is
+    /// dim, so every command stays reachable with the arrows and the read-only
+    /// state still reads. Per-command summaries/tags are shown when the
+    /// operator filters (the full-row view); the compaction trades them for
+    /// density.
     /// @param content_width Columns available for wrapping.
     /// @param[out] out_lines The built compact lines.
     /// @param[out] sel_line Index into @p out_lines of the selected command's
@@ -349,10 +349,8 @@ private:
     ftxui::Element render_list() const
     {
         using namespace ftxui;
-        const std::size_t content_width =
-            static_cast<std::size_t>(measured_width() > 2
-                                         ? measured_width() - 2
-                                         : 0);
+        const std::size_t content_width = static_cast<std::size_t>(
+            measured_width() > 2 ? measured_width() - 2 : 0);
         const std::vector<PaletteEntry>& entries = m_model_.entries();
         const bool empty_query = m_model_.query().empty();
 
@@ -380,7 +378,8 @@ private:
                     : 0;
             }
             for (std::size_t i = first;
-                 i < entries.size() && i < first + rows_shown; ++i)
+                 i < entries.size() && i < first + rows_shown;
+                 ++i)
             {
                 rows.push_back(entry_row(entries[i], i == sel, content_width));
             }
@@ -388,10 +387,11 @@ private:
 
         Elements content_rows;
         content_rows.push_back(filter_line(content_width));
-        // In the compact view the per-command disabled reason is not shown, so a
-        // read-only session gets an explicit note (the dim style still applies
-        // to each disabled command token).
-        if (m_context_.options.read_only && empty_query) {
+        // In the compact view the per-command disabled reason is not shown, so
+        // a read-only session gets an explicit note (the dim style still
+        // applies to each disabled command token). The read-only mode is read
+        // through the capability badge, not a bespoke flag (subtask 18).
+        if (!capability_for(m_context_).badge().empty() && empty_query) {
             content_rows.push_back(
                 text(" read-only session: write commands disabled")
                 | to_decorator(m_theme_.warning));
@@ -444,7 +444,8 @@ class PaletteScreen final : public IScreen
 public:
     /**
      * @brief Builds the screen over @p context and @p commands.
-     * @param context The screen context; captured by the component by reference.
+     * @param context The screen context; captured by the component by
+     * reference.
      * @param commands The catalog to list; moved in.
      */
     PaletteScreen(ScreenContext& context, std::vector<CommandInfo> commands)

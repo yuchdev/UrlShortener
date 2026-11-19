@@ -4,7 +4,6 @@
 #include <vector>
 
 #include <boost/test/unit_test.hpp>
-
 #include <url_shortener/tui/command_client.hpp>
 #include <url_shortener/tui/palette_model.hpp>
 
@@ -30,6 +29,15 @@ namespace tui = url_shortener::tui;
 
 namespace
 {
+
+/// A base CapabilityModel for the given read-only mode (palette entries use
+/// base permissions, so no resolver is needed).
+tui::CapabilityModel cap(bool read_only)
+{
+    tui::SessionInfo session;
+    session.read_only = read_only;
+    return tui::CapabilityModel(session);
+}
 
 tui::CommandInfo cmd(const std::string& name,
                      const std::string& summary,
@@ -80,7 +88,7 @@ const tui::PaletteEntry* find(const std::vector<tui::PaletteEntry>& entries,
 // ---------------------------------------------------------------------------
 BOOST_AUTO_TEST_CASE(empty_query_lists_all_sorted)
 {
-    tui::PaletteModel model(catalog(), /*read_only=*/false);
+    tui::PaletteModel model(catalog(), cap(false));
     const std::vector<tui::PaletteEntry>& entries = model.entries();
     BOOST_REQUIRE_EQUAL(entries.size(), 9u);
     for (std::size_t i = 1; i < entries.size(); ++i) {
@@ -88,8 +96,7 @@ BOOST_AUTO_TEST_CASE(empty_query_lists_all_sorted)
         const std::string cur = entries[i].info->name;
         // Extra parens: BOOST_TEST's auto-decomposition mis-handles
         // std::string::operator< (it compares by length), so disable it here.
-        BOOST_CHECK_MESSAGE(prev < cur,
-                            prev << " should sort before " << cur);
+        BOOST_CHECK_MESSAGE(prev < cur, prev << " should sort before " << cur);
     }
 }
 
@@ -98,7 +105,7 @@ BOOST_AUTO_TEST_CASE(empty_query_lists_all_sorted)
 // ---------------------------------------------------------------------------
 BOOST_AUTO_TEST_CASE(link_prefix_shows_only_link_commands)
 {
-    tui::PaletteModel model(catalog(), false);
+    tui::PaletteModel model(catalog(), cap(false));
     model.set_query("link.");
     const std::vector<tui::PaletteEntry>& entries = model.entries();
     BOOST_REQUIRE(!entries.empty());
@@ -114,7 +121,7 @@ BOOST_AUTO_TEST_CASE(link_prefix_shows_only_link_commands)
 // ---------------------------------------------------------------------------
 BOOST_AUTO_TEST_CASE(leading_colon_is_stripped)
 {
-    tui::PaletteModel model(catalog(), false);
+    tui::PaletteModel model(catalog(), cap(false));
     model.set_query(":link.");
     BOOST_TEST(model.query() == "link.");
     for (const tui::PaletteEntry& e : model.entries()) {
@@ -127,7 +134,7 @@ BOOST_AUTO_TEST_CASE(leading_colon_is_stripped)
 // ---------------------------------------------------------------------------
 BOOST_AUTO_TEST_CASE(subsequence_matches_link_list)
 {
-    tui::PaletteModel model(catalog(), false);
+    tui::PaletteModel model(catalog(), cap(false));
     model.set_query("lst");
     BOOST_TEST(find(model.entries(), "link.list") != nullptr);
 }
@@ -137,11 +144,11 @@ BOOST_AUTO_TEST_CASE(subsequence_matches_link_list)
 // ---------------------------------------------------------------------------
 BOOST_AUTO_TEST_CASE(unknown_query_is_empty)
 {
-    tui::PaletteModel model(catalog(), false);
+    tui::PaletteModel model(catalog(), cap(false));
     model.set_query("zzzznope");
     BOOST_TEST(model.entries().empty());
-    BOOST_TEST(model.selected() == static_cast<const tui::PaletteEntry*>(
-                                       nullptr));
+    BOOST_TEST(model.selected()
+               == static_cast<const tui::PaletteEntry*>(nullptr));
 }
 
 // ---------------------------------------------------------------------------
@@ -150,13 +157,13 @@ BOOST_AUTO_TEST_CASE(unknown_query_is_empty)
 // ---------------------------------------------------------------------------
 BOOST_AUTO_TEST_CASE(read_only_disables_write_commands)
 {
-    tui::PaletteModel model(catalog(), /*read_only=*/true);
+    tui::PaletteModel model(catalog(), cap(true));
     const std::vector<tui::PaletteEntry>& entries = model.entries();
 
     const tui::PaletteEntry* create = find(entries, "link.create");
     BOOST_REQUIRE(create != nullptr);
     BOOST_TEST(!create->enabled);
-    BOOST_TEST(create->disabled_reason == "not_authorized (read-only session)");
+    BOOST_TEST(create->disabled_reason == "not_authorized: read-only session");
 
     const tui::PaletteEntry* get = find(entries, "link.get");
     BOOST_REQUIRE(get != nullptr);
@@ -170,7 +177,7 @@ BOOST_AUTO_TEST_CASE(read_only_disables_write_commands)
 // ---------------------------------------------------------------------------
 BOOST_AUTO_TEST_CASE(tags_carry_confirm_and_jobs_markers)
 {
-    tui::PaletteModel model(catalog(), false);
+    tui::PaletteModel model(catalog(), cap(false));
     const std::vector<tui::PaletteEntry>& entries = model.entries();
 
     BOOST_TEST(find(entries, "link.get")->tag == "read");
@@ -188,7 +195,7 @@ BOOST_AUTO_TEST_CASE(synthetic_command_appears)
 {
     std::vector<tui::CommandInfo> commands = catalog();
     commands.push_back(cmd("widget.frobnicate", "Frobnicate a widget", "read"));
-    tui::PaletteModel model(commands, false);
+    tui::PaletteModel model(commands, cap(false));
     BOOST_TEST(find(model.entries(), "widget.frobnicate") != nullptr);
 
     model.set_query("frob");
@@ -201,7 +208,8 @@ BOOST_AUTO_TEST_CASE(synthetic_command_appears)
 // ---------------------------------------------------------------------------
 BOOST_AUTO_TEST_CASE(stable_order_and_selection)
 {
-    tui::PaletteModel model(catalog(), false);  // empty query -> equal scores
+    tui::PaletteModel model(catalog(),
+                            cap(false));  // empty query -> equal scores
     const std::vector<tui::PaletteEntry>& entries = model.entries();
     BOOST_REQUIRE(entries.size() >= 2u);
     BOOST_TEST(entries.front().info->name == "db.tables");  // first by name

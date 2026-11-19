@@ -251,7 +251,7 @@ public:
         : m_model_(model)
         , m_ctx_(ctx)
         , m_flow_(MutationDeps {
-              ctx.caller, ctx.policy, ctx.toasts, ctx.theme, ctx.read_only})
+              ctx.caller, ctx.policy, ctx.toasts, ctx.theme, ctx.capability})
     {
         using namespace ftxui;
 
@@ -355,7 +355,14 @@ private:
     /// Whether the submit button is currently active.
     bool submit_enabled() const
     {
-        if (m_ctx_.read_only && !is_read_only_command(m_model_.command())) {
+        // The one capability decision (subtask 18), arg-aware: a form whose
+        // current arguments resolve to a non-`read` permission in a read-only
+        // session disables the submit.
+        if (!m_ctx_.capability
+                 .can_run(m_model_.command(),
+                          m_model_.to_request(k_preview_id).args_json)
+                 .allowed)
+        {
             return false;
         }
         return !m_flow_.busy() && !m_flow_.awaiting_confirm();
@@ -587,8 +594,13 @@ private:
         // ADR 0003 rule 5 / subtask 18: in a read-only session a write
         // command's disabled Create button carries the registry's
         // not_authorized reason, so the control is disabled *and labelled*,
-        // never silently inert.
-        if (m_ctx_.read_only && !is_read_only_command(m_model_.command())) {
+        // never silently inert. The one capability decision drives it
+        // (arg-aware via the current form arguments).
+        if (!m_ctx_.capability
+                 .can_run(m_model_.command(),
+                          m_model_.to_request(k_preview_id).args_json)
+                 .allowed)
+        {
             content_rows.push_back(
                 text("read-only session: " + m_model_.command().name
                      + " needs write access (not_authorized)")

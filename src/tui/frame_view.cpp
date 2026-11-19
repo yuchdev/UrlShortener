@@ -1,7 +1,7 @@
-#include "url_shortener/tui/frame_view.hpp"
-
 #include <string>
 #include <utility>
+
+#include "url_shortener/tui/frame_view.hpp"
 
 #include <url_shortener/tui/keymap.hpp>
 #include <url_shortener/tui/text_fit.hpp>
@@ -24,15 +24,12 @@ namespace
 std::string footer_text(const std::vector<KeyHint>& screen_hints)
 {
     std::vector<KeyHint> all = screen_hints;
-    for (const KeyHint& hint : global_hints())
-    {
+    for (const KeyHint& hint : global_hints()) {
         all.push_back(hint);
     }
     std::string out;
-    for (std::size_t i = 0; i < all.size(); ++i)
-    {
-        if (i != 0)
-        {
+    for (std::size_t i = 0; i < all.size(); ++i) {
+        if (i != 0) {
             out += "  ";
         }
         out += sanitize_for_terminal(all[i].keys) + " "
@@ -45,11 +42,10 @@ std::string footer_text(const std::vector<KeyHint>& screen_hints)
 ftxui::Element too_small_element()
 {
     using namespace ftxui;
-    return hbox({filler(),
-                 vbox({filler(),
-                       text("terminal too small (need 80x24)"),
-                       filler()}),
-                 filler()});
+    return hbox(
+        {filler(),
+         vbox({filler(), text("terminal too small (need 80x24)"), filler()}),
+         filler()});
 }
 
 }  // namespace
@@ -64,28 +60,36 @@ ftxui::Element render_frame(const FrameModel& model,
 {
     using namespace ftxui;
 
-    if (width < k_min_frame_width || height < k_min_frame_height)
-    {
+    if (width < k_min_frame_width || height < k_min_frame_height) {
         return too_small_element();
     }
 
-    // T-110: model.title() already sanitizes and width-fits the server-provided
-    // backend label (FrameModel::title -> sanitize_for_terminal +
+    // T-110: FrameModel::title_within already sanitizes and width-fits the
+    // server-provided backend label (sanitize_for_terminal +
     // truncate_to_width), so no server control bytes reach this text() call. No
-    // server data other than the backend label reaches the frame here.
-    // FTXUI sizes a window title to its natural width, so [F1 Help] trails the
-    // title rather than hugging the right corner; the D1 order (title first,
-    // Help hint last) is preserved. Right-corner alignment is an FTXUI
-    // limitation documented as a minor deviation from the D1 sketch.
-    Element title_row = hbox({text(model.title()) | to_decorator(theme.title),
-                              filler(),
-                              text("[F1 Help]") | to_decorator(theme.hint)});
+    // server data other than the backend label reaches the frame here. FTXUI
+    // sizes a window title to its natural width, so [F1 Help] trails the title
+    // rather than hugging the right corner; the D1 order (title first, Help
+    // hint last) is preserved. Right-corner alignment is an FTXUI limitation
+    // documented as a minor deviation from the D1 sketch. Subtask 18 review E:
+    // fit the whole title into the row reserving the
+    // `[F1 Help]` hint (9 cols + a space) and the two border columns, so the
+    // read-only `[READ-ONLY]` badge and the role are never clipped off the
+    // right edge - only the backend label shrinks (title_within reserves them
+    // first).
+    constexpr int k_help_cols = 10;  // "[F1 Help]" + one leading space
+    const int title_budget_i = width - 2 - k_help_cols;
+    const auto title_budget =
+        static_cast<std::size_t>(title_budget_i > 1 ? title_budget_i : 1);
+    Element title_row = hbox(
+        {text(model.title_within(title_budget)) | to_decorator(theme.title),
+         filler(),
+         text("[F1 Help]") | to_decorator(theme.hint)});
 
     Elements tab_cells;
-    for (const std::pair<std::string, bool>& tab : model.tabs(active_tab))
-    {
-        const StyleSpec& style = tab.second ? theme.tab_active
-                                            : theme.tab_inactive;
+    for (const std::pair<std::string, bool>& tab : model.tabs(active_tab)) {
+        const StyleSpec& style =
+            tab.second ? theme.tab_active : theme.tab_inactive;
         tab_cells.push_back(text(tab.first) | to_decorator(style));
         tab_cells.push_back(text(" "));
     }
@@ -97,14 +101,14 @@ ftxui::Element render_frame(const FrameModel& model,
     Elements content;
     content.push_back(std::move(tab_bar));
     content.push_back(separator());
-    if (std::optional<std::string> banner = model.banner())
-    {
+    if (std::optional<std::string> banner = model.banner()) {
         content.push_back(text(*banner) | to_decorator(theme.banner));
     }
     content.push_back(std::move(body) | flex);
     content.push_back(separator());
     // Width-fit the footer to the window's inner width (the two border columns)
-    // so a long or hostile set of hints keeps the footer to the single last row.
+    // so a long or hostile set of hints keeps the footer to the single last
+    // row.
     const auto inner_width = static_cast<std::size_t>(width - 2);
     content.push_back(
         text(truncate_to_width(footer_text(footer_hints), inner_width))
@@ -114,8 +118,7 @@ ftxui::Element render_frame(const FrameModel& model,
 
     // Mono theme: fold Unicode box-drawing/block glyphs to ASCII once at the
     // frame root (ADR 0003 "ASCII-borders fallback" for legacy consoles/tmux).
-    if (theme.ascii_only)
-    {
+    if (theme.ascii_only) {
         frame = ascii_filter(std::move(frame));
     }
     return frame;

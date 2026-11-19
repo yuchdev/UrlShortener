@@ -14,7 +14,14 @@ namespace
 /// Maximum display width of the backend label in the title bar (D1 step 2).
 constexpr std::size_t k_backend_label_max = 60;
 
-/// Sanitizes the server-provided backend label and fits it into the title.
+/// The fixed title prefix that precedes the backend label.
+constexpr char k_title_prefix[] = "url_shortener -- backend: ";
+
+/// The fixed title segment that precedes the role (`Admin`/`User`).
+constexpr char k_role_prefix[] = " -- user: local/";
+
+/// Sanitizes the server-provided backend label and fits it to @p budget
+/// columns.
 ///
 /// T-110: @p value comes from `system.info` (untrusted server data), so it is
 /// first run through @ref sanitize_for_terminal (dropping ESC/CSI/OSC/DCS, C0/
@@ -22,9 +29,45 @@ constexpr std::size_t k_backend_label_max = 60;
 /// @ref truncate_to_width (UTF-8-aware, ellipsis on cut). Doing both in the
 /// model means every consumer of @ref FrameModel::title gets a safe, bounded
 /// label with no per-sink duplication.
-std::string safe_label(const std::string& value)
+std::string safe_label(const std::string& value, std::size_t budget)
 {
-    return truncate_to_width(sanitize_for_terminal(value), k_backend_label_max);
+    return truncate_to_width(sanitize_for_terminal(value), budget);
+}
+
+/// Composes the full title with the backend label fitted to @p label_budget.
+///
+/// The role (`Admin`/`User`) and, for a read-only session, the `[READ-ONLY]`
+/// badge are always appended in full; only the backend label is width-bounded,
+/// so the operator's role and badge are never the part that gets clipped
+/// (subtask 18 review E). The badge text comes from @ref CapabilityModel so the
+/// title and the status gating share one source of truth.
+std::string compose_title(const SessionInfo& session,
+                          const std::string& backend_label,
+                          std::size_t label_budget)
+{
+    const char* role = session.read_only ? "User" : "Admin";
+    std::string title = std::string(k_title_prefix)
+        + safe_label(backend_label, label_budget) + k_role_prefix + role;
+    const std::string badge = CapabilityModel(session).badge();
+    if (!badge.empty()) {
+        title += " [" + badge + "]";
+    }
+    return title;
+}
+
+/// The display width of the fixed (non-label) title parts for @p session: the
+/// prefix, the role segment and, when read-only, the ` [READ-ONLY]` badge. All
+/// are ASCII, so byte length equals display width.
+std::size_t title_overhead(const SessionInfo& session)
+{
+    const char* role = session.read_only ? "User" : "Admin";
+    std::size_t overhead = std::string(k_title_prefix).size()
+        + std::string(k_role_prefix).size() + std::string(role).size();
+    const std::string badge = CapabilityModel(session).badge();
+    if (!badge.empty()) {
+        overhead += badge.size() + 3;  // " [" + "]"
+    }
+    return overhead;
 }
 
 /// One D1 tab: its label and the screen whose active tab lights it up.
@@ -61,17 +104,26 @@ FrameModel::FrameModel(SessionInfo session,
 
 std::string FrameModel::title() const
 {
-    const char* role = m_session_.read_only ? "User" : "Admin";
-    std::string title = "url_shortener -- backend: "
-        + safe_label(m_backend_label_) + " -- user: local/" + role;
-    // D1 step 4 / subtask 18: a read-only session trails a `[READ-ONLY]` badge
-    // after the role. The badge text comes from CapabilityModel so the title,
-    // the status gating and the test matrix share one source of truth.
-    const std::string badge = CapabilityModel(m_session_).badge();
-    if (!badge.empty()) {
-        title += " [" + badge + "]";
+    // The unbounded title: the backend label is capped at k_backend_label_max
+    // only; the render sink (@ref title_within) applies the width budget.
+    return compose_title(m_session_, m_backend_label_, k_backend_label_max);
+}
+
+std::string FrameModel::title_within(std::size_t max_cols) const
+{
+    // Reserve the fixed prefix + role + badge first, then fit the backend label
+    // into whatever columns remain (never past the k_backend_label_max cap), so
+    // the role and the `[READ-ONLY]` badge are always fully visible and the
+    // label is the only part that shrinks (subtask 18 review E).
+    const std::size_t overhead = title_overhead(m_session_);
+    std::size_t budget = max_cols > overhead ? max_cols - overhead : 1;
+    if (budget > k_backend_label_max) {
+        budget = k_backend_label_max;
     }
-    return title;
+    if (budget == 0) {
+        budget = 1;
+    }
+    return compose_title(m_session_, m_backend_label_, budget);
 }
 
 std::optional<std::string> FrameModel::banner() const

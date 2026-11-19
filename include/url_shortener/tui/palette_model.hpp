@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 
+#include <url_shortener/tui/capability.hpp>
 #include <url_shortener/tui/command_client.hpp>
 
 namespace url_shortener::tui
@@ -20,10 +21,10 @@ namespace url_shortener::tui
  * colour, no JSON tokenizing. It never consults authorization (contract C7) -
  * the read-only *disabling* it computes is a presentation hint for the view
  * (ADR 0003 rule 5), and the registry still enforces every permission. It names
- * no command (contract C1/C8): the "(confirm)" marker is derived through the one
- * confirmation authority (@ref ConfirmPolicy), never a hard-coded command list.
- * Every display string it exposes (@ref PaletteEntry's command name / summary /
- * tag) is raw server data the view must pass through
+ * no command (contract C1/C8): the "(confirm)" marker is derived through the
+ * one confirmation authority (@ref ConfirmPolicy), never a hard-coded command
+ * list. Every display string it exposes (@ref PaletteEntry's command name /
+ * summary / tag) is raw server data the view must pass through
  * `text_fit::sanitize_for_terminal` before rendering (threat model T-110).
  */
 
@@ -67,10 +68,10 @@ struct PaletteEntry
  *
  * Built once from @ref ICommandClient::commands, it owns a stable copy of the
  * catalog so a command added to the registry later appears with no TUI code
- * change (D9 "zero TUI code"). @ref set_query re-ranks the entries; @ref entries
- * returns the visible, ranked subset (score descending, then command name
- * ascending for a stable order); @ref select_next / @ref select_prev move the
- * highlighted row within that subset.
+ * change (D9 "zero TUI code"). @ref set_query re-ranks the entries; @ref
+ * entries returns the visible, ranked subset (score descending, then command
+ * name ascending for a stable order); @ref select_next / @ref select_prev move
+ * the highlighted row within that subset.
  *
  * Single-threaded: a `PaletteModel` is created and mutated only on the UI
  * thread.
@@ -88,19 +89,20 @@ public:
      *
      * @param commands The command catalog, typically @ref
      * ICommandClient::commands; moved in and retained for the model's lifetime.
-     * @param read_only `true` for a `ControlSet::User` session: write/migrate
-     * commands are marked disabled with a reason (ADR 0003 rule 5). A
-     * presentation hint only; authorization stays with the registry (C7).
+     * @param capability The single capability decision (subtask 18): in a
+     * read-only session each entry whose command is not runnable is marked
+     * disabled with the capability's reason (ADR 0003 rule 5). A presentation
+     * mirror only; authorization stays with the registry (C7).
      */
-    PaletteModel(std::vector<CommandInfo> commands, bool read_only);
+    PaletteModel(std::vector<CommandInfo> commands, CapabilityModel capability);
 
     /**
      * @brief Sets the filter query and re-ranks the entries.
      *
      * A single leading `:` (the palette prefix) and surrounding whitespace are
      * stripped before matching. An empty query lists every command; a query
-     * that matches nothing yields an empty @ref entries list. Selection is reset
-     * to the first (highest-ranked) entry.
+     * that matches nothing yields an empty @ref entries list. Selection is
+     * reset to the first (highest-ranked) entry.
      *
      * @param q The raw filter text from the palette input box.
      */
@@ -170,12 +172,13 @@ private:
     /// Recomputes @ref m_entries_ from @ref m_commands_ for @ref m_query_.
     void rebuild();
 
-    ///< The stable catalog copy; @ref PaletteEntry::info points into this and it
-    ///< is never reallocated after construction.
+    ///< The stable catalog copy; @ref PaletteEntry::info points into this and
+    ///< it is never reallocated after construction.
     std::vector<CommandInfo> m_commands_;
 
-    ///< `true` for a read-only session; drives per-entry disabling.
-    bool m_read_only_ = false;
+    ///< The single capability decision; drives per-entry disabling (subtask
+    ///< 18).
+    CapabilityModel m_capability_;
 
     ///< The display tag for each command, parallel to @ref m_commands_
     ///< (computed once; "(confirm)"/"(jobs)" markers folded in).

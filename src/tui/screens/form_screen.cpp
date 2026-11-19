@@ -73,7 +73,7 @@ public:
             m_policy_,
             m_toasts_,
             m_theme_,
-            m_context_.options.read_only,
+            capability_for(m_context_),
             m_title_,
             [this](const commands::CommandResponse& resp)
             {

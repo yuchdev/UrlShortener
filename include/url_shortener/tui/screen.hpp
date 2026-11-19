@@ -4,8 +4,8 @@
 #include <vector>
 
 #include <ftxui/component/component_base.hpp>
-
 #include <url_shortener/tui/async_caller.hpp>
+#include <url_shortener/tui/capability.hpp>
 #include <url_shortener/tui/command_client.hpp>
 #include <url_shortener/tui/keymap.hpp>
 #include <url_shortener/tui/router.hpp>
@@ -56,6 +56,37 @@ struct ScreenContext
     ///< Slug handed from Links to Link detail; empty when none is pending.
     std::string pending_slug;
 };
+
+/**
+ * @brief Builds the @ref CapabilityModel a screen uses as its single
+ * enable/disable decision (subtask 18 success criterion 4).
+ *
+ * The returned model mirrors the session's read-only state and resolves each
+ * request's *effective* permission through @ref
+ * AsyncCaller::required_permission (so an argument-dependent raise like
+ * `link.list status=all` is honored, D16). It captures @p context's @ref
+ * ScreenContext::caller by reference; that caller is owned by @ref App and
+ * outlives every screen, so a model kept by a screen (or its view context) is
+ * safe for the screen's whole lifetime. Screens call `capability.can_run(...)`
+ * instead of reading the session mode directly, so the capability decision
+ * lives in exactly one place.
+ *
+ * @param context The screen context whose session and caller the model wraps.
+ * @return A @ref CapabilityModel bound to @p context's session and caller.
+ */
+inline CapabilityModel capability_for(const ScreenContext& context)
+{
+    AsyncCaller& caller = context.caller;
+    // The read-only mode is the process flag (`TuiOptions::read_only`), which
+    // `tui_entry` derives identically to the session's `ControlSet::User`; use
+    // it so the capability agrees with the session identity carried for the
+    // frame role/badge.
+    SessionInfo session = context.session;
+    session.read_only = context.options.read_only;
+    return CapabilityModel(session,
+                           [&caller](const commands::CommandRequest& request)
+                           { return caller.required_permission(request); });
+}
 
 /**
  * @brief The interface every screen implements so it plugs into the frame

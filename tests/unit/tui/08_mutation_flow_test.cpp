@@ -10,6 +10,7 @@
 #include <url_shortener/commands/envelope.hpp>
 #include <url_shortener/core/clock.hpp>
 #include <url_shortener/tui/async_caller.hpp>
+#include <url_shortener/tui/capability.hpp>
 #include <url_shortener/tui/command_client.hpp>
 #include <url_shortener/tui/confirm.hpp>
 #include <url_shortener/tui/mutation_flow.hpp>
@@ -70,8 +71,17 @@ struct FlowFixture
                                   policy,
                                   toasts,
                                   tui::theme_for(tui::ThemeName::dark),
-                                  read_only})
+                                  make_capability(read_only)})
     {
+    }
+
+    /// A base capability for the session mode (these tests use base-permission
+    /// commands, so no argument-aware resolver is needed).
+    static tui::CapabilityModel make_capability(bool read_only)
+    {
+        tui::SessionInfo session;
+        session.read_only = read_only;
+        return tui::CapabilityModel(session);
     }
 
     commands::CommandRequest request(const std::string& command,
@@ -284,8 +294,12 @@ BOOST_AUTO_TEST_CASE(destroyed_flow_drops_completion)
     // drained, while the caller/poster/toasts (declared first) outlive it - the
     // real teardown order (App destroys screens, hence flows, before the
     // caller), so ~MutationFlow's cancel() runs against a live caller.
-    auto flow = std::make_unique<tui::MutationFlow>(tui::MutationDeps {
-        caller, policy, toasts, tui::theme_for(tui::ThemeName::dark), false});
+    auto flow = std::make_unique<tui::MutationFlow>(
+        tui::MutationDeps {caller,
+                           policy,
+                           toasts,
+                           tui::theme_for(tui::ThemeName::dark),
+                           tui::CapabilityModel(tui::SessionInfo {})});
     commands::CommandRequest request;
     request.command = "link.update";
     request.id = "tui-1";

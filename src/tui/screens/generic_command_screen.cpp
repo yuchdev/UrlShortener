@@ -23,7 +23,6 @@
 #include <ftxui/component/event.hpp>
 #include <ftxui/dom/elements.hpp>
 #include <ftxui/screen/box.hpp>
-
 #include <url_shortener/commands/envelope.hpp>
 #include <url_shortener/core/clock.hpp>
 #include <url_shortener/tui/confirm.hpp>
@@ -79,15 +78,18 @@ public:
         , m_theme_(theme_for(context.options.theme))
         , m_on_close_(std::move(config.on_close))
         , m_model_(config.command)
-        , m_raw_flow_(MutationDeps {context.caller, m_policy_, m_toasts_,
-                                    m_theme_, context.options.read_only})
+        , m_raw_flow_(MutationDeps {context.caller,
+                                    m_policy_,
+                                    m_toasts_,
+                                    m_theme_,
+                                    capability_for(context)})
     {
         FormViewContext view_ctx {
             m_context_.caller,
             m_policy_,
             m_toasts_,
             m_theme_,
-            m_context_.options.read_only,
+            capability_for(m_context_),
             m_model_.command().name,
             [this](const commands::CommandResponse& resp)
             { on_submit_result(resp, m_model_.to_request(k_preview_id)); },
@@ -116,8 +118,8 @@ public:
         else {
             body = m_form_->Render();
         }
-        body = dbox(
-            {std::move(body), render_toasts(m_toasts_, false, m_theme_)});
+        body =
+            dbox({std::move(body), render_toasts(m_toasts_, false, m_theme_)});
         if (m_theme_.ascii_only) {
             body = ascii_filter(std::move(body));
         }
@@ -137,7 +139,8 @@ public:
         }
         // Raw-JSON toggle. The spec named Ctrl-J, but FTXUI maps Ctrl-J to the
         // same byte (0x0A) as Enter/Return, so hijacking it would break confirm
-        // and button activation; Ctrl-R is used instead (see subtask deviation).
+        // and button activation; Ctrl-R is used instead (see subtask
+        // deviation).
         if (event == Event::CtrlR) {
             toggle_raw();
             return true;
@@ -188,7 +191,8 @@ private:
     };
 
     /// Handles a successful submit (form or raw path): a job leaves the form
-    /// open (the flow toasts "job accepted"); any other result opens the viewer.
+    /// open (the flow toasts "job accepted"); any other result opens the
+    /// viewer.
     void on_submit_result(const commands::CommandResponse& resp,
                           const commands::CommandRequest& request)
     {
@@ -200,8 +204,8 @@ private:
             m_job_pending_ = true;
             return;
         }
-        m_result_ = std::make_unique<ResultViewerModel>(
-            resp.result_json, view_width());
+        m_result_ =
+            std::make_unique<ResultViewerModel>(resp.result_json, view_width());
         m_mode_ = Mode::result;
     }
 
@@ -294,8 +298,7 @@ private:
             if (event == Event::Character("j") || event == Event::ArrowDown) {
                 m_result_->scroll(1);
             }
-            else if (event == Event::Character("k")
-                     || event == Event::ArrowUp)
+            else if (event == Event::Character("k") || event == Event::ArrowUp)
             {
                 m_result_->scroll(-1);
             }
@@ -372,10 +375,8 @@ private:
     ftxui::Element render_raw()
     {
         using namespace ftxui;
-        const std::size_t width =
-            static_cast<std::size_t>(measured_width() > 4
-                                         ? measured_width() - 4
-                                         : 0);
+        const std::size_t width = static_cast<std::size_t>(
+            measured_width() > 4 ? measured_width() - 4 : 0);
         Elements buffer_lines;
         std::size_t start = 0;
         while (start <= m_raw_buffer_.size()) {
@@ -390,8 +391,7 @@ private:
             start = nl + 1;
         }
         Element content = vbox({
-            text("Edit args as one JSON object:")
-                | to_decorator(m_theme_.hint),
+            text("Edit args as one JSON object:") | to_decorator(m_theme_.hint),
             text(""),
             vbox(std::move(buffer_lines)) | flex,
             separator(),
@@ -470,12 +470,13 @@ class GenericCommandScreen final : public IScreen
 public:
     /**
      * @brief Builds the screen over @p context and @p config.
-     * @param context The screen context; captured by the component by reference.
+     * @param context The screen context; captured by the component by
+     * reference.
      * @param config The command and close hook; moved in.
      */
     GenericCommandScreen(ScreenContext& context, GenericCommandConfig config)
-        : m_component_(ftxui::Make<GenericCommandComponent>(context,
-                                                            std::move(config)))
+        : m_component_(
+              ftxui::Make<GenericCommandComponent>(context, std::move(config)))
     {
     }
 

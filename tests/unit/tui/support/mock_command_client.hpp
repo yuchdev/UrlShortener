@@ -2,8 +2,10 @@
 
 #include <chrono>
 #include <deque>
+#include <functional>
 #include <map>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <thread>
 #include <utility>
@@ -87,6 +89,27 @@ public:
     }
 
     /**
+     * @brief Installs a hook that emulates the registry's `permission_for`
+     * argument-dependent permission raise (decision log D16).
+     *
+     * @ref required_permission consults @p hook first: a returned value is used
+     * as the request's effective wire permission; `std::nullopt` falls back to
+     * the base permission from the catalog set via @ref set_commands. This lets
+     * a screen/matrix test prove the arg-aware read-only gate (e.g. `link.list`
+     * with `status=all` raising to `write`) against the fake, matching how
+     * @ref InProcessClient reads it from the real registry.
+     *
+     * @param hook The emulated raise; moved in. An empty hook restores the
+     * base-permission default.
+     */
+    void set_permission_hook(std::function<std::optional<std::string>(
+                                 const commands::CommandRequest&)> hook)
+    {
+        std::lock_guard<std::mutex> lock(m_mutex_);
+        m_permission_hook_ = std::move(hook);
+    }
+
+    /**
      * @brief Returns a copy of every recorded request, taken under the lock.
      *
      * @return The recorded requests in call order; safe to call while a worker
@@ -155,6 +178,34 @@ public:
         return m_session_;
     }
 
+    /**
+     * @brief Resolves @p request's effective permission, emulating the
+     * registry's argument-dependent raise when a hook is installed.
+     *
+     * @param request The request whose effective permission to resolve.
+     * @return The hook's value for @p request when it yields one; otherwise the
+     * base permission of the matching catalog entry, or `"manage_users"` for an
+     * unknown command (fail closed), mirroring the interface default.
+     */
+    std::string required_permission(
+        const commands::CommandRequest& request) const override
+    {
+        std::lock_guard<std::mutex> lock(m_mutex_);
+        if (m_permission_hook_) {
+            const std::optional<std::string> hinted =
+                m_permission_hook_(request);
+            if (hinted.has_value()) {
+                return *hinted;
+            }
+        }
+        for (const CommandInfo& info : m_commands_) {
+            if (info.name == request.command) {
+                return info.permission;
+            }
+        }
+        return "manage_users";
+    }
+
     ///< Every request passed to @ref call, in order. For single-threaded
     ///< screen tests; across threads read it only after workers join, or use
     ///< @ref recorded_requests.
@@ -176,6 +227,11 @@ private:
 
     ///< Per-call delay applied by @ref call; zero disables sleeping.
     std::chrono::milliseconds m_delay_ {0};
+
+    ///< Optional emulation of the registry's `permission_for` raise; consulted
+    ///< by @ref required_permission before the catalog base permission.
+    std::function<std::optional<std::string>(const commands::CommandRequest&)>
+        m_permission_hook_;
 };
 
 }  // namespace url_shortener::tui::testing

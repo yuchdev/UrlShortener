@@ -30,12 +30,44 @@ CapabilityModel::CapabilityModel(SessionInfo session)
 {
 }
 
+CapabilityModel::CapabilityModel(SessionInfo session,
+                                 PermissionResolver resolver)
+    : m_session_(std::move(session))
+    , m_resolver_(std::move(resolver))
+{
+}
+
 Capability CapabilityModel::can_run(const CommandInfo& command) const
 {
     // A read/write session runs everything; the registry still enforces the
     // real permission (C7). A read-only session runs only read commands, with
     // the classifier failing closed on any non-`read` or unknown permission.
     if (!m_session_.read_only || is_read_only_command(command)) {
+        return Capability {true, std::string()};
+    }
+    return Capability {false, std::string(k_read_only_reason)};
+}
+
+Capability CapabilityModel::can_run(const CommandInfo& command,
+                                    const std::string& args_json) const
+{
+    // Without a resolver, no argument-dependent raise is known: fall back to
+    // the base-permission decision (correct for commands with no
+    // permission_for).
+    if (!m_resolver_) {
+        return can_run(command);
+    }
+    if (!m_session_.read_only) {
+        return Capability {true, std::string()};
+    }
+
+    commands::CommandRequest probe;
+    probe.command = command.name;
+    probe.args_json = args_json;
+    // The effective permission for these exact arguments; the resolver fails
+    // closed (non-`read`) on anything it cannot resolve.
+    const std::string effective = m_resolver_(probe);
+    if (effective == "read") {
         return Capability {true, std::string()};
     }
     return Capability {false, std::string(k_read_only_reason)};

@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <functional>
 #include <optional>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -63,6 +64,16 @@ struct CountsPanel
 
     ///< `total` of `link.list {status:deleted}`.
     std::uint64_t deleted = 0;
+
+    ///< `true` when the `total` count was not fetched because the session may
+    ///< not run `link.list {status:all}` (it raises to write, D16): the count
+    ///< renders `n/a (read-only)` instead of `0` (subtask 18 review A).
+    bool total_restricted = false;
+
+    ///< `true` when the `deleted` count was not fetched because the session may
+    ///< not run `link.list {status:deleted}` (raises to write); renders
+    ///< `n/a (read-only)`.
+    bool deleted_restricted = false;
 };
 
 /**
@@ -205,6 +216,34 @@ public:
      * and panel states so an auto-refresh does not flash `loading`.
      */
     void start_refresh();
+
+    /**
+     * @brief Marks a panel's request as not issued because the session may not
+     * run it (subtask 18 review A).
+     *
+     * The dashboard screen calls this instead of submitting a request whose
+     * effective permission the capability denies in a read-only session
+     * (`link.list {status:all|deleted}` raises to write, D16). A restricted
+     * count (`counts.total` / `counts.deleted`) no longer blocks the counts
+     * panel from reaching @ref PanelState::ready and renders `n/a (read-only)`;
+     * a restricted `recent` / `redirects` panel reports @ref restricted so the
+     * screen shows `n/a (read-only)` rather than waiting forever. Call after
+     * @ref start_refresh and before submitting the surviving batch.
+     *
+     * @param panel The panel name (as from @ref panel_of) whose request was not
+     * issued.
+     */
+    void mark_restricted(const std::string& panel);
+
+    /**
+     * @brief Whether a panel's data was withheld because the session may not
+     * run its request (read-only, review A).
+     *
+     * @param panel The panel name to query.
+     * @return `true` when @ref mark_restricted was called for @p panel in the
+     * current batch; `false` otherwise.
+     */
+    bool restricted(const std::string& panel) const;
 
     /**
      * @brief Returns the panel name a request/response id was tagged with.
@@ -354,7 +393,9 @@ private:
     {
         pending,  ///< Not yet answered in this batch.
         ok,  ///< Answered successfully.
-        failed  ///< Answered with a failure.
+        failed,  ///< Answered with a failure.
+        restricted  ///< Not issued: the session may not run it (read-only,
+                    ///< D16).
     };
 
     /// Index of each counts sub-request into @ref m_counts_status_.
@@ -397,6 +438,10 @@ private:
 
     ///< The first failed counts call's error message.
     std::string m_counts_error_;
+
+    ///< Panels whose request was withheld this batch because the session may
+    ///< not run it (read-only, review A); drives @ref restricted.
+    std::set<std::string> m_restricted_;
 
     ///< The redirect-metrics panel (and Top slugs governor).
     RedirectsPanel m_redirects_;

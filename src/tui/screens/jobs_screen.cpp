@@ -107,7 +107,7 @@ public:
                                 m_policy_,
                                 m_toasts_,
                                 m_theme_,
-                                context.options.read_only})
+                                capability_for(context)})
     {
         TableViewOptions opts;
         opts.title = "Jobs";

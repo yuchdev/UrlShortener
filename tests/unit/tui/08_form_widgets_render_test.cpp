@@ -163,7 +163,7 @@ struct FormHarness
                                 policy,
                                 toasts,
                                 theme,
-                                false,
+                                tui::CapabilityModel(tui::SessionInfo {}),
                                 title,
                                 nullptr,
                                 nullptr,

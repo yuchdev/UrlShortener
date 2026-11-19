@@ -28,8 +28,7 @@ std::string to_lower(const std::string& s)
 {
     std::string out = s;
     for (char& c : out) {
-        c = static_cast<char>(
-            std::tolower(static_cast<unsigned char>(c)));
+        c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
     }
     return out;
 }
@@ -77,9 +76,9 @@ bool segment_prefix(const std::string& name, const std::string& query)
     return false;
 }
 
-/// Whether invoking @p c would require a typed-token confirmation (the slug of a
-/// `link.delete`, the `MIGRATE` token of a migrate command). Asked through the
-/// single confirmation authority with a representative slug probe so the
+/// Whether invoking @p c would require a typed-token confirmation (the slug of
+/// a `link.delete`, the `MIGRATE` token of a migrate command). Asked through
+/// the single confirmation authority with a representative slug probe so the
 /// policy's slug-gated branch reports `type_token`, keeping the palette free of
 /// any command-name list (contract C1/C8).
 bool needs_typed_confirm(const CommandInfo& c)
@@ -117,9 +116,10 @@ std::string make_tag(const CommandInfo& c)
 
 }  // namespace
 
-PaletteModel::PaletteModel(std::vector<CommandInfo> commands, bool read_only)
+PaletteModel::PaletteModel(std::vector<CommandInfo> commands,
+                           CapabilityModel capability)
     : m_commands_(std::move(commands))
-    , m_read_only_(read_only)
+    , m_capability_(std::move(capability))
 {
     m_tags_.reserve(m_commands_.size());
     for (const CommandInfo& c : m_commands_) {
@@ -188,18 +188,21 @@ void PaletteModel::rebuild()
         entry.info = &m_commands_[i];
         entry.tag = m_tags_[i];
         entry.score = s;
-        // Fail closed via the one shared predicate (threat model T-116): an
-        // empty/unknown permission is treated as a write, so a read-only
-        // session disables it rather than offering it.
-        entry.enabled =
-            !(m_read_only_ && !is_read_only_command(m_commands_[i]));
+        // The one capability decision (subtask 18). It fails closed via the
+        // shared predicate (threat model T-116): an empty/unknown permission is
+        // treated as a write, so a read-only session disables it rather than
+        // offering it.
+        const Capability cap = m_capability_.can_run(m_commands_[i]);
+        entry.enabled = cap.allowed;
         if (!entry.enabled) {
-            entry.disabled_reason = "not_authorized (read-only session)";
+            entry.disabled_reason = cap.reason;
         }
         m_entries_.push_back(std::move(entry));
     }
-    std::sort(m_entries_.begin(), m_entries_.end(),
-              [](const PaletteEntry& a, const PaletteEntry& b) {
+    std::sort(m_entries_.begin(),
+              m_entries_.end(),
+              [](const PaletteEntry& a, const PaletteEntry& b)
+              {
                   if (a.score != b.score) {
                       return a.score > b.score;
                   }

@@ -100,8 +100,8 @@ public:
                                 m_policy_,
                                 m_toasts_,
                                 m_theme_,
-                                context.options.read_only})
-        , m_model_(context.options.read_only)
+                                capability_for(context)})
+        , m_model_(capability_for(context))
         , m_table_(m_model_.columns(), 20)
     {
         using namespace ftxui;
@@ -124,6 +124,28 @@ public:
         { m_context_.text_input_active = focused; };
         m_table_view_ = make_table_view(m_table_, std::move(options));
         Add(m_table_view_);
+
+        // Review A (display): the `all` / `deleted` views raise link.list to a
+        // write permission (D16), so a read-only session cannot query them.
+        // Default to `active` rather than issuing a request the server would
+        // refuse (the all/deleted radios render disabled below).
+        if (!status_queryable(StatusFilter::all)) {
+            m_status_ = StatusFilter::active;
+        }
+    }
+
+    /// Whether this session may query the given status view - the one
+    /// capability decision (subtask 18), arg-aware: `status=all|deleted` raises
+    /// link.list to a write permission (D16), so a read-only session cannot run
+    /// them.
+    bool status_queryable(StatusFilter status) const
+    {
+        CommandInfo list;
+        list.name = "link.list";
+        list.permission = "read";
+        const std::string args =
+            "{\"status\":\"" + status_to_wire(status) + "\"}";
+        return capability_for(m_context_).can_run(list, args).allowed;
     }
 
     /// Refreshes the page when first shown or when the data is stale (step 5).
@@ -378,23 +400,33 @@ private:
         return false;
     }
 
+    /// The next status in cyclic radio order.
+    static StatusFilter next_status(StatusFilter status)
+    {
+        switch (status) {
+            case StatusFilter::all:
+                return StatusFilter::active;
+            case StatusFilter::active:
+                return StatusFilter::disabled;
+            case StatusFilter::disabled:
+                return StatusFilter::deleted;
+            case StatusFilter::deleted:
+                return StatusFilter::all;
+        }
+        return StatusFilter::active;
+    }
+
     /// Cycles the status radio and reloads page 1 with the current filter text.
+    ///
+    /// Review A (display): a status the session cannot query (all/deleted in a
+    /// read-only session) is skipped, so Tab never lands on a disabled choice.
     void cycle_status()
     {
-        switch (m_status_) {
-            case StatusFilter::all:
-                m_status_ = StatusFilter::active;
-                break;
-            case StatusFilter::active:
-                m_status_ = StatusFilter::disabled;
-                break;
-            case StatusFilter::disabled:
-                m_status_ = StatusFilter::deleted;
-                break;
-            case StatusFilter::deleted:
-                m_status_ = StatusFilter::all;
-                break;
+        StatusFilter candidate = next_status(m_status_);
+        for (int i = 0; i < 4 && !status_queryable(candidate); ++i) {
+            candidate = next_status(candidate);
         }
+        m_status_ = candidate;
         // set_filter resets the offset to page 1 and re-queries; the handler
         // reads the new m_status_.
         m_table_.set_filter(m_table_.query().filter);
@@ -599,7 +631,7 @@ private:
             m_policy_,
             m_toasts_,
             m_theme_,
-            m_context_.options.read_only,
+            capability_for(m_context_),
             title,
             [this](const commands::CommandResponse& response)
             { on_form_success(response); },
@@ -715,6 +747,7 @@ private:
         Elements cells;
         cells.push_back(text("status: ") | to_decorator(m_theme_.hint));
         bool first = true;
+        bool any_disabled = false;
         for (const Item& item : items) {
             if (!first) {
                 cells.push_back(text(" "));
@@ -724,23 +757,39 @@ private:
             const std::string label =
                 selected ? ("(" + std::string(item.label) + ")") : item.label;
             Element cell = text(label);
-            if (selected) {
+            // Review A (display): a status the session cannot query
+            // (all/deleted in read-only) renders disabled, not hidden (ADR 0003
+            // rule 5).
+            if (!status_queryable(item.status)) {
+                cell = cell | to_decorator(m_theme_.disabled);
+                any_disabled = true;
+            }
+            else if (selected) {
                 cell = cell | to_decorator(m_theme_.selected_row);
             }
             cells.push_back(std::move(cell));
         }
+        if (any_disabled) {
+            cells.push_back(text("  (all/deleted: not_authorized, read-only)")
+                            | to_decorator(m_theme_.disabled));
+        }
         return hbox(std::move(cells));
     }
 
-    /// The in-body D3 footer keys; the write keys dim in a read-only session.
+    /// The in-body D3 footer keys; the write keys dim when writes are disabled.
     ftxui::Element action_hints_line() const
     {
         using namespace ftxui;
-        const bool read_only = m_context_.options.read_only;
+        // The one capability decision (subtask 18): whether this session may
+        // run any write at all, used to dim the write-key hints.
+        CommandInfo write_probe;
+        write_probe.permission = "write";
+        const bool writes_disabled =
+            !capability_for(m_context_).can_run(write_probe).allowed;
         const auto seg = [&](const char* label, bool write) -> Element
         {
             Element element = text(label);
-            if (write && read_only) {
+            if (write && writes_disabled) {
                 element = element | to_decorator(m_theme_.disabled);
             }
             return element;
