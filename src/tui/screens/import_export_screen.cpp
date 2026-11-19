@@ -144,7 +144,13 @@ public:
                                 capability_for(context)})
         , m_import_(context.options.max_inline_bytes)
     {
-        reset_focus();
+        // Compute the default focus WITHOUT touching the shared
+        // ScreenContext::text_input_active (BUG-2, 06.0/20 smoke): this
+        // constructor runs for every registered screen at startup, including
+        // while this screen is off-screen, so writing the shared flag here
+        // would leak Import/Export's text focus onto whatever tab is active.
+        // The flag is (re)asserted from on_enter once this screen is shown.
+        compute_default_focus();
         // Review A (display): the all/deleted export views raise link.export to
         // a write (D16), so a read-only session cannot query them. Default to
         // active rather than offering a view the server would refuse.
@@ -293,9 +299,10 @@ private:
         return c[i];
     }
 
-    /// Resets the focus to the sub-tab default (the paste area on Import, the
-    /// format radio on Export) and refreshes the text-input flag.
-    void reset_focus()
+    /// Sets @ref m_focus_ to the sub-tab default (the paste area on Import, the
+    /// format radio on Export) without touching the shared context, so it is
+    /// safe to call from the constructor while this screen is off-screen.
+    void compute_default_focus()
     {
         if (m_mode_ == Mode::import_tab) {
             const std::vector<Ctl> c = controls();
@@ -310,6 +317,15 @@ private:
         else {
             m_focus_ = 0;
         }
+    }
+
+    /// Resets the focus to the sub-tab default and refreshes the text-input
+    /// flag. Only call this on the active screen (e.g. from @ref on_enter or an
+    /// interaction handler); the constructor uses @ref compute_default_focus
+    /// instead so an off-screen screen never writes the shared flag.
+    void reset_focus()
+    {
+        compute_default_focus();
         update_text_input_active();
     }
 

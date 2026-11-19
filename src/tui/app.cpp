@@ -13,6 +13,7 @@
 #include <ftxui/dom/elements.hpp>
 #include <ftxui/screen/terminal.hpp>
 #include <url_shortener/commands/envelope.hpp>
+#include <url_shortener/tui/app_navigation.hpp>
 #include <url_shortener/tui/async_caller.hpp>
 #include <url_shortener/tui/frame_model.hpp>
 #include <url_shortener/tui/frame_view.hpp>
@@ -150,6 +151,13 @@ int App::run()
     ScreenInteractive& screen = runtime.screen;
     AsyncCaller& caller = runtime.caller;
     screen.TrackMouse(false);  // mouse is an ADR 0003 non-goal (T-124)
+    // FTXUI 7.0.3 defaults force_handle_ctrl_c_=true, which re-raises SIGINT on
+    // Ctrl-C *regardless* of our Event::CtrlC -> screen.Exit() handler below,
+    // so the process dies with 130 instead of exiting cleanly with 0 (BUG-1,
+    // 06.0/20 smoke). Turn it off so Ctrl-C takes the clean Exit() path;
+    // SIGTERM still uses FTXUI's own signal handling (which restores termios),
+    // so a `kill -TERM` keeps working.
+    screen.ForceHandleCtrlC(false);
 
     // The live context every screen reaches the application through (contract
     // C8). Declared after `runtime` (so it is destroyed before the caller it
@@ -176,17 +184,6 @@ int App::run()
             screens.push_back(make_placeholder_screen(slot.id, slot.message));
         }
     }
-
-    // Map a screen id to its index in the tab container.
-    const auto index_for = [&screens](ScreenId id) -> int
-    {
-        for (std::size_t i = 0; i < screens.size(); ++i) {
-            if (screens[i]->id() == id) {
-                return static_cast<int>(i);
-            }
-        }
-        return 0;
-    };
 
     std::vector<Component> components;
     components.reserve(screens.size());
@@ -234,29 +231,17 @@ int App::run()
         [&]
         {
             const Dimensions size = Terminal::Size();
-            const ScreenId active = m_router_.active_tab();
-            active_index = index_for(active);
 
-            // Fire on_leave/on_enter once per tab change so a data-backed
-            // screen (e.g. Settings) refreshes when shown (subtask 19). The
-            // render callback runs on the UI thread and on_enter only submits
-            // async work, so this never blocks the loop.
-            if (!entered_tab.has_value() || *entered_tab != active) {
-                if (entered_tab.has_value()) {
-                    const int prev = index_for(*entered_tab);
-                    if (prev >= 0
-                        && static_cast<std::size_t>(prev) < screens.size())
-                    {
-                        screens[prev]->on_leave();
-                    }
-                }
-                if (active_index >= 0
-                    && static_cast<std::size_t>(active_index) < screens.size())
-                {
-                    screens[active_index]->on_enter();
-                }
-                entered_tab = active;
-            }
+            // Fire the on_leave/on_enter hand-off once per tab change (so a
+            // data-backed screen refreshes when shown, subtask 19) and reset
+            // the shared text-input focus so it reflects only the active screen
+            // (BUG-2, 06.0/20 smoke). The render callback runs on the UI thread
+            // and on_enter only submits async work, so this never blocks the
+            // loop. The shared `sync_active_screen` is exercised headlessly by
+            // `tui__20_app_navigation_test`.
+            const int synced =
+                sync_active_screen(screens, m_router_, context, entered_tab);
+            active_index = synced >= 0 ? synced : 0;
 
             FrameModel model(m_client_.session(),
                              m_backend_label_,
@@ -289,56 +274,23 @@ int App::run()
             return frame;
         });
 
-    root = CatchEvent(
-        root,
-        [&](const Event& event) -> bool
-        {
-            // While the help overlay is open it owns all input: Esc/F1/`?`
-            // close it, everything else is swallowed so no key leaks to the
-            // screen beneath.
-            if (m_help_visible_) {
-                if (event == Event::Escape || event == Event::F1
-                    || event == Event::Character("?"))
-                {
-                    m_help_visible_ = false;
-                }
-                return true;
-            }
-            // F1 opens help from anywhere, including while a text Input is
-            // focused (checked before the text-input guard below); `?` stays
-            // typable.
-            if (event == Event::F1) {
-                m_help_visible_ = true;
-                return true;
-            }
-            // A focused text input swallows navigation keys (typing `1` in a
-            // slug field must not switch tab). A form/filter screen mirrors its
-            // focus into ScreenContext::text_input_active.
-            if (context.text_input_active) {
-                return false;
-            }
-            if (event == Event::CtrlC) {
-                screen.Exit();
-                return true;
-            }
-            if (event == Event::Escape) {
-                return m_router_.pop();
-            }
-            if (event.is_character() && event.character().size() == 1) {
-                const char key = event.character()[0];
-                if (key == '?') {
-                    m_help_visible_ = true;
-                    return true;
-                }
-                if ((key >= '1' && key <= '7') || key == ':') {
-                    return m_router_.navigate_tab(key);
-                }
-                if (key == 'q') {
-                    return m_router_.pop();
-                }
-            }
-            return false;
-        });
+    root = CatchEvent(root,
+                      [&](const Event& event) -> bool
+                      {
+                          // The global hotkey logic (help overlay, the focused
+                          // text-input guard, Ctrl-C quit, Esc/q back,
+                          // digit/`:` tab switch) lives in the shared
+                          // `handle_global_key` so it can be exercised
+                          // headlessly by `tui__20_app_navigation_test`; Ctrl-C
+                          // is reported as an exit request here so that free
+                          // function needs no live screen.
+                          const GlobalKeyOutcome outcome = handle_global_key(
+                              event, m_router_, context, m_help_visible_);
+                          if (outcome.exit_requested) {
+                              screen.Exit();
+                          }
+                          return outcome.handled;
+                      });
 
     // FTXUI (v7.0.3) already restores termios + escapes on every exit path
     // including exceptions (its Loop destructor) and SIGINT/SIGTERM/SIGQUIT/

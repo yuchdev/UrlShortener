@@ -118,4 +118,18 @@ std::optional<TuiOptions> to_tui_options(const TuiCliOptions& cli,
  */
 observability::LoggingConfig tui_logging_config(const TuiCliOptions& cli);
 
+/**
+ * @brief Reports whether the process stdio can drive the interactive TUI: both
+ * stdin and stdout must be attached to a terminal.
+ *
+ * Exposed so `main()` can refuse a non-interactive `tui` invocation (a pipe or
+ * redirect on either stream) *before* the process-wide command/job runtime is
+ * constructed, so the refusal emits only its single stderr line and never the
+ * job runner's teardown log (BUG-3, 06.0/20 smoke). @ref run_tui performs the
+ * same check as defense in depth for any direct caller.
+ *
+ * @return `true` iff both `stdin` and `stdout` are interactive terminals.
+ */
+bool tui_stdio_is_interactive();
+
 }  // namespace url_shortener::tui

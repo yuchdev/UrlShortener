@@ -81,6 +81,11 @@ bool stdout_is_tty()
 
 }  // namespace
 
+bool tui_stdio_is_interactive()
+{
+    return stdin_is_tty() && stdout_is_tty();
+}
+
 observability::LoggingConfig tui_logging_config(const TuiCliOptions& cli)
 {
     observability::LoggingConfig cfg;
@@ -123,8 +128,11 @@ int run_tui(const TuiCliOptions& cli,
 {
     // Step 1: the TUI needs a real terminal; refuse a pipe/redirect cleanly so
     // a non-interactive caller fails fast instead of leaving a half-opened
-    // screen.
-    if (!stdin_is_tty() || !stdout_is_tty()) {
+    // screen. `main()` already performs this check before building the
+    // process-wide job runtime (so a non-TTY refusal never emits the job
+    // runner's teardown log, BUG-3); this is defense in depth for a direct
+    // caller.
+    if (!tui_stdio_is_interactive()) {
         std::cerr << "tui: refusing to start without an interactive terminal\n";
         return 2;
     }

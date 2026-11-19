@@ -128,6 +128,23 @@ int main(int argc, char* argv[])
                 url_shortener::app::AppErrorCode::storage_failure);
         }
 
+#if URLSHORTENER_WITH_TUI
+        // The interactive `tui` mode needs a real terminal. Refuse a
+        // pipe/redirect here — BEFORE the process-wide command/job runtime is
+        // built below — so a non-interactive invocation (`url_shortener tui <
+        // /dev/null`) emits only its single stderr refusal line and never the
+        // job runner's `job_runner_shutdown` teardown log, which would
+        // otherwise reach the still-default stderr log sink (BUG-3, 06.0/20
+        // smoke). run_tui repeats this check as defense in depth.
+        if (parsed.tui.has_value()
+            && !url_shortener::tui::tui_stdio_is_interactive())
+        {
+            std::cerr << "tui: refusing to start without an interactive "
+                         "terminal\n";
+            return 2;
+        }
+#endif
+
         // Build and publish the one process-wide command runtime from the
         // ACTIVE backend handle, before mark_serving() (install asserts
         // !serving) and before any CLI dispatch or HttpServer can serve a
