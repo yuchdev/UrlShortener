@@ -553,3 +553,21 @@ no decision D1-D16 or contract C1-C11 reversed. Amended specs:
   carry already match the threat model; no contradiction found. The README Subtasks
   table is unchanged - subtask 04 absorbing the peer plumbing adds no new subtask-graph
   edge (04 already precedes 06/07/09), so no cycle and no table change.
+
+### 2026-11-19 - 06.0/18 read-only: argument-dependent permission (user ruling)
+
+- **Finding (security review of `cdfacd1`, HIGH x2):** `link.list` and `link.export` raise
+  their required permission to `write` via `permission_for` (`status=all|deleted`, export
+  `path`), but the TUI client mirror (`is_read_only_command`, `CapabilityModel`,
+  `MutationFlow`) saw only the descriptor's base `read`. A `--read-only` session therefore
+  sent write-permission requests (default Links view, Dashboard counts, default Export),
+  which the server correctly refused (C7 held; no data exposure), and the 18 matrix test
+  was arg-blind so it could not detect it.
+- **Ruling (user, 2026-11-19):** **client preflight.** `ICommandClient` gains
+  `required_permission(const CommandRequest&)`; `InProcessClient` evaluates the registry's
+  real `max(base, permission_for(args))` (single source of truth, no duplicated rules in
+  the TUI). `CapabilityModel::can_run(info, args)` uses it. A future remote client must
+  provide an equivalent or fail closed. This extends contract C8's client interface.
+- **Display ruling (user):** in read-only, Links defaults to status `active`; `all` /
+  `deleted` choices render disabled with the `not_authorized` reason. Dashboard total /
+  deleted counts show `n/a (read-only)`; active / disabled still load. Nothing hidden.
