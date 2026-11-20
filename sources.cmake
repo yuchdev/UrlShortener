@@ -140,6 +140,7 @@ set(URL_SHORTENER_SOURCES
       tests/unit/http/40_jobs_routes.cpp
       tests/unit/http/30_redirect_through_backend.cpp
       tests/unit/http/31_link_handlers_through_backend.cpp
+      tests/unit/http/32_redirect_fallback_no_command.cpp
   )
 
   set(DOCS_UNIT_SOURCES
@@ -781,6 +782,7 @@ set(URL_SHORTENER_SOURCES
       tests/perf/analytics/queue_overflow_redirect_tail_latency.cpp
       tests/perf/analytics/redirect_analytics_enabled_vs_disabled.cpp
       tests/perf/analytics/worker_batch_insert_throughput.cpp
+      tests/perf/redirect/redirect_fast_path_guard.cpp
   )
 
   set(ALL_INTEGRATION_SOURCES

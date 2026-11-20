@@ -12,6 +12,8 @@ workflow explicitly promotes a specific check to a gate
 tests/perf/
 ├── analytics/   # analytics pipeline benchmarks (placeholders today)
 └── redirect/    # redirect fast-path timing guard (subtask 32)
+    ├── redirect_fast_path_guard.cpp   # benchmark + advisory checks (plain main)
+    └── baseline.json                  # committed baseline, Release-only
 ```
 
 Each `.cpp` is a standalone program that defines its own `main()` and prints a
@@ -86,3 +88,38 @@ benchmark files themselves.
    hardware and Release settings.
 4. Never relax a threshold to make a failing run pass without an explicit,
    reviewed justification.
+
+### Redirect fast-path guard (`redirect/baseline.json`)
+
+The redirect guard (`redirect__redirect_fast_path_guard`) compares the measured,
+calibration-normalised redirect latency against `redirect/baseline.json`. The
+guard finds that file through the `PERF_BASELINE_PATH` compile definition set in
+`CMakeLists.txt`; there is no runtime path to configure.
+
+- **Debug builds skip.** A build without `NDEBUG` prints
+  `skipped: not an optimized build` and exits 0 — the numbers would not be
+  comparable to the Release baseline. Measure and record **only** in a Release
+  build.
+- **Checks and thresholds.** Everything is computed on normalised numbers
+  (`measured_ns / calibration_ns`):
+  - *C-baseline* (advisory; a gate under `URLSHORTENER_PERF_GATE=1`): normalised
+    p50 within **+25 %** and p99 within **+40 %** of the baseline.
+  - *C-registry-presence* (advisory; gated likewise): constructing a full
+    `CommandRegistry` + documented services + an idle 4-worker `JobRunner`
+    in-process keeps the redirect p50 ratio **≤ 1.10**.
+  - *C-no-regression-vs-self* (always on): three repetitions; a relative spread
+    (stddev/median) **> 15 %** marks the run `UNRELIABLE` and suppresses the
+    baseline/registry checks (exit 0) — a noisy runner, not a regression.
+- **Writing a new baseline (human only, never CI).** On a quiet Release machine:
+
+  ```bash
+  cmake-build-rel/redirect__redirect_fast_path_guard --write-baseline
+  ```
+
+  It refuses to write when `CI=true`. Commit the regenerated
+  `redirect/baseline.json` with the compiler, CPU model and build type noted in
+  the file's `compiler`/`cpu` fields. The committed baseline must be recorded on
+  the nightly workflow's runner class so the normalised comparison stays valid.
+- The baseline checked in with subtask 32 is a **placeholder** (zeroed samples,
+  `calibration_ns = 1.0`): a zeroed scenario disables its own comparison, so the
+  guard stays advisory until a real baseline is recorded on the CI runner.

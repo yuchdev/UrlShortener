@@ -340,6 +340,14 @@ include(CTest)
     )
   endforeach()
 
+  # Subtask 32: the redirect fast-path guard locates its checked-in baseline at
+  # build time (no runtime path discovery), so the committed baseline.json is
+  # the single source of truth the guard compares against.
+  if(TARGET redirect__redirect_fast_path_guard)
+    target_compile_definitions(redirect__redirect_fast_path_guard PRIVATE
+        PERF_BASELINE_PATH="${CMAKE_CURRENT_SOURCE_DIR}/tests/perf/redirect/baseline.json")
+  endif()
+
   # ---- App-layer unit tests: dedicated loop with tests/unit/app include dir ----
   # These tests use AppTestFakes.hpp from tests/unit/app/, so the test directory
   # must be on the include path (the generic macro uses tests/contract/metadata).
