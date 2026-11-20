@@ -12,7 +12,7 @@ Tracks progress against [plan.md](/docs/roadmap/0006-unified-command-model-and-t
 | 04.0 | REST and CLI adapters | ✅ Complete (15/15 subtasks) | 22 (`commands__40`, http `15`-`25`; `cli__06`-`12`; cli int `20`, `21`; `observability__04`; `ratelimiter__08`) |
 | 05.0 | Jobs, pair import/export, stdio | ✅ Complete (21/21 subtasks) | 23 (`commands__50`-`65`; `app__60`; `cli__20`, `cli__21`; http `40`; cli int `40`, `41`; e2e `30`) |
 | 06.0 | Terminal UI | ✅ Complete | 58 (`tui__01`, `tui__02_*` x3, `tui__03`, `tui__04_*` x6, `tui__05_*` x4, `tui__06_*` x4, `tui__07_*` x3, `tui__08_*` x3, `tui__09_*` x3, `tui__10_*` x2, `tui__11_*` x4, `tui__12_*` x3, `tui__13_*` x2, `tui__14_*` x2, `tui__15_*` x3, `tui__16_*` x3, `tui__17_*` x2, `tui__18_*` x3, `tui__19_*` x2, `tui__20_app_navigation_test`, `tui__21_*` x2, `cli__30`) |
-| 07.0 | Tests and conformance | 🔶 In progress (20/34 subtasks) | 20 (`conformance_00_corpus_lint`, `conformance_01_matcher_vectors`, `conformance_02_harness_selftest`, `conformance_10_cli_cmd_corpus`, `conformance_11_stdio_corpus`, `conformance_12_stdio_framing`, `conformance_13_rest_generic_corpus`, `conformance_14_rest_resource_corpus`, `conformance__00_support_selftest`, `conformance__01_direct_registry_corpus`, `conformance__02_tui_client_corpus` (+ link corpus 57 cases), `commands__70`..`72`, `commands__74`, `commands__75`, `tui__37`, `conformance_30_authz_process_level`, `commands__80_redirect_isolation_test`, `docs__03`..`06`, `tui__22_mock_support_helpers_test`; perf label: `analytics__*` x3) |
+| 07.0 | Tests and conformance | 🔶 In progress (21/34 subtasks) | 20 (`conformance_00_corpus_lint`, `conformance_01_matcher_vectors`, `conformance_02_harness_selftest`, `conformance_10_cli_cmd_corpus`, `conformance_11_stdio_corpus`, `conformance_12_stdio_framing`, `conformance_13_rest_generic_corpus`, `conformance_14_rest_resource_corpus`, `conformance__00_support_selftest`, `conformance__01_direct_registry_corpus`, `conformance__02_tui_client_corpus` (+ link corpus 57 cases), `commands__70`..`72`, `commands__74`, `commands__75`, `commands__76`..`78`, `cli__31`, `tui__23`, `conformance_31_import_limits_process_level`, `tui__37`, `conformance_30_authz_process_level`, `commands__80_redirect_isolation_test`, `docs__03`..`06`, `tui__22_mock_support_helpers_test`; perf label: `analytics__*` x3) |
 | 08.0 | Docs and registry sync | ⬜ Not started | 0 |
 
 **Legend:** ✅ Complete · 🔶 In progress / partial · ⬜ Not started
@@ -725,3 +725,10 @@ affected. **Ruling: fix now in 07.0**, as a separate `fix(security)` commit:
 - parse bracketed IPv6 before the port split;
 - keep public numeric IPs accepted;
 - assert the 07.0/20 SSRF vectors as explicit `invalid_url`.
+
+**Resolution (2026-11-20):** fixed in `752dad8` and `5d970c8`; the tests are in `7eea03d` and `6a83c81`. Two review rounds found that the first fix still missed the trailing-dot, `%2e`, `localhost.` and IPv6-embedded forms, and those are now closed too. With private targets denied, `invalid_url` is now returned for:
+- numeric IPv4 in decimal, hex, octal and short forms, including a trailing dot;
+- bracketed and IPv4-mapped/compatible IPv6, NAT64 and 6to4 that embed a private v4;
+- CGNAT, benchmark, multicast, reserved and broadcast ranges.
+
+Public hosts are unchanged. One new policy: a `%` in the host is always refused (no percent-decoding), even when private targets are allowed. The redirect fast path is untouched (C10). `master` is also affected, and a backport decision is pending at the 07.0 close.
