@@ -16,23 +16,28 @@ Matching and normalization are **not** reimplemented here: this module delegates
 to :mod:`conformance_match` (subtask 02), whose rules are pinned as data in
 ``tests/conformance/normalizer_vectors.json`` so the Python and C++ matchers
 cannot drift. The ``HTTP_STATUS`` / ``CLI_EXIT`` tables below are exact copies of
-the command catalog's error-code table (subtask 16 asserts the equality); the
-transport status-code assertions themselves live in each adapter, which alone can
-observe an HTTP status or a process exit code.
+the command catalog's error-code table (subtask 16 asserts the equality);
+:func:`run_case` asserts the transport status an adapter reports against them,
+and treats a missing status on a transport that has a status channel as a
+finding so a shim cannot pass without it.
 
 How to add an adapter (5 steps)
 -------------------------------
 1. Subclass :class:`Adapter`, set ``self.transport`` to one of the ids in
    :data:`TRANSPORT_CAPS` (its capabilities drive the id/raw/options skip rules).
-2. In ``begin_case`` (optional) start whatever the case needs - spawn the binary,
-   materialize ``ctx.storage_config_path()`` for a sqlite case, wait for
-   readiness with :func:`wait_http_ready` - or return a reason string to skip.
-3. Implement ``send(step, request_text, ctx)``: turn the already-substituted
-   request into a wire call, assert the transport status with
-   :func:`expected_http_status` / :func:`expected_cli_exit` where observable, and
-   return the parsed response envelope as a ``dict``.
-4. In ``end_case`` (optional) stop and reap every process you started, with a
-   timeout and never ``shell=True``.
+2. In ``begin_case`` (optional) start whatever the case needs - spawn the binary
+   with :func:`spawn` (never a shell), materialize ``ctx.storage_config_path()``
+   for a sqlite case, wait for readiness with :func:`wait_http_ready` - or return
+   a reason string to skip.
+3. Implement ``send(step, request_text, ctx)`` with a bounded timeout: turn the
+   already-substituted request into a wire call and return the response. For
+   ``rest_*`` return ``{"envelope": {...}, "http_status": int}`` and for
+   ``cli_cmd`` ``{"envelope": {...}, "cli_exit": int}`` so :func:`run_case`
+   asserts the transport status; ``direct`` / ``stdio`` / ``tui`` return the
+   plain envelope ``dict``.
+4. In ``end_case`` (optional) stop and reap every process you started with
+   :func:`terminate_and_reap` (terminate -> wait -> kill -> wait); never
+   ``shell=True``.
 5. Register a ``NN_<name>_shim.py`` that calls ``main_for(MyAdapter, "<id>")``
    and append it to ``CONFORMANCE_PY_SOURCES`` in ``sources.cmake``.
 
@@ -48,6 +53,7 @@ import json
 import os
 import shutil
 import socket
+import subprocess
 import sys
 import tempfile
 import time
@@ -98,6 +104,19 @@ TRANSPORT_CAPS: Dict[str, Caps] = {
 #: (corpus lint rule 10). Only ``direct`` and ``tui`` run in the test process.
 OUT_OF_PROCESS_TRANSPORTS = {"cli_cmd", "stdio", "rest_generic", "rest_resource"}
 
+#: Which transport-status channel each transport exposes, so :func:`run_case`
+#: can require and assert it. ``"http"`` -> the adapter must return an HTTP
+#: status; ``"cli"`` -> a process exit code; ``None`` -> no separate status
+#: channel (``direct`` is in-process, ``stdio`` / ``tui`` frame one envelope).
+_STATUS_CHANNEL: Dict[str, Optional[str]] = {
+    "direct": None,
+    "rest_generic": "http",
+    "rest_resource": "http",
+    "cli_cmd": "cli",
+    "stdio": None,
+    "tui": None,
+}
+
 #: Error code -> HTTP status for the REST transports. An exact copy of the
 #: command catalog error table (01.0/02); subtask 16 asserts the equality.
 HTTP_STATUS: Dict[str, int] = {
@@ -142,6 +161,10 @@ _TERMINAL_JOB_STATES = {"succeeded", "failed", "cancelled"}
 
 #: Poll interval while awaiting a job's terminal state (mirrors the C++ runner).
 _JOB_POLL_INTERVAL_S = 0.025
+
+#: Hard ceiling on ``await_job.timeout_ms`` so a corpus typo cannot hang CTest;
+#: a larger value is clamped down to this.
+_MAX_AWAIT_TIMEOUT_MS = 60000
 
 
 # ---------------------------------------------------------------------------
@@ -221,6 +244,8 @@ class CaseContext:
         :raises ValueError: If a key is not a safe bare name (lint rule 11); the
             runner turns this into a clean finding rather than a crash.
         """
+        # The temp dir comes from tempfile.mkdtemp, which creates it mode 0700
+        # (owner-only), so case files are not world-readable while a case runs.
         files = case.get("files") or {}
         for name, content in files.items():
             reason = _bad_file_name_reason(name)
@@ -287,7 +312,24 @@ class Adapter(ABC):
     def send(
         self, step: Dict[str, Any], request_text: str, ctx: CaseContext
     ) -> Dict[str, Any]:
-        """Send one request and return the parsed response envelope.
+        """Send one request and return the response envelope (with status).
+
+        The call **must** be timeout-bounded: a hung transport has to fail the
+        case by timeout, never block CTest forever (use :func:`spawn` /
+        :func:`terminate_and_reap`, and a bounded ``recv``).
+
+        The return shape carries the transport status so :func:`run_case` can
+        assert it:
+
+        * ``direct`` / ``stdio`` / ``tui`` (no separate status channel): return
+          the plain envelope ``dict``.
+        * ``rest_generic`` / ``rest_resource``: return
+          ``{"envelope": <dict>, "http_status": int}``.
+        * ``cli_cmd``: return ``{"envelope": <dict>, "cli_exit": int}``.
+
+        A real envelope never carries a top-level ``envelope`` key (N5), so the
+        wrapper is detected unambiguously. Omitting the status on a transport
+        that requires one is a finding.
 
         :param step: The step dict after ``${var}`` / ``${tmp}`` substitution
             (so transport directives like ``rest_resource`` are already expanded).
@@ -295,7 +337,8 @@ class Adapter(ABC):
             envelope for a ``request`` step, or the verbatim string for a
             ``raw_request`` step.
         :param ctx: The per-case context.
-        :return: The response envelope parsed into a ``dict``.
+        :return: The response envelope, or a ``{"envelope", "http_status" |
+            "cli_exit"}`` wrapper for the transports that have a status channel.
         """
         raise NotImplementedError
 
@@ -310,15 +353,14 @@ class Adapter(ABC):
 
 
 # ---------------------------------------------------------------------------
-# Status helpers (used by the transport adapters, not by run_case)
+# Transport-status assertion (enforced by run_case)
 # ---------------------------------------------------------------------------
 
 
-def _expected_code(step: Dict[str, Any]) -> Optional[str]:
-    """Return the ``expect.error.code`` of a step, or ``None`` for a success."""
-    expect = step.get("expect")
-    if isinstance(expect, dict) and expect.get("ok") is False:
-        error = expect.get("error")
+def _error_code_of(expect_block: Any) -> Optional[str]:
+    """Return the ``error.code`` of an ``expect`` block, or ``None`` on success."""
+    if isinstance(expect_block, dict) and expect_block.get("ok") is False:
+        error = expect_block.get("error")
         if isinstance(error, dict):
             code = error.get("code")
             if isinstance(code, str):
@@ -326,36 +368,118 @@ def _expected_code(step: Dict[str, Any]) -> Optional[str]:
     return None
 
 
+def _status_from_expect(
+    expect_block: Any, step: Dict[str, Any], channel: str
+) -> int:
+    """Return the transport status *channel* expects for *expect_block*.
+
+    :param expect_block: The ``expect`` or ``expect_accept`` block that drives
+        the expected status.
+    :param step: The step dict; an explicit ``http_status`` / ``cli_exit``
+        overrides the table.
+    :param channel: ``"http"`` or ``"cli"``.
+    :return: The explicit override, the catalog status/exit for the expected
+        error code, or the success value (200 / 0).
+    """
+    if channel == "http":
+        if isinstance(step.get("http_status"), int):
+            return step["http_status"]
+        code = _error_code_of(expect_block)
+        return HTTP_STATUS.get(code, 500) if code is not None else 200
+    if isinstance(step.get("cli_exit"), int):
+        return step["cli_exit"]
+    code = _error_code_of(expect_block)
+    return CLI_EXIT.get(code, 4) if code is not None else 0
+
+
 def expected_http_status(step: Dict[str, Any], success_status: int = 200) -> int:
-    """Return the HTTP status a ``rest_generic`` call should return for *step*.
+    """Return the HTTP status a ``rest_*`` call should return for *step*.
+
+    Public convenience for an adapter that wants to precompute the status;
+    :func:`run_case` performs the same assertion itself.
 
     :param step: The step dict; an explicit ``http_status`` overrides the table.
     :param success_status: Status for an ``ok: true`` expectation (default 200).
     :return: The explicit override, the catalog status for the expected error
         code, or *success_status* when the step expects success.
     """
-    if isinstance(step.get("http_status"), int):
-        return step["http_status"]
-    code = _expected_code(step)
-    if code is not None:
-        return HTTP_STATUS.get(code, 500)
-    return success_status
+    status = _status_from_expect(step.get("expect", {}), step, "http")
+    if _error_code_of(step.get("expect")) is None and not isinstance(
+        step.get("http_status"), int
+    ):
+        return success_status
+    return status
 
 
 def expected_cli_exit(step: Dict[str, Any], success_exit: int = 0) -> int:
     """Return the ``cmd`` exit code a step should produce.
+
+    Public convenience for an adapter that wants to precompute the exit code;
+    :func:`run_case` performs the same assertion itself.
 
     :param step: The step dict; an explicit ``cli_exit`` overrides the table.
     :param success_exit: Exit code for an ``ok: true`` expectation (default 0).
     :return: The explicit override, the catalog exit code for the expected error
         code, or *success_exit* when the step expects success.
     """
-    if isinstance(step.get("cli_exit"), int):
-        return step["cli_exit"]
-    code = _expected_code(step)
-    if code is not None:
-        return CLI_EXIT.get(code, 4)
-    return success_exit
+    code = _status_from_expect(step.get("expect", {}), step, "cli")
+    if _error_code_of(step.get("expect")) is None and not isinstance(
+        step.get("cli_exit"), int
+    ):
+        return success_exit
+    return code
+
+
+def _unwrap_send(result: Any) -> Tuple[Any, Dict[str, Any]]:
+    """Split an adapter ``send`` result into ``(envelope, status_wrapper)``.
+
+    A wrapper is any dict carrying a top-level ``envelope`` key (which a real
+    envelope never has, by N5); otherwise *result* is the envelope itself and
+    the wrapper is empty.
+
+    :param result: The value returned by :meth:`Adapter.send`.
+    :return: ``(envelope, wrapper)`` where *wrapper* may hold ``http_status`` /
+        ``cli_exit``.
+    """
+    if isinstance(result, dict) and "envelope" in result:
+        return result.get("envelope"), result
+    return result, {}
+
+
+def _status_findings(
+    wrapper: Dict[str, Any],
+    transport: str,
+    expect_block: Any,
+    step: Dict[str, Any],
+    label: str,
+) -> List[str]:
+    """Assert the transport status for a step; return findings (``[]`` on pass).
+
+    For a transport with a status channel the wrapper must carry the status and
+    it must equal the expected one; a missing status is a finding so a shim that
+    forgets it cannot pass silently. Transports without a channel are ignored.
+
+    :param wrapper: The status wrapper from :func:`_unwrap_send`.
+    :param transport: The adapter's transport id.
+    :param expect_block: The ``expect`` / ``expect_accept`` driving the status.
+    :param step: The step dict (for an explicit status override).
+    :param label: Step label used to locate findings.
+    :return: ``[]`` when the status is correct (or not required), else findings.
+    """
+    channel = _STATUS_CHANNEL.get(transport)
+    if channel is None:
+        return []
+    key = "http_status" if channel == "http" else "cli_exit"
+    actual = wrapper.get(key)
+    if not isinstance(actual, int):
+        return [
+            f"{label}: {transport} send() omitted {key}; this transport must "
+            "return its transport status alongside the envelope"
+        ]
+    expected = _status_from_expect(expect_block, step, channel)
+    if actual != expected:
+        return [f"{label}: {transport} {key} {actual} != expected {expected}"]
+    return []
 
 
 # ---------------------------------------------------------------------------
@@ -423,6 +547,76 @@ def wait_http_ready(port: int, timeout: float = 15.0) -> None:
         f"server on 127.0.0.1:{port} not ready within {timeout:.1f}s "
         f"(last: {last_error})"
     )
+
+
+# ---------------------------------------------------------------------------
+# Safe process spawn / reap (shims 06-09 MUST use these)
+# ---------------------------------------------------------------------------
+
+
+def spawn(
+    argv: Any,
+    cwd: Optional[str] = None,
+    env: Optional[Dict[str, str]] = None,
+    stdin: Any = None,
+    stdout: Any = None,
+    stderr: Any = None,
+) -> "subprocess.Popen[Any]":
+    """Spawn a child process from an explicit argv list, never a shell.
+
+    Every shim (06-09) that starts the binary MUST go through this helper so no
+    adapter can accidentally pass ``shell=True`` or a string command line.
+
+    :param argv: The argument vector; must be a list/tuple of ``str`` (the
+        program path first). A string or a non-``str`` element is rejected.
+    :param cwd: Working directory for the child (``None`` inherits).
+    :param env: Full environment mapping for the child (``None`` inherits).
+    :param stdin: Passed through to ``Popen`` (e.g. ``subprocess.PIPE``).
+    :param stdout: Passed through to ``Popen``.
+    :param stderr: Passed through to ``Popen``.
+    :return: The started ``subprocess.Popen``.
+    :raises TypeError: If *argv* is not a list/tuple of ``str``.
+    """
+    if isinstance(argv, (str, bytes)) or not isinstance(argv, (list, tuple)):
+        raise TypeError("spawn() argv must be a list/tuple of str, not a string")
+    if not all(isinstance(arg, str) for arg in argv):
+        raise TypeError("spawn() argv elements must all be str")
+    # shell is never True: argv is passed as a list, so no shell is involved.
+    return subprocess.Popen(
+        list(argv),
+        cwd=cwd,
+        env=env,
+        stdin=stdin,
+        stdout=stdout,
+        stderr=stderr,
+    )
+
+
+def terminate_and_reap(
+    proc: Optional["subprocess.Popen[Any]"], timeout: float = 5.0
+) -> Optional[int]:
+    """Stop and reap *proc*: terminate, wait, then kill, then wait.
+
+    Idempotent and never raises on an already-exited process, so an adapter's
+    ``end_case`` can call it on every path.
+
+    :param proc: The process to stop, or ``None`` (a no-op).
+    :param timeout: Seconds to wait after each of terminate and kill.
+    :return: The process exit code, or ``None`` when *proc* is ``None``.
+    """
+    if proc is None:
+        return None
+    if proc.poll() is None:
+        proc.terminate()
+        try:
+            proc.wait(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            try:
+                proc.wait(timeout=timeout)
+            except subprocess.TimeoutExpired:
+                pass
+    return proc.returncode
 
 
 # ---------------------------------------------------------------------------
@@ -652,7 +846,10 @@ def _poll_job(
     if var not in ctx.variables:
         return None, f"await_job references unsaved variable {var!r}"
     job_id = ctx.variables[var]
-    timeout_ms = await_spec.get("timeout_ms", 5000)
+    requested_ms = await_spec.get("timeout_ms", 5000)
+    if not isinstance(requested_ms, int) or requested_ms < 0:
+        requested_ms = 5000
+    timeout_ms = min(requested_ms, _MAX_AWAIT_TIMEOUT_MS)
     deadline = time.monotonic() + (timeout_ms / 1000.0)
     request = {"v": 1, "command": "job.get", "args": {"id": job_id}}
     request_text = json.dumps(request, ensure_ascii=False)
@@ -660,9 +857,10 @@ def _poll_job(
     last: Optional[Dict[str, Any]] = None
     while True:
         try:
-            response = adapter.send(step_stub, request_text, ctx)
+            result = adapter.send(step_stub, request_text, ctx)
         except Exception as exc:  # noqa: BLE001 - surface any adapter fault
             return last, f"job.get poll raised {type(exc).__name__}: {exc}"
+        response, _ = _unwrap_send(result)
         last = response if isinstance(response, dict) else last
         state = _job_state(response)
         if state in _TERMINAL_JOB_STATES:
@@ -698,17 +896,20 @@ def _run_step(
     except RecursionError:
         return [f"{label}: request nesting too deep to substitute"]
 
+    transport = adapter.transport
     try:
-        actual = adapter.send(sub_step, request_text, ctx)
+        result = adapter.send(sub_step, request_text, ctx)
     except Exception as exc:  # noqa: BLE001 - surface any adapter fault
         return [f"{label}: adapter.send raised {type(exc).__name__}: {exc}"]
+    actual, wrapper = _unwrap_send(result)
 
     if "await_job" not in step:
         try:
             expect = cm.substitute(step.get("expect", {}), variables)
         except ValueError as exc:
             return [f"{label}: expect substitution failed: {exc}"]
-        findings = _check_envelope(expect, actual, request, caps, variables, label)
+        findings = _status_findings(wrapper, transport, step.get("expect", {}), step, label)
+        findings += _check_envelope(expect, actual, request, caps, variables, label)
         if findings:
             return findings
         return _apply_save(step, actual, variables, label)
@@ -720,6 +921,9 @@ def _run_step(
         accept = cm.substitute(step.get("expect_accept", {}), variables)
     except ValueError as exc:
         return [f"{label}: expect_accept substitution failed: {exc}"]
+    findings += _status_findings(
+        wrapper, transport, step.get("expect_accept", {}), step, f"{label} (accept)"
+    )
     findings += _check_envelope(
         accept, actual, request, caps, variables, f"{label} (accept)"
     )

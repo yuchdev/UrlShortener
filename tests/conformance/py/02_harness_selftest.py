@@ -17,7 +17,10 @@ behaviours later shims rely on:
 8. ``test_tmp_windows_path_normalized`` - ``${tmp}`` expands with ``/`` separators
    even from a Windows-style temp path.
 
-A ninth test exercises :func:`build_suite` and the coverage-summary writer.
+Further tests exercise the transport-status enforcement (match, mismatch and a
+missing status on a ``rest_*`` transport), the safe :func:`conformance_common.spawn`
+/ :func:`conformance_common.terminate_and_reap` helpers, and
+:func:`build_suite` with the coverage-summary writer.
 
 The file resolves its sibling import from ``__file__`` so it runs identically
 under ``python3 -I`` (CTest registers it that way).
@@ -327,6 +330,58 @@ class HarnessSelfTest(unittest.TestCase):
         request_text = adapter.sent_texts[0]
         self.assertIn("C:/Users/runner/conf_case_x/pairs.csv", request_text)
         self.assertNotIn("\\", request_text)
+
+    def test_status_match(self) -> None:
+        # rest_generic returns the wrapper with the correct HTTP status.
+        adapter = FakeAdapter(
+            transport="rest_generic",
+            main=[{"envelope": OK_CREATE, "http_status": 200}],
+        )
+        findings = cc.run_case(_create_case(), adapter)
+        self.assertEqual(findings, [])
+
+    def test_status_mismatch_is_finding(self) -> None:
+        adapter = FakeAdapter(
+            transport="rest_generic",
+            main=[{"envelope": OK_CREATE, "http_status": 500}],
+        )
+        findings = cc.run_case(_create_case(), adapter)
+        self.assertTrue(findings)
+        self.assertTrue(
+            any("http_status" in f for f in findings),
+            f"expected an http_status finding, got {findings!r}",
+        )
+
+    def test_missing_status_on_rest_is_finding(self) -> None:
+        # A plain envelope (no wrapper) from a rest_* transport must fail: the
+        # shim forgot to report its HTTP status.
+        adapter = FakeAdapter(transport="rest_generic", main=[OK_CREATE])
+        findings = cc.run_case(_create_case(), adapter)
+        self.assertTrue(findings)
+        self.assertTrue(
+            any("omitted http_status" in f for f in findings),
+            f"expected a missing-status finding, got {findings!r}",
+        )
+
+    def test_spawn_rejects_string_argv(self) -> None:
+        with self.assertRaises(TypeError):
+            cc.spawn("echo hi")
+        with self.assertRaises(TypeError):
+            cc.spawn([sys.executable, 123])
+
+    def test_spawn_and_reap_short_process(self) -> None:
+        proc = cc.spawn([sys.executable, "-c", "pass"])
+        proc.wait(timeout=10)  # let it exit on its own, then reap cleanly
+        code = cc.terminate_and_reap(proc)
+        self.assertEqual(code, 0)
+        # Idempotent: a second reap of an exited process is a no-op.
+        self.assertEqual(cc.terminate_and_reap(proc), 0)
+
+    def test_terminate_and_reap_long_process(self) -> None:
+        proc = cc.spawn([sys.executable, "-c", "import time; time.sleep(30)"])
+        code = cc.terminate_and_reap(proc, timeout=5.0)
+        self.assertIsNotNone(code)
+        self.assertIsNotNone(proc.poll())
 
     def test_build_suite_and_summary(self) -> None:
         # build_suite over a tiny on-disk corpus, then the summary writer.
