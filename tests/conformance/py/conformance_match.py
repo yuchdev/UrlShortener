@@ -50,6 +50,17 @@ _ID_RE = re.compile(r"[A-Za-z0-9_.:-]+")
 #: Maximum length of an ``<id>`` value.
 _ID_MAX_LEN = 64
 
+#: Maximum subject length handed to a ``<regex:...>`` match (CWE-674 / ReDoS
+#: guard). A longer subject is a mismatch and is never passed to
+#: ``re.fullmatch``. The C++ runner (07.0/03) applies the identical cap, and the
+#: ``regex_rejects_oversized_subject`` vector pins the shared verdict.
+_REGEX_SUBJECT_MAX = 1024
+
+#: Maximum subject length handed to the ``<ts>`` match. A valid RFC 3339 UTC
+#: timestamp is far shorter, so this changes no verdict - it only refuses to scan
+#: an attacker-sized string. Mirrored by the C++ runner.
+_TS_SUBJECT_MAX = 64
+
 #: RFC 3339 UTC timestamp ``YYYY-MM-DDThh:mm:ss[.fff]Z`` (ASCII, UTC only). The
 #: fractional part is optional; the literal ``T`` and trailing ``Z`` are
 #: required so non-UTC offsets and lowercase separators are rejected.
@@ -378,7 +389,11 @@ def _match_token(
             return None
         return f"expected <id>, got {actual!r}"
     if kind == "ts":
-        if isinstance(actual, str) and _TS_RE.fullmatch(actual):
+        if (
+            isinstance(actual, str)
+            and len(actual) <= _TS_SUBJECT_MAX
+            and _TS_RE.fullmatch(actual)
+        ):
             return None
         return f"expected <ts> (RFC 3339 UTC), got {actual!r}"
     if kind == "int":
@@ -404,7 +419,13 @@ def _match_token(
         bad = forbidden_regex_reason(pattern)
         if bad is not None:
             return f"<regex> pattern uses a disallowed construct: {bad}"
-        if isinstance(actual, str) and re.fullmatch(pattern, actual):
+        # Bound the subject before matching (CWE-674): an over-long subject is a
+        # mismatch and is never scanned. The C++ runner caps identically.
+        if (
+            isinstance(actual, str)
+            and len(actual) <= _REGEX_SUBJECT_MAX
+            and re.fullmatch(pattern, actual)
+        ):
             return None
         return f"expected <regex:{pattern}> full match, got {actual!r}"
     if kind == "var":

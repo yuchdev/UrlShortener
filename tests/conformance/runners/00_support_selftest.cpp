@@ -17,6 +17,7 @@
  */
 
 #define BOOST_TEST_MODULE ConformanceSupportSelftest
+#include <filesystem>
 #include <fstream>
 #include <iterator>
 #include <string>
@@ -64,28 +65,22 @@ std::string vectors_path()
 std::vector<std::string> run_vector(const Json& vector)
 {
     VariableMap vars;
-    if (const Json* variables = vector.find("variables"))
-    {
-        if (variables->is_object())
-        {
-            for (const Json::Member& member : variables->members())
-            {
+    if (const Json* variables = vector.find("variables")) {
+        if (variables->is_object()) {
+            for (const Json::Member& member : variables->members()) {
                 vars[member.first] = member.second;
             }
         }
     }
     bool subset = false;
-    if (const Json* mode = vector.find("mode"); mode && mode->is_string())
-    {
+    if (const Json* mode = vector.find("mode"); mode && mode->is_string()) {
         subset = mode->as_string() == "subset";
     }
 
     std::string error;
     const Json* expected_in = vector.find("expected");
-    const Json expected =
-        Matcher::substitute(*expected_in, vars, &error);
-    if (!error.empty())
-    {
+    const Json expected = Matcher::substitute(*expected_in, vars, &error);
+    if (!error.empty()) {
         return {std::string("$: substitution error: ") + error};
     }
 
@@ -106,8 +101,7 @@ std::vector<std::string> run_vector(const Json& vector)
     }
 
     const MatchResult result = Matcher::match(expected, actual, subset, vars);
-    for (const std::string& reason : result.findings)
-    {
+    for (const std::string& reason : result.findings) {
         findings.push_back(reason);
     }
     return findings;
@@ -128,8 +122,8 @@ public:
         return caps;
     }
 
-    std::optional<std::string> begin_case(
-        const Case&, const std::filesystem::path&) override
+    std::optional<std::string> begin_case(const Case&,
+                                          const std::filesystem::path&) override
     {
         return std::nullopt;
     }
@@ -184,8 +178,7 @@ BOOST_AUTO_TEST_CASE(every_vector_matches_its_expectation)
     BOOST_REQUIRE_GE(doc->items().size(), 60u);
 
     std::size_t checked = 0;
-    for (const Json& vector : doc->items())
-    {
+    for (const Json& vector : doc->items()) {
         const Json* name = vector.find("name");
         const std::string label =
             name != nullptr && name->is_string() ? name->as_string() : "?";
@@ -196,22 +189,19 @@ BOOST_AUTO_TEST_CASE(every_vector_matches_its_expectation)
         BOOST_REQUIRE(expect_match != nullptr && expect_match->is_bool());
         const bool want = expect_match->as_bool();
         std::string joined;
-        for (const std::string& reason : reasons)
-        {
+        for (const std::string& reason : reasons) {
             joined += "\n    " + reason;
         }
-        BOOST_CHECK_MESSAGE(matched == want,
-                            label << ": expected match=" << want
-                                  << " got reasons=" << joined);
+        BOOST_CHECK_MESSAGE(
+            matched == want,
+            label << ": expected match=" << want << " got reasons=" << joined);
 
         if (const Json* needle = vector.find("reason_contains");
             needle && needle->is_string())
         {
             bool found = false;
-            for (const std::string& reason : reasons)
-            {
-                if (reason.find(needle->as_string()) != std::string::npos)
-                {
+            for (const std::string& reason : reasons) {
+                if (reason.find(needle->as_string()) != std::string::npos) {
                     found = true;
                 }
             }
@@ -251,16 +241,28 @@ BOOST_AUTO_TEST_CASE(json_round_trip_is_stable)
 
 BOOST_AUTO_TEST_CASE(malformed_json_is_rejected_without_crashing)
 {
-    const std::vector<std::string> malformed = {
-        "",          "{",          "[",          "{\"a\":}",
-        "{\"a\":1,}", "[1,]",       "nul",        "tru",
-        "fals",      "{\"a\":1 \"b\":2}",         "\"unterminated",
-        "123abc",    "{'a':1}",    "[1 2]",       "{\"a\"}",
-        "--1",       "01",         "1.",          "1e",
-        "{\"a\":1,\"a\":2}"};
+    const std::vector<std::string> malformed = {"",
+                                                "{",
+                                                "[",
+                                                "{\"a\":}",
+                                                "{\"a\":1,}",
+                                                "[1,]",
+                                                "nul",
+                                                "tru",
+                                                "fals",
+                                                "{\"a\":1 \"b\":2}",
+                                                "\"unterminated",
+                                                "123abc",
+                                                "{'a':1}",
+                                                "[1 2]",
+                                                "{\"a\"}",
+                                                "--1",
+                                                "01",
+                                                "1.",
+                                                "1e",
+                                                "{\"a\":1,\"a\":2}"};
     BOOST_REQUIRE_GE(malformed.size(), 20u);
-    for (const std::string& input : malformed)
-    {
+    for (const std::string& input : malformed) {
         std::string error;
         std::optional<Json> parsed;
         BOOST_CHECK_NO_THROW(parsed = Json::parse(input, &error));
@@ -275,12 +277,10 @@ BOOST_AUTO_TEST_CASE(deeply_nested_input_fails_cleanly)
 {
     std::string deep;
     const int levels = 200;
-    for (int i = 0; i < levels; ++i)
-    {
+    for (int i = 0; i < levels; ++i) {
         deep.push_back('[');
     }
-    for (int i = 0; i < levels; ++i)
-    {
+    for (int i = 0; i < levels; ++i) {
         deep.push_back(']');
     }
     std::string error;
@@ -293,8 +293,7 @@ BOOST_AUTO_TEST_CASE(deeply_nested_input_fails_cleanly)
 BOOST_AUTO_TEST_CASE(duplicate_keys_are_rejected)
 {
     std::string error;
-    const std::optional<Json> parsed =
-        Json::parse(R"({"a":1,"a":2})", &error);
+    const std::optional<Json> parsed = Json::parse(R"({"a":1,"a":2})", &error);
     BOOST_CHECK(!parsed.has_value());
     BOOST_CHECK(error == "duplicate key");
 }
@@ -376,4 +375,63 @@ BOOST_AUTO_TEST_CASE(case_runner_resolves_skips_and_runs)
         RunReport report = runner.run({test_case}, adapter);
         BOOST_TEST(report.skipped == 1);
     }
+}
+
+// ---------------------------------------------------------------------------
+// Security regressions: path traversal and unbounded token arguments
+// ---------------------------------------------------------------------------
+
+BOOST_AUTO_TEST_CASE(case_runner_refuses_path_traversal_file_keys)
+{
+    namespace fs = std::filesystem;
+    CaseRunner runner([](int) {});
+    FakeAdapter adapter;
+
+    const fs::path sentinel =
+        fs::temp_directory_path() / "conformance_sentinel_07003.txt";
+    {
+        std::ofstream stream(sentinel, std::ios::binary);
+        stream << "original";
+    }
+
+    // An absolute files key must be refused (contains a separator).
+    {
+        Case test_case = make_ok_case();
+        test_case.name = "abs_key";
+        test_case.files[sentinel.string()] = "HACKED";
+        RunReport report = runner.run({test_case}, adapter);
+        BOOST_TEST(report.failed == 1);
+        BOOST_TEST(report.ran == 0);
+    }
+
+    // A parent-escaping `../` files key must be refused too.
+    {
+        Case test_case = make_ok_case();
+        test_case.name = "dotdot_key";
+        test_case.files["../escape.txt"] = "HACKED";
+        RunReport report = runner.run({test_case}, adapter);
+        BOOST_TEST(report.failed == 1);
+        BOOST_TEST(report.ran == 0);
+    }
+
+    // The sentinel outside any temp dir is provably untouched.
+    std::ifstream in(sentinel, std::ios::binary);
+    const std::string content((std::istreambuf_iterator<char>(in)),
+                              std::istreambuf_iterator<char>());
+    BOOST_TEST(content == "original");
+    std::error_code ec;
+    fs::remove(sentinel, ec);
+}
+
+BOOST_AUTO_TEST_CASE(slug_token_with_overflowing_length_is_rejected_not_thrown)
+{
+    VariableMap vars;
+    Json expected = Json::object();
+    expected.set("slug", Json::string("<slug:99999999999999999999>"));
+    Json actual = Json::object();
+    actual.set("slug", Json::string("abc"));
+    MatchResult result;
+    BOOST_CHECK_NO_THROW(result =
+                             Matcher::match(expected, actual, false, vars));
+    BOOST_TEST(!result.ok);
 }

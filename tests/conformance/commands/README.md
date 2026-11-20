@@ -207,6 +207,14 @@ Each rule has a negative fixture under
 12. **Role sanity.** A step whose `command` is mutating (per the catalog) and
     whose effective caller is `user` must expect `error.code ==
     "not_authorized"`.
+13. **Unicode NFC.** Every string in `request` / `raw_request` / `expect` /
+    `expect_accept` (values and object keys) must already be in Unicode NFC
+    (`unicodedata.normalize("NFC", s) == s`). The C++ runner's N6 normalization
+    composes only the Latin-1 accented range (it carries no full Unicode data
+    table, forbidden by CLAUDE.md), so a corpus that relied on composing a wider
+    code point would make the C++ and Python matchers disagree. Requiring
+    pre-normalized corpus strings keeps the two verdicts identical; author
+    accented text in its composed form.
 
 ## Running the linter
 

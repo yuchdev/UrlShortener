@@ -10,7 +10,7 @@ unambiguous shape.
 
 The authoritative, human-readable schema lives next to the corpus in
 ``tests/conformance/commands/README.md``; this module is the executable mirror
-of that document. The twelve numbered lint rules below map one-to-one onto the
+of that document. The thirteen numbered lint rules below map one-to-one onto the
 rules documented there and onto the negative fixtures under
 ``tests/conformance/py/lint_negative/``.
 
@@ -36,6 +36,7 @@ import glob
 import json
 import re
 import sys
+import unicodedata
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
@@ -169,7 +170,7 @@ VAR_ONLY_RE = re.compile(r"^\$\{[A-Za-z_][A-Za-z0-9_]*\}$")
 class Finding:
     """A single lint violation.
 
-    :ivar rule: The 1-based rule number (1..12) that was violated; matches the
+    :ivar rule: The 1-based rule number (1..13) that was violated; matches the
         numbered rule in ``tests/conformance/commands/README.md`` and the
         ``lint_negative`` fixture ``rule_NN_*.json``.
     :ivar file: Path (as supplied) of the offending corpus file.
@@ -391,6 +392,32 @@ def _collect_var_refs(node: Any) -> Set[str]:
         elif isinstance(current, list):
             stack.extend(current)
     return refs
+
+
+def _iter_non_nfc_strings(node: Any) -> List[str]:
+    """Return every string inside *node* that is not already Unicode NFC.
+
+    Used by rule 13. The walk is iterative so arbitrarily deep input cannot
+    overflow the call stack.
+
+    :param node: Any JSON value (dict/list/str/scalar).
+    :return: Each non-NFC string value found (object keys are checked too).
+    """
+    offenders: List[str] = []
+    stack: List[Any] = [node]
+    while stack:
+        current = stack.pop()
+        if isinstance(current, str):
+            if unicodedata.normalize("NFC", current) != current:
+                offenders.append(current)
+        elif isinstance(current, dict):
+            for key, value in current.items():
+                if unicodedata.normalize("NFC", key) != key:
+                    offenders.append(key)
+                stack.append(value)
+        elif isinstance(current, list):
+            stack.extend(current)
+    return offenders
 
 
 def _bad_file_name_reason(key: str) -> Optional[str]:
@@ -796,6 +823,22 @@ class _Linter:
                     f"mutating command '{command}' as caller 'user' must expect "
                     "error.code 'not_authorized'",
                 )
+
+        # Rule 13: every matched string must already be Unicode NFC. The C++
+        # runner's NFC only composes the Latin-1 range, so a corpus that relied
+        # on composing a wider codepoint would diverge from the Python matcher;
+        # requiring pre-normalized strings keeps the two verdicts identical.
+        for key in ("request", "raw_request", "expect", "expect_accept"):
+            if key in step:
+                for offender in _iter_non_nfc_strings(step[key]):
+                    self._emit(
+                        13,
+                        file,
+                        name,
+                        sid,
+                        f"string {offender!r} in '{key}' is not Unicode "
+                        "NFC-normalized",
+                    )
 
     def _expect_denied(self, expect: Any) -> bool:
         """Return ``True`` iff *expect* asserts ``not_authorized``."""

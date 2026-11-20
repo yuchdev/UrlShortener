@@ -3,14 +3,16 @@
  * @brief Implementation of the conformance case runner (see case_runner.hpp).
  */
 
-#include "case_runner.hpp"
-
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <cstdlib>
 #include <fstream>
+#include <string>
 #include <system_error>
 #include <thread>
+
+#include "case_runner.hpp"
 
 #include "matcher.hpp"
 
@@ -20,13 +22,41 @@ namespace conformance
 namespace
 {
 
+/// Reduces @p name to a safe `[A-Za-z0-9_]` token for a directory component.
+/// Never uses the raw case name (which, for an in-process case, is untrusted)
+/// so the temp-dir path cannot be steered outside the temp root.
+std::string sanitize_token(const std::string& name)
+{
+    std::string token;
+    for (const char c : name) {
+        const bool keep = (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z')
+            || (c >= '0' && c <= '9') || c == '_';
+        token.push_back(keep ? c : '_');
+        if (token.size() >= 40) {
+            break;
+        }
+    }
+    return token;
+}
+
 /// Returns a process-unique temp directory path for a case run (not created).
 std::filesystem::path unique_tmp_dir(const std::string& case_name)
 {
-    static std::atomic<unsigned long long> counter{0};
+    static std::atomic<unsigned long long> counter {0};
     const unsigned long long n = counter.fetch_add(1);
-    return std::filesystem::temp_directory_path() /
-           ("conformance_" + case_name + "_" + std::to_string(n));
+    return std::filesystem::temp_directory_path()
+        / ("conformance_" + sanitize_token(case_name) + "_"
+           + std::to_string(n));
+}
+
+/// `true` iff lexically normalizing `base / name` stays strictly under @p base.
+bool stays_under(const std::filesystem::path& base, const std::string& name)
+{
+    const std::filesystem::path full = (base / name).lexically_normal();
+    const std::filesystem::path root = base.lexically_normal();
+    const auto mismatch =
+        std::mismatch(root.begin(), root.end(), full.begin(), full.end());
+    return mismatch.first == root.end() && mismatch.second != full.end();
 }
 
 /// Builds the expected envelope from an @ref Expect block (after substitution).
@@ -38,8 +68,7 @@ Json build_expected(const Expect& expect, const VariableMap& vars)
     envelope.set("ok", Json::boolean(expect.ok));
     std::string substitute_error;
     Json body = Matcher::substitute(expect.value, vars, &substitute_error);
-    switch (expect.body)
-    {
+    switch (expect.body) {
         case Expect::Body::Result:
             envelope.set("result", std::move(body));
             break;
@@ -58,19 +87,17 @@ Json build_expected(const Expect& expect, const VariableMap& vars)
 /// `true` when a job `state` string denotes a terminal job.
 bool is_terminal_state(const std::string& state)
 {
-    return state == "succeeded" || state == "failed" || state == "cancelled" ||
-           state == "canceled" || state == "done" || state == "completed" ||
-           state == "complete" || state == "error";
+    return state == "succeeded" || state == "failed" || state == "cancelled"
+        || state == "canceled" || state == "done" || state == "completed"
+        || state == "complete" || state == "error";
 }
 
 /// Applies a step's `save` captures from @p response into @p vars.
 void apply_save(const Step& step, const Json& response, VariableMap& vars)
 {
-    for (const auto& capture : step.save)
-    {
+    for (const auto& capture : step.save) {
         const Json* value = response.path(capture.second);
-        if (value != nullptr)
-        {
+        if (value != nullptr) {
             vars[capture.first] = *value;
         }
     }
@@ -80,15 +107,13 @@ void apply_save(const Step& step, const Json& response, VariableMap& vars)
 void write_summary(Transport transport, const RunReport& report)
 {
     std::filesystem::path out;
-    if (const char* dir = std::getenv("URLSHORTENER_CONFORMANCE_OUT"))
-    {
-        out = std::filesystem::path(dir) /
-              (std::string(transport_id(transport)) + "_summary.json");
+    if (const char* dir = std::getenv("URLSHORTENER_CONFORMANCE_OUT")) {
+        out = std::filesystem::path(dir)
+            / (std::string(transport_id(transport)) + "_summary.json");
     }
-    else
-    {
-        out = std::filesystem::temp_directory_path() /
-              (std::string(transport_id(transport)) + "_summary.json");
+    else {
+        out = std::filesystem::temp_directory_path()
+            / (std::string(transport_id(transport)) + "_summary.json");
     }
 
     Json summary = Json::object();
@@ -96,8 +121,7 @@ void write_summary(Transport transport, const RunReport& report)
                 Json::string(std::string(transport_id(transport))));
     summary.set("ran", Json::integer(report.ran));
     Json skipped = Json::array();
-    for (const auto& entry : report.skips)
-    {
+    for (const auto& entry : report.skips) {
         Json item = Json::object();
         item.set("case", Json::string(entry.first));
         item.set("reason", Json::string(entry.second));
@@ -106,8 +130,7 @@ void write_summary(Transport transport, const RunReport& report)
     summary.set("skipped", std::move(skipped));
 
     std::ofstream stream(out, std::ios::binary | std::ios::trunc);
-    if (stream)
-    {
+    if (stream) {
         stream << summary.dump();
     }
 }
@@ -116,13 +139,12 @@ void write_summary(Transport transport, const RunReport& report)
 
 CaseRunner::CaseRunner()
     : m_sleep([](int ms)
-              {
-                  std::this_thread::sleep_for(std::chrono::milliseconds(ms));
-              })
+              { std::this_thread::sleep_for(std::chrono::milliseconds(ms)); })
 {
 }
 
-CaseRunner::CaseRunner(SleepFn sleep) : m_sleep(std::move(sleep))
+CaseRunner::CaseRunner(SleepFn sleep)
+    : m_sleep(std::move(sleep))
 {
 }
 
@@ -134,11 +156,10 @@ RunReport CaseRunner::run(const std::vector<Case>& cases,
     const TransportCaps caps = adapter.caps();
     const std::string transport_name(transport_id(transport));
 
-    for (const Case& test_case : cases)
-    {
+    for (const Case& test_case : cases) {
         // --- Skip resolution (only / skip / capability) ------------------
-        if (!test_case.only.empty() &&
-            test_case.only.find(transport) == test_case.only.end())
+        if (!test_case.only.empty()
+            && test_case.only.find(transport) == test_case.only.end())
         {
             ++report.skipped;
             report.skips.emplace_back(test_case.name,
@@ -146,42 +167,58 @@ RunReport CaseRunner::run(const std::vector<Case>& cases,
             continue;
         }
         const auto skip_it = test_case.skip.find(transport);
-        if (skip_it != test_case.skip.end())
-        {
+        if (skip_it != test_case.skip.end()) {
             ++report.skipped;
             report.skips.emplace_back(test_case.name, skip_it->second);
             continue;
         }
         bool needs_raw = false;
-        for (const Step& step : test_case.steps)
-        {
-            if (step.raw_request.has_value())
-            {
+        for (const Step& step : test_case.steps) {
+            if (step.raw_request.has_value()) {
                 needs_raw = true;
             }
         }
-        if (needs_raw && !caps.carries_raw)
-        {
+        if (needs_raw && !caps.carries_raw) {
             ++report.skipped;
-            report.skips.emplace_back(
-                test_case.name, "transport cannot carry raw_request");
+            report.skips.emplace_back(test_case.name,
+                                      "transport cannot carry raw_request");
             continue;
         }
 
-        // --- Per-case temp dir + materialized files ----------------------
+        // --- Per-case temp dir, from a sanitized token (never the raw name) --
         const std::filesystem::path tmp = unique_tmp_dir(test_case.name);
+
+        // Reject any unsafe files key before touching the filesystem: it must
+        // be a safe bare name AND lexically stay under tmp. Guards path
+        // traversal (CWE-22/73) when a case is built in-process rather than
+        // linted.
+        std::string unsafe_key;
+        for (const auto& file : test_case.files) {
+            if (!is_safe_bare_name(file.first) || !stays_under(tmp, file.first))
+            {
+                unsafe_key = file.first;
+                break;
+            }
+        }
+        if (!unsafe_key.empty()) {
+            ++report.failed;
+            report.failures.push_back(transport_name + "/" + test_case.name
+                                      + ": unsafe files key '" + unsafe_key
+                                      + "' refused (path traversal)");
+            continue;
+        }
+
+        // --- Materialize files -------------------------------------------
         std::error_code ec;
         std::filesystem::create_directories(tmp, ec);
-        for (const auto& file : test_case.files)
-        {
+        for (const auto& file : test_case.files) {
             std::ofstream stream(tmp / file.first, std::ios::binary);
             stream << file.second;
         }
 
         const std::optional<std::string> declined =
             adapter.begin_case(test_case, tmp);
-        if (declined.has_value())
-        {
+        if (declined.has_value()) {
             ++report.skipped;
             report.skips.emplace_back(test_case.name, *declined);
             std::filesystem::remove_all(tmp, ec);
@@ -195,15 +232,19 @@ RunReport CaseRunner::run(const std::vector<Case>& cases,
         for (std::size_t i = 0; i < test_case.steps.size() && !case_failed; ++i)
         {
             const Step& step = test_case.steps[i];
-            case_failed = !run_step(adapter, transport_name, test_case, step, i,
-                                    caps, vars, report);
+            case_failed = !run_step(adapter,
+                                    transport_name,
+                                    test_case,
+                                    step,
+                                    i,
+                                    caps,
+                                    vars,
+                                    report);
         }
-        if (case_failed)
-        {
+        if (case_failed) {
             ++report.failed;
         }
-        else
-        {
+        else {
             ++report.ran;
         }
 
@@ -228,27 +269,24 @@ bool CaseRunner::run_step(IConformanceAdapter& adapter,
     std::string substitute_error;
     std::optional<Json> request_json;
     std::string request_text;
-    if (step.request.has_value())
-    {
+    if (step.request.has_value()) {
         request_json =
             Matcher::substitute(*step.request, vars, &substitute_error);
         request_text = request_json->dump();
     }
-    else
-    {
+    else {
         const Json raw = Matcher::substitute(
             Json::string(*step.raw_request), vars, &substitute_error);
         request_text = raw.is_string() ? raw.as_string() : *step.raw_request;
     }
 
     const std::string label = step.label.empty()
-                                  ? ("step[" + std::to_string(index) + "]")
-                                  : ("step[" + step.label + "]");
-    const std::string where = transport_name + "/" + test_case.name + "/" +
-                              label;
+        ? ("step[" + std::to_string(index) + "]")
+        : ("step[" + step.label + "]");
+    const std::string where =
+        transport_name + "/" + test_case.name + "/" + label;
 
-    if (!substitute_error.empty())
-    {
+    if (!substitute_error.empty()) {
         report.failures.push_back(where + ": " + substitute_error);
         return false;
     }
@@ -257,10 +295,9 @@ bool CaseRunner::run_step(IConformanceAdapter& adapter,
     std::string parse_error;
     const std::optional<Json> response =
         Json::parse(response_text, &parse_error);
-    if (!response.has_value())
-    {
-        report.failures.push_back(where + ": response is not valid JSON (" +
-                                  parse_error + "): " + response_text);
+    if (!response.has_value()) {
+        report.failures.push_back(where + ": response is not valid JSON ("
+                                  + parse_error + "): " + response_text);
         return false;
     }
 
@@ -270,21 +307,24 @@ bool CaseRunner::run_step(IConformanceAdapter& adapter,
         request_json.has_value() ? &request_json.value() : nullptr;
 
     // Immediate accept assertion for an async job step.
-    if (step.await_job.has_value() && step.expect_accept.present)
-    {
-        if (!check_expect(where + " (accept)", step.expect_accept, *response,
-                          request_ptr, caps, vars, report))
+    if (step.await_job.has_value() && step.expect_accept.present) {
+        if (!check_expect(where + " (accept)",
+                          step.expect_accept,
+                          *response,
+                          request_ptr,
+                          caps,
+                          vars,
+                          report))
         {
             return false;
         }
-        const Json terminal =
-            poll_job(adapter, step, vars);
-        return check_expect(where, step.expect, terminal, nullptr, caps, vars,
-                            report);
+        const Json terminal = poll_job(adapter, step, vars);
+        return check_expect(
+            where, step.expect, terminal, nullptr, caps, vars, report);
     }
 
-    return check_expect(where, step.expect, *response, request_ptr, caps, vars,
-                        report);
+    return check_expect(
+        where, step.expect, *response, request_ptr, caps, vars, report);
 }
 
 Json CaseRunner::poll_job(IConformanceAdapter& adapter,
@@ -294,8 +334,7 @@ Json CaseRunner::poll_job(IConformanceAdapter& adapter,
     const AwaitJob& await = *step.await_job;
     Json job_id = Json::null();
     const auto it = vars.find(await.var);
-    if (it != vars.end())
-    {
+    if (it != vars.end()) {
         job_id = it->second;
     }
     Json args = Json::object();
@@ -308,26 +347,21 @@ Json CaseRunner::poll_job(IConformanceAdapter& adapter,
 
     Json last = Json::object();
     int elapsed = 0;
-    while (elapsed <= await.timeout_ms)
-    {
+    while (elapsed <= await.timeout_ms) {
         const std::string text = adapter.send(step, request_text);
         std::string parse_error;
         std::optional<Json> doc = Json::parse(text, &parse_error);
-        if (!doc.has_value())
-        {
+        if (!doc.has_value()) {
             break;
         }
         last = std::move(*doc);
         const Json* state = last.path("$.job.state");
-        if (state == nullptr)
-        {
+        if (state == nullptr) {
             state = last.path("$.result.state");
         }
-        const bool terminal =
-            state != nullptr && state->is_string() &&
-            is_terminal_state(state->as_string());
-        if (terminal || last.path("$.result") != nullptr)
-        {
+        const bool terminal = state != nullptr && state->is_string()
+            && is_terminal_state(state->as_string());
+        if (terminal || last.path("$.result") != nullptr) {
             break;
         }
         m_sleep(25);
@@ -345,22 +379,19 @@ bool CaseRunner::check_expect(const std::string& where,
                               RunReport& report)
 {
     std::vector<std::string> findings;
-    const Json normalized =
-        Matcher::normalize_actual(response, request, caps.carries_id, &findings);
+    const Json normalized = Matcher::normalize_actual(
+        response, request, caps.carries_id, &findings);
     const Json expected = build_expected(expect, vars);
     const MatchResult result =
         Matcher::match(expected, normalized, expect.subset, vars);
-    for (const std::string& reason : result.findings)
-    {
+    for (const std::string& reason : result.findings) {
         findings.push_back(reason);
     }
-    if (findings.empty())
-    {
+    if (findings.empty()) {
         return true;
     }
     std::string message = where;
-    for (const std::string& finding : findings)
-    {
+    for (const std::string& finding : findings) {
         message += "\n  " + finding;
     }
     message += "\n  expected: " + expected.dump();

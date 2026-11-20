@@ -26,6 +26,22 @@ namespace conformance
 {
 
 /**
+ * @brief Rejects a `files` key / case name that is unsafe as a bare file name.
+ *
+ * Mirrors corpus lint rule 11 (`conformance_common._bad_file_name_reason`) and
+ * hardens the C++ runner against path traversal (CWE-22/73) when a case is
+ * constructed in-process rather than loaded through the linted corpus: the name
+ * is materialized directly inside the per-case temp directory, so it must not
+ * escape it.
+ *
+ * @param name The candidate bare file name.
+ * @return `true` only when @p name is a safe bare name: non-empty, not `.` or
+ * `..`, not starting with `~`, free of NUL and of any path separator (`/` or
+ * `\\`), and without a drive (`X:`) or UNC prefix.
+ */
+bool is_safe_bare_name(const std::string& name);
+
+/**
  * @brief An expected envelope assertion (an `expect` or `expect_accept` block).
  */
 struct Expect
@@ -33,17 +49,17 @@ struct Expect
     /// Which body the envelope carries.
     enum class Body
     {
-        None,    ///< No body parsed (absent block).
+        None,  ///< No body parsed (absent block).
         Result,  ///< A success `result` object.
-        Job,     ///< An accepted `job` object.
-        Error    ///< An `error` object (only `code` is compared).
+        Job,  ///< An accepted `job` object.
+        Error  ///< An `error` object (only `code` is compared).
     };
 
-    bool present = false;          ///< Whether the block was supplied.
-    bool ok = false;               ///< Expected envelope `ok` flag.
-    bool subset = false;           ///< `true` for `match: "subset"`.
-    Body body = Body::None;        ///< Which of result/job/error is set.
-    Json value = Json::object();   ///< The result/job/error object as authored.
+    bool present = false;  ///< Whether the block was supplied.
+    bool ok = false;  ///< Expected envelope `ok` flag.
+    bool subset = false;  ///< `true` for `match: "subset"`.
+    Body body = Body::None;  ///< Which of result/job/error is set.
+    Json value = Json::object();  ///< The result/job/error object as authored.
 };
 
 /**
@@ -51,8 +67,8 @@ struct Expect
  */
 struct AwaitJob
 {
-    std::string var;         ///< Variable holding the job id to poll.
-    int timeout_ms = 5000;   ///< Poll budget before the step is failed.
+    std::string var;  ///< Variable holding the job id to poll.
+    int timeout_ms = 5000;  ///< Poll budget before the step is failed.
 };
 
 /**
@@ -60,11 +76,11 @@ struct AwaitJob
  */
 struct RestResource
 {
-    std::string method;               ///< HTTP method (e.g. `"POST"`).
-    std::string path;                 ///< Route path.
-    std::optional<Json> query;        ///< Optional query parameters object.
-    std::optional<Json> body;         ///< Optional request body.
-    std::optional<int> status;        ///< Expected HTTP status, if pinned.
+    std::string method;  ///< HTTP method (e.g. `"POST"`).
+    std::string path;  ///< Route path.
+    std::optional<Json> query;  ///< Optional query parameters object.
+    std::optional<Json> body;  ///< Optional request body.
+    std::optional<int> status;  ///< Expected HTTP status, if pinned.
 };
 
 /**
@@ -72,17 +88,17 @@ struct RestResource
  */
 struct Step
 {
-    std::string label;                      ///< Shown in failure output.
-    std::optional<std::string> caller;      ///< Per-step role override.
-    std::optional<Json> request;            ///< Request envelope, or absent.
-    std::optional<std::string> raw_request; ///< Verbatim text, or absent.
-    Expect expect;                          ///< Required terminal assertion.
-    Expect expect_accept;                   ///< Immediate `job` assertion.
+    std::string label;  ///< Shown in failure output.
+    std::optional<std::string> caller;  ///< Per-step role override.
+    std::optional<Json> request;  ///< Request envelope, or absent.
+    std::optional<std::string> raw_request;  ///< Verbatim text, or absent.
+    Expect expect;  ///< Required terminal assertion.
+    Expect expect_accept;  ///< Immediate `job` assertion.
     std::map<std::string, std::string> save;  ///< var -> JSONPath captures.
-    std::optional<AwaitJob> await_job;      ///< Async-job polling, if any.
+    std::optional<AwaitJob> await_job;  ///< Async-job polling, if any.
     std::optional<RestResource> rest_resource;  ///< Resource-route form.
-    std::optional<int> http_status;         ///< REST generic status override.
-    std::optional<int> cli_exit;            ///< CLI exit-code override.
+    std::optional<int> http_status;  ///< REST generic status override.
+    std::optional<int> cli_exit;  ///< CLI exit-code override.
 };
 
 /**
@@ -90,16 +106,16 @@ struct Step
  */
 struct Case
 {
-    std::string name;                        ///< Globally unique case id.
-    std::string doc;                         ///< One-line description.
-    std::string command;                     ///< Primary command under test.
-    std::string caller = "admin";            ///< Default role for all steps.
-    std::string backend = "sqlite";          ///< Backing store selector.
-    std::vector<Step> steps;                 ///< Ordered steps (>= 1).
+    std::string name;  ///< Globally unique case id.
+    std::string doc;  ///< One-line description.
+    std::string command;  ///< Primary command under test.
+    std::string caller = "admin";  ///< Default role for all steps.
+    std::string backend = "sqlite";  ///< Backing store selector.
+    std::vector<Step> steps;  ///< Ordered steps (>= 1).
     std::map<std::string, std::string> files;  ///< name -> text materialized.
-    std::set<Transport> only;                ///< Allowed transports, if set.
-    std::map<Transport, std::string> skip;   ///< transport -> skip reason.
-    std::string suite;                       ///< Owning suite id.
+    std::set<Transport> only;  ///< Allowed transports, if set.
+    std::map<Transport, std::string> skip;  ///< transport -> skip reason.
+    std::string suite;  ///< Owning suite id.
 };
 
 /**
