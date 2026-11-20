@@ -37,14 +37,17 @@
  *           `commands::validate_args` against the same spec; untouched fields
  * are omitted; set values keep their JSON type; a cleared nullable field
  *           becomes `null`; prefill is idempotent and re-emits a valid
- * envelope; and every byte (quotes, backslashes, newlines, emoji, 4 KiB paste)
- *           survives JSON escaping unchanged. A fixed edge-case table and one
- *           real `link.create` case from the live catalog round it out.
- * Boundaries: all 8 ArgType values; required/optional/nullable/default; integer
- *           bounds vs registry limits; 64- vs 65-byte strings; empty enum list;
- *           a buffer at `k_max_field_bytes`; invalid UTF-8 kept well-formed.
- * On failure first check: the failing `BOOST_TEST_CONTEXT` prints the seed and
- *           case index - rerun with `FORM_PROP_SEED=<seed>`; then inspect
+ * envelope; every byte (quotes, backslashes, newlines, emoji, 4 KiB paste)
+ *           survives JSON escaping unchanged; the fields keep their descriptor
+ *           order and required flags; and a missing required field or an
+ * invalid value for every invalidate-able type is flagged on its own field. A
+ * fixed edge-case table and one real `link.create` case from the live catalog
+ * round it out. Boundaries: all 8 ArgType values;
+ * required/optional/nullable/default; integer bounds vs registry limits; 64- vs
+ * 65-byte strings; empty enum list; a buffer at `k_max_field_bytes`; invalid
+ * UTF-8 kept well-formed. On failure first check: the failing
+ * `BOOST_TEST_CONTEXT` prints the seed and case index - rerun with
+ * `FORM_PROP_SEED=<seed>`; then inspect
  *           `encode_field`/`validate`/`prefill_from_result` in
  *           `src/tui/form_model.cpp` and `validate_args` in
  *           `src/commands/arg_spec.cpp`. This test asserts behaviour only; a
@@ -594,6 +597,18 @@ BOOST_AUTO_TEST_CASE(valid_forms_round_trip_through_validate_args)
         BOOST_TEST_CONTEXT("seed=" << seed << " case=" << i << " ["
                                    << describe(gen) << "]")
         {
+            // P12: field order equals ArgInfo descriptor order, and each
+            // field's required flag matches its spec. (The visual `*` required
+            // marker is render-only and is covered by tui__08, so it is not
+            // asserted here.)
+            BOOST_REQUIRE_EQUAL(model.fields().size(), gen.info.args.size());
+            for (std::size_t f = 0; f < gen.info.args.size(); ++f) {
+                BOOST_CHECK_EQUAL(model.fields()[f].spec.name,
+                                  gen.info.args[f].name);
+                BOOST_CHECK_EQUAL(model.fields()[f].spec.required,
+                                  gen.info.args[f].required);
+            }
+
             // P1: advisory validation passes and the args pass the registry.
             BOOST_CHECK(model.validate());
             const std::string json = model.to_args_json();
@@ -689,7 +704,7 @@ BOOST_AUTO_TEST_CASE(valid_forms_round_trip_through_validate_args)
 BOOST_AUTO_TEST_CASE(missing_required_field_is_flagged_and_omitted)
 {
     const std::uint32_t seed = form_prop_seed();
-    for (int i = 0; i < 120; ++i) {
+    for (int i = 0; i < k_iterations; ++i) {
         SpecGenerator gen_rng(seed + 0x2000u + static_cast<std::uint32_t>(i));
         const GeneratedSpec gen = gen_rng.random_command(
             k_all_types[i % 8], /*force_required_at0=*/true);
@@ -715,20 +730,36 @@ BOOST_AUTO_TEST_CASE(missing_required_field_is_flagged_and_omitted)
 // ---------------------------------------------------------------------------
 BOOST_AUTO_TEST_CASE(invalid_value_flags_only_its_own_field)
 {
-    const cmd::ArgType corruptible[] = {cmd::ArgType::integer,
+    // Every ArgType that can be made invalid through FormModel's own setters.
+    // Boolean is deliberately absent: set_checked(bool) accepts only true/false
+    // and the model has no other boolean input, so there is no invalid value to
+    // drive through the API (set_checked cannot fail validate()). The remaining
+    // seven types each have a reachable invalid input, exercised below, so all
+    // the model's invalidate-able ArgType values are covered.
+    const cmd::ArgType corruptible[] = {cmd::ArgType::string,
+                                        cmd::ArgType::integer,
                                         cmd::ArgType::timestamp,
                                         cmd::ArgType::enumeration,
-                                        cmd::ArgType::string_map};
+                                        cmd::ArgType::string_list,
+                                        cmd::ArgType::string_map,
+                                        cmd::ArgType::object};
+    constexpr int k_corruptible = 7;
     const std::uint32_t seed = form_prop_seed();
-    for (int i = 0; i < 120; ++i) {
+    for (int i = 0; i < k_iterations; ++i) {
         SpecGenerator gen_rng(seed + 0x3000u + static_cast<std::uint32_t>(i));
-        const cmd::ArgType target = corruptible[i % 4];
+        const cmd::ArgType target = corruptible[i % k_corruptible];
         const GeneratedSpec gen = gen_rng.random_command(target);
         FormModel model(gen.info);
         gen_rng.fill_all(model, gen, -1);
 
-        // Corrupt field 0 (the forced corruptible type).
+        // Corrupt field 0 (the forced corruptible type) with an input that is
+        // invalid through the model's public API.
         switch (target) {
+            case cmd::ArgType::string:
+                // String fields enforce only the T-121 byte cap client-side; a
+                // buffer at k_max_field_bytes is the reachable invalid input.
+                model.set_text(0, std::string(70u * 1024u, 'x'));
+                break;
             case cmd::ArgType::integer:
                 model.set_text(0, "nan123xyz");
                 break;
@@ -740,8 +771,26 @@ BOOST_AUTO_TEST_CASE(invalid_value_flags_only_its_own_field)
                     0,
                     static_cast<int>(gen.info.args[0].enum_values.size()) + 5);
                 break;
+            case cmd::ArgType::string_list: {
+                // Over k_max_elements (1000) list entries is the reachable
+                // malformed list input (a comma-list cannot otherwise fail).
+                std::string many;
+                for (int e = 0; e < 1001; ++e) {
+                    if (e != 0) {
+                        many += ",";
+                    }
+                    many += "x";
+                }
+                model.set_text(0, many);
+                break;
+            }
             case cmd::ArgType::string_map:
                 model.set_text(0, "keywithoutequals");
+                break;
+            case cmd::ArgType::object:
+                // A member-based object has no raw-JSON check; its reachable
+                // invalid input is a member buffer at the T-121 byte cap.
+                model.set_member(0, 0, std::string(70u * 1024u, 'x'));
                 break;
             default:
                 break;
@@ -980,6 +1029,20 @@ BOOST_AUTO_TEST_CASE(fixed_edge_cases)
     }
 
     // Timestamps.
+    //
+    // PRODUCT FINDING (expected-failure note, routed to the user; no product
+    // code changed here): FormModel's timestamp validity defers entirely to
+    // url_shortener::parseRfc3339Zulu (src/core/utils.cpp:~71-81), which is
+    // std::get_time(&tm, "%Y-%m-%dT%H:%M:%SZ") + timegm. On libc++ (macOS CI)
+    // std::get_time does NOT range-check the calendar, so all of the following
+    // are ACCEPTED even though RFC 3339 rejects them:
+    //   - "2026-02-29T00:00:00Z"  (Feb 29 in a non-leap year),
+    //   - "2026-01-02"            (date only, no time or 'Z'),
+    //   - "2026-01-02T03:04:05"   (no trailing 'Z').
+    // These calendar-invalid / truncated forms are therefore deliberately kept
+    // OUT of the assertions below; this test asserts only what holds across
+    // platforms. Tightening the parser (or validating the parsed tm against the
+    // input) is the product change the finding tracks.
     {
         FormModel leap(one("t", ArgKind::timestamp));
         leap.set_text(0, "2024-02-29T00:00:00Z");  // valid leap day, Zulu
@@ -989,11 +1052,7 @@ BOOST_AUTO_TEST_CASE(fixed_edge_cases)
         offset.set_text(0, "2026-01-02T03:04:05+00:00");  // non-Zulu offset
         BOOST_CHECK(!offset.validate());
 
-        // Non-timestamp text is rejected. (The shared get_time-based parser is
-        // lenient about *truncated* RFC 3339 - e.g. "2026-01-02" is accepted on
-        // libc++ - so this edge asserts only on unambiguous garbage, which is
-        // the model contract this test cares about; calendar-strictness is the
-        // parser's concern, not FormModel's.)
+        // Unambiguous non-timestamp text is rejected on every platform.
         FormModel garbage(one("t", ArgKind::timestamp));
         garbage.set_text(0, "not-a-timestamp");
         BOOST_CHECK(!garbage.validate());
