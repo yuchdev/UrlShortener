@@ -1,6 +1,7 @@
 #define BOOST_TEST_MODULE RedirectIsolationStructuralGuard
 #include <algorithm>
 #include <array>
+#include <filesystem>
 #include <fstream>
 #include <sstream>
 #include <string>
@@ -9,10 +10,7 @@
 #include <vector>
 
 #include <boost/test/unit_test.hpp>
-
 #include <url_shortener/http/route_registry.hpp>
-
-#include <filesystem>
 
 namespace fs = std::filesystem;
 
@@ -36,7 +34,8 @@ namespace
 
 /// Every `url_shortener/...` include target the redirect translation unit and
 /// its header are allowed to name. Any `url_shortener/...` include outside this
-/// set is a layering violation and fails `redirect_sources_include_allowlist_only`.
+/// set is a layering violation and fails
+/// `redirect_sources_include_allowlist_only`.
 constexpr std::array<std::string_view, 8> k_allowed_url_shortener_includes = {
     "url_shortener/analytics/click_event_queue.hpp",
     "url_shortener/app/app_error.hpp",
@@ -84,7 +83,8 @@ constexpr std::array<std::string_view, 2> k_registry_builders = {
     "process_job_runner",
 };
 
-/// One `#include` line: its 1-based line number and the quoted/bracketed target.
+/// One `#include` line: its 1-based line number and the quoted/bracketed
+/// target.
 struct IncludeLine
 {
     ///< 1-based line number within the scanned file.
@@ -107,8 +107,7 @@ std::string include_target(const std::string& line)
     }
     i = line.find_first_not_of(" \t", i + 1);
     const std::string_view keyword = "include";
-    if (i == std::string::npos
-        || line.compare(i, keyword.size(), keyword) != 0)
+    if (i == std::string::npos || line.compare(i, keyword.size(), keyword) != 0)
     {
         return {};
     }
@@ -212,14 +211,14 @@ bool is_forbidden_include(const std::string& target)
 {
     return std::any_of(k_forbidden_include_dirs.begin(),
                        k_forbidden_include_dirs.end(),
-                       [&](std::string_view bad) {
-                           return target.find(bad) != std::string::npos;
-                       });
+                       [&](std::string_view bad)
+                       { return target.find(bad) != std::string::npos; });
 }
 
 /// @brief Whether a `url_shortener/...` include is on the allowlist.
 ///
-/// @param target An include target already known to start with `url_shortener/`.
+/// @param target An include target already known to start with
+/// `url_shortener/`.
 /// @return `true` when @p target is one of
 ///         @ref k_allowed_url_shortener_includes.
 bool is_allowed_url_shortener(const std::string& target)
@@ -273,12 +272,11 @@ const RouteDescriptor* find_route(const std::string& method,
                                   const std::string& path)
 {
     const auto& routes = registeredRoutes();
-    const auto it =
-        std::find_if(routes.begin(), routes.end(),
-                     [&](const RouteDescriptor& route) {
-                         return route.method == method
-                             && route.path_pattern == path;
-                     });
+    const auto it = std::find_if(
+        routes.begin(),
+        routes.end(),
+        [&](const RouteDescriptor& route)
+        { return route.method == method && route.path_pattern == path; });
     return it == routes.end() ? nullptr : &*it;
 }
 
@@ -364,9 +362,9 @@ BOOST_AUTO_TEST_CASE(redirect_sources_have_no_command_symbols)
 
     for (const auto& file : redirect_sources()) {
         const std::string code = strip_line_comments(readFile(file));
-        BOOST_REQUIRE_MESSAGE(!code.empty(),
-                              "redirect source empty/unreadable: "
-                                  << file.string());
+        BOOST_REQUIRE_MESSAGE(
+            !code.empty(),
+            "redirect source empty/unreadable: " << file.string());
         for (const std::string_view symbol : k_forbidden_symbols) {
             BOOST_TEST(code.find(symbol) == std::string::npos,
                        "forbidden command-layer symbol '"
@@ -397,9 +395,9 @@ BOOST_AUTO_TEST_CASE(redirect_routes_not_in_command_route_table)
 
     for (const auto& [method, path] : redirects) {
         const RouteDescriptor* route = find_route(method, path);
-        BOOST_REQUIRE_MESSAGE(route != nullptr,
-                              "redirect route missing from registry: "
-                                  << method << ' ' << path);
+        BOOST_REQUIRE_MESSAGE(
+            route != nullptr,
+            "redirect route missing from registry: " << method << ' ' << path);
 
         BOOST_TEST(route->route_label != "api_commands",
                    "redirect route " << method << ' ' << path
@@ -584,10 +582,10 @@ BOOST_AUTO_TEST_CASE(guard_flags_planted_violations)
     const fs::path tainted = dir / "tainted.cpp";
     {
         std::ofstream out(tainted);
-        out << "#include <string>\n";                                   // 1
+        out << "#include <string>\n";  // 1
         out << "#include <url_shortener/commands/command_registry.hpp>\n";  // 2
-        out << "// CommandRegistry here is only a comment\n";           // 3
-        out << "void f() { CommandRequest r; }\n";                      // 4
+        out << "// CommandRegistry here is only a comment\n";  // 3
+        out << "void f() { CommandRequest r; }\n";  // 4
     }
 
     // Include scan: the forbidden include is found with its exact line number.
