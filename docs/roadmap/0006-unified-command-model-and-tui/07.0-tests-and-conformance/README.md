@@ -68,7 +68,7 @@ G gates             04, 06-10, 30, 32 -> 33 (CI wiring) -> 34 (coverage gap + re
 | 20 | [Security: import SSRF, size and path limits](20-security-import-ssrf-size-and-path-limits.md) | ✅ Complete | Task 05.0, Task 06.0 | 34 |
 | 21 | [Security: no listener, no URI store](21-security-no-listener-and-no-uri-store.md) | ✅ Complete | Task 04.0, Task 05.0, Task 06.0 | 34 |
 | 22 | [TUI mock command client (extends the 06.0 mock)](22-tui-mock-command-client.md) | ✅ Complete | Task 06.0 | 23, 26, 27, 28, 29, 08.0/11 |
-| 23 | [TUI snapshot renderer and golden compare (extends the 06.0 harness)](23-tui-snapshot-renderer-and-golden-compare.md) | ⬜ Not started | 22 | 24, 25, 27, 28, 29, 08.0/11 |
+| 23 | [TUI snapshot renderer and golden compare (extends the 06.0 harness)](23-tui-snapshot-renderer-and-golden-compare.md) | ✅ Complete (consumed; .gitattributes added) | 22 | 24, 25, 27, 28, 29, 08.0/11 |
 | 24 | [TUI snapshots: navigation screens](24-tui-snapshots-navigation-screens.md) | ✅ Complete (consumed by 06.0) | 23, Task 06.0 | 29, 34, 08.0/10, 08.0/11 |
 | 25 | [TUI snapshots: forms, jobs, palette, dialogs](25-tui-snapshots-forms-jobs-palette-dialogs.md) | ✅ Complete (consumed by 06.0) | 23, Task 06.0 | 29, 34, 08.0/10, 08.0/11 |
 | 26 | [FormModel property tests](26-form-builder-property-tests.md) | ✅ Complete | 22, Task 01.0, Task 06.0 | 29, 34, 08.0/11 |
