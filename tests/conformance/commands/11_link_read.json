@@ -181,6 +181,7 @@
             "command": "link.get",
             "args": { "slug": "soft-gone" }
           },
+          "rest_resource": { "method": "GET", "path": "/api/v1/links/soft-gone", "status": 200 },
           "expect": { "ok": true, "result": { "slug": "soft-gone", "status": "deleted" }, "match": "subset" }
         }
       ]
@@ -589,6 +590,7 @@
             "command": "link.stats",
             "args": { "slug": "stats-ghost" }
           },
+          "rest_resource": { "method": "GET", "path": "/api/v1/links/stats-ghost/stats", "status": 404 },
           "expect": { "ok": false, "error": { "code": "not_found" } }
         }
       ]

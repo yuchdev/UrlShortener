@@ -380,7 +380,7 @@
     },
     {
       "name": "link_delete_blank_slug",
-      "doc": "a blank slug is present but resolves to no link, so delete returns not_found (the argument layer does not reject empty strings)",
+      "doc": "an intentionally asserted uniform behavior: the argument layer does not reject empty strings, so a present-but-blank slug is a valid-shaped request that resolves to no link, and delete returns not_found identically on every transport (not invalid_field)",
       "command": "link.delete",
       "steps": [
         {
