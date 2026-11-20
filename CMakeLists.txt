@@ -425,6 +425,14 @@ include(CTest)
     )
   endforeach()
 
+  # Shared directory every conformance runner writes its per-transport summary
+  # JSON into (URLSHORTENER_CONFORMANCE_OUT), so a local `ctest -L conformance`
+  # populates the coverage gate's --report matrix exactly like CI. Created at
+  # configure time because the C++ RunReport writer opens the file without
+  # creating parent dirs; the Python _SummaryCollector mkdirs defensively too.
+  set(CONFORMANCE_OUT_DIR "${CMAKE_BINARY_DIR}/conformance_out")
+  file(MAKE_DIRECTORY "${CONFORMANCE_OUT_DIR}")
+
   # ---- Conformance Python harness (Task 07.0; label "integration;conformance")
   # Out-of-process Python runners for the command conformance corpus. Target
   # name is conformance_<stem>; the second label lets `ctest -L conformance`
@@ -441,7 +449,7 @@ include(CTest)
     )
     set_tests_properties(conformance_${conformance_py_name} PROPERTIES
       ENVIRONMENT
-        "SIMPLE_HTTP_BIN=$<TARGET_FILE:url_shortener>;URLSHORTENER_CONFORMANCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/tests/conformance"
+        "SIMPLE_HTTP_BIN=$<TARGET_FILE:url_shortener>;URLSHORTENER_CONFORMANCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/tests/conformance;URLSHORTENER_CONFORMANCE_OUT=${CONFORMANCE_OUT_DIR}"
       TIMEOUT 300
       LABELS "integration;conformance"
     )
@@ -504,6 +512,7 @@ include(CTest)
     )
     add_test(NAME ${conformance_cpp_target} COMMAND ${conformance_cpp_target})
     set_tests_properties(${conformance_cpp_target} PROPERTIES
+        ENVIRONMENT "URLSHORTENER_CONFORMANCE_OUT=${CONFORMANCE_OUT_DIR}"
         LABELS "integration;conformance")
   endforeach()
 
@@ -535,6 +544,7 @@ include(CTest)
     add_test(NAME conformance__02_tui_client_corpus
         COMMAND conformance__02_tui_client_corpus)
     set_tests_properties(conformance__02_tui_client_corpus PROPERTIES
+        ENVIRONMENT "URLSHORTENER_CONFORMANCE_OUT=${CONFORMANCE_OUT_DIR}"
         LABELS "integration;conformance")
   endif()
 

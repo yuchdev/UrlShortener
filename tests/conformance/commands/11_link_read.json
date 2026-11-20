@@ -145,6 +145,23 @@
       ]
     },
     {
+      "name": "link_preview_unknown_not_found",
+      "doc": "previewing an unknown slug is not_found on every transport",
+      "command": "link.preview",
+      "steps": [
+        {
+          "label": "preview",
+          "request": {
+            "v": 1,
+            "command": "link.preview",
+            "args": { "slug": "prev-ghost" }
+          },
+          "rest_resource": { "method": "GET", "path": "/api/v1/links/prev-ghost/preview", "status": 404 },
+          "expect": { "ok": false, "error": { "code": "not_found" } }
+        }
+      ]
+    },
+    {
       "name": "link_get_deleted_visible_to_management",
       "doc": "a soft-deleted link is still returned by link.get with status deleted (management visibility)",
       "command": "link.get",

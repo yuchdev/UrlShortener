@@ -311,13 +311,30 @@ class CoverageGateCatalogParsingTest(unittest.TestCase):
         self.assertIn(("POST", "/api/v1/links/{slug}/restore"), routes)
         self.assertIn(("POST", "/api/v1/jobs/{id}/cancel"), routes)
 
-    def test_documented_errors_cover_only_create_get_update(self) -> None:
-        """Only link.create / link.get / link.update carry an ``Errors:`` line."""
+    def test_documented_errors_are_parsed_including_inline_job_commands(self) -> None:
+        """Every ``Errors:`` line is attributed, by heading or inline command.
+
+        ``link.create`` / ``link.get`` / ``link.update`` and the read commands that
+        gained an ``Errors:`` line (``db.rows``, ``link.stats``, ``link.preview``,
+        ``link.list``, ``link.export``) are keyed by their ``####`` heading;
+        ``job.get`` / ``job.cancel`` live in a table with no heading and are keyed
+        by the dotted command backticked inline before ``Errors:``.
+        """
         documented = covg.parse_documented_errors(_CATALOG)
         self.assertEqual(
-            set(documented), {"link.create", "link.get", "link.update"}
+            set(documented),
+            {
+                "link.create", "link.get", "link.update", "db.rows",
+                "link.stats", "link.preview", "link.list", "link.export",
+                "job.get", "job.cancel",
+            },
         )
         self.assertIn("not_found", documented["link.get"])
+        self.assertIn("not_found", documented["link.preview"])
+        # Inline attribution: the backticked `app::UpdateLinkCommand` token before
+        # link.update's Errors: line must NOT hijack its codes.
+        self.assertEqual(documented["job.cancel"], {"not_found", "not_authorized"})
+        self.assertEqual(documented["job.get"], {"not_found"})
 
 
 class CoverageMatrixAndSkipNotesTest(unittest.TestCase):

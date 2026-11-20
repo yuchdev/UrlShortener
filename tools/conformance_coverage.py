@@ -234,7 +234,12 @@ def _backticked(cell: str) -> List[str]:
 #: A hand-written ``#### `command.name` - ...`` section-3 heading.
 _COMMAND_HEADING_RE = re.compile(r"^####\s+`([a-z][a-z0-9_]*\.[a-z][a-z0-9_]*)`")
 
+#: A dotted ``<group>.<verb>`` command name (an inline ``Errors:`` attribution).
+_COMMAND_NAME_RE = re.compile(r"^[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*$")
+
 #: A hand-written ``Errors: `code`, `code`, ...`` line (section 3.1-3.3 prose).
+#: The code list is the contiguous backticked run right after ``Errors:``; a
+#: following ``. Maps to: `...``` clause is not captured (the run stops at ``.``).
 _ERRORS_LINE_RE = re.compile(r"\bErrors:\s*(`[^`]+`(?:[,/ ]+`[^`]+`)*)")
 
 
@@ -243,11 +248,21 @@ def parse_documented_errors(catalog: Path) -> Dict[str, Set[str]]:
 
     Section 3's command subsections (``#### `link.create` ...``) may carry an
     ``Errors: `code`, `code`, ...`` line enumerating the error codes that command
-    documents. This associates every such line with its nearest preceding command
-    heading. A command absent from the result (``command.list``, ``system.info``,
-    ``link.preview``, ``job.list``, ...) documents **no** error and so is exempt
-    from the mandatory per-command failure case (spec check 1: "unless the
-    descriptor has no documented error").
+    documents. Each line is attributed to a command two ways:
+
+    * **Inline** - when a dotted command name is backticked immediately before
+      ``Errors:`` on the same line (``\\`job.cancel\\` Errors: \\`not_found\\``),
+      that command owns the codes. This carries the job commands, which live in a
+      section-3.4 *table* with no ``####`` subsection heading of their own.
+    * **By heading** - otherwise the codes belong to the nearest preceding
+      ``#### \\`command\\``` subsection (the form ``link.create`` / ``link.get`` /
+      ``link.update`` use; the backticked ``\\`app::UpdateLinkCommand\\``` token
+      that precedes one such line is ignored because it is not a dotted command
+      name).
+
+    A command absent from the result (``command.list``, ``system.info``, ...)
+    documents **no** error and so is exempt from the mandatory per-command
+    failure case (spec check 1: "unless the descriptor has no documented error").
 
     :param catalog: Path to ``docs/commands/README.md``.
     :return: A ``command -> {error code}`` map holding only commands with a
@@ -260,13 +275,19 @@ def parse_documented_errors(catalog: Path) -> Dict[str, Set[str]]:
         if heading:
             current = heading.group(1)
             continue
-        if current is None:
-            continue
         match = _ERRORS_LINE_RE.search(line)
-        if match:
-            codes = set(_backticked(match.group(1)))
-            if codes:
-                documented.setdefault(current, set()).update(codes)
+        if not match:
+            continue
+        codes = set(_backticked(match.group(1)))
+        if not codes:
+            continue
+        before = _backticked(line[: match.start()])
+        if before and _COMMAND_NAME_RE.match(before[-1]):
+            command: Optional[str] = before[-1]
+        else:
+            command = current
+        if command is not None:
+            documented.setdefault(command, set()).update(codes)
     return documented
 
 
@@ -824,7 +845,9 @@ def _check_orphans(
 # ---------------------------------------------------------------------------
 
 
-def _load_summaries(summaries_dir: Path) -> Dict[str, Dict[str, Any]]:
+def _load_summaries(
+    summaries_dir: Path, newer_than: Optional[float] = None
+) -> Dict[str, Dict[str, Any]]:
     """Load every per-transport summary JSON found under *summaries_dir*.
 
     Reads both the C++ ``RunReport`` summary (``<transport>_summary.json``,
@@ -832,15 +855,28 @@ def _load_summaries(summaries_dir: Path) -> Dict[str, Dict[str, Any]]:
     ``_SummaryCollector`` summary (``conformance_summary_<transport>.json``,
     ``{transport, cases:[{name,command,suite,status,reason}]}``).
 
+    A summary written by an *earlier* build is stale and must not seed the matrix
+    with counts for a corpus that has since changed. When *newer_than* is given
+    (the binary's mtime), a summary file older than it is skipped, so a transport
+    whose runner has not executed since the last build shows ``-`` rather than
+    pre-build counts. Each live runner also overwrites its own file on every run,
+    so a transport that *did* run is always current; the mtime filter only guards
+    the "did not run since the build" case.
+
     :param summaries_dir: Directory the runners wrote their summaries to.
-    :return: ``transport -> summary dict`` for every summary found (unreadable or
-        malformed files are skipped).
+    :param newer_than: Epoch mtime a summary must be at least as new as to be
+        used (typically the ``url_shortener`` binary's mtime); ``None`` disables
+        the filter.
+    :return: ``transport -> summary dict`` for every fresh summary found
+        (unreadable, malformed or stale files are skipped).
     """
     summaries: Dict[str, Dict[str, Any]] = {}
     if not summaries_dir.is_dir():
         return summaries
     for path in sorted(summaries_dir.glob("*summary*.json")):
         try:
+            if newer_than is not None and path.stat().st_mtime < newer_than:
+                continue
             doc = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
             continue
@@ -1031,6 +1067,7 @@ def main(argv: List[str]) -> int:
         / environment error.
     """
     args = _parse_args(argv)
+    binary_mtime: Optional[float] = None
     try:
         if args.registry_json:
             commands = registry_commands_from_json(Path(args.registry_json))
@@ -1044,6 +1081,10 @@ def main(argv: List[str]) -> int:
                 )
                 return 2
             commands = registry_commands(binary)
+            try:
+                binary_mtime = Path(binary).stat().st_mtime
+            except OSError:
+                binary_mtime = None
         codes = catalog_error_codes(Path(args.catalog))
         routes = catalog_routes(Path(args.catalog))
         documented_errors = parse_documented_errors(Path(args.catalog))
@@ -1057,7 +1098,9 @@ def main(argv: List[str]) -> int:
 
     if args.report:
         summaries_dir = Path(args.summaries) if args.summaries else None
-        summaries = _load_summaries(summaries_dir) if summaries_dir else {}
+        summaries = (
+            _load_summaries(summaries_dir, binary_mtime) if summaries_dir else {}
+        )
         Path(args.report).write_text(
             build_matrix(index, commands, summaries), encoding="utf-8"
         )

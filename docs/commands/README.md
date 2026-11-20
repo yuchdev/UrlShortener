@@ -241,6 +241,7 @@ only; the resource route stays slug-only.)
 `result` is **not** a full `LinkView`: it is the reduced preview projection of
 `serializeLinkPreviewJson`, keys in this order:
 `{ "slug", "url", "status", "redirect_type", "enabled", "expires_at", "deleted_at" }`.
+Errors: `not_found`.
 
 #### `link.stats` - `read`, sync
 
@@ -262,6 +263,7 @@ only; the resource route stays slug-only.)
 A bad timestamp or bucket is `invalid_field` (message names the field; the
 resource route keeps its `invalid_timestamp` / `invalid_bucket` strings).
 Maps to `GET /api/v1/links/{slug}/stats`, `link stats`.
+Errors: `invalid_field`, `not_found`.
 
 ### 3.2 Browse commands (new; needed by TUI and Milestone 0002/0004)
 
@@ -285,6 +287,7 @@ in the app layer because the SQL backends keep them in `attributes`). Maps to:
 new `GET /api/v1/links` (query params = args; gated, see "REST access
 control"), `link list`. _Note:_ default `status` is recorded in the decision
 log (Q9).
+Errors: `invalid_field`, `not_authorized`.
 
 #### `db.tables` - `read`, sync
 
@@ -308,6 +311,7 @@ stored. The `click_events` table reads the process-local analytics repository,
 so it is empty in a CLI/TUI process that did not serve redirects (Task 03.0
 subtask 16). The `jobs` table lists the jobs of the current process (Task 05.0
 subtask 21).
+Errors: `not_found`, `invalid_field`.
 
 ### 3.3 Pair commands: insert, import, export
 
@@ -339,6 +343,7 @@ section 2, decision log D16) raises the required permission to `write` when
 `path` is present: a read-only session (`ControlSet::User`) gets
 `not_authorized` before any job is created; inline export stays `read`.
 `command.list` reports the base permission `read`.
+Errors: `invalid_field`, `not_authorized`, `unsupported`.
 
 ### 3.4 Job commands
 
@@ -349,6 +354,11 @@ section 2, decision log D16) raises the required permission to `write` when
 | `job.cancel` | `write` | `id` | job object; cancelling a finished job is a no-op returning its final state |
 
 States: `queued`, `running`, `succeeded`, `failed`, `cancelled`. Unknown id: `not_found`.
+
+`job.get` Errors: `not_found`.
+
+`job.cancel` Errors: `not_found`, `not_authorized`.
+
 Jobs carry no owner in V1 (single local operator, or one REST role); when
 Milestone 0002 adds users, `job.*` must filter by principal.
 
