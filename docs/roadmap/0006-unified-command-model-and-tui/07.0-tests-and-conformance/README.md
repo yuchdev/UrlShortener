@@ -47,7 +47,7 @@ G gates             04, 06-10, 30, 32 -> 33 (CI wiring) -> 34 (coverage gap + re
 | # | Document | Status | Depends on | Blocks |
 |---|----------|--------|------------|--------|
 | 01 | [Corpus schema and lint](01-corpus-schema-and-lint.md) | ✅ Complete | Task 01.0 | 02, 03, 05, 11, 12, 13, 14 |
-| 02 | [Matcher and normalizer vectors](02-matcher-and-normalizer-vectors.md) | ⬜ Not started | 01 | 03, 05 |
+| 02 | [Matcher and normalizer vectors](02-matcher-and-normalizer-vectors.md) | ✅ Complete | 01 | 03, 05 |
 | 03 | [C++ conformance support library](03-cpp-conformance-support-library.md) | ⬜ Not started | 01, 02 | 04, 10 |
 | 04 | [Direct registry shim and runner](04-direct-registry-shim-and-runner.md) | ⬜ Not started | 03, Task 01.0, Task 02.0, Task 03.0 | 10, 11, 12, 13, 14, 33 |
 | 05 | [Python harness common module](05-python-harness-common-module.md) | ⬜ Not started | 01, 02 | 06, 07, 08 |
