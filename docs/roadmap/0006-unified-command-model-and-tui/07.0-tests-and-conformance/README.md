@@ -57,7 +57,7 @@ G gates             04, 06-10, 30, 32 -> 33 (CI wiring) -> 34 (coverage gap + re
 | 09 | [REST resource-route shim](09-rest-resource-route-shim.md) | ✅ Complete | 08, Task 04.0 | 15, 33 |
 | 10 | [TUI InProcessClient shim](10-tui-inprocess-client-shim.md) | ✅ Complete | 03, 04, Task 06.0 | 15, 33 |
 | 11 | [Corpus: link commands](11-corpus-link-commands.md) | ✅ Complete | 01, 04, Task 03.0 | 15 |
-| 12 | [Corpus: browse and system commands](12-corpus-browse-and-system-commands.md) | ⬜ Not started | 01, 04, Task 03.0 | 15 |
+| 12 | [Corpus: browse and system commands](12-corpus-browse-and-system-commands.md) | ✅ Complete | 01, 04, Task 03.0 | 15 |
 | 13 | [Corpus: jobs, import and export](13-corpus-jobs-import-export.md) | ⬜ Not started | 01, 04, Task 05.0 | 15 |
 | 14 | [Corpus: envelope errors and authorization](14-corpus-envelope-errors-and-authorization.md) | ⬜ Not started | 01, 04, Task 01.0, Task 03.0 | 15 |
 | 15 | [Corpus coverage gate](15-corpus-coverage-gate.md) | ⬜ Not started | 06, 07, 08, 09, 10, 11, 12, 13, 14 | 34 |
