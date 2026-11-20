@@ -386,6 +386,7 @@ set(URL_SHORTENER_SOURCES
       tests/unit/cli/20_cli_parser_serve_stdio.cpp
       tests/unit/cli/21_serve_stdio_dispatch.cpp
       tests/unit/cli/30_cli_parser_tui_mode.cpp
+      tests/unit/cli/31_cli_parser_tui_path_flags.cpp
   )
 
   set(ANALYTICS_INTEGRATION_SOURCES
@@ -494,6 +495,9 @@ set(URL_SHORTENER_SOURCES
       tests/unit/commands/70_db_table_allowlist_test.cpp
       tests/unit/commands/71_jobs_rows_no_secrets_test.cpp
       tests/unit/commands/72_system_info_key_set_test.cpp
+      tests/unit/commands/76_import_row_validation_parity_test.cpp
+      tests/unit/commands/77_import_limits_test.cpp
+      tests/unit/commands/78_path_argument_policy_test.cpp
   )
 
   set(COMMON_CPP_SOURCES
@@ -722,6 +726,7 @@ set(URL_SHORTENER_SOURCES
       tests/conformance/py/12_stdio_framing.py
       tests/conformance/py/13_rest_generic_corpus.py
       tests/conformance/py/14_rest_resource_corpus.py
+      tests/conformance/py/31_import_limits_process_level.py
   )
 
   # ---- Conformance C++ support library (Task 07.0 subtask 03) ----
@@ -941,5 +946,6 @@ set(URL_SHORTENER_SOURCES
         tests/unit/tui/19_tui_entry_boundary_test.cpp
         tests/unit/tui/20_app_navigation_test.cpp
         tests/unit/tui/21_settings_screen_test.cpp
+        tests/unit/tui/23_tui_file_path_policy_test.cpp
     )
   endif()
