@@ -732,3 +732,17 @@ affected. **Ruling: fix now in 07.0**, as a separate `fix(security)` commit:
 - CGNAT, benchmark, multicast, reserved and broadcast ranges.
 
 Public hosts are unchanged. One new policy: a `%` in the host is always refused (no percent-decoding), even when private targets are allowed. The redirect fast path is untouched (C10). `master` is also affected, and a backport decision is pending at the 07.0 close.
+
+### 2026-11-20 - 07.0/15 coverage waivers (orchestrator decision)
+
+The corpus coverage gate (`tools/conformance_coverage.py`) waives three error
+codes, which raises the spec's "at most two documented waivers" to three:
+- `storage_failure`, waived to unit tests;
+- `internal`, waived to unit tests;
+- `busy`. Overflowing the shipped default job queue isn't deterministic from
+  a replayed corpus, so `busy` is proven by the fixture case
+  `conformance__01_direct_registry_corpus::direct_reports_busy_when_job_queue_is_full`
+  (`0c57fe4`).
+
+Each waiver names an owner, a reason and an evidence file, and the gate
+checks that the evidence file exists.
