@@ -44,7 +44,8 @@ import json
 import sys
 import time
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
+from urllib.parse import urlencode
 
 _THIS = Path(__file__).resolve()
 if str(_THIS.parent) not in sys.path:
@@ -182,7 +183,17 @@ class ServerProcess:
 
 
 class RestClient:
-    """POSTs a command envelope to the server matching a role.
+    """Issues HTTP requests to the server matching a role, over loopback.
+
+    Two request shapes are supported, both bounded by :data:`_POST_TIMEOUT_S`,
+    both targeting only ``127.0.0.1`` and both capping the response body at
+    :data:`_MAX_RESPONSE_BYTES`:
+
+      * :meth:`post_command` - the generic command endpoint
+        ``POST /api/v1/commands`` used by the ``rest_generic`` shim (subtask 08).
+      * :meth:`call` - an arbitrary method/path/query/body resource-route request
+        used by the ``rest_resource`` shim (subtask 09). It never touches the
+        generic path above.
 
     :ivar _ports: A live ``role -> port`` mapping; the owner mutates it as it
         lazily spawns the per-role servers, so a client built up front still
@@ -240,3 +251,75 @@ class RestClient:
         except json.JSONDecodeError:
             parsed = None
         return status, parsed, raw, content_type
+
+    def call(
+        self,
+        role: str,
+        method: str,
+        path: str,
+        query: Optional[Any] = None,
+        body: Optional[Any] = None,
+    ) -> Tuple[int, Optional[dict], str]:
+        """Issue a resource-route request on the *role* server over loopback.
+
+        This is the resource-route counterpart to :meth:`post_command`: it sends
+        a free method/path/query/body instead of a command envelope to
+        ``/api/v1/commands``, so the ``rest_resource`` shim can replay the
+        equivalent REST resource routes (``POST /api/v1/links``,
+        ``GET /api/v1/links/{slug}``, ...). It carries no ``Authorization`` or
+        other secret header, so failure output never leaks a token, and it is
+        bounded by :data:`_POST_TIMEOUT_S`.
+
+        :param role: The role whose server receives the request; must be present
+            in the live port map.
+        :param method: The HTTP method (``"GET"``, ``"POST"``, ``"PATCH"``,
+            ``"DELETE"``), used verbatim.
+        :param path: The request path, e.g. ``"/api/v1/links/docs"``; it is sent
+            exactly as given (no percent-encoding is applied, so a corpus author
+            controls on-the-wire bytes).
+        :param query: Optional query parameters: a ``dict`` (percent-encoded via
+            :func:`urllib.parse.urlencode`) or a raw string (a leading ``?`` is
+            tolerated and stripped). ``None`` or empty sends no query.
+        :param body: Optional request body: when not ``None`` it is JSON-encoded
+            and sent with ``Content-Type: application/json``; otherwise no body
+            and no content-type header are sent.
+        :return: ``(http_status, parsed_json_or_None, raw_text)``;
+            *parsed_json_or_None* is ``None`` when the body is not valid JSON.
+        :raises KeyError: If no server for *role* has been started.
+        :raises AssertionError: If the response body exceeds
+            :data:`_MAX_RESPONSE_BYTES`.
+        """
+        port = self._ports[role]
+        target = path
+        query_text = ""
+        if isinstance(query, dict):
+            query_text = urlencode(query)
+        elif isinstance(query, str):
+            query_text = query[1:] if query.startswith("?") else query
+        if query_text:
+            target = f"{path}?{query_text}"
+        headers: Dict[str, str] = {}
+        encoded_body: Optional[bytes] = None
+        if body is not None:
+            encoded_body = json.dumps(body, ensure_ascii=False).encode("utf-8")
+            headers["Content-Type"] = "application/json"
+        conn = http.client.HTTPConnection("127.0.0.1", port,
+                                          timeout=_POST_TIMEOUT_S)
+        try:
+            conn.request(method, target, body=encoded_body, headers=headers)
+            response = conn.getresponse()
+            # Read one byte past the cap so an over-cap body is detected exactly.
+            body_bytes = response.read(_MAX_RESPONSE_BYTES + 1)
+            status = response.status
+        finally:
+            conn.close()
+        if len(body_bytes) > _MAX_RESPONSE_BYTES:
+            raise AssertionError(
+                f"rest_resource response body exceeded {_MAX_RESPONSE_BYTES} "
+                f"bytes (status {status}); refusing to buffer it")
+        raw = body_bytes.decode("utf-8", "replace")
+        try:
+            parsed = json.loads(raw)
+        except json.JSONDecodeError:
+            parsed = None
+        return status, parsed, raw
