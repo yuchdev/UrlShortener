@@ -9,27 +9,34 @@ reap it afterwards. That machinery lives here once so neither shim duplicates it
 Security model (threat brief ruling (c)):
 
   * One server **per role**. The admin server is started with the real
-    ``--command-api-role admin`` operator flag; because every connection targets
-    ``127.0.0.1`` the peer is loopback, so ``command_api_caller``
-    (``src/http/command_bridge.cpp``) grants Admin. The user server is started
-    with the default ``--command-api-role user`` and stays User. The shim never
-    grants blanket Admin to every case and never passes a role through the
-    request body.
+    ``--command-api-role admin`` operator flag; for the gated endpoints (generic
+    ``POST /api/v1/commands`` and the gated reads ``GET /api/v1/links`` /
+    ``/api/v1/jobs*``), because every connection targets ``127.0.0.1`` the peer is
+    loopback, so ``command_api_caller`` (``src/http/command_bridge.cpp``) grants
+    Admin. The user server is started with the default ``--command-api-role user``
+    and stays User on those endpoints. The shim never grants blanket Admin to
+    every case and never passes a role through the request body.
   * File paths are left at the production default-deny: no ``--path-root`` or
     ``--no-file-paths`` flag is ever passed, so a ``path`` argument comes back
     ``unsupported``.
   * The *client* connects only to ``127.0.0.1``. The *server*, however, listens
     on all IPv4 interfaces: ``HttpServer`` always binds ``0.0.0.0``
     (``src/http/http_server.cpp``) and exposes no bind-host flag - that is by
-    design for the public redirect server, and Admin is still gated on a loopback
-    *peer* (``is_loopback_peer`` / ``command_api_caller`` in
-    ``src/http/command_bridge.cpp``), not on the bind address. The test-window
-    exposure this implies: while a case runs, any **local** process able to reach
-    the ephemeral port over loopback would be granted Admin on that throwaway
-    server's per-case SQLite database. This is acceptable for a short-lived test
+    design for the public redirect server. The gated endpoints above derive the
+    role from a loopback *peer* (``is_loopback_peer`` / ``command_api_caller``),
+    not from the bind address. The **resource write routes**
+    (``link.create``/``update``/``delete``/``enable``/``disable``/``restore``),
+    however, run through ``resource_route_caller()``, which is hard-wired to
+    ``ControlSet::Admin`` with **no** peer or role check
+    (``src/http/command_bridge.cpp``) - the documented T-60 open-routes posture
+    deferred to Milestone 0002. The test-window exposure this implies: while a
+    case runs, **any network peer** able to reach the ephemeral ``0.0.0.0`` port
+    (not only a loopback one) can perform Admin-level resource writes against that
+    throwaway server's per-case SQLite database, and a loopback peer additionally
+    gains Admin on the gated endpoints. This is acceptable for a short-lived test
     server on a developer/CI host and is not changed here (no product code is
     touched); it is called out so the loopback-client wording is not read as a
-    loopback *bind*.
+    loopback *bind* and so the resource-route exposure is not understated.
   * Every HTTP call is timeout-bounded, so a hung server fails a step by timeout
     rather than blocking CTest.
 

@@ -59,12 +59,19 @@ Security (threat brief ruling (c), same as subtask 08):
 
   * one server per role - a ``--command-api-role admin`` server for ``admin``
     steps/resource calls and a separate ``--command-api-role user`` server for
-    ``user`` steps; Admin is honoured only because the client connects over
-    ``127.0.0.1`` (loopback peer). The role comes only from the operator flag,
-    never from corpus ``args`` / ``options``. Resource routes themselves run as
-    Admin by design (``execute_resource_command``); the gated ``GET /api/v1/links``
-    / ``/api/v1/jobs*`` rows use the loopback+role gate, so a ``user`` case on a
-    gated row expects ``not_authorized``.
+    ``user`` steps. The role comes only from the operator flag, never from corpus
+    ``args`` / ``options``. The ``--command-api-role``/loopback gate only governs
+    the generic ``POST /api/v1/commands`` endpoint and the gated read rows
+    (``GET /api/v1/links``, ``/api/v1/jobs*``), so a ``user`` case on a gated row
+    expects ``not_authorized``. The resource WRITE routes
+    (``link.create``/``update``/``delete``/``enable``/``disable``/``restore``)
+    run through ``resource_route_caller()``, which is hard-wired to
+    ``ControlSet::Admin`` with **no** peer or role check
+    (``src/http/command_bridge.cpp``) - the documented T-60 open-routes posture
+    deferred to Milestone 0002. **This shim therefore cannot prove per-role write
+    authorization on the resource routes, because the product does not gate them
+    in 0006**; it exercises their result/status parity only, and per-role write
+    denial is covered on the generic endpoint instead.
   * file paths stay default-deny (no ``--path-root`` / ``--no-file-paths``), so a
     ``path`` argument returns ``unsupported``; REST never enables file paths.
   * ``inmemory`` cases never reach this adapter: :func:`conformance_common.run_case`
@@ -228,32 +235,45 @@ class RestResourceAdapter(cc.Adapter):
     def _wrap(self, status: int, body: Any, raw: str) -> Dict[str, Any]:
         """Synthesize a command envelope from a legacy resource-route response.
 
+        Ok-ness is decided by whether the legacy body carries ``error.code``, not
+        by the status band, so an ``ok: true`` HTTP-200 error (``job_cancelled``)
+        is wrapped as a failure envelope.
+
         :param status: The HTTP status the resource route returned.
         :param body: The parsed JSON body (``None`` if the body was not JSON).
         :param raw: The raw body text, for diagnostics.
-        :return: A synthetic ``{"v","ok","id", "result"|"error"}`` envelope.
-        :raises AssertionError: If a 2xx body is not a JSON object, or a non-2xx
-            body carries no recoverable ``error.code`` (the legacy handler emits
-            one; its absence is a real divergence, not a silent pass).
+        :return: A synthetic ``{"v","ok","id", "result"|"error"}`` envelope -
+            ``ok: false`` with the translated ``error.code`` when the body carries
+            one (any status, including a 200 ``job_cancelled``), else ``ok: true``
+            with the body as ``result``.
+        :raises AssertionError: If a success (no ``error.code``) body is not a 2xx
+            JSON object - a non-2xx body with no recoverable ``error.code`` is a
+            real divergence, not a silent pass.
         """
         envelope: Dict[str, Any] = {"v": 1, "id": _SYNTHETIC_ENVELOPE_ID}
-        if 200 <= status < 300:
-            assert isinstance(body, dict), (
-                f"rest_resource 2xx body is not a JSON object (status {status}): "
-                f"{_snippet(raw)!r}")
-            envelope["ok"] = True
-            envelope["result"] = body
-            return envelope
+        # Success vs failure is decided by whether the legacy body carries an
+        # error code, NOT by the 2xx band: ``job_cancelled`` is HTTP 200 with an
+        # error body (error_codes.cpp; HTTP_STATUS["job_cancelled"] == 200), so a
+        # status-band test would mis-wrap a cancelled job as a success result.
         legacy_code = None
         if isinstance(body, dict) and isinstance(body.get("error"), dict):
             legacy_code = body["error"].get("code")
-        assert isinstance(legacy_code, str), (
-            f"rest_resource error body carries no error.code (status {status}): "
+        if isinstance(legacy_code, str):
+            envelope_code = self._table["legacy_code_to_envelope"].get(
+                legacy_code, legacy_code)
+            envelope["ok"] = False
+            envelope["error"] = {"code": envelope_code}
+            return envelope
+        # No error code: a success body. A 2xx is the result payload; a non-2xx
+        # with no recoverable error.code is a real divergence, not a silent pass.
+        assert 200 <= status < 300, (
+            f"rest_resource non-2xx status {status} carries no error.code "
+            f"(body {_snippet(raw)!r})")
+        assert isinstance(body, dict), (
+            f"rest_resource 2xx body is not a JSON object (status {status}): "
             f"{_snippet(raw)!r}")
-        envelope_code = self._table["legacy_code_to_envelope"].get(
-            legacy_code, legacy_code)
-        envelope["ok"] = False
-        envelope["error"] = {"code": envelope_code}
+        envelope["ok"] = True
+        envelope["result"] = body
         return envelope
 
     def send(
@@ -577,6 +597,81 @@ class ResourceRouteSanity(unittest.TestCase):
                          _snippet(raw))
 
 
+class EnvelopeSynthesisUnit(unittest.TestCase):
+    """Server-free unit tests of :meth:`RestResourceAdapter._wrap`.
+
+    These need no HTTP server: they call the pure synthesis function on crafted
+    ``(status, body)`` pairs. The adapter is constructed once (resolving the
+    binary path and loading the status table, but spawning nothing).
+    """
+
+    _adapter: Optional[RestResourceAdapter] = None
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        """Build one adapter (no server) to exercise its _wrap in isolation."""
+        cls._adapter = RestResourceAdapter()
+
+    def test_job_cancelled_200_with_error_body_is_not_ok(self) -> None:
+        """An HTTP-200 job_cancelled error body wraps as ok=false, not a result.
+
+        Type: unit (envelope synthesis).
+        Scenario: ``job_cancelled`` is HTTP 200 with an error body
+          (HTTP_STATUS["job_cancelled"] == 200); _wrap must key ok-ness on the
+          presence of error.code, not the 2xx band, so it yields
+          ``ok=false, error.code=job_cancelled`` and never ``ok=true`` with a
+          result containing an error object.
+        Boundaries: the single security-review case (07.0/09) that proves the
+          status-band shortcut is not used.
+        On failure first check: did _wrap revert to deciding ok-ness by status?
+        """
+        assert self._adapter is not None
+        env = self._adapter._wrap(200, {"error": {"code": "job_cancelled"}}, "{}")
+        self.assertIs(env["ok"], False)
+        self.assertEqual(env["error"], {"code": "job_cancelled"})
+        self.assertNotIn("result", env)
+
+    def test_2xx_body_without_error_is_ok_result(self) -> None:
+        """A 2xx body with no error.code wraps as ok=true with the body as result.
+
+        Type: unit (envelope synthesis).
+        Scenario: a 201 create view (no error key) becomes
+          ``ok=true, result=<body>``.
+        On failure first check: did _wrap stop treating a plain 2xx body as a result?
+        """
+        assert self._adapter is not None
+        view = {"slug": "docs", "url": "https://example.com/docs"}
+        env = self._adapter._wrap(201, view, "{}")
+        self.assertIs(env["ok"], True)
+        self.assertEqual(env["result"], view)
+        self.assertNotIn("error", env)
+
+    def test_4xx_error_code_is_translated(self) -> None:
+        """A 4xx legacy code is translated through legacy_code_to_envelope.
+
+        Type: unit (envelope synthesis).
+        Scenario: a 400 ``invalid_request`` body wraps as
+          ``ok=false, error.code=invalid_field`` (the envelope vocabulary).
+        On failure first check: did the translation map or _wrap lookup change?
+        """
+        assert self._adapter is not None
+        env = self._adapter._wrap(400, {"error": {"code": "invalid_request"}}, "{}")
+        self.assertIs(env["ok"], False)
+        self.assertEqual(env["error"], {"code": "invalid_field"})
+
+    def test_non_2xx_without_error_code_raises(self) -> None:
+        """A non-2xx body with no recoverable error.code is a divergence, not a pass.
+
+        Type: unit (envelope synthesis, negative).
+        Scenario: a 500 body that is not an error object fails loudly rather than
+          silently wrapping as a success.
+        On failure first check: did _wrap start swallowing unrecoverable bodies?
+        """
+        assert self._adapter is not None
+        with self.assertRaises(AssertionError):
+            self._adapter._wrap(500, {"unexpected": True}, "{}")
+
+
 def _main() -> int:
     """Run the corpus replay and the route-table sanity tests; write the summary.
 
@@ -584,8 +679,10 @@ def _main() -> int:
     """
     collector = cc._SummaryCollector("rest_resource")
     corpus = cc.build_suite(lambda: RestResourceAdapter(), "rest_resource", collector)
-    sanity = unittest.TestLoader().loadTestsFromTestCase(ResourceRouteSanity)
-    suite = unittest.TestSuite([corpus, sanity])
+    loader = unittest.TestLoader()
+    sanity = loader.loadTestsFromTestCase(ResourceRouteSanity)
+    wrap_unit = loader.loadTestsFromTestCase(EnvelopeSynthesisUnit)
+    suite = unittest.TestSuite([corpus, sanity, wrap_unit])
     result = unittest.TextTestRunner(verbosity=2).run(suite)
     collector.write()
     return 0 if result.wasSuccessful() else 1
