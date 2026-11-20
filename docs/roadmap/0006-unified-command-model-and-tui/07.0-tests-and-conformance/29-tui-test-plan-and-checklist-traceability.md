@@ -2,10 +2,19 @@
 
 **Parent task:** 07.0 Tests and conformance
 **State:** ⬜ Not started
-**Depends on:** 22, 23, 24, 25, 26, 27, 28; 06.0/20 (writes the manual smoke checklist)
+**Depends on:** 22, 23, 24, 25, 26, 27, 28; 06.0/20 (`docs/testing/tui_manual_smoke.md`, already shipped), 06.0/21 (D13 Settings goldens)
 **Blocks:** 34
 **Estimated size:** S
 **Suggested agent:** docs-writer (plan), testing-expert (traceability review)
+
+> **Amended 2026-11-20 (as-built reconciliation).** **D13 (Settings) goldens are
+> owned by 06.0/21** (`tui__21_settings_*`, `d13_*`), **not** 07.0/24-25 - fix
+> the attribution here and in README exit criterion 4 (done). The traceability
+> table must cite **as-built targets**: the 06.0 screen tests `tui__04`..`tui__21`
+> (navigation/forms/jobs/palette/dialogs/settings are *consumed*) plus the new
+> 07.0 stems `tui__22` (helpers), `tui__30` (form property), `tui__31/32/33`
+> (state machine/hotkeys/non-blocking), `tui__34` (no-secrets), `tui__37`
+> (preflight forward). `docs/testing/tui_manual_smoke.md` already exists.
 
 ## Objective
 
@@ -33,26 +42,27 @@ covered only manually, so no gap is accidental.
 
 ## Classes and functions (document structure)
 
-`testplans/tui.md` headings: `## Scope`; `## Automated layers` (table: layer, files, target names, what it proves: mock client 22, snapshot harness 23, navigation goldens 24, forms/jobs/palette goldens 25, FormBuilder properties 26, state machine and non-blocking 27, confirm/read-only 28, conformance TUI shim 10, no-listener 21); `## Manual layer` (link to `tui_manual_smoke.md`); `## Traceability` (below); `## Acceptance criteria`; `## Commands` (`ctest -R "^tui__"`, `UPDATE_GOLDEN`, `FORM_PROP_SEED`); `## Known gaps`.
+`testplans/tui.md` headings: `## Scope`; `## Automated layers` (table: layer, files, target names, what it proves: mock-client helpers 22, snapshot harness 23 [consumed, 06.0/01], navigation goldens 24 [consumed, 06.0], forms/jobs/palette goldens 25 [consumed, 06.0], FormModel properties 26 [`tui__30`], state machine/hotkeys/non-blocking 27 [`tui__31/32/33`], confirm/read-only 28 [consumed `tui__06/08/18`, + `tui__34`], conformance TUI shim 10, no-listener 21); `## Manual layer` (link to `tui_manual_smoke.md`); `## Traceability` (below); `## Acceptance criteria`; `## Commands` (`ctest -R "^tui__"`, `UPDATE_GOLDEN`, `FORM_PROP_SEED`); `## Known gaps`.
 
 Traceability table (one row per ADR 0003 rule/diagram): rows R1-R7 (rules) and D1-D13, columns: automated test (target::case) | manual step (S-id) | status (`auto`, `manual`, `both`, `gap`). Seed content:
 
 | Item | Automated | Manual | Expected status |
 |---|---|---|---|
 | R1 only `ICommandClient` crosses out | `tui__02_include_boundary_test`, `commands__79_...::tui_sources_include_no_service_headers` | none | auto |
-| R2 generic first | `tui__33_...::palette_new_command_zero_tui_code`, `tui__40_...` | S-palette | both |
-| R3 never block UI | `tui__52_...` | S-dashboard (no freeze) | both |
-| R4 mutations confirm | `tui__60_...` | S-create/delete | both |
-| R5 read-only | `tui__61_...`, `conformance_30_...` | S-readonly | both |
+| R2 generic first | `tui__11_generic_command_flow_test`, `tui__30_form_model_property_test` | S-palette | both |
+| R3 never block UI | `tui__33_nonblocking_ui_test` | S-dashboard (no freeze) | both |
+| R4 mutations confirm | `tui__06_confirm_test`, `tui__08_mutation_flow_test` | S-create/delete | both |
+| R5 read-only | `tui__18_readonly_matrix_test`, `tui__37_required_permission_forward_test`, `conformance_30_...` | S-readonly | both |
 | R6 headless testable | all `tui__*` | none | auto |
-| R7 no secrets on screen | `tui__62_...`, `commands__72_...` | S-tables | both |
-| D1-D10, D13 layouts | goldens (24, 25) | S-diagram sign-off | both |
-| D11 state machine | `tui__50_...` | S-navigation | both |
+| R7 no secrets on screen | `tui__34_no_secrets_real_registry_test`, `tui__14_tables_screen_test`, `commands__72_...` | S-tables | both |
+| D1-D10 layouts | 06.0 goldens via `tui__04/06/08/10/11/12/13/14/15/16/17` (consumed; see 24, 25) | S-diagram sign-off | both |
+| D13 Settings layout | 06.0/21 goldens `d13_*` via `tui__21_settings_screen_test` (consumed) | S-diagram sign-off | both |
+| D11 state machine | `tui__04_router_test`, `tui__31_screen_transition_requests_test` | S-navigation | both |
 | D12 same envelope on every transport | `conformance__02_tui_client_corpus` | none | auto |
 | terminal restore after crash/SIGKILL | none | needs step | manual |
 | resize live | none | S2 | manual |
 | legacy console glyphs | none | S1 | manual |
-| IME / wide characters | partial: `tui__40_` P11 (JSON escaping only) | needs step | manual |
+| IME / wide characters | partial: `tui__30_form_model_property_test` P11 (JSON escaping only) | needs step | manual |
 
 Steps to add to `tui_manual_smoke.md` if absent (additive rows, numbered after the existing ones): kill the process hard and check terminal state; paste a 1 MB payload in import; every hotkey from the D1/D3/D6/D8 footers once (table); read-only banner and disabled actions; `--yes` behavior; wide-character slug display; 10k-row table responsiveness.
 

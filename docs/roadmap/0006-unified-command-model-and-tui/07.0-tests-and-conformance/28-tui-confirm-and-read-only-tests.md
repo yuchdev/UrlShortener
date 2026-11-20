@@ -2,86 +2,81 @@
 
 **Parent task:** 07.0 Tests and conformance
 **State:** ⬜ Not started
-**Depends on:** 22, 23; Task 06.0 (read-only and safety behaviors)
+**Depends on:** 22, 23; Task 06.0 (read-only and safety behaviors), Task 03.0/05.0 (real registry for the no-secrets test)
 **Blocks:** 29, 34, 08.0/11
-**Estimated size:** S
+**Estimated size:** XS (most of this shipped in 06.0)
 **Suggested agent:** testing-expert (review: security-auditor)
 
-## Objective
+> **Amended 2026-11-20 (as-built reconciliation).** Confirm flows, read-only
+> matrix/render, capability gating and row-JSON secret filtering shipped in 06.0.
+> The only gap is the **real-registry no-secrets** test (originally test 62). Per
+> the 2026-11-20 ruling it **drops the "TUI has no redaction logic" structural
+> assertion** and instead keeps TUI redaction as **defense in depth**: it asserts
+> (a) the server handlers are the primary control - real-registry frames of
+> Tables / System info / Dashboard contain no secret markers (the positive
+> allowlist in handlers, subtask 18) - **and** (b) the TUI filter also drops
+> secret-named fields (T-125). New stem: `tui__34`. `configWithSecrets()` does not
+> exist as a shared helper; build it locally from `fake_secret_marker` (subtask 18
+> no longer ships a `RegistryFixture`).
 
-Test ADR 0003 rules 4, 5 and 7 end to end at the TUI level with the mock
-client: every mutating command requires confirmation (typed confirmation for
-destructive ones), `--yes` skips it, read-only mode renders write actions
-disabled with the registry's reason (not hidden) and never sends a mutation,
-and secrets never reach the screen.
+## Coverage already delivered (06.0)
+
+| Need | Delivered by (consumed) |
+|---|---|
+| confirm dialog gating, typed-slug delete, y/n confirm, `--yes` skip | `tui__06_confirm_test`, `tui__06_dialog_render_test`, `tui__08_mutation_flow_test` |
+| generic-form confirm before submit | `tui__11_generic_command_flow_test` |
+| read-only matrix / render / capability gate (arg-aware) | `tui__18_readonly_matrix_test`, `tui__18_readonly_render_test`, `tui__18_capability_test` |
+| read-only goldens | `d01_frame_readonly_80x24`, `d03_links_readonly_80x24`, `d05_new_link_readonly_80x24`, `d07_import_readonly_80x24`, `d09_palette_readonly_80x24`, `d13_settings_readonly_80x24` |
+| row-JSON drops secret-named fields (TUI defense in depth) | `tui__14_tables_screen_test::row_json_hides_secret_fields` |
 
 ## Dependencies
 
-- Subtasks 22, 23; 06.0 subtask "read-only mode and mutation safety".
-- Catalog: `mutating` flag per descriptor; `link.delete` typed-slug confirmation; the reserved `MIGRATE` confirmation for `migrate`-permission commands (ADR 0003 rule 4; no such command exists in this milestone - the path is tested with a synthetic `CommandInfo` whose permission is `migrate`, matching 06.0/06's `ConfirmPolicy`).
+- Subtasks 22 (`tui_test_support.hpp`, `command_list_fixture`), 23; 06.0 read-only/safety behaviors; Task 10 (`InProcessClient` shim) for the real-registry frame.
 
 ## Files affected
 
 | Path | create/modify | What changes |
 |---|---|---|
-| `tests/unit/tui/60_confirm_flow_test.cpp` | create | confirm dialogs |
-| `tests/unit/tui/61_read_only_mode_test.cpp` | create | read-only rendering and sends |
-| `tests/unit/tui/62_no_secrets_on_screen_test.cpp` | create | secrets scan of frames |
-| `tests/unit/tui/golden/*.txt` | create | about 5 goldens |
-| `sources.cmake` | modify | Append to `TUI_RENDER_UNIT_SOURCES` (owned by Task 06.0 subtask 01) |
+| `tests/unit/tui/34_no_secrets_real_registry_test.cpp` | create | the real-registry no-secrets test (stem `34` is free) |
+| `sources.cmake` | modify | Append to the owning TUI list (render: `TUI_RENDER_UNIT_SOURCES`) |
 
 ## Classes and functions
 
+The single gap case (ruling 2026-11-20):
+
 | File | Case | Assertion |
 |---|---|---|
-| 60 | `every_mutating_descriptor_requires_confirm` | iterate descriptors from `commandListFixture()`; for each with `mutating`, open its generic form from the palette, fill minimal valid args, submit: dialog appears and `client.request_texts_for(cmd)` is empty until confirmed |
-| 60 | `non_mutating_never_confirms` | read commands send immediately on submit |
-| 60 | `delete_requires_typed_slug` | wrong text keeps confirm disabled; exact slug enables; request after confirm only |
-| 60 | `cancel_dialog_sends_nothing` | `Esc` and Cancel button |
-| 60 | `confirm_is_not_bypassed_by_double_enter` | repeated Enter while dialog open sends exactly one request |
-| 60 | `yes_flag_skips_confirm_for_all` | `TuiOptions` with `assume_yes = true` (assigned, C++17 - no designated initializers): immediate send, still exactly one request |
-| 60 | `yes_flag_does_not_skip_typed_destructive_confirm` | document the 06.0 decision (ADR 0003 says `--yes` skips dialogs "for scripted/test runs"; if typed confirmation is also skipped, test asserts that and the risk is noted for security-auditor) |
-| 61 | `read_only_header_marker` | golden `read_only_frame` |
-| 61 | `read_only_write_actions_disabled_with_reason` | goldens `read_only_links_footer` (n/e/d shown disabled), reason text equals the `not_authorized` message the registry returned (from the mock) or the static reason string defined by 06.0 |
-| 61 | `read_only_pressing_n_sends_nothing` | `n`, `e`, `d`, `u`, `t` keys: `client.expectNoCalls()` for mutating commands (read commands may be sent) |
-| 61 | `read_only_server_denial_still_rendered` | even if the TUI sent a mutation (forced via palette), a `not_authorized` response shows the toast `! not_authorized` with command and id |
-| 61 | `read_only_import_screen_disabled` | golden `read_only_import_disabled` |
-| 61 | `read_only_palette_marks_write_commands` | write commands shown with permission column and disabled marker |
-| 62 | `frames_never_contain_secret_markers` | script mock responses containing fields named `password`, `token`, `salt`, `dsn`, `client_id` (as would only appear through a handler bug) inside `db.rows`/`system.info`: the TUI shows server-provided data verbatim (it does **not** try to be the redaction layer) - this test documents that redaction is enforced in handlers (subtask 18) by asserting that the TUI sources contain no redaction logic and no `db.rows` column filtering (structural), and that when real handlers are used via `InProcessClient` + real registry (reuse subtask 10 fixture) the rendered frames of Tables, System info and Dashboard contain none of the `fake_secret_marker` strings |
-| 62 | `tables_screen_only_lists_server_allowlist` | sidebar equals `db.tables` response; TUI does not add tables of its own |
+| 34 | `real_registry_frames_contain_no_secret_markers` | build `InProcessClient` over the real `build_command_runtime` registry with a locally-built `configWithSecrets()` (TLS paths, passphrase, `analytics_client_hash_salt`, a `StorageConfig` DSN - all concatenated at runtime from `fake_secret_marker`); render Tables, System info and Dashboard; **no** frame contains any marker. This proves the **server handlers are the primary control** (positive allowlist, subtask 18). |
+| 34 | `tui_filter_also_drops_secret_named_fields` | script a mock `db.rows` response that (as only a handler bug could) carries fields named `password`/`token`/`salt`/`dsn`: the TUI's own row filter drops them (defense in depth, T-125). **Not** a structural "no redaction logic" assertion - the TUI keeps its filter. |
 
 ## Implementation steps
 
-1. Reuse `ScreenFixture`; for 62's end-to-end part build the `InProcessClient` over the real registry with `configWithSecrets()` (from subtask 18) - the only TUI test that touches the registry; place it last and name it `..._with_real_registry`.
-2. Generate goldens, review against D10 and ADR rule 5 wording ("write screens render disabled with the registry's `not_authorized` reason, not hidden").
+1. Build the `InProcessClient` over the real registry with a locally-assembled `configWithSecrets()` (subtask 18 ships no shared helper); drive the Tables/System/Dashboard screen components directly (no `ScreenFixture`).
+2. For the defense-in-depth case, use `MockCommandClient` with a scripted secret-bearing `db.rows` response and assert the rendered frame drops the secret-named fields.
 
 ## Commands
 
 ```bash
-ctest --test-dir cmake-build -R "^tui__6[0-2]_" --output-on-failure
+ctest --test-dir cmake-build -R "^tui__34_" --output-on-failure
 ```
 
 ## Tests
 
 | Test file | Target | CTest label | Cases |
 |---|---|---|---|
-| `tests/unit/tui/60_confirm_flow_test.cpp` | `tui__60_confirm_flow_test` | `unit` | 7 |
-| `tests/unit/tui/61_read_only_mode_test.cpp` | `tui__61_read_only_mode_test` | `unit` | 7 |
-| `tests/unit/tui/62_no_secrets_on_screen_test.cpp` | `tui__62_no_secrets_on_screen_test` | `unit` | 2 (+1 real-registry variant) |
+| `tests/unit/tui/34_no_secrets_real_registry_test.cpp` | `tui__34_no_secrets_real_registry_test` | `unit` | 2 |
 
 ## Constraints
 
-- Iteration over descriptors must be dynamic so new mutating commands are covered automatically.
 - Fake secret strings are assembled at runtime (repo secret-scan hook).
-- Read-only is a registry-enforced property: the TUI test proves the UI also avoids sending, never that the UI alone is the barrier.
+- Read-only is a registry-enforced property (proven by the shipped `tui__18_*`); this subtask only adds the no-secrets proof.
+- Keep the TUI secret-named-field filter (defense in depth); do **not** assert the TUI has "no redaction logic".
 
 ## Success criteria
 
-1. A new descriptor with `mutating=true` without a confirm dialog fails `every_mutating_descriptor_requires_confirm`.
-2. Read-only mode sends zero mutating requests across all hotkeys on every screen.
-3. No frame in the suite contains the secret marker.
+1. No real-registry frame contains the secret marker.
+2. The TUI filter still drops secret-named fields (T-125).
 
 ## Out of scope / risks
 
-- Clipboard/export of screen contents: no such feature.
-- Risk: `--yes` semantics for typed confirmations may be a security decision for the maintainers (flag in the PR if 06.0 allows skipping).
+- Confirm/read-only behavior is already proven by the shipped `tui__06`/`08`/`11`/`18` tests (consumed).

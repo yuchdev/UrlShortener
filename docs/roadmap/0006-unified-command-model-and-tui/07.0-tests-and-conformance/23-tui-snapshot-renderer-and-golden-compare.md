@@ -1,105 +1,100 @@
-# 23 - TUI snapshot renderer and golden compare (extension of the 06.0 harness)
+# 23 - TUI snapshot renderer and golden compare (06.0 harness, mostly consumed)
 
 **Parent task:** 07.0 Tests and conformance
 **State:** ⬜ Not started
 **Depends on:** 22
 **Blocks:** 24, 25, 27, 28, 29, 08.0/11
-**Estimated size:** M
+**Estimated size:** XS (reduced from M: the harness shipped in 06.0/01)
 **Suggested agent:** testing-expert
 
-## Objective
+> **Amended 2026-11-20 (as-built reconciliation).** The render harness is
+> **shipped and working**: `render_helpers.hpp` (`render_to_text(Element|
+> Component, w=80, h=24)`, `send_events(component, vector<Event>)`), `golden.hpp`
+> (`assert_matches_golden`, `text_diff`, `split_lines`, env `UPDATE_GOLDEN`,
+> compile def `TUI_GOLDEN_DIR`) and `inline_poster.hpp` (`InlinePoster::run_pending`
+> = the originally-specced "drain"). 70 goldens are committed and green. So this
+> subtask no longer rewrites the harness. **Removed APIs that do not exist and
+> contradict as-built:** `to_ascii_borders` / "ASCII borders only" (the committed
+> goldens use **box-drawing glyphs**, read straight from `Cell::character`); the
+> `# golden: <name>` header line (goldens have no header); the `CI=true` update
+> guard; the token-form `press_keys`; `drain(MockCommandClient&, root)`; a
+> headless `App` factory and a fake clock (neither exists - `App::run()` starts
+> the loop; screens are driven directly via `send_events`/`OnEvent`). The only
+> gap is an **optional** token helper placed in `tui_test_support.hpp` (subtask
+> 22), never in the shipped `render_helpers.hpp`.
 
-Make the render harness that Task 06.0 subtask 01 ships
-(`tests/unit/tui/support/render_helpers.hpp`: `render_to_text`, `send_events`;
-`tests/unit/tui/support/golden.hpp`: `assert_matches_golden`, env
-`UPDATE_GOLDEN=1`) strong enough for the whole snapshot suite: deterministic
-80x24 mono/ASCII frames, readable diffs on mismatch, a safe "update goldens"
-workflow, key-sequence and async-drain helpers. So layout regressions are
-caught without a terminal (ADR 0003 rule 6, diagrams D1-D10 as the visual spec).
+## Coverage already delivered (06.0/01, 06.0/03)
 
-This subtask **extends** the 06.0 helpers in place; it does not create a second
-renderer, a second golden directory or a second environment variable.
+| Original 07.0 need | Delivered by (consumed) |
+|---|---|
+| `render_to_text`, `send_events` | `tests/unit/tui/support/render_helpers.hpp` |
+| `assert_matches_golden`, `text_diff`, `UPDATE_GOLDEN`, `TUI_GOLDEN_DIR` | `tests/unit/tui/support/golden.hpp` |
+| async drain for headless settle | `tests/unit/tui/support/inline_poster.hpp` (`run_pending`) |
+| harness self-tests | `tui__01_render_harness_selftest`, `tui__05_ascii_test` |
+| 70 committed goldens (`d01`..`d13`, `table_*`, etc.) | the `tui__04`..`tui__21` screen tests |
 
 ## Dependencies
 
-- Subtask 22 (extended mock); Task 06.0 subtask 01 (helpers, `TUI_GOLDEN_DIR` compile definition, `register_tui_tests`,
-  `TUI_RENDER_UNIT_SOURCES`).
-- FTXUI APIs used (VERIFY AT PIN TIME against the version pinned by 06.0 subtask 01): `ftxui::Screen::Create(Dimension::Fixed(w), Dimension::Fixed(h))`, `ftxui::Render(Screen&, Element)`, `Screen::PixelAt(x, y).character`, `Component::Render()`, `Component::OnEvent(Event)`, `Terminal::SetColorSupport`.
-- 06.0 must expose: a factory building the `App` root component from `(ICommandClient&, TuiOptions)` without starting `ScreenInteractive::Loop` (06.0/04), an injectable time source for clocks/"started" columns, and the theme option `mono` (06.0/05).
+- Subtask 22 (`tui_test_support.hpp` helpers); Task 06.0/01 (shipped helpers, `TUI_GOLDEN_DIR`, `register_tui_tests`, `TUI_RENDER_UNIT_SOURCES`), 06.0/03 (`InlinePoster`).
+- FTXUI APIs (as pinned by 06.0/01): `Screen::Create(Dimension::Fixed(w), Dimension::Fixed(h))`, `Render(Screen&, Element)`, `PixelAt(x, y).character`, `Component::Render()`, `Component::OnEvent(Event)`.
 
 ## Files affected
 
 | Path | create/modify | What changes |
 |---|---|---|
-| `tests/unit/tui/support/render_helpers.hpp` | modify | add `press_keys`, `drain`, ASCII border mapping and determinism setup (below) |
-| `tests/unit/tui/support/golden.hpp` | modify | `assert_matches_golden` prints a unified diff (first 40 lines) and refuses `UPDATE_GOLDEN` when `CI=true`; rewrite restricted to `TUI_GOLDEN_DIR` |
-| `tests/unit/tui/24_snapshot_harness_test.cpp` | create | harness self-test with a tiny fake component (Task 07.0 owns `tests/unit/tui/22-69`) |
-| `sources.cmake` | modify | append the test to `TUI_RENDER_UNIT_SOURCES` (owned by 06.0/01) |
-| `.gitattributes` | modify or create | `tests/unit/tui/golden/* text eol=lf` |
+| `tests/unit/tui/support/tui_test_support.hpp` | modify (subtask 22's header) | **optional** token helper `press_keys(Component, {"j","Enter",...})` mapping tokens to `ftxui::Event` and calling `send_events` - a convenience over the shipped `send_events`, test-support only, justified by the state-machine test (27). Omit if 27 uses explicit `Event`s. |
+| `.gitattributes` | modify or create | `tests/unit/tui/golden/* text eol=lf` (if not already set by 06.0) |
+
+No change to `render_helpers.hpp` or `golden.hpp` (shipped, used by 57 tests).
 
 ## Classes and functions
 
 ```cpp
-namespace url_shortener::tui::testing {   // namespace of the 06.0/01 helpers
+namespace url_shortener::tui::testing {   // shipped 06.0/01 helpers, unchanged:
+//   std::string render_to_text(ftxui::Element|ftxui::Component, int w=80, int h=24);
+//   void send_events(ftxui::Component, const std::vector<ftxui::Event>&);
+//   void assert_matches_golden(const std::string& actual, const std::string& golden_rel_path);
+//   std::string text_diff(const std::string& expected, const std::string& actual);
 
-// Existing (06.0/01): render_to_text(Element|Component, w = 80, h = 24), send_events, assert_matches_golden.
-
-// Added: token form of send_events: "j", "k", "Enter", "Esc", "Tab", "Ctrl-C" tokens or literal text
-// ("hello" => five Character events). Returns after each event processed.
-void press_keys(ftxui::Component root, std::initializer_list<std::string_view> keys);
-// Deliver queued worker responses through the 06.0/03 InlinePoster so async screens settle.
-void drain(MockCommandClient&, ftxui::Component root);
-// Applied inside render_to_text: maps box-drawing glyphs to '+', '-', '|' so goldens match ADR style.
-std::string to_ascii_borders(std::string text);
+// Optional convenience (subtask 22 header, not render_helpers.hpp):
+void press_keys(ftxui::Component root,
+                std::initializer_list<std::string_view> keys);  // tokens -> Event -> send_events
 }
 ```
 
-Golden file format: plain UTF-8 text; first line `# golden: <name>  (80x24, theme=mono, locale=C)`; rest is the frame. On mismatch, `assert_matches_golden` prints a unified diff (first 40 differing lines) and the rewrite instruction `UPDATE_GOLDEN=1 ctest -R <target>`.
-
-Determinism rules enforced by the harness and documented in the header:
-
-1. Theme `mono` and ASCII borders only (ADR 0003 negative consequences: legacy consoles) - goldens never contain color or box-drawing glyphs that differ per terminal.
-2. `Terminal::SetColorSupport(Palette1)`; `setlocale(LC_ALL, "C")`.
-3. All times from the injected fake clock (`2026-10-19T10:44:02Z`); no `now()` in goldens.
-4. Terminal size fixed by `Screen::Create`, never read from the OS.
-5. Wide/CJK glyph handling: tested once in the self-test (cell width > 1) to keep column math honest.
+Determinism as actually shipped: fixed `Screen::Create(w,h)`; text read from
+`Cell::character` only (no ANSI); right-trimmed rows; box-drawing glyphs kept.
+Themes include `mono` (06.0/05); time-dependent columns are fed by scripted mock
+responses (there is no fake clock in `include/url_shortener/tui`).
 
 ## Implementation steps
 
-1. Extend `render_to_text` with the ASCII mapping (still through `Screen::PixelAt`, not `ToString`, which emits ANSI).
-2. Extend `assert_matches_golden` with the diff, the CI guard and the canonical-prefix check on the rewrite path.
-3. Add `press_keys` and `drain`.
-4. Self-test: render a hand-built element to a known string; mismatch produces a diff; update mode writes into a temp golden dir (the self-test overrides the dir via env `TUI_GOLDEN_DIR_OVERRIDE`); the 06.0 self-test (`tui__01_render_harness_selftest`) still passes.
+1. If subtask 27 needs it, add `press_keys` to `tui_test_support.hpp` (header-only) and self-test the token mapping there. Otherwise this subtask is a no-op beyond the `.gitattributes` check.
+2. Confirm the shipped `tui__01`/`tui__05` self-tests still pass; do not modify the shipped helpers.
 
 ## Commands
 
 ```bash
-ctest --test-dir cmake-build -R "^tui__(01|24)_" --output-on-failure
-UPDATE_GOLDEN=1 ctest --test-dir cmake-build -R "^tui__(2[0-2]|3[0-3])_" --output-on-failure    # POSIX
-# PowerShell: $env:UPDATE_GOLDEN=1; ctest --test-dir cmake-build -C Debug -R "^tui__(2[0-2]|3[0-3])_" --output-on-failure
+ctest --test-dir cmake-build -R "^tui__(01|05)_" --output-on-failure
+UPDATE_GOLDEN=1 ctest --test-dir cmake-build -R "^tui__" --output-on-failure    # POSIX, intentional regen only
 ```
 
 ## Tests
 
-| Test file | Target | CTest label | Cases |
-|---|---|---|---|
-| `tests/unit/tui/24_snapshot_harness_test.cpp` | `tui__24_snapshot_harness_test` | `unit` | render fixed element; right-trim; ASCII mapping; golden match; golden mismatch diff; update mode writes only inside golden dir; `CI=true` + `UPDATE_GOLDEN` fails; wide glyph width; `press_keys` token parsing |
+No new render test file; the `press_keys` helper (if added) is self-tested inside
+`tui__22_mock_support_helpers_test` (subtask 22).
 
 ## Constraints
 
-- `UPDATE_GOLDEN` must never be set in CI; the harness fails if `CI=true` and `UPDATE_GOLDEN` is set.
-- One environment variable (`UPDATE_GOLDEN`, 06.0 README K4) and one golden directory (`tests/unit/tui/golden/`).
-- Goldens are committed text; review diffs like code.
-- Line endings: goldens stored with `\n` (`.gitattributes`).
+- Do not modify the shipped `render_helpers.hpp` / `golden.hpp` / `inline_poster.hpp`.
+- One golden directory (`tests/unit/tui/golden/`), one env var (`UPDATE_GOLDEN`).
+- Goldens are committed text with box glyphs; review diffs like code; `\n` line endings.
 
 ## Success criteria
 
-1. Two consecutive runs on Windows and Linux produce identical text for the same component.
-2. A one-character layout change in a screen fails with a readable diff.
-3. Update mode cannot write outside the golden directory.
-4. There is exactly one renderer/golden helper set under `tests/unit/tui/support/` (grep).
+1. The shipped harness and 70 goldens stay green; no second renderer/golden helper is added (grep).
+2. If `press_keys` is added, its token mapping is self-tested.
 
 ## Out of scope / risks
 
-- Pixel-perfect color/style regression: not covered (mono text only).
-- Risk: FTXUI version differences change border glyph widths; goldens pin the FTXUI version selected by 06.0 and must be regenerated on upgrade.
+- A `CI=true` update guard and a `# golden:` header were specced but not built; if desired, raise them as a 08.0 follow-up, not a 07.0 gate (the goldens are already deterministic).

@@ -1,5 +1,14 @@
 # Task 07.0 - Tests and conformance
 
+> **Amended 2026-11-20 (as-built reconciliation).** Specs 18-29, 20, 21 and 33
+> were rewritten against the names Tasks 01.0-06.0 actually built; coverage 06.0
+> already shipped is marked *consumed* and only real gaps remain as work items.
+> See the 2026-11-20 "07.0 entry: as-built reconciliation (user rulings)" in
+> [status.md](/docs/roadmap/0006-unified-command-model-and-tui/status.md) and the
+> [standing threat brief](/docs/security/0006-07.0-tests-and-conformance-threat-brief.md).
+> Exit criterion 4 now includes D13; Settings goldens (`d13_*`) are owned by
+> 06.0/21, not 07.0/24-25.
+
 **Parent milestone:** [Milestone 0006 - Unified Command Model and TUI](/docs/roadmap/0006-unified-command-model-and-tui/plan.md)
 **Status:** ⬜ Not started
 **Depends on:** [01.0](/docs/roadmap/0006-unified-command-model-and-tui/01.0-command-model-core/README.md) (registry, envelope), [03.0](/docs/roadmap/0006-unified-command-model-and-tui/03.0-link-and-browse-commands/README.md) (commands), [04.0](/docs/roadmap/0006-unified-command-model-and-tui/04.0-rest-and-cli-adapters/README.md) (REST, `cmd`), [05.0](/docs/roadmap/0006-unified-command-model-and-tui/05.0-jobs-pairs-and-stdio/README.md) (jobs, stdio), [06.0](/docs/roadmap/0006-unified-command-model-and-tui/06.0-tui/README.md) (TUI). Work is incremental: groups A-D can start as soon as 01.0 lands and grow with each task; the final gate (group G) runs after 06.0.
@@ -55,14 +64,14 @@ G gates             04, 06-10, 30, 32 -> 33 (CI wiring) -> 34 (coverage gap + re
 | 16 | [Catalog drift: command sections](16-catalog-drift-command-sections.md) | ⬜ Not started | Task 01.0, Task 03.0 | 34, 08.0/03 |
 | 17 | [Catalog drift: route table](17-catalog-drift-route-table.md) | ⬜ Not started | Task 04.0 | 34, 08.0/09 |
 | 18 | [Security: allowlist and redaction](18-security-allowlist-and-redaction.md) | ⬜ Not started | Task 01.0, Task 03.0, Task 05.0 | 34 |
-| 19 | [Security: authorization matrix](19-security-authorization-matrix.md) | ⬜ Not started | Task 01.0, Task 04.0, Task 05.0 | 34 |
-| 20 | [Security: import SSRF, size and path limits](20-security-import-ssrf-size-and-path-limits.md) | ⬜ Not started | Task 05.0 | 34 |
+| 19 | [Security: authorization matrix](19-security-authorization-matrix.md) | ⬜ Not started | Task 01.0, Task 04.0, Task 05.0, Task 06.0 | 34 |
+| 20 | [Security: import SSRF, size and path limits](20-security-import-ssrf-size-and-path-limits.md) | ⬜ Not started | Task 05.0, Task 06.0 | 34 |
 | 21 | [Security: no listener, no URI store](21-security-no-listener-and-no-uri-store.md) | ⬜ Not started | Task 04.0, Task 05.0, Task 06.0 | 34 |
 | 22 | [TUI mock command client (extends the 06.0 mock)](22-tui-mock-command-client.md) | ⬜ Not started | Task 06.0 | 23, 26, 27, 28, 29, 08.0/11 |
 | 23 | [TUI snapshot renderer and golden compare (extends the 06.0 harness)](23-tui-snapshot-renderer-and-golden-compare.md) | ⬜ Not started | 22 | 24, 25, 27, 28, 29, 08.0/11 |
 | 24 | [TUI snapshots: navigation screens](24-tui-snapshots-navigation-screens.md) | ⬜ Not started | 23, Task 06.0 | 29, 34, 08.0/10, 08.0/11 |
 | 25 | [TUI snapshots: forms, jobs, palette, dialogs](25-tui-snapshots-forms-jobs-palette-dialogs.md) | ⬜ Not started | 23, Task 06.0 | 29, 34, 08.0/10, 08.0/11 |
-| 26 | [FormBuilder property tests](26-form-builder-property-tests.md) | ⬜ Not started | 22, Task 01.0, Task 06.0 | 29, 34, 08.0/11 |
+| 26 | [FormModel property tests](26-form-builder-property-tests.md) | ⬜ Not started | 22, Task 01.0, Task 06.0 | 29, 34, 08.0/11 |
 | 27 | [TUI state machine and non-blocking tests](27-tui-state-machine-and-nonblocking-tests.md) | ⬜ Not started | 22, 23, Task 06.0 | 29, 34, 08.0/11 |
 | 28 | [TUI confirm and read-only tests](28-tui-confirm-and-read-only-tests.md) | ⬜ Not started | 22, 23, Task 06.0 | 29, 34, 08.0/11 |
 | 29 | [TUI test plan and checklist traceability](29-tui-test-plan-and-checklist-traceability.md) | ⬜ Not started | 22, 23, 24, 25, 26, 27, 28, 06.0/20 | 34 |
@@ -159,7 +168,8 @@ subtask 08) and `admin` with `--command-api-role admin` from a loopback peer.
    error codes present in the corpus.
 3. Catalog-drift tests (16, 17) are green: `docs/commands/README.md` equals the
    generator output.
-4. Security tests 18-21 green; TUI goldens D1-D10 committed and green.
+4. Security tests 18-21 green; TUI goldens D1-D10 **and D13** (Settings, shipped
+   by 06.0/21 as `d13_*`) committed and green.
 5. `-L perf` runs at least the registered redirect guard; structural guard green.
 6. `/test-gap tests/conformance` and `/test-gap src/commands` produce no
    unaddressed P0 item; `/verify-subtask` reports PASS for 07.0 subtasks and

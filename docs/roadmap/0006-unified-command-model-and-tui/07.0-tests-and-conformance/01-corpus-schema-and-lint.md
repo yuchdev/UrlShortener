@@ -53,7 +53,7 @@ corpus authoring, coverage gate) reads one unambiguous schema.
 | `doc` | string | yes | One-line scenario description |
 | `command` | string | yes | Primary command under test (feeds the coverage matrix) |
 | `caller` | `"admin"` \| `"user"` | no, default `admin` | Default role for all steps (`user` = `ControlSet::User`) |
-| `backend` | `"sqlite"` \| `"inmemory"` | no, default `sqlite` | `inmemory` is legal only if `transports.only` excludes `cli_cmd` and `rest_*` out-of-process runners |
+| `backend` | `"sqlite"` \| `"inmemory"` | no, default `sqlite` | `inmemory` is legal only if `transports.only` is **present** and excludes every out-of-process runner (`cli_cmd`, `stdio`, `rest_generic`, `rest_resource`); only the in-process `direct` and `tui` transports can share an in-memory store (see rule 10) |
 | `files` | object name -> text | no | Materialized in the per-case temp dir; referenced as `${tmp}/<name>` |
 | `transports` | `{ "only": [ids] }` or `{ "skip": { id: "reason" } }` | no | ids: `direct`,`rest_generic`,`rest_resource`,`cli_cmd`,`stdio`,`tui`; every skip needs a non-empty reason |
 | `steps` | array of Step, length >= 1 | yes | Executed in order on one fresh store; **all** steps are asserted |
@@ -99,7 +99,14 @@ corpus authoring, coverage gate) reads one unambiguous schema.
 7. `${var}` used before the step that `save`s it is an error; `${tmp}` always allowed.
 8. `await_job` requires `expect_accept`; `expect_accept` forbidden without `await_job`.
 9. `transports.skip` reasons non-empty; ids known; `only` and `skip` mutually exclusive.
-10. `backend: "inmemory"` rule from the Case table.
+10. **Backend.** `backend: "inmemory"` requires a `transports.only` list that
+    is **present** and **excludes every out-of-process runner** -
+    `cli_cmd`, `stdio` (spawns `serve-stdio`), `rest_generic` and
+    `rest_resource`; only the in-process `direct` and `tui` transports can share
+    an in-memory store. A missing `transports.only`, or an `only` list that
+    includes any of those four ids, is a rule-10 error. Matches the as-built
+    schema (`tests/conformance/commands/README.md` rule 10, tightened in commit
+    `7c45475`).
 11. `files` keys contain no path separators.
 12. Role/permission sanity: a step whose `command` is mutating per the catalog and whose effective caller is `user` must expect `error.code == "not_authorized"`.
 

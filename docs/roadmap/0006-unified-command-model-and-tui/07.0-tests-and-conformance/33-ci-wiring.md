@@ -5,7 +5,15 @@
 **Depends on:** 04, 06-10, 30, 32 (and the TUI build option from 06.0)
 **Blocks:** 34
 **Estimated size:** S
-**Suggested agent:** cpp-expert (workflow YAML) with testing-expert review
+**Suggested agent:** cpp-expert (workflow YAML + e2e shell) with testing-expert review
+
+> **Amended 2026-11-20 (as-built reconciliation).** Adds the **portable timeout
+> fallback** (user ruling 2026-11-19, item 3) to e2e sections
+> `tests/e2e/scripts/sections/1[4-8]_*.sh`. As built they call GNU `timeout 5`
+> directly (e.g. `14_cli_link_update.sh:73`, `15:64`, `16:68`, `17:64`,
+> `18:64`), which is absent on macOS (`gtimeout` exists) and caused the standing
+> `e2e_14`-`18` failures. The fix: a tiny portable shim that uses `timeout` if
+> present, else `gtimeout`, else a small background-watchdog fallback.
 
 ## Objective
 
@@ -31,6 +39,46 @@ CTest on non-Windows hosts but no workflow selects `-L e2e`.
 | `.github/workflows/perf-analytics.yml` | modify | Rename job description comment only; add step publishing the redirect guard table to `$GITHUB_STEP_SUMMARY`; keep `continue-on-error: true`; add `URLSHORTENER_PERF_GATE` unset |
 | `.github/workflows/e2e-tests.yml` | modify | Add `tests/conformance/**` and `docs/commands/**` to the `pull_request.paths` filter |
 | `docs/agent/ci-pipeline-specification.md` | modify | One short subsection documenting the jobs above (docs-sync owner is 08.0 subtask on testing docs; this file is changed only if the spec lists job names) |
+| `tests/e2e/scripts/sections/14_cli_link_update.sh` | modify | replace `timeout 5` with the portable shim |
+| `tests/e2e/scripts/sections/15_cli_link_delete.sh` | modify | same |
+| `tests/e2e/scripts/sections/16_cli_link_enable_disable.sh` | modify | same |
+| `tests/e2e/scripts/sections/17_cli_link_restore.sh` | modify | same |
+| `tests/e2e/scripts/sections/18_cli_link_preview.sh` | modify | same |
+| `tests/e2e/scripts/common.sh` | modify | define the shared `run_with_timeout` shim once (sections 14-18 source it; if a section does not source `common.sh`, inline the shim in its header) |
+
+## Portable timeout fallback (e2e 14-18)
+
+Define one shim (preferably in `tests/e2e/scripts/common.sh`, which the sections
+can source, else inline in each section's header) and call it where the sections
+currently call `timeout 5`:
+
+```sh
+# run_with_timeout <seconds> <cmd...> : prefer GNU timeout, then gtimeout,
+# else a background watchdog. Preserves the command's own exit status, and
+# returns 124 on timeout, matching GNU timeout so the existing
+# "capture rc with || rc=$?" logic is unchanged.
+run_with_timeout() {
+  secs=$1; shift
+  if command -v timeout >/dev/null 2>&1; then
+    timeout "$secs" "$@"
+  elif command -v gtimeout >/dev/null 2>&1; then
+    gtimeout "$secs" "$@"
+  else
+    "$@" &
+    cmd_pid=$!
+    ( sleep "$secs"; kill -TERM "$cmd_pid" 2>/dev/null ) &
+    watch_pid=$!
+    wait "$cmd_pid"; rc=$?
+    kill -TERM "$watch_pid" 2>/dev/null; wait "$watch_pid" 2>/dev/null
+    return $rc
+  fi
+}
+```
+
+The sections keep `set -euo pipefail` and the existing `|| rc=$?` capture (the
+comment at e.g. `14_cli_link_update.sh:69` stays valid; the shim returns 124 on
+timeout like GNU `timeout`). The CLI itself runs its own `io_context` and never
+blocks, so a timeout firing is still a genuine failure, not a flake.
 
 ## Classes and functions
 
