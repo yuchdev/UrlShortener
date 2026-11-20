@@ -599,7 +599,7 @@
     },
     {
       "name": "link_import_errors_capped_at_100",
-      "doc": "150 invalid rows all fail; the reported errors array is capped and errors_omitted counts the 50 beyond the 100-entry cap (T-109)",
+      "doc": "150 invalid rows all fail; the 100-entry cap is proven by the derived counts (failed 150 with errors_omitted 50 = 150-100) rather than by asserting the errors array length, since the matcher has no array-length operator",
       "command": "link.import",
       "transports": {
         "skip": {
@@ -629,7 +629,7 @@
           },
           "await_job": {
             "var": "job_id",
-            "timeout_ms": 15000
+            "timeout_ms": 5000
           },
           "expect": {
             "ok": true,

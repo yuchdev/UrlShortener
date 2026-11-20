@@ -160,6 +160,14 @@ class CliCmdAdapter(cc.Adapter):
             argv.append("--dry-run")
         if options.get("async"):
             argv.append("--async")
+        if options.get("no_wait"):
+            # ``no_wait`` is not an envelope option (the catalog closes
+            # ``options`` to ``dry_run``/``async``); it is a cli-only replay hint
+            # that selects the real ``cmd --no-wait`` flag, which prints the
+            # accepted job envelope instead of waiting for the terminal record.
+            # It is consumed here and never forwarded as an envelope key, so it
+            # only ever applies to ``cli_cmd``-only corpus cases.
+            argv.append("--no-wait")
 
         stdin_bytes = json.dumps(req.get("args", {})).encode("utf-8")
         proc = cc.spawn(argv, cwd=str(ctx.tmp), env=cc.conformance_env(),
