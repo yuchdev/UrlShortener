@@ -954,5 +954,6 @@ set(URL_SHORTENER_SOURCES
         tests/unit/tui/20_app_navigation_test.cpp
         tests/unit/tui/21_settings_screen_test.cpp
         tests/unit/tui/23_tui_file_path_policy_test.cpp
+        tests/unit/tui/34_no_secrets_real_registry_test.cpp
     )
   endif()
