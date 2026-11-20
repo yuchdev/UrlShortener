@@ -292,6 +292,8 @@ include(CTest)
   register_labeled_cpp_tests(DOCS_UNIT_SOURCES           "unit")
   target_compile_definitions(docs__01_configuration_examples_match_parser
       PRIVATE SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
+  target_compile_definitions(docs__03_command_catalog_matches_registry
+      PRIVATE SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
   register_labeled_cpp_tests(ANALYTICS_UNIT_SOURCES      "unit")
   register_labeled_cpp_tests(ANALYTICS_INTEGRATION_SOURCES "integration")
   register_labeled_cpp_tests(CONTRACT_METADATA_SOURCES   "contract")
@@ -416,6 +418,49 @@ include(CTest)
       TIMEOUT 300
       LABELS "integration;conformance"
     )
+  endforeach()
+
+  # ---- Conformance C++ support library + runners (Task 07.0 subtask 03) ----
+  # conformance_support is a test-only static library holding the mini JSON DOM,
+  # corpus loader, matcher/normalizer and case runner. It links
+  # url_shortener_common but is NEVER linked into any product target (decision
+  # log D3; 07.0/21 enforces the include boundary). The support .cpp files live
+  # in their own CONFORMANCE_SUPPORT_CPP list so the CLAUDE.md "list every .cpp"
+  # rule holds without adding them to url_shortener_common.
+  add_library(conformance_support STATIC ${CONFORMANCE_SUPPORT_CPP})
+  target_compile_features(conformance_support PUBLIC cxx_std_17)
+  target_include_directories(conformance_support PUBLIC
+      ${CMAKE_CURRENT_SOURCE_DIR}/tests/conformance/support
+      ${CMAKE_CURRENT_SOURCE_DIR}/include
+  )
+  target_link_libraries(conformance_support PUBLIC url_shortener_common)
+
+  # Each runner under tests/conformance/runners becomes conformance__<stem> (a
+  # dedicated loop, not the generic <parent_dir>__<stem> macro) with the corpus
+  # directory baked in via CONFORMANCE_CORPUS_DIR and the second label
+  # "conformance" so `ctest -L conformance` selects it.
+  foreach(conformance_cpp_src IN LISTS CONFORMANCE_CPP_SOURCES)
+    get_filename_component(conformance_cpp_name ${conformance_cpp_src} NAME_WE)
+    set(conformance_cpp_target "conformance__${conformance_cpp_name}")
+    add_executable(${conformance_cpp_target}
+        ${CMAKE_CURRENT_SOURCE_DIR}/${conformance_cpp_src}
+    )
+    target_compile_features(${conformance_cpp_target} PRIVATE cxx_std_17)
+    target_include_directories(${conformance_cpp_target} PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/conformance
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/conformance/support
+    )
+    target_compile_definitions(${conformance_cpp_target} PRIVATE
+        CONFORMANCE_CORPUS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/conformance")
+    target_link_libraries(${conformance_cpp_target}
+      PRIVATE
+        conformance_support
+        Boost::unit_test_framework
+    )
+    add_test(NAME ${conformance_cpp_target} COMMAND ${conformance_cpp_target})
+    set_tests_properties(${conformance_cpp_target} PROPERTIES
+        LABELS "integration;conformance")
   endforeach()
 
   # The shared-SQLite scenario (subtask 02.0/14) spawns a long-lived server

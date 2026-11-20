@@ -144,6 +144,7 @@ set(URL_SHORTENER_SOURCES
 
   set(DOCS_UNIT_SOURCES
       tests/unit/docs/02_route_registry_docs.cpp
+      tests/unit/docs/03_command_catalog_matches_registry.cpp
   )
 
   set(CORE_UNIT_SOURCES
@@ -714,6 +715,27 @@ set(URL_SHORTENER_SOURCES
       tests/conformance/py/00_corpus_lint.py
       tests/conformance/py/01_matcher_vectors.py
       tests/conformance/py/02_harness_selftest.py
+  )
+
+  # ---- Conformance C++ support library (Task 07.0 subtask 03) ----
+  # Test-only building blocks (mini JSON DOM, corpus loader, matcher/normalizer,
+  # adapter interface, case runner) compiled into the conformance_support static
+  # library. NEVER part of url_shortener_common and never linked into a product
+  # target (decision log D3). Listed here only to satisfy the CLAUDE.md rule that
+  # every .cpp has a home in sources.cmake.
+  set(CONFORMANCE_SUPPORT_CPP
+      tests/conformance/support/mini_json.cpp
+      tests/conformance/support/matcher.cpp
+      tests/conformance/support/corpus.cpp
+      tests/conformance/support/case_runner.cpp
+  )
+
+  # ---- Conformance C++ runners (Task 07.0 subtask 03; label "conformance") ----
+  # In-process Boost.Test runners under tests/conformance/runners. Registered by
+  # a dedicated loop in CMakeLists.txt as conformance__<stem>. Later subtasks
+  # (04, 10) append their shim runners here.
+  set(CONFORMANCE_CPP_SOURCES
+      tests/conformance/runners/00_support_selftest.cpp
   )
 
   # ---- Perf benchmarks (Task 07.0 subtask 30; label "perf") ----
