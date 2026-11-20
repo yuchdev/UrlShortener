@@ -12,6 +12,7 @@
  */
 
 #include <functional>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -24,13 +25,27 @@ namespace conformance
 {
 
 /**
+ * @brief Result of polling `job.get` to a terminal state (or timing out).
+ *
+ * Mirrors the Python harness `_poll_job` return `(response, finding)`:
+ * @ref response holds the last `job.get` response seen (absent only when the
+ * job id was never saved); @ref finding is empty on a terminal state and
+ * carries the timeout / poll-fault reason otherwise.
+ */
+struct PollResult
+{
+    std::optional<Json> response;  ///< Last `job.get` response, if any.
+    std::optional<std::string> finding;  ///< Timeout / fault reason, if any.
+};
+
+/**
  * @brief Aggregate outcome of replaying a corpus through one adapter.
  */
 struct RunReport
 {
-    int ran = 0;      ///< Cases that executed at least one step.
+    int ran = 0;  ///< Cases that executed at least one step.
     int skipped = 0;  ///< Cases skipped (only/skip/capability).
-    int failed = 0;   ///< Cases with at least one failing step.
+    int failed = 0;  ///< Cases with at least one failing step.
 
     ///< One `"transport/case/step[label]: <path>: <reason>"` line per failure,
     ///< each followed by the expected and actual JSON documents.
@@ -68,8 +83,7 @@ public:
      * @param adapter The transport adapter under test.
      * @return The aggregate @ref RunReport.
      */
-    RunReport run(const std::vector<Case>& cases,
-                  IConformanceAdapter& adapter);
+    RunReport run(const std::vector<Case>& cases, IConformanceAdapter& adapter);
 
 private:
     /**
@@ -86,12 +100,21 @@ private:
                   RunReport& report);
 
     /**
-     * @brief Polls `job.get` until the job is terminal or the budget expires.
-     * @return The final `job.get` response (the last one received).
+     * @brief Polls `job.get` for the saved job id until terminal or timeout.
+     *
+     * Parity with the Python harness `_poll_job`: the job state is read from
+     * `$.result.state` (the real `job.get` always returns the record under
+     * `result`), the loop breaks only on a terminal state
+     * (`succeeded`/`failed`/`cancelled`), the budget is `min(timeout_ms,
+     * 60000)` ms, and waiting uses the injectable @ref SleepFn at a 25 ms
+     * interval.
+     *
+     * @return A @ref PollResult carrying the last response and any timeout /
+     * unsaved-variable / poll-fault finding.
      */
-    Json poll_job(IConformanceAdapter& adapter,
-                  const Step& step,
-                  VariableMap& vars);
+    PollResult poll_job(IConformanceAdapter& adapter,
+                        const Step& step,
+                        VariableMap& vars);
 
     /**
      * @brief Normalizes @p response, matches it against @p expect, and records

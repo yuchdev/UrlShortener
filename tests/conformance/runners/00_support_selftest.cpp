@@ -31,6 +31,7 @@
 #include "matcher.hpp"
 #include "mini_json.hpp"
 
+using conformance::AwaitJob;
 using conformance::Case;
 using conformance::CaseRunner;
 using conformance::Expect;
@@ -158,6 +159,117 @@ Case make_ok_case()
     Json result = Json::object();
     result.set("slug", Json::string("docs"));
     step.expect.value = result;
+    test_case.steps.push_back(std::move(step));
+    return test_case;
+}
+
+/// Adapter that returns a fixed accept envelope for the job-creating request,
+/// then walks a scripted list of `job.get` records (queued -> running ->
+/// terminal), clamping at the last entry. Used to exercise `await_job` polling
+/// and terminal projection deterministically (mirrors the Python harness
+/// fakes).
+class FakeJobAdapter : public IConformanceAdapter
+{
+public:
+    FakeJobAdapter(std::string accept, std::vector<std::string> job_get)
+        : m_accept(std::move(accept))
+        , m_job_get(std::move(job_get))
+    {
+    }
+
+    Transport transport() const override { return Transport::Direct; }
+
+    TransportCaps caps() const override
+    {
+        TransportCaps caps;
+        caps.carries_id = false;
+        caps.carries_raw = false;
+        caps.carries_options = true;
+        return caps;
+    }
+
+    std::optional<std::string> begin_case(const Case&,
+                                          const std::filesystem::path&) override
+    {
+        return std::nullopt;
+    }
+
+    std::string send(const Step&, const std::string& request_text) override
+    {
+        if (request_text.find("\"job.get\"") != std::string::npos) {
+            const std::size_t i = std::min(m_poll_index, m_job_get.size() - 1);
+            ++m_poll_index;
+            return m_job_get[i];
+        }
+        return m_accept;
+    }
+
+    void end_case() override {}
+
+private:
+    std::string m_accept;
+    std::vector<std::string> m_job_get;
+    std::size_t m_poll_index = 0;
+};
+
+/// Builds a `job.get` record envelope with the given state and optional nested
+/// result / error, matching `serialize_job_json`'s `{result: <record>}` shape.
+std::string job_get_record(const std::string& state,
+                           const std::string& nested_result,
+                           const std::string& nested_error)
+{
+    std::string body = R"({"v":1,"id":"srv-9","ok":true,"result":{"id":"j-1",)"
+                       R"("state":")"
+        + state + "\"";
+    if (!nested_result.empty()) {
+        body += ",\"result\":" + nested_result;
+    }
+    if (!nested_error.empty()) {
+        body += ",\"error\":" + nested_error;
+    }
+    body += "}}";
+    return body;
+}
+
+/// Builds a one-step async-job case: accept expects a queued job, terminal
+/// expects @p expect_ok with @p body carrying @p value.
+Case make_job_case(const std::string& name,
+                   bool expect_ok,
+                   Expect::Body body,
+                   Json value)
+{
+    Case test_case;
+    test_case.name = name;
+    test_case.doc = "async job await";
+    test_case.command = "link.import";
+
+    Step step;
+    Json request = Json::object();
+    request.set("v", Json::integer(1));
+    request.set("command", Json::string("link.import"));
+    request.set("args", Json::object());
+    step.request = request;
+    step.save["job_id"] = "$.job.id";
+
+    step.expect_accept.present = true;
+    step.expect_accept.ok = true;
+    step.expect_accept.subset = true;
+    step.expect_accept.body = Expect::Body::Job;
+    Json accept_job = Json::object();
+    accept_job.set("id", Json::string("<id>"));
+    accept_job.set("state", Json::string("queued"));
+    step.expect_accept.value = accept_job;
+
+    AwaitJob await;
+    await.var = "job_id";
+    await.timeout_ms = 5000;
+    step.await_job = await;
+
+    step.expect.present = true;
+    step.expect.ok = expect_ok;
+    step.expect.subset = true;
+    step.expect.body = body;
+    step.expect.value = std::move(value);
     test_case.steps.push_back(std::move(step));
     return test_case;
 }
@@ -434,4 +546,100 @@ BOOST_AUTO_TEST_CASE(slug_token_with_overflowing_length_is_rejected_not_thrown)
     BOOST_CHECK_NO_THROW(result =
                              Matcher::match(expected, actual, false, vars));
     BOOST_TEST(!result.ok);
+}
+
+// ---------------------------------------------------------------------------
+// await_job: polling to a terminal state and projecting the outcome envelope
+// (parity with the Python harness _poll_job / _project_terminal_job).
+// ---------------------------------------------------------------------------
+
+namespace
+{
+
+/// Builds the `{total,created}` import result object used by the job tests.
+Json import_result()
+{
+    Json value = Json::object();
+    value.set("total", Json::integer(1));
+    value.set("created", Json::integer(1));
+    return value;
+}
+
+/// Builds an `{code}` error object for the failed / cancelled job tests.
+Json job_error(const std::string& code)
+{
+    Json value = Json::object();
+    value.set("code", Json::string(code));
+    return value;
+}
+
+/// Accept envelope every FakeJobAdapter returns for the job-creating request.
+const char* const kAcceptQueued =
+    R"({"v":1,"id":"srv-1","ok":true,"job":{"id":"j-1","state":"queued"}})";
+
+}  // namespace
+
+BOOST_AUTO_TEST_CASE(await_job_poll_succeeds_and_projects_result)
+{
+    CaseRunner runner([](int) {});
+    FakeJobAdapter adapter(
+        kAcceptQueued,
+        {job_get_record("queued", "", ""),
+         job_get_record("running", "", ""),
+         job_get_record("succeeded", R"({"total":1,"created":1})", "")});
+
+    const Case test_case =
+        make_job_case("job_ok", true, Expect::Body::Result, import_result());
+    const RunReport report = runner.run({test_case}, adapter);
+    BOOST_TEST(report.ran == 1);
+    BOOST_TEST(report.failed == 0);
+}
+
+BOOST_AUTO_TEST_CASE(await_job_poll_projects_failed_as_error_envelope)
+{
+    CaseRunner runner([](int) {});
+    FakeJobAdapter adapter(
+        kAcceptQueued,
+        {job_get_record("running", "", ""),
+         job_get_record("failed", "", R"({"code":"import_failed"})")});
+
+    const Case test_case = make_job_case(
+        "job_failed", false, Expect::Body::Error, job_error("import_failed"));
+    const RunReport report = runner.run({test_case}, adapter);
+    BOOST_TEST(report.ran == 1);
+    BOOST_TEST(report.failed == 0);
+}
+
+BOOST_AUTO_TEST_CASE(await_job_poll_projects_cancelled_as_error_envelope)
+{
+    CaseRunner runner([](int) {});
+    FakeJobAdapter adapter(
+        kAcceptQueued,
+        {job_get_record("cancelled", "", R"({"code":"cancelled"})")});
+
+    const Case test_case = make_job_case(
+        "job_cancelled", false, Expect::Body::Error, job_error("cancelled"));
+    const RunReport report = runner.run({test_case}, adapter);
+    BOOST_TEST(report.ran == 1);
+    BOOST_TEST(report.failed == 0);
+}
+
+BOOST_AUTO_TEST_CASE(await_job_poll_timeout_is_a_clean_finding)
+{
+    CaseRunner runner([](int) {});
+    // The record never leaves "running", so the poll must hit the timeout.
+    FakeJobAdapter adapter(kAcceptQueued, {job_get_record("running", "", "")});
+
+    Case test_case = make_job_case(
+        "job_timeout", true, Expect::Body::Result, import_result());
+    test_case.steps[0].await_job->timeout_ms = 100;
+    const RunReport report = runner.run({test_case}, adapter);
+    BOOST_TEST(report.failed == 1);
+    bool saw_timeout = false;
+    for (const std::string& failure : report.failures) {
+        if (failure.find("terminal state within 100 ms") != std::string::npos) {
+            saw_timeout = true;
+        }
+    }
+    BOOST_TEST(saw_timeout);
 }

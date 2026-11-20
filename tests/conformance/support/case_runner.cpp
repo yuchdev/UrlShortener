@@ -121,12 +121,64 @@ Json build_expected(const Expect& expect, const VariableMap& vars)
     return envelope;
 }
 
-/// `true` when a job `state` string denotes a terminal job.
+/// `true` when a job `state` string denotes a terminal job. Mirrors the Python
+/// harness `_TERMINAL_JOB_STATES` exactly - no broader set, or the poll would
+/// break early on a still-running record.
 bool is_terminal_state(const std::string& state)
 {
-    return state == "succeeded" || state == "failed" || state == "cancelled"
-        || state == "canceled" || state == "done" || state == "completed"
-        || state == "complete" || state == "error";
+    return state == "succeeded" || state == "failed" || state == "cancelled";
+}
+
+/// Reads `response.result.state`, or an empty string when absent. The real
+/// `job.get` (`src/commands/job_commands.cpp` `serialize_job_json`) always
+/// wraps the job record under `result`, even while queued/running.
+std::string job_record_state(const Json& response)
+{
+    const Json* record = response.find("result");
+    if (record != nullptr && record->is_object()) {
+        const Json* state = record->find("state");
+        if (state != nullptr && state->is_string()) {
+            return state->as_string();
+        }
+    }
+    return std::string();
+}
+
+/// Projects a terminal `job.get` response into a flat outcome envelope.
+///
+/// Byte-for-byte port of `conformance_common._project_terminal_job`: a terminal
+/// record carries the command result at `result.result` (succeeded) or the
+/// error at `result.error` (failed / cancelled); the corpus `expect` compares
+/// against that command outcome, so it is re-expressed as `{v, id?, ok,
+/// result|error}`.
+Json project_terminal_job(const Json& terminal)
+{
+    const Json* record_ptr = terminal.find("result");
+    const Json record = (record_ptr != nullptr && record_ptr->is_object())
+        ? *record_ptr
+        : Json::object();
+    const Json* state = record.find("state");
+    const bool succeeded = state != nullptr && state->is_string()
+        && state->as_string() == "succeeded";
+
+    Json outcome = Json::object();
+    const Json* v = terminal.find("v");
+    outcome.set("v", v != nullptr ? *v : Json::integer(1));
+    outcome.set("ok", Json::boolean(succeeded));
+    if (const Json* id = terminal.find("id")) {
+        outcome.set("id", *id);
+    }
+    if (succeeded) {
+        const Json* result = record.find("result");
+        outcome.set("result", result != nullptr ? *result : Json::object());
+    }
+    else {
+        const Json* error = record.find("error");
+        outcome.set(
+            "error",
+            (error != nullptr && error->is_object()) ? *error : Json::object());
+    }
+    return outcome;
 }
 
 /// Applies a step's `save` captures from @p response into @p vars.
@@ -363,68 +415,107 @@ bool CaseRunner::run_step(IConformanceAdapter& adapter,
     const Json* request_ptr =
         request_json.has_value() ? &request_json.value() : nullptr;
 
-    // Immediate accept assertion for an async job step.
-    if (step.await_job.has_value() && step.expect_accept.present) {
-        if (!check_expect(where + " (accept)",
-                          step.expect_accept,
-                          *response,
-                          request_ptr,
-                          caps,
-                          vars,
-                          report))
-        {
-            return false;
+    // Async job step: assert the immediate accept envelope, then poll to a
+    // terminal state and assert expect against the PROJECTED outcome. Mirrors
+    // the Python harness _run_step job path.
+    if (step.await_job.has_value()) {
+        if (step.expect_accept.present) {
+            if (!check_expect(where + " (accept)",
+                              step.expect_accept,
+                              *response,
+                              request_ptr,
+                              caps,
+                              vars,
+                              report))
+            {
+                return false;
+            }
         }
-        const Json terminal = poll_job(adapter, step, vars);
-        return check_expect(
-            where, step.expect, terminal, nullptr, caps, vars, report);
+        const PollResult poll = poll_job(adapter, step, vars);
+        bool ok = true;
+        if (poll.finding.has_value()) {
+            report.failures.push_back(where + ": " + *poll.finding);
+            ok = false;
+        }
+        if (poll.response.has_value()) {
+            const Json outcome = project_terminal_job(*poll.response);
+            // request = nullptr and the transport-default carries_id, exactly
+            // as Python checks the projected outcome envelope.
+            if (!check_expect(
+                    where, step.expect, outcome, nullptr, caps, vars, report))
+            {
+                ok = false;
+            }
+        }
+        return ok;
     }
 
     return check_expect(
         where, step.expect, *response, request_ptr, caps, vars, report);
 }
 
-Json CaseRunner::poll_job(IConformanceAdapter& adapter,
-                          const Step& step,
-                          VariableMap& vars)
+PollResult CaseRunner::poll_job(IConformanceAdapter& adapter,
+                                const Step& step,
+                                VariableMap& vars)
 {
     const AwaitJob& await = *step.await_job;
-    Json job_id = Json::null();
+    PollResult out;
+
     const auto it = vars.find(await.var);
-    if (it != vars.end()) {
-        job_id = it->second;
+    if (it == vars.end()) {
+        out.finding =
+            "await_job references unsaved variable '" + await.var + "'";
+        return out;
     }
+
+    // Clamp the budget to the same 60 s ceiling as the Python harness so a
+    // corpus typo cannot hang the suite.
+    constexpr int kMaxAwaitTimeoutMs = 60000;
+    constexpr int kPollIntervalMs = 25;
+    int timeout_ms = await.timeout_ms;
+    if (timeout_ms < 0) {
+        timeout_ms = 5000;
+    }
+    if (timeout_ms > kMaxAwaitTimeoutMs) {
+        timeout_ms = kMaxAwaitTimeoutMs;
+    }
+
     Json args = Json::object();
-    args.set("id", job_id);
+    args.set("id", it->second);
     Json request = Json::object();
     request.set("v", Json::integer(1));
     request.set("command", Json::string("job.get"));
     request.set("args", std::move(args));
     const std::string request_text = request.dump();
 
-    Json last = Json::object();
     int elapsed = 0;
-    while (elapsed <= await.timeout_ms) {
-        const std::string text = adapter.send(step, request_text);
+    for (;;) {
+        std::string text;
+        try {
+            text = adapter.send(step, request_text);
+        } catch (const std::exception& ex) {
+            out.finding = std::string("job.get poll raised: ") + ex.what();
+            return out;
+        }
         std::string parse_error;
         std::optional<Json> doc = Json::parse(text, &parse_error);
-        if (!doc.has_value()) {
-            break;
+        std::string state;
+        if (doc.has_value()) {
+            state = job_record_state(*doc);
+            out.response = std::move(doc);
         }
-        last = std::move(*doc);
-        const Json* state = last.path("$.job.state");
-        if (state == nullptr) {
-            state = last.path("$.result.state");
+        if (!state.empty() && is_terminal_state(state)) {
+            return out;  // terminal: no finding
         }
-        const bool terminal = state != nullptr && state->is_string()
-            && is_terminal_state(state->as_string());
-        if (terminal || last.path("$.result") != nullptr) {
-            break;
+        if (elapsed >= timeout_ms) {
+            out.finding = "job did not reach a terminal state within "
+                + std::to_string(timeout_ms) + " ms (last state "
+                + (state.empty() ? std::string("null") : state) + ")";
+            return out;
         }
-        m_sleep(25);
-        elapsed += 25;
+        m_sleep(kPollIntervalMs);
+        elapsed += kPollIntervalMs;
     }
-    return last;
 }
 
 bool CaseRunner::check_expect(const std::string& where,
