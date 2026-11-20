@@ -12,7 +12,7 @@ Tracks progress against [plan.md](/docs/roadmap/0006-unified-command-model-and-t
 | 04.0 | REST and CLI adapters | ✅ Complete (15/15 subtasks) | 22 (`commands__40`, http `15`-`25`; `cli__06`-`12`; cli int `20`, `21`; `observability__04`; `ratelimiter__08`) |
 | 05.0 | Jobs, pair import/export, stdio | ✅ Complete (21/21 subtasks) | 23 (`commands__50`-`65`; `app__60`; `cli__20`, `cli__21`; http `40`; cli int `40`, `41`; e2e `30`) |
 | 06.0 | Terminal UI | ✅ Complete | 58 (`tui__01`, `tui__02_*` x3, `tui__03`, `tui__04_*` x6, `tui__05_*` x4, `tui__06_*` x4, `tui__07_*` x3, `tui__08_*` x3, `tui__09_*` x3, `tui__10_*` x2, `tui__11_*` x4, `tui__12_*` x3, `tui__13_*` x2, `tui__14_*` x2, `tui__15_*` x3, `tui__16_*` x3, `tui__17_*` x2, `tui__18_*` x3, `tui__19_*` x2, `tui__20_app_navigation_test`, `tui__21_*` x2, `cli__30`) |
-| 07.0 | Tests and conformance | 🔶 In progress (10/34 subtasks) | 9 (`conformance_00_corpus_lint`, `conformance_01_matcher_vectors`, `conformance_02_harness_selftest`, `commands__70`..`72`, `commands__80_redirect_isolation_test`, `docs__03_command_catalog_matches_registry`, `tui__22_mock_support_helpers_test`; perf label: `analytics__*` x3) |
+| 07.0 | Tests and conformance | 🔶 In progress (11/34 subtasks) | 10 (`conformance_00_corpus_lint`, `conformance_01_matcher_vectors`, `conformance_02_harness_selftest`, `conformance__00_support_selftest`, `commands__70`..`72`, `commands__80_redirect_isolation_test`, `docs__03_command_catalog_matches_registry`, `tui__22_mock_support_helpers_test`; perf label: `analytics__*` x3) |
 | 08.0 | Docs and registry sync | ⬜ Not started | 0 |
 
 **Legend:** ✅ Complete · 🔶 In progress / partial · ⬜ Not started
@@ -698,3 +698,14 @@ User rulings:
 - Spec 20 also carries the `tui --path-root/--no-file-paths` product change
   (2026-11-19 ruling); spec 19 adds the `resolve_permission` raised-permission
   assertions (06.0/18 ruling).
+
+### 2026-11-20 - 07.0/06 CLI response id in conformance (user ruling)
+
+`url_shortener cmd` builds its own envelope and supplies the client id `cli-1`
+when `--id` is absent (specified in 04.0/13). The conformance matcher's N4
+rule expected any non-echoed id to be server-minted (`srv-<n>`), so the first
+06 shim injected `--id srv-<n>`. Ruling: **the shim echoes the corpus request
+id via the real `--id` flag** (the `cli_cmd` transport is treated as
+echo-capable). For steps without an id, the matcher accepts the CLI's
+documented `cli-<n>` client id. No product change. `docs/commands/README.md`
+is amended to state the CLI's default client id.
