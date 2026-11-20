@@ -294,6 +294,10 @@ include(CTest)
       PRIVATE SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
   target_compile_definitions(docs__03_command_catalog_matches_registry
       PRIVATE SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
+  target_compile_definitions(docs__04_command_route_table_consistency
+      PRIVATE SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
+  target_compile_definitions(docs__05_api_reference_matches_registry
+      PRIVATE SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
   register_labeled_cpp_tests(ANALYTICS_UNIT_SOURCES      "unit")
   register_labeled_cpp_tests(ANALYTICS_INTEGRATION_SOURCES "integration")
   register_labeled_cpp_tests(CONTRACT_METADATA_SOURCES   "contract")

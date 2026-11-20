@@ -145,6 +145,8 @@ set(URL_SHORTENER_SOURCES
   set(DOCS_UNIT_SOURCES
       tests/unit/docs/02_route_registry_docs.cpp
       tests/unit/docs/03_command_catalog_matches_registry.cpp
+      tests/unit/docs/04_command_route_table_consistency.cpp
+      tests/unit/docs/05_api_reference_matches_registry.cpp
   )
 
   set(CORE_UNIT_SOURCES

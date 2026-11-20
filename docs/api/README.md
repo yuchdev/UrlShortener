@@ -1,4 +1,4 @@
-﻿# URL Shortener API Reference
+# URL Shortener API Reference
 
 Generated from `url_shortener::http::registeredRoutes()`. The C++ route
 registry is the source of truth for HTTP API inventory, route labels, operation
