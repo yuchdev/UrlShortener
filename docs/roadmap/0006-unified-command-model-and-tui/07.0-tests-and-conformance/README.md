@@ -50,7 +50,7 @@ G gates             04, 06-10, 30, 32 -> 33 (CI wiring) -> 34 (coverage gap + re
 | 02 | [Matcher and normalizer vectors](02-matcher-and-normalizer-vectors.md) | ✅ Complete | 01 | 03, 05 |
 | 03 | [C++ conformance support library](03-cpp-conformance-support-library.md) | ⬜ Not started | 01, 02 | 04, 10 |
 | 04 | [Direct registry shim and runner](04-direct-registry-shim-and-runner.md) | ⬜ Not started | 03, Task 01.0, Task 02.0, Task 03.0 | 10, 11, 12, 13, 14, 33 |
-| 05 | [Python harness common module](05-python-harness-common-module.md) | ⬜ Not started | 01, 02 | 06, 07, 08 |
+| 05 | [Python harness common module](05-python-harness-common-module.md) | ✅ Complete | 01, 02 | 06, 07, 08 |
 | 06 | [CLI `cmd` shim](06-cli-cmd-shim.md) | ⬜ Not started | 05, Task 02.0, Task 04.0 | 15, 33 |
 | 07 | [serve-stdio shim](07-serve-stdio-shim.md) | ⬜ Not started | 05, Task 05.0 | 15, 33 |
 | 08 | [REST generic shim](08-rest-generic-shim.md) | ⬜ Not started | 05, Task 04.0 | 09, 15, 33 |
