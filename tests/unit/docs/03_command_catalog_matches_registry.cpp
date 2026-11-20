@@ -231,9 +231,11 @@ struct DocCommand
     ///< for a table-defined command.
     bool dry_run = false;
 
-    ///< `true` when the heading meta carries a `` `path` ``-based permission
-    ///< parenthetical (the D16 export hook annotation).
-    bool has_path_hook = false;
+    ///< `true` when the heading meta carries a `` (`write` with ...) ``
+    ///< permission parenthetical (the argument-dependent `permission_for`
+    ///< annotation: D16 `path` on `link.export`, T-71 `status` on
+    ///< `link.list`/`link.export`).
+    bool has_perm_parenthetical = false;
 
     ///< `true` when this command came from a `#### ` subsection heading.
     bool from_heading = false;
@@ -400,8 +402,11 @@ ParsedCatalog parse_catalog(const std::string& markdown)
             dc.kind = (meta.find("job") != std::string::npos) ? "job" : "sync";
             dc.mutating = meta.find("Mut") != std::string::npos;
             dc.dry_run = meta.find("dry_run") != std::string::npos;
-            dc.has_path_hook = meta.find("`path`") != std::string::npos
-                && meta.find('(') != std::string::npos;
+            // Any argument-dependent permission raise is annotated with the
+            // fixed `` (`write` with <arg>...) `` form; recognize the whole
+            // family, not just the `path` case (D16 path, T-71 status).
+            dc.has_perm_parenthetical =
+                meta.find("(`write` with") != std::string::npos;
 
             std::vector<std::string> heading_names;
             for (const std::string& tok : name_tokens) {
@@ -630,6 +635,73 @@ bool is_enum_type(ArgType type)
     return type == ArgType::enumeration;
 }
 
+/// Hint appended to every descriptor-sourced failure message: the live values
+/// come from the command registry, so run the catalog dump to see them and then
+/// fix the hand-written prose by hand (only block 3.7 is generator-owned).
+constexpr const char* k_regen_hint =
+    " (run ./cmake-build/command_catalog_dump to print the live descriptor "
+    "metadata, then fix the prose in docs/commands/README.md by hand)";
+
+/// Maps a hand-written `Type`-cell's leading base token to its @ref ArgType.
+///
+/// Only the leading run of lower-case ASCII letters is read (`int 0..1000000`
+/// -> `int`, `enum `a`\|`b`` -> `enum`, `object `{...}` | `null`` -> `object`),
+/// which is the clean catalog vocabulary. A cell whose base token is not one of
+/// the recognized spellings yields `std::nullopt`, which the caller turns into
+/// a failure so a new, unrecognized type spelling cannot pass silently.
+std::optional<ArgType> doc_base_type(std::string_view type_cell)
+{
+    std::size_t i = 0;
+    const std::string t = trim(type_cell);
+    std::string token;
+    while (i < t.size() && t[i] >= 'a' && t[i] <= 'z') {
+        token += t[i];
+        ++i;
+    }
+    if (token == "string") {
+        return ArgType::string;
+    }
+    if (token == "int" || token == "integer") {
+        return ArgType::integer;
+    }
+    if (token == "bool" || token == "boolean") {
+        return ArgType::boolean;
+    }
+    if (token == "enum") {
+        return ArgType::enumeration;
+    }
+    if (token == "timestamp") {
+        return ArgType::timestamp;
+    }
+    if (token == "list" || token == "array") {
+        return ArgType::string_list;
+    }
+    if (token == "map") {
+        return ArgType::string_map;
+    }
+    if (token == "object") {
+        return ArgType::object;
+    }
+    return std::nullopt;
+}
+
+/// `command.arg` keys whose hand-written `Type` cell is genuinely irregular and
+/// is therefore exempt from the base-type comparison (names, required and clean
+/// enum members are still checked). Every entry carries its reason; a NEW
+/// irregular cell is NOT silently skipped - it fails @ref argspec_tables_match
+/// until it is added here on purpose.
+const std::set<std::string>& type_comparison_exceptions()
+{
+    static const std::set<std::string> exceptions = {
+        // The 3.2 db.rows table folds two arguments of different types into one
+        // combined `` `sort` / `order` `` row with a single `string / enum`
+        // Type cell, so neither sub-cell can be attributed to one ArgType.
+        "db.rows.sort",
+        "db.rows.order",
+    };
+    return exceptions;
+}
+
 /// The one production registry builder, over the default (in-memory/legacy)
 /// backend, plus the committed catalog text and its parse.
 ///
@@ -762,10 +834,14 @@ BOOST_AUTO_TEST_CASE(command_set_matches_registry)
 //   prose states equal the live descriptor's base permission, execution kind,
 //   mutating flag and dry-run support; table-defined commands (3.4/3.5) assert
 //   the permission column alone.
-// Boundaries: the base permission is compared (not the per-call D16 raise);
-//   kind/mut/dry_run are asserted only for #### headings that state them.
+// Boundaries: the base permission is compared (not the per-call D16/T-71
+//   raise); kind/mut/dry_run are asserted only for #### headings that state
+//   them; the `` (`write` with ...) `` permission-hook annotation must match
+//   descriptor.permission_for in BOTH directions (so link.list's T-71 status
+//   hook and link.export's D16 path hook are both pinned).
 // On failure first check: did a descriptor flip permission/kind/mutating/
-//   dry_run, or did the heading meta drift from the descriptor?
+//   dry_run or gain/lose a permission_for, or did the heading meta drift from
+//   the descriptor? Run command_catalog_dump to see the live values.
 BOOST_AUTO_TEST_CASE(perm_kind_mutating_columns_match)
 {
 #ifdef SOURCE_DIR
@@ -782,43 +858,54 @@ BOOST_AUTO_TEST_CASE(perm_kind_mutating_columns_match)
 
         BOOST_TEST(meta.perm == std::string(permission_name(d.permission)),
                    "section 3: Perm mismatch for '"
-                       << name << "': doc=" << meta.perm
-                       << " registry=" << permission_name(d.permission));
+                       << name << "': doc=" << meta.perm << " registry="
+                       << permission_name(d.permission) << k_regen_hint);
 
         if (!meta.from_heading) {
             continue;  // tables state only the permission
         }
         const std::string kind = d.kind == ExecutionKind::job ? "job" : "sync";
         BOOST_TEST(meta.kind == kind,
-                   "section 3: Kind mismatch for '" << name
-                                                    << "': doc=" << meta.kind
-                                                    << " registry=" << kind);
-        BOOST_TEST(meta.mutating == d.mutating,
-                   "section 3: Mut mismatch for '" << name << "'");
-        BOOST_TEST(meta.dry_run == d.supports_dry_run,
-                   "section 3: dry_run mismatch for '" << name << "'");
-        if (meta.has_path_hook) {
-            BOOST_TEST(static_cast<bool>(d.permission_for),
-                       "section 3: '"
-                           << name
-                           << "' is annotated with a path permission hook but "
-                              "the descriptor has no permission_for (D16)");
-        }
+                   "section 3: Kind mismatch for '"
+                       << name << "': doc=" << meta.kind << " registry=" << kind
+                       << k_regen_hint);
+        BOOST_TEST(
+            meta.mutating == d.mutating,
+            "section 3: Mut mismatch for '" << name << "'" << k_regen_hint);
+        BOOST_TEST(
+            meta.dry_run == d.supports_dry_run,
+            "section 3: dry_run mismatch for '" << name << "'" << k_regen_hint);
+
+        // The argument-dependent permission hook and its heading parenthetical
+        // must agree in BOTH directions: a `` (`write` with ...) `` annotation
+        // requires a descriptor.permission_for (D16 path / T-71 status), and a
+        // descriptor that carries a permission_for must be annotated so a
+        // reader is never surprised by a per-call permission raise.
+        BOOST_TEST(
+            meta.has_perm_parenthetical == static_cast<bool>(d.permission_for),
+            "section 3: '" << name
+                           << "' permission-hook annotation disagrees with the "
+                              "descriptor's permission_for (doc annotated="
+                           << meta.has_perm_parenthetical << ", registry hook="
+                           << static_cast<bool>(d.permission_for) << ")"
+                           << k_regen_hint);
     }
 #endif
 }
 
 // Scenario: for every command whose section 3.1-3.3 subsection has a regular
-//   | Arg | Type | Req | Description | table, the documented argument names and
-//   required-ness match the descriptor's ArgSpec set, and each enumeration
-//   argument's documented members (when the Type cell is a clean `enum ...`)
-//   match the descriptor's enum_values.
+//   | Arg | Type | Req | Description | table, the documented argument names,
+//   required-ness and base type match the descriptor's ArgSpec set, and each
+//   enumeration argument's documented members (when the Type cell is a clean
+//   `enum ...`) match the descriptor's enum_values.
 // Boundaries: names are compared as a set; required maps yes->true, no/one of->
-//   false; enum members are compared only for clean `enum` cells (combined
-//   cells such as db.rows `string / enum`, and the free-string link.stats
-//   `bucket`, are name/required-checked only). Commands documented with prose
-//   args (link.delete, the enable/disable/restore family, link.preview,
-//   db.tables, link.export) are covered by command_set_matches_registry.
+//   false; the Type base token (leading word: string/int/bool/enum/timestamp/
+//   list/map/object) is compared to ArgType for every cell except the named
+//   entries in type_comparison_exceptions (only db.rows's combined sort/order
+//   cell today), and an unrecognized token fails; enum members are compared for
+//   clean `enum` cells. Commands documented with prose args (link.delete, the
+//   enable/disable/restore family, link.preview, db.tables, link.export) are
+//   covered by command_set_matches_registry.
 // On failure first check: was an argument added/removed/renamed, its
 //   required-ness changed, or an enum domain edited on one side only?
 BOOST_AUTO_TEST_CASE(argspec_tables_match)
@@ -846,18 +933,43 @@ BOOST_AUTO_TEST_CASE(argspec_tables_match)
             reg_names.insert(spec.name);
         }
         BOOST_TEST(doc_names == reg_names,
-                   "section 3: argument-name set drift for '" << name << "'");
+                   "section 3: argument-name set drift for '" << name << "'"
+                                                              << k_regen_hint);
 
         for (const auto& spec : d.args) {
             const auto da = doc_by_name.find(spec.name);
             if (da == doc_by_name.end()) {
                 continue;  // reported by the set comparison above
             }
+            const std::string qualified = name + "." + spec.name;
             const bool doc_required = da->second.req == "yes";
             BOOST_TEST(spec.required == doc_required,
-                       "section 3: '" << name << "." << spec.name
-                                      << "' required mismatch (doc req='"
-                                      << da->second.req << "')");
+                       "section 3: '"
+                           << qualified << "' required mismatch (doc req='"
+                           << da->second.req << "')" << k_regen_hint);
+
+            // Base-type discriminant. Exempt only the explicitly listed,
+            // genuinely irregular cells; any other cell must map to a known
+            // ArgType and match the descriptor, so a new unrecognized or
+            // mismatched spelling fails here.
+            if (type_comparison_exceptions().count(qualified) == 0) {
+                const std::optional<ArgType> doc_type =
+                    doc_base_type(da->second.type);
+                BOOST_TEST(doc_type.has_value(),
+                           "section 3: '"
+                               << qualified
+                               << "' has an unrecognized Type base token '"
+                               << da->second.type
+                               << "' (add it to doc_base_type or, if genuinely "
+                                  "irregular, to type_comparison_exceptions)"
+                               << k_regen_hint);
+                if (doc_type.has_value()) {
+                    BOOST_TEST((*doc_type == spec.type),
+                               "section 3: '"
+                                   << qualified << "' Type mismatch (doc cell='"
+                                   << da->second.type << "')" << k_regen_hint);
+                }
+            }
 
             if (is_enum_type(spec.type)
                 && trim(da->second.type).rfind("enum", 0) == 0)
@@ -870,7 +982,7 @@ BOOST_AUTO_TEST_CASE(argspec_tables_match)
                                                spec.enum_values.end());
                 BOOST_TEST(doc_enum == reg_enum,
                            "section 3: enum members drift for '"
-                               << name << "." << spec.name << "'");
+                               << qualified << "'" << k_regen_hint);
             }
         }
     }
@@ -899,24 +1011,28 @@ BOOST_AUTO_TEST_CASE(error_table_matches_code)
         }
         const std::string wire(info.name);
         const auto row = doc.error_rows.find(wire);
-        BOOST_REQUIRE_MESSAGE(
-            row != doc.error_rows.end(),
-            "section 1 error table: code '" << wire << "' is missing");
+        BOOST_REQUIRE_MESSAGE(row != doc.error_rows.end(),
+                              "section 1 error table: code '"
+                                  << wire << "' is missing" << k_regen_hint);
         BOOST_TEST(row->second.first == info.http_status,
-                   "section 1 error table: HTTP mismatch for '" << wire << "'");
-        BOOST_TEST(
-            row->second.second == info.exit_code,
-            "section 1 error table: CLI exit mismatch for '" << wire << "'");
+                   "section 1 error table: HTTP mismatch for '"
+                       << wire << "'" << k_regen_hint);
+        BOOST_TEST(row->second.second == info.exit_code,
+                   "section 1 error table: CLI exit mismatch for '"
+                       << wire << "'" << k_regen_hint);
     }
     // Doc -> registry: every documented row is a real code.
     for (const auto& [wire, status_exit] : doc.error_rows) {
         const auto code = error_code_from_name(wire);
         BOOST_TEST(code.has_value(),
                    "section 1 error table: '" << wire
-                                              << "' is not a CommandErrorCode");
+                                              << "' is not a CommandErrorCode"
+                                              << k_regen_hint);
     }
 
-    // Cross-check the conformance Python maps when that module exists.
+    // Cross-check the conformance Python maps when that module exists. A code
+    // in either dict that is not a known CommandErrorCode is a failure (the
+    // Python harness must not carry a phantom code), not a silent skip.
     const auto py =
         read_file(source_dir + "/tests/conformance/py/conformance_common.py");
     if (py.has_value()) {
@@ -924,9 +1040,10 @@ BOOST_AUTO_TEST_CASE(error_table_matches_code)
         const auto exit = parse_python_int_dict(*py, "CLI_EXIT");
         for (const auto& [wire, status] : http) {
             const auto code = error_code_from_name(wire);
-            if (!code.has_value()) {
-                continue;
-            }
+            BOOST_REQUIRE_MESSAGE(
+                code.has_value(),
+                "conformance_common.py HTTP_STATUS has unknown code '" << wire
+                                                                       << "'");
             BOOST_TEST(error_info_for(*code).http_status
                            == static_cast<unsigned>(status),
                        "conformance_common.py HTTP_STATUS mismatch for '"
@@ -934,9 +1051,10 @@ BOOST_AUTO_TEST_CASE(error_table_matches_code)
         }
         for (const auto& [wire, code_exit] : exit) {
             const auto code = error_code_from_name(wire);
-            if (!code.has_value()) {
-                continue;
-            }
+            BOOST_REQUIRE_MESSAGE(
+                code.has_value(),
+                "conformance_common.py CLI_EXIT has unknown code '" << wire
+                                                                    << "'");
             BOOST_TEST(
                 error_info_for(*code).exit_code == code_exit,
                 "conformance_common.py CLI_EXIT mismatch for '" << wire << "'");

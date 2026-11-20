@@ -265,11 +265,11 @@ Maps to `GET /api/v1/links/{slug}/stats`, `link stats`.
 
 ### 3.2 Browse commands (new; needed by TUI and Milestone 0002/0004)
 
-#### `link.list` - `read`, sync
+#### `link.list` - `read` (`write` with `status` `all`/`deleted`), sync
 
 | Arg | Type | Req | Description |
 |---|---|---|---|
-| `status` | enum `all`\|`active`\|`disabled`\|`expired`\|`deleted` | no | Default `active` (the TUI sends `all` explicitly). Matches `resolveLinkStatus` (precedence `deleted > disabled > expired > active`); `active` excludes expired links. |
+| `status` | enum `all`\|`active`\|`disabled`\|`expired`\|`deleted` | no | Default `active` (the TUI sends `all` explicitly). Matches `resolveLinkStatus` (precedence `deleted > disabled > expired > active`); `active` excludes expired links. Listing `all` or `deleted` raises the required permission to `write` (`link_status_permission`, threat model T-71). |
 | `q` | string | no | Substring match on slug or target URL. |
 | `tag` | string | no | Exact tag. |
 | `campaign` | string | no | Campaign name. |
