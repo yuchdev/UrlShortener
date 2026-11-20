@@ -709,3 +709,19 @@ id via the real `--id` flag** (the `cli_cmd` transport is treated as
 echo-capable). For steps without an id, the matcher accepts the CLI's
 documented `cli-<n>` client id. No product change. `docs/commands/README.md`
 is amended to state the CLI's default client id.
+
+### 2026-11-20 - 07.0/20 SSRF private-target bypass (user ruling)
+
+The 07.0/20 security review found a pre-existing private-target bypass, and it
+was reproduced on the real binary. With private targets disallowed,
+`http://127.0.0.1/` is refused, but `http://2130706433/`,
+`http://0x7f000001/`, `http://0177.0.0.1/` and `http://[::1]/` are accepted.
+The cause is in `src/core/utils.cpp`: `isPrivateHost` matches by string
+prefix, and the authority's port split breaks bracketed IPv6. The impact is
+minting redirects to loopback/internal targets (CWE-918/601 filter bypass).
+This is a redirect service and it does no server-side fetch. `master` is also
+affected. **Ruling: fix now in 07.0**, as a separate `fix(security)` commit:
+- normalize numeric IPv4 (decimal/octal/hex) before the private check;
+- parse bracketed IPv6 before the port split;
+- keep public numeric IPs accepted;
+- assert the 07.0/20 SSRF vectors as explicit `invalid_url`.
