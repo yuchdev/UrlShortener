@@ -710,6 +710,20 @@ set(URL_SHORTENER_SOURCES
       tests/conformance/py/00_corpus_lint.py
   )
 
+  # ---- Perf benchmarks (Task 07.0 subtask 30; label "perf") ----
+  # Advisory latency/throughput benchmarks (docs/testing/README.md 3.5). Owned by
+  # Task 07.0 subtask 30; subtask 32 appends the redirect fast-path guard under
+  # tests/perf/redirect/. Each file defines its own main() (no BOOST_TEST_MODULE).
+  # Registered by register_labeled_cpp_tests with RUN_SERIAL TRUE and TIMEOUT 300
+  # so parallel ctest -j load does not skew measurements. The "perf" label is kept
+  # out of the default -L "unit|contract|integration|e2e" union, so routine
+  # developer runs and the unit gate never execute these.
+  set(PERF_SOURCES
+      tests/perf/analytics/queue_overflow_redirect_tail_latency.cpp
+      tests/perf/analytics/redirect_analytics_enabled_vs_disabled.cpp
+      tests/perf/analytics/worker_batch_insert_throughput.cpp
+  )
+
   set(ALL_INTEGRATION_SOURCES
       ${LEGACY_CORE_INTEGRATION_SOURCES}
       ${LINK_MANAGEMENT_INTEGRATION_SOURCES}
