@@ -10,6 +10,7 @@
 
 #include "url_shortener/app/link_backend.hpp"
 #include "url_shortener/app/system_info.hpp"
+#include "url_shortener/commands/job_runner.hpp"
 #include "url_shortener/composition/job_runtime.hpp"
 #include "url_shortener/config/storage_config.hpp"
 
@@ -48,12 +49,25 @@ StorageConfig config_for(std::string_view backend,
 }  // namespace
 
 RegistryFixture::RegistryFixture(const std::filesystem::path& tmp,
-                                 std::string_view backend)
+                                 std::string_view backend,
+                                 std::optional<JobRunnerKnob> job_knob)
 {
     // Start each case from a clean process: drop any runner left by a prior
     // case (joining its workers) and clear the installed store.
     composition::reset_process_job_runtime_for_tests();
     app::LinkBackend::reset();
+
+    // Pin the job runner's bounds before build_command_runtime creates it on
+    // first use. Always configuring (even without an override) makes the bounds
+    // deterministic regardless of what a prior case set, and the no-override
+    // default equals `JobRunnerOptions{}`, i.e. the production V1 bounds, so
+    // every corpus case behaves exactly as it does in `main`.
+    composition::JobRuntimeSettings job_settings;
+    if (job_knob.has_value()) {
+        job_settings.runner.worker_count = job_knob->worker_count;
+        job_settings.runner.queue_capacity = job_knob->queue_capacity;
+    }
+    composition::configure_process_job_runtime(job_settings);
 
     // Fixed base domain so a generated short_url is deterministic; slug length
     // stays at its default (matchers use <slug:N>).
@@ -118,6 +132,11 @@ RegistryFixture::~RegistryFixture()
 url_shortener::commands::CommandRegistry& RegistryFixture::registry()
 {
     return *m_runtime_->registry;
+}
+
+url_shortener::commands::JobRunner& RegistryFixture::job_runner()
+{
+    return *m_runtime_->job_runner;
 }
 
 url_shortener::commands::CallerContext RegistryFixture::caller(

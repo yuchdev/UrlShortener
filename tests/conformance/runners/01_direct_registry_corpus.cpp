@@ -21,8 +21,11 @@
 
 #define BOOST_TEST_MODULE ConformanceDirectRegistryCorpus
 #include <atomic>
+#include <chrono>
+#include <cstddef>
 #include <filesystem>
 #include <fstream>
+#include <future>
 #include <iterator>
 #include <string>
 #include <vector>
@@ -32,22 +35,34 @@
 #include "case_runner.hpp"
 #include "corpus.hpp"
 #include "direct_adapter.hpp"
+#include "matcher.hpp"
 #include "mini_json.hpp"
 #include "registry_fixture.hpp"
+#include "url_shortener/commands/command_descriptor.hpp"
 #include "url_shortener/commands/command_registry.hpp"
 #include "url_shortener/commands/envelope.hpp"
 #include "url_shortener/commands/error_codes.hpp"
+#include "url_shortener/commands/job_runner.hpp"
+#include "url_shortener/commands/job_submitter.hpp"
 
 using conformance::Case;
 using conformance::CaseRunner;
 using conformance::CorpusLoader;
 using conformance::DirectRegistryAdapter;
+using conformance::JobRunnerKnob;
 using conformance::Json;
+using conformance::Matcher;
+using conformance::MatchResult;
 using conformance::RegistryFixture;
 using conformance::RunReport;
 using conformance::Transport;
+using conformance::VariableMap;
 using url_shortener::commands::CommandErrorCode;
 using url_shortener::commands::CommandResponse;
+using url_shortener::commands::IJobContext;
+using url_shortener::commands::JobBody;
+using url_shortener::commands::JobOutcome;
+using url_shortener::commands::JobSubmitResult;
 
 namespace
 {
@@ -123,6 +138,57 @@ std::string read_file(const std::filesystem::path& path)
     std::ifstream stream(path, std::ios::binary);
     return std::string((std::istreambuf_iterator<char>(stream)),
                        std::istreambuf_iterator<char>());
+}
+
+/// Serializes an async `link.import` request carrying one inline CSV row.
+std::string import_envelope(const std::string& csv_row)
+{
+    Json args = Json::object();
+    args.set("format", Json::string("csv"));
+    args.set("data", Json::string(csv_row + "\n"));
+    Json envelope = Json::object();
+    envelope.set("v", Json::integer(1));
+    envelope.set("command", Json::string("link.import"));
+    envelope.set("args", std::move(args));
+    return envelope.dump();
+}
+
+/// Holds @p response to the corpus standard: serialize it, normalize the actual
+/// envelope (N1/N4/N5) and match it against `{ok:false, error:{code}}` with the
+/// shared @ref conformance::Matcher - the exact pipeline the case runner uses,
+/// so a `busy` verdict here is judged identically to a corpus case.
+bool expect_error_code(const CommandResponse& response, const std::string& code)
+{
+    const std::string text =
+        url_shortener::commands::serialize_response(response);
+    std::string parse_error;
+    const std::optional<Json> actual = Json::parse(text, &parse_error);
+    if (!actual.has_value()) {
+        BOOST_TEST_MESSAGE("response did not parse: " + parse_error);
+        return false;
+    }
+
+    Json expected = Json::object();
+    expected.set("v", Json::integer(1));
+    expected.set("id", Json::string("<id>"));
+    expected.set("ok", Json::boolean(false));
+    Json error = Json::object();
+    error.set("code", Json::string(code));
+    expected.set("error", std::move(error));
+
+    std::vector<std::string> findings;
+    const Json normalized = Matcher::normalize_actual(
+        *actual, nullptr, /*carries_id=*/true, &findings);
+    const VariableMap vars;
+    const MatchResult result =
+        Matcher::match(expected, normalized, /*subset=*/false, vars);
+    for (const std::string& reason : findings) {
+        BOOST_TEST_MESSAGE("normalize finding: " + reason);
+    }
+    for (const std::string& reason : result.findings) {
+        BOOST_TEST_MESSAGE("match finding: " + reason);
+    }
+    return findings.empty() && result.ok;
 }
 
 }  // namespace
@@ -231,5 +297,94 @@ BOOST_AUTO_TEST_CASE(direct_paths_are_confined_to_case_tmp)
     BOOST_TEST(read_file(sentinel) == "SENTINEL");
 
     fs::remove(sentinel, ec);
+    fs::remove_all(tmp, ec);
+}
+
+// Type: integration conformance security/robustness (job queue-full -> busy).
+// Scenario: with one worker and a one-deep queue, a blocking job occupies the
+//   worker and one async link.import fills the queue; the next async
+//   link.import is rejected `busy` (threat model T-86). The rejection is held
+//   to the corpus standard via the shared Matcher and the catalog `busy` code.
+//   This covers the `busy` code that spec 13 requires but no corpus step can
+//   trigger deterministically (the default 16-deep queue cannot be overflowed
+//   by a fixed number of steps). The tui transport mirror is deferred to
+//   subtask 10, where the InProcessClient shim lands
+//   (02_tui_client_corpus.cpp).
+// Boundaries: occupation is synchronized with futures, never sleeps - `started`
+//   proves the worker is running the blocking body, `release` (always fired)
+//   frees it so the fixture's shutdown join cannot hang; wait_idle drains the
+//   queued import on a bounded budget.
+// On failure first check: did the queue bound stop mapping a full queue to
+//   `busy`, or did link.import stop submitting async work to the runner?
+BOOST_AUTO_TEST_CASE(direct_reports_busy_when_job_queue_is_full)
+{
+    namespace fs = std::filesystem;
+    const fs::path tmp = unique_tmp_dir();
+    std::error_code ec;
+    fs::create_directories(tmp, ec);
+
+    // One worker, a one-deep queue: a running job plus one queued job fill it.
+    JobRunnerKnob knob;
+    knob.worker_count = 1;
+    knob.queue_capacity = 1;
+
+    {
+        RegistryFixture fixture(tmp, "inmemory", knob);
+        const auto admin = fixture.caller("admin");
+
+        // Occupy the single worker with a body that blocks until released.
+        // `started` fires when the body begins (so the worker is provably
+        // busy); `release` lets it finish. No sleeps are used for
+        // synchronization.
+        auto started = std::make_shared<std::promise<void>>();
+        auto release = std::make_shared<std::promise<void>>();
+        std::future<void> started_future = started->get_future();
+        std::shared_future<void> release_future = release->get_future().share();
+
+        // Always release the blocking body - even on an assertion/early exit -
+        // so the fixture's shutdown join can never hang.
+        struct Releaser
+        {
+            std::shared_ptr<std::promise<void>> promise;
+            bool fired = false;
+            void fire()
+            {
+                if (!fired) {
+                    fired = true;
+                    promise->set_value();
+                }
+            }
+            ~Releaser() { fire(); }
+        } releaser {release};
+
+        JobBody block = [started, release_future](IJobContext&) -> JobOutcome
+        {
+            started->set_value();
+            release_future.wait();
+            JobOutcome outcome;
+            outcome.ok = true;
+            outcome.result_json = "{}";
+            return outcome;
+        };
+        const JobSubmitResult occupied = fixture.job_runner().submit(
+            "test.block", "0000000000000000", std::move(block));
+        BOOST_REQUIRE(occupied.job.has_value());
+        started_future.wait();  // the worker is now provably running the body
+
+        // Fill the one-deep queue with a queued async import (worker is busy).
+        const CommandResponse queued = fixture.registry().execute_json(
+            admin, import_envelope("http://a.com/,busyq"));
+        BOOST_REQUIRE(queued.ok);
+        BOOST_REQUIRE(queued.job.has_value());
+
+        // The next async import cannot be enqueued: the queue is full -> busy.
+        const CommandResponse rejected = fixture.registry().execute_json(
+            admin, import_envelope("http://b.com/,busyr"));
+        BOOST_TEST(expect_error_code(rejected, "busy"));
+
+        releaser.fire();  // let the blocking body finish, then drain (bounded).
+        fixture.job_runner().wait_idle(std::chrono::seconds(5));
+    }
+
     fs::remove_all(tmp, ec);
 }

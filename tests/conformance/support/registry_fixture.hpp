@@ -25,8 +25,10 @@
  * case runner does).
  */
 
+#include <cstddef>
 #include <filesystem>
 #include <memory>
+#include <optional>
 #include <string>
 #include <string_view>
 
@@ -37,6 +39,25 @@
 
 namespace conformance
 {
+
+/**
+ * @brief Test-support override for the process-wide job runner's bounds.
+ *
+ * Supplied to @ref RegistryFixture only by a C++ runner that must drive a
+ * job-queue edge the corpus cannot reach deterministically - notably the `busy`
+ * error (queue full). Omitting it (the default) keeps the production V1 bounds,
+ * so every corpus case behaves exactly as it does in `main`. The defaults here
+ * mirror `commands::JobRunnerOptions` (two workers, a sixteen-deep queue).
+ */
+struct JobRunnerKnob
+{
+    ///< Always-on worker threads draining the queue (`>= 1`).
+    std::size_t worker_count = 2;
+
+    ///< Maximum number of *queued* (not yet running) jobs before `submit`
+    ///< returns `busy` (`>= 1`).
+    std::size_t queue_capacity = 16;
+};
 
 /**
  * @brief Owns the per-case product command registry and its backing store.
@@ -77,11 +98,18 @@ public:
      * @param backend `"sqlite"` (fresh `${tmp}/links.db`) or `"inmemory"`
      * (fresh in-memory metadata repository). Any other value is treated as
      * `"sqlite"`.
+     * @param job_knob Optional, test-support only: the job runner's worker
+     * count and queue capacity. `std::nullopt` (the default) selects the
+     * production V1 bounds, so every corpus case behaves identically; a value
+     * is used only by a runner that must drive the `busy` (queue-full) edge
+     * deterministically.
      * @throws std::runtime_error on an unrecoverable wiring failure from
      * `InitLinkBackend`/`build_command_runtime` (a bad path, a failed probe);
      * expected conditions never throw.
      */
-    RegistryFixture(const std::filesystem::path& tmp, std::string_view backend);
+    RegistryFixture(const std::filesystem::path& tmp,
+                    std::string_view backend,
+                    std::optional<JobRunnerKnob> job_knob = std::nullopt);
 
     /**
      * @brief Tears the fixture down and restores the process-wide default
@@ -120,6 +148,17 @@ public:
      * @return A `CallerContext` carrying the resolved control set.
      */
     url_shortener::commands::CallerContext caller(std::string_view role) const;
+
+    /**
+     * @brief Returns the per-case process-wide job runner.
+     *
+     * Exposed for a runner that must occupy the queue directly (submit a
+     * blocking body, then @ref url_shortener::commands::JobRunner::wait_idle to
+     * drain on teardown) to reach a queue edge; corpus replay never needs it.
+     *
+     * @return A reference to the runner; valid for the fixture's lifetime.
+     */
+    url_shortener::commands::JobRunner& job_runner();
 
 private:
     ///< Server config the runtime's link service borrows by reference (base
