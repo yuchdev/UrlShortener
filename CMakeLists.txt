@@ -382,9 +382,12 @@ include(CTest)
   # still includes it. SIMPLE_HTTP_BIN mirrors the CLI integration tests.
   foreach(conformance_py_src IN LISTS CONFORMANCE_PY_SOURCES)
     get_filename_component(conformance_py_name ${conformance_py_src} NAME_WE)
+    # -I runs Python in isolated mode (ignores env vars and does not add the
+    # script's own directory to sys.path); 00_corpus_lint.py inserts the repo
+    # root onto sys.path explicitly from __file__, so imports still resolve.
     add_test(
       NAME conformance_${conformance_py_name}
-      COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/${conformance_py_src}
+      COMMAND ${Python3_EXECUTABLE} -I ${CMAKE_CURRENT_SOURCE_DIR}/${conformance_py_src}
     )
     set_tests_properties(conformance_${conformance_py_name} PROPERTIES
       ENVIRONMENT
