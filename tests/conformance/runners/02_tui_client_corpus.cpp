@@ -117,7 +117,8 @@ std::filesystem::path unique_tmp_dir()
 {
     static std::atomic<unsigned long long> counter {0};
     return std::filesystem::temp_directory_path()
-        / ("conformance_tui_seam_" + std::to_string(counter.fetch_add(1)));
+        / ("conformance_tui_seam_" + conformance::process_unique_token() + "_"
+           + std::to_string(counter.fetch_add(1)));
 }
 
 /// Serializes a one-command request envelope with an empty `args` object.

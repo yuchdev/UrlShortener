@@ -6,10 +6,12 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <cstdio>
 #include <cstdlib>
 #include <exception>
 #include <fstream>
 #include <functional>
+#include <random>
 #include <string>
 #include <system_error>
 #include <thread>
@@ -21,6 +23,22 @@
 
 namespace conformance
 {
+
+const std::string& process_unique_token()
+{
+    static const std::string token = []
+    {
+        std::random_device device;
+        const auto draw = (static_cast<unsigned long long>(device()) << 32U)
+            ^ static_cast<unsigned long long>(device());
+        const auto start = static_cast<unsigned long long>(
+            std::chrono::steady_clock::now().time_since_epoch().count());
+        char buffer[48];
+        std::snprintf(buffer, sizeof(buffer), "%llx_%llx", draw, start);
+        return std::string(buffer);
+    }();
+    return token;
+}
 
 namespace
 {
@@ -82,8 +100,8 @@ std::filesystem::path unique_tmp_dir(const std::string& case_name)
     static std::atomic<unsigned long long> counter {0};
     const unsigned long long n = counter.fetch_add(1);
     return std::filesystem::temp_directory_path()
-        / ("conformance_" + sanitize_token(case_name) + "_"
-           + std::to_string(n));
+        / ("conformance_" + process_unique_token() + "_"
+           + sanitize_token(case_name) + "_" + std::to_string(n));
 }
 
 /// `true` iff lexically normalizing `base / name` stays strictly under @p base.

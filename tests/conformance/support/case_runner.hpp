@@ -132,4 +132,21 @@ private:
     SleepFn m_sleep;  ///< Poll-sleep hook.
 };
 
+/**
+ * @brief Returns a token that is distinct for every process running the
+ * conformance suite, for use in temp-directory names.
+ *
+ * Per-case temp directories live under the shared
+ * `std::filesystem::temp_directory_path()`. The C++ runners walk the same
+ * corpus in the same order, so a per-process counter alone yields identical
+ * names in two runners started together (`ctest -j`). One runner's cleanup
+ * then deletes the other's fixture. Every temp-dir name built by the
+ * conformance support library and runners must include this token.
+ *
+ * @return A fixed string, computed once per process. It combines a random
+ * device draw with the steady-clock start time, and contains only `[0-9a-f_]`.
+ * Thread-safe: it is a function-local static.
+ */
+const std::string& process_unique_token();
+
 }  // namespace conformance
