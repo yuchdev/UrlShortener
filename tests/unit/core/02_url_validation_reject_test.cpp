@@ -203,3 +203,59 @@ BOOST_AUTO_TEST_CASE(url_validation_accepts_public_including_translated)
             "public (possibly translated) host should be accepted: " + url);
     }
 }
+
+/**
+ * [Unit][Core][Security] A malformed authority a browser would re-normalize to
+ * loopback is refused in BOTH modes; valid registered names stay accepted
+ * (07.0/20 review follow-up - strict host allowlist).
+ *
+ * Scenario:
+ *   Given a numeric host followed by a backslash (WHATWG ends the host at '\'
+ *   and maps it to '/'), a host with leading whitespace, and a host with a
+ *   double trailing dot - all of which a browser collapses to 127.0.0.1.
+ *   When normalizeTargetUrl() validates them with private targets either
+ *   denied or allowed.
+ *   Then each is refused as a malformed URL in BOTH modes (behaviour change:
+ *   malformed authorities are rejected even when allow_private_targets is on),
+ *   while valid hosts - a single FQDN trailing dot, a punycode host, a
+ *   host:port and path/query percent-encoding - stay accepted.
+ *
+ * If this breaks:
+ *   - A '\'/whitespace host could reach loopback after browser normalization.
+ *   - First check the authority backslash refusal and is_valid_url_host.
+ */
+BOOST_AUTO_TEST_CASE(url_validation_rejects_backslash_whitespace_double_dot)
+{
+    ServerConfig denied;
+    ServerConfig allowed;
+    allowed.shortener_allow_private_targets = true;
+
+    const std::vector<std::string> malformed = {
+        std::string("http://2130706433\\x"),  // backslash ends the host
+        std::string("http://0x7f000001\\x"),  // backslash after hex
+        std::string("http:// 2130706433/"),  // leading whitespace in host
+        std::string("http://2130706433../"),  // double trailing dot
+    };
+    for (const std::string& url : malformed) {
+        BOOST_TEST(!normalizeTargetUrl(url, denied).has_value(),
+                   "malformed authority must be refused (denied): " + url);
+        BOOST_TEST(!normalizeTargetUrl(url, allowed).has_value(),
+                   "malformed authority must be refused (allowed too): " + url);
+    }
+
+    // Valid registered names / numeric forms stay accepted in both modes.
+    ServerConfig cfg;  // denied is fine; these are public
+    for (const std::string& url :
+         {std::string("http://example.com/"),
+          std::string("http://example.com./"),  // single FQDN trailing dot
+          std::string("http://xn--bcher-kva.example/"),  // punycode IDN
+          std::string("http://8.8.8.8/"),
+          std::string("http://134744072/"),
+          std::string("http://[2001:4860:4860::8888]/"),
+          std::string("http://example.com:8080/path"),
+          std::string("http://example.com/a%20b?q=%2e")})  // path/query percent
+    {
+        BOOST_TEST(normalizeTargetUrl(url, cfg).has_value(),
+                   "valid host should be accepted: " + url);
+    }
+}
