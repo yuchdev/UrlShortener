@@ -713,6 +713,7 @@ set(URL_SHORTENER_SOURCES
   set(CONFORMANCE_PY_SOURCES
       tests/conformance/py/00_corpus_lint.py
       tests/conformance/py/01_matcher_vectors.py
+      tests/conformance/py/02_harness_selftest.py
   )
 
   # ---- Perf benchmarks (Task 07.0 subtask 30; label "perf") ----

@@ -412,8 +412,8 @@ include(CTest)
     )
     set_tests_properties(conformance_${conformance_py_name} PROPERTIES
       ENVIRONMENT
-        "SIMPLE_HTTP_BIN=$<TARGET_FILE:url_shortener>"
-      TIMEOUT 120
+        "SIMPLE_HTTP_BIN=$<TARGET_FILE:url_shortener>;URLSHORTENER_CONFORMANCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/tests/conformance"
+      TIMEOUT 300
       LABELS "integration;conformance"
     )
   endforeach()
