@@ -1,0 +1,23 @@
+{
+  "corpus_version": 1,
+  "suite": "neg",
+  "description": "RULE-12 negative: a user caller runs a mutating command but does not expect denial.",
+  "cases": [
+    {
+      "name": "neg_user_mutating_allowed",
+      "doc": "user is allowed to create a link instead of being denied",
+      "command": "link.create",
+      "caller": "user",
+      "steps": [
+        {
+          "request": {
+            "v": 1,
+            "command": "link.create",
+            "args": { "target_url": "https://example.com/x", "slug": "x" }
+          },
+          "expect": { "ok": true, "result": { "slug": "x" }, "match": "subset" }
+        }
+      ]
+    }
+  ]
+}

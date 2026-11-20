@@ -1,0 +1,20 @@
+{
+  "corpus_version": 1,
+  "suite": "neg",
+  "description": "RULE-10 negative: backend inmemory restricted to an out-of-process transport.",
+  "cases": [
+    {
+      "name": "neg_inmemory_out_of_process",
+      "doc": "inmemory cannot be shared with the cli_cmd runner",
+      "command": "link.get",
+      "backend": "inmemory",
+      "transports": { "only": ["cli_cmd"] },
+      "steps": [
+        {
+          "request": { "v": 1, "command": "link.get", "args": { "slug": "a" } },
+          "expect": { "ok": true, "result": { "slug": "a" }, "match": "subset" }
+        }
+      ]
+    }
+  ]
+}

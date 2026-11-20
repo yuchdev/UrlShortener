@@ -1,0 +1,19 @@
+{
+  "corpus_version": 1,
+  "suite": "neg",
+  "description": "RULE-11 negative: a files key contains a path separator.",
+  "cases": [
+    {
+      "name": "neg_files_path_separator",
+      "doc": "file name is a relative path, not a bare name",
+      "command": "link.get",
+      "files": { "sub/data.csv": "full_url,short_url\n" },
+      "steps": [
+        {
+          "request": { "v": 1, "command": "link.get", "args": { "slug": "a" } },
+          "expect": { "ok": true, "result": { "slug": "a" }, "match": "subset" }
+        }
+      ]
+    }
+  ]
+}

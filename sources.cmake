@@ -701,6 +701,15 @@ set(URL_SHORTENER_SOURCES
       tests/integration/cli/41_serve_stdio_jobs_and_eof.py
   )
 
+  # ---- Conformance Python harness (Task 07.0; label "integration;conformance")
+  # Out-of-process Python runners and tools for the command conformance corpus
+  # (tests/conformance/commands/*.json). Owned by Task 07.0 subtask 05; subtask
+  # 01 seeds the corpus linter wrapper. Later subtasks append their NN_*.py
+  # runners here. Registered like CLI_INTEGRATION_SOURCES (Python3 + binary).
+  set(CONFORMANCE_PY_SOURCES
+      tests/conformance/py/00_corpus_lint.py
+  )
+
   set(ALL_INTEGRATION_SOURCES
       ${LEGACY_CORE_INTEGRATION_SOURCES}
       ${LINK_MANAGEMENT_INTEGRATION_SOURCES}

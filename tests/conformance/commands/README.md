@@ -1,0 +1,232 @@
+# Command conformance corpus - schema (v1) and authoring guide
+
+This directory holds the **command conformance corpus**: a set of UTF-8 JSON
+files, one *suite* per file, each a list of *cases* replayed verbatim through
+every transport (direct registry, REST generic, REST resource routes, `cmd`
+CLI, `serve-stdio`, TUI `InProcessClient`). The corpus is **data, not code** -
+adding a transport adds one shim and reuses every case here unchanged.
+
+This file is the authoritative schema. Its executable mirror is
+[`tools/conformance_lint.py`](/tools/conformance_lint.py), run in CI by
+`conformance_00_corpus_lint`. Every key documented here is enforced by the
+linter and every key the linter knows is documented here; the two must not
+drift. Schema changes after merge are **additive only** - otherwise bump
+`corpus_version`.
+
+Error codes and the mutating-command set are **not** copied into the linter;
+they are parsed live from the command catalog
+([`docs/commands/README.md`](/docs/commands/README.md) section 1 error table
+and section 3.7 generated table), so a code added by Task 01.0 is picked up
+automatically.
+
+## Corpus file
+
+A corpus file is a UTF-8 JSON object:
+
+```json
+{
+  "corpus_version": 1,
+  "suite": "link_lifecycle",
+  "description": "create/get/update/delete round trips",
+  "allow_unknown_codes": false,
+  "cases": [ { "...": "Case" } ]
+}
+```
+
+| Key | Type | Req | Meaning |
+|---|---|---|---|
+| `corpus_version` | integer | yes | Schema version. Only `1` is defined. |
+| `suite` | string | yes | Short suite id (also the logical grouping in reports). |
+| `description` | string | no | One-line human description of the suite. |
+| `allow_unknown_codes` | bool | no, default `false` | Relax rule 4's "code in catalog" check. **Only** the self-test corpus sets it to `true`. |
+| `cases` | array of Case | yes | The cases of this suite. |
+
+## Case
+
+All keys are lower_snake_case; unknown keys are lint errors.
+
+| Key | Type | Req | Meaning |
+|---|---|---|---|
+| `name` | string `^[a-z][a-z0-9_]*$`, globally unique | yes | Prefix by group, e.g. `link_create_conflict`. |
+| `doc` | string | yes | One-line scenario description. |
+| `command` | string | yes | Primary command under test (feeds the coverage matrix). |
+| `caller` | `"admin"` \| `"user"` | no, default `admin` | Default role for all steps (`user` = `ControlSet::User`). |
+| `backend` | `"sqlite"` \| `"inmemory"` | no, default `sqlite` | `inmemory` is legal only if `transports.only` is present and excludes every out-of-process runner (see rule 10). |
+| `files` | object name -> text | no | Materialized in the per-case temp dir; referenced as `${tmp}/<name>`. Keys must be bare names (no path separator). |
+| `transports` | `{ "only": [ids] }` or `{ "skip": { id: "reason" } }` | no | ids: `direct`, `rest_generic`, `rest_resource`, `cli_cmd`, `stdio`, `tui`; every skip needs a non-empty reason; `only` and `skip` are mutually exclusive. |
+| `steps` | array of Step, length >= 1 | yes | Executed in order on one fresh store; **all** steps are asserted. |
+
+## Step
+
+| Key | Type | Req | Meaning |
+|---|---|---|---|
+| `label` | string | no | Shown in failure output. |
+| `caller` | role | no | Overrides the case role for this step. |
+| `request` | Request envelope object | one of | Exactly the catalog section 1 request (`v`, optional `id`, `command`, `args`, `options`). |
+| `raw_request` | string | one of | Verbatim text sent instead of an envelope (invalid JSON, missing `command`, bad `v`). Carried only by transports with capability `carries_raw`. |
+| `expect` | Expect | yes | See below. |
+| `save` | object var -> JSON path | no | Captures from the actual response, e.g. `{"slug": "$.result.slug"}`; usable as `${slug}` in later steps. |
+| `await_job` | `{ "var": "job_id", "timeout_ms": 5000 }` | no | After this step, poll `job.get {id: ${job_id}}` until `state` is terminal; the **final** `job.get` response is what `expect` checks. `var` names a variable saved by this or an earlier step. |
+| `expect_accept` | Expect | only with `await_job` | Checks the immediate `job` envelope (`{"ok":true,"job":{"id":"<id>","state":"queued"}}`). |
+| `rest_resource` | `{ "method", "path", "query"?, "body"?, "status" }` | no | Equivalent resource-route call for adapter `rest_resource`; absent = step runs through `rest_generic` on that adapter. |
+| `http_status` | int | no | Override the status derived from the catalog error table for `rest_generic`. |
+| `cli_exit` | int | no | Override exit code derived from the catalog table for `cli_cmd`. |
+
+Exactly one of `request` / `raw_request` is required per step.
+
+## Expect
+
+```json
+{ "ok": true,  "result": { "slug": "docs", "created_at": "<ts>", "id": "<id>" }, "match": "exact" }
+{ "ok": false, "error":  { "code": "slug_conflict" } }
+{ "ok": true,  "job":    { "id": "<id>", "state": "queued" } }
+```
+
+| Key | Type | Req | Meaning |
+|---|---|---|---|
+| `ok` | bool | yes | Whether the envelope is a success. |
+| `result` | object | one of | Expected `result` match object (success). |
+| `job` | object | one of | Expected `job` match object (accepted). |
+| `error` | `{ "code": string }` | one of | Expected error; **only** `code` is allowed. |
+| `match` | `"exact"` \| `"subset"` | no, default `exact` | `exact`: extra keys in actual fail. `subset`: extra object keys in actual allowed; arrays still exact. |
+
+- Exactly one of `result` / `job` / `error`, matching `ok` (`error` iff
+  `ok: false`).
+- `error.message` is **never** specified or compared (catalog: the message is
+  for humans).
+- Envelope `v` is always compared (`1`); envelope `id` is compared only against
+  the request `id` on transports with capability `carries_id`; when the request
+  has no `id` the response `id` must match `^srv-[0-9]+$`.
+- Literal timestamps are forbidden under `created_at` / `updated_at` /
+  `deleted_at` / `started_at` / `finished_at`: use the `<ts>` matcher. Any value
+  under a key named `id` must be a matcher token (`<id>`) or a `${var}`.
+- Matcher tokens and `${var}` substitution are defined fully in Task 07.0
+  subtask 02.
+
+## Lint rules
+
+Each rule has a negative fixture under
+[`../py/lint_negative/`](/tests/conformance/py/lint_negative) named
+`rule_NN_<desc>.json`, verified by `conformance_00_corpus_lint`.
+
+1. **Structure.** Valid JSON; `corpus_version == 1`; required keys present; no
+   unknown keys at any structured level (corpus, case, step, request envelope,
+   expect, transports, await_job, rest_resource); `caller` (where present) is
+   `admin` or `user`.
+2. **Case name.** Matches `^[a-z][a-z0-9_]*$` and is unique across **all**
+   corpus files.
+3. **Request shape.** Exactly one of `request` / `raw_request` per step.
+4. **Expect shape.** `ok` is boolean; exactly one of `result` / `job` / `error`
+   consistent with `ok`; `match` (if present) is `exact` or `subset`; `error`
+   carries only `code`; `code` is in the catalog error table, unless the file
+   is marked `allow_unknown_codes: true` (self-test only). Applies to both
+   `expect` and `expect_accept`.
+5. **Command name.** `request.command` is a dotted `<group>.<verb>`, unless the
+   step uses `raw_request` or the case name starts with `unknown_command_`.
+6. **No literals for volatile fields.** In `expect` / `expect_accept`, timestamp
+   keys must be the `<ts>` matcher; values under a key named `id` must be a
+   matcher token or `${var}`.
+7. **Variable order.** A `${var}` must be saved by this or an earlier step;
+   `${tmp}` is always allowed.
+8. **Job coupling.** `await_job` requires `expect_accept`; `expect_accept` is
+   forbidden without `await_job`.
+9. **Transports.** `skip` reasons are non-empty; ids are known; `only` and
+   `skip` are mutually exclusive.
+10. **Backend.** `backend` is `sqlite` or `inmemory`; `inmemory` requires a
+    `transports.only` list that excludes every out-of-process runner
+    (`cli_cmd`, `stdio`, `rest_generic`, `rest_resource`) - only the in-process
+    `direct` and `tui` transports can share an in-memory store.
+11. **File names.** `files` keys contain no path separator (`/` or `\`).
+12. **Role sanity.** A step whose `command` is mutating (per the catalog) and
+    whose effective caller is `user` must expect `error.code ==
+    "not_authorized"`.
+
+## Running the linter
+
+```bash
+python tools/conformance_lint.py tests/conformance/commands/*.json
+ctest --test-dir cmake-build -R "^conformance_00_corpus_lint$" --output-on-failure
+```
+
+On Windows / PowerShell the shell glob does not expand; pass the directory and
+the tool globs it:
+
+```powershell
+python tools/conformance_lint.py tests/conformance/commands
+```
+
+## Annotated examples
+
+### Success - create a link
+
+```json
+{
+  "name": "link_create_ok",
+  "doc": "admin creates a link and gets a result envelope",
+  "command": "link.create",
+  "steps": [
+    {
+      "label": "create",
+      "request": {
+        "v": 1,
+        "command": "link.create",
+        "args": { "target_url": "https://example.com/docs", "slug": "docs" }
+      },
+      "expect": {
+        "ok": true,
+        "result": { "slug": "docs", "created_at": "<ts>", "id": "<id>" },
+        "match": "subset"
+      },
+      "save": { "slug": "$.result.slug" }
+    }
+  ]
+}
+```
+
+### Error - duplicate slug
+
+```json
+{
+  "name": "link_create_conflict",
+  "doc": "creating a duplicate slug returns slug_conflict",
+  "command": "link.create",
+  "steps": [
+    {
+      "request": { "v": 1, "command": "link.create",
+                   "args": { "target_url": "https://example.com/a", "slug": "dup" } },
+      "expect": { "ok": true, "result": { "slug": "dup" }, "match": "subset" }
+    },
+    {
+      "request": { "v": 1, "command": "link.create",
+                   "args": { "target_url": "https://example.com/b", "slug": "dup" } },
+      "expect": { "ok": false, "error": { "code": "slug_conflict" } }
+    }
+  ]
+}
+```
+
+### Job - async import with await
+
+```json
+{
+  "name": "link_import_job",
+  "doc": "import runs as a job; await the terminal job.get",
+  "command": "link.import",
+  "files": { "pairs.csv": "full_url,short_url\nhttps://example.com/a,a\n" },
+  "steps": [
+    {
+      "label": "import",
+      "request": {
+        "v": 1,
+        "command": "link.import",
+        "args": { "format": "csv", "path": "${tmp}/pairs.csv" },
+        "options": { "async": true }
+      },
+      "save": { "job_id": "$.job.id" },
+      "expect_accept": { "ok": true, "job": { "id": "<id>", "state": "queued" } },
+      "await_job": { "var": "job_id", "timeout_ms": 5000 },
+      "expect": { "ok": true, "result": { "imported": 1 }, "match": "subset" }
+    }
+  ]
+}
+```

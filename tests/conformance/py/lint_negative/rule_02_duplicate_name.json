@@ -1,0 +1,29 @@
+{
+  "corpus_version": 1,
+  "suite": "neg",
+  "description": "RULE-2 negative: two cases share a name.",
+  "cases": [
+    {
+      "name": "neg_dup_name",
+      "doc": "first case",
+      "command": "link.get",
+      "steps": [
+        {
+          "request": { "v": 1, "command": "link.get", "args": { "slug": "a" } },
+          "expect": { "ok": true, "result": { "slug": "a" }, "match": "subset" }
+        }
+      ]
+    },
+    {
+      "name": "neg_dup_name",
+      "doc": "second case with the same name",
+      "command": "link.get",
+      "steps": [
+        {
+          "request": { "v": 1, "command": "link.get", "args": { "slug": "b" } },
+          "expect": { "ok": true, "result": { "slug": "b" }, "match": "subset" }
+        }
+      ]
+    }
+  ]
+}

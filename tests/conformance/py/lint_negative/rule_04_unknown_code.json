@@ -1,0 +1,18 @@
+{
+  "corpus_version": 1,
+  "suite": "neg",
+  "description": "RULE-4 negative: error.code is not in the catalog error table.",
+  "cases": [
+    {
+      "name": "neg_unknown_code",
+      "doc": "expect an error code that does not exist",
+      "command": "link.get",
+      "steps": [
+        {
+          "request": { "v": 1, "command": "link.get", "args": { "slug": "a" } },
+          "expect": { "ok": false, "error": { "code": "totally_made_up_code" } }
+        }
+      ]
+    }
+  ]
+}

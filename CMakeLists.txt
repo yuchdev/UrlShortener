@@ -375,6 +375,25 @@ include(CTest)
     )
   endforeach()
 
+  # ---- Conformance Python harness (Task 07.0; label "integration;conformance")
+  # Out-of-process Python runners for the command conformance corpus. Target
+  # name is conformance_<stem>; the second label lets `ctest -L conformance`
+  # select the suite while the documented union -L "unit|contract|integration"
+  # still includes it. SIMPLE_HTTP_BIN mirrors the CLI integration tests.
+  foreach(conformance_py_src IN LISTS CONFORMANCE_PY_SOURCES)
+    get_filename_component(conformance_py_name ${conformance_py_src} NAME_WE)
+    add_test(
+      NAME conformance_${conformance_py_name}
+      COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/${conformance_py_src}
+    )
+    set_tests_properties(conformance_${conformance_py_name} PROPERTIES
+      ENVIRONMENT
+        "SIMPLE_HTTP_BIN=$<TARGET_FILE:url_shortener>"
+      TIMEOUT 120
+      LABELS "integration;conformance"
+    )
+  endforeach()
+
   # The shared-SQLite scenario (subtask 02.0/14) spawns a long-lived server
   # process and polls its redirect path; run it serially so parallel ctest load
   # cannot starve its readiness/convergence deadlines. It already uses a dynamic
