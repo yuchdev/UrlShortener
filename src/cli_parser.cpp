@@ -925,6 +925,19 @@ std::string buildTuiHelpText()
            "  --read-only          Run the session as a read-only user; write\n"
            "                       controls render disabled, not hidden.\n"
            "  --yes                Skip mutation confirmation dialogs.\n"
+           "  --no-file-paths      Refuse import/export `path` arguments; a "
+           "path\n"
+           "                       returns `unsupported`. Mutually exclusive "
+           "with\n"
+           "                       --path-root.\n"
+           "  --path-root <DIR>    Confine import/export `path` to this "
+           "absolute\n"
+           "                       directory (a path outside it is refused). "
+           "Both\n"
+           "                       path forms require write, so a --read-only\n"
+           "                       session cannot use `path`. Mutually "
+           "exclusive\n"
+           "                       with --no-file-paths.\n"
            "  --log-file <PATH>    Write logs and audit lines to this file "
            "(created\n"
            "                       0600). Default: ./url_shortener-tui.log.\n"
@@ -945,13 +958,21 @@ std::string buildTuiHelpText()
  * only a flag's stem before any `'='`, never an operand value (threat model
  * T-77).
  *
+ * The `--path-root`/`--no-file-paths` pair mirrors `parse_serve_stdio`
+ * exactly: `--path-root` is routed through the **shared** @ref
+ * normalize_path_root (never a second copy) so `/foo/` normalizes to `/foo`
+ * and `.`/`..`/`~`/non-absolute values are rejected, and the two flags are
+ * mutually exclusive (07.0/20 ruling (a), threat model T-96/T-118).
+ *
  * @param tokens The tokens after the leading `tui` positional (argv[2..]);
  *        consumed in place by `--storage-config` stripping.
  * @param config ServerConfig receiving `--storage-config`.
  * @return TuiCliOptions The parsed launch options.
  * @throws std::invalid_argument If an option is unknown or missing its value,
- *         `--theme` is not one of `dark|light|mono`, `--log-file` is empty, or
- *         a non-flag positional appears.
+ *         `--theme` is not one of `dark|light|mono`, `--log-file` or
+ *         `--path-root` is empty, `--path-root` is not an absolute path or
+ *         contains a `.`/`..`/`~` component, `--no-file-paths` and
+ *         `--path-root` are combined, or a non-flag positional appears.
  */
 TuiCliOptions parseTuiCommand(std::vector<std::string>& tokens,
                               ServerConfig& config)
@@ -970,6 +991,19 @@ TuiCliOptions parseTuiCommand(std::vector<std::string>& tokens,
         }
         else if (token == "--yes") {
             options.assume_yes = true;
+        }
+        else if (token == "--no-file-paths") {
+            options.no_file_paths = true;
+        }
+        else if (token == "--path-root") {
+            const std::string& value = cmdFlagValue(tokens, i, "--path-root");
+            if (value.empty()) {
+                throw std::invalid_argument(
+                    "Empty value for --path-root flag.");
+            }
+            // Reuse the serve-stdio normalizer so trailing-slash / prefix-trap
+            // normalization is byte-identical across both local-operator modes.
+            options.path_root = normalize_path_root(value);
         }
         else if (token == "--theme") {
             const std::string& value = cmdFlagValue(tokens, i, "--theme");
@@ -996,6 +1030,13 @@ TuiCliOptions parseTuiCommand(std::vector<std::string>& tokens,
             throw std::invalid_argument(
                 "Unexpected positional argument for tui.");
         }
+    }
+
+    // Cross-flag rule (parity with parse_serve_stdio): confining and disabling
+    // `path` at once is contradictory.
+    if (options.no_file_paths && options.path_root.has_value()) {
+        throw std::invalid_argument(
+            "--no-file-paths and --path-root are mutually exclusive.");
     }
 
     return options;

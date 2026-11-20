@@ -122,6 +122,25 @@ std::optional<TuiOptions> to_tui_options(const TuiCliOptions& cli,
     return options;
 }
 
+composition::PairFileOptions tui_file_path_policy(const TuiCliOptions& cli)
+{
+    composition::PairFileOptions policy;
+    if (cli.no_file_paths) {
+        // --no-file-paths: `path` returns `unsupported` even for a write-
+        // capable operator; no root (mutually exclusive with --path-root).
+        policy.allow_paths = false;
+    }
+    else {
+        // Neither flag -> today's local-operator default (full filesystem);
+        // --path-root confines it to the normalized absolute root. The parser
+        // guarantees at most one of the two flags is set, so this branch sets
+        // the root only when --path-root was given (nullopt otherwise).
+        policy.allow_paths = true;
+        policy.root = cli.path_root;
+    }
+    return policy;
+}
+
 int run_tui(const TuiCliOptions& cli,
             const ServerConfig& config,
             const app::LinkBackendHandle& backend)
@@ -165,20 +184,19 @@ int run_tui(const TuiCliOptions& cli,
     // @p backend - the same ACTIVE handle `main` installed - so the browse
     // lister reads the configured repository that link CRUD writes through; a
     // stale/empty store under --storage-config (threat model T-114, the
-    // serve-stdio split-store bug) is thereby avoided. As a local-operator mode
-    // the TUI opts explicitly into file paths (T-95 default-deny is lifted
-    // here) so link.import/link.export `path` works. No designated initializers
-    // (C++17): assign the members.
+    // serve-stdio split-store bug) is thereby avoided. No designated
+    // initializers (C++17): assign the members.
     //
-    // Known limitation (06.0/19 security follow-up, T-118): unlike serve-stdio,
-    // the TUI exposes no `--no-file-paths`/`--path-root` flag and sets no
-    // confinement root here, so the capability is the operator's full
-    // filesystem. --read-only still blocks link.import writes server-side (the
-    // registry denies the write permission), but link.export can read any file
-    // the operator can read. Acceptable for a local-operator tool; a
-    // confinement flag is a documented follow-up, not added here.
+    // File-path capability (T-95/T-96/T-118, 07.0/20 ruling (a)): derived from
+    // `--no-file-paths`/`--path-root` by @ref tui_file_path_policy, now at
+    // parity with serve-stdio. With neither flag the local operator keeps full-
+    // filesystem access (allow_paths = true); `--no-file-paths` makes every
+    // `path` return `unsupported`, and `--path-root <DIR>` confines `path` to
+    // the canonical root (escape -> `invalid_field`). Both path forms require
+    // `write`, so a `--read-only` session cannot use `path` regardless (the
+    // registry denies it).
     composition::CommandRuntimeOptions runtime_options;
-    runtime_options.file_paths.allow_paths = true;
+    runtime_options.file_paths = tui_file_path_policy(cli);
 
     composition::CommandRuntime runtime;
     try {

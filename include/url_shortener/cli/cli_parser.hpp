@@ -226,6 +226,26 @@ struct TuiCliOptions
     ///< (decision log D14, threat model T-119). `std::nullopt` means the flag
     ///< was not given; when set, the path is non-empty (empty is rejected).
     std::optional<std::string> log_file;
+
+    ///< `--no-file-paths`: reject `link.import`/`link.export` `path` arguments
+    ///< as `unsupported`, so a `tui` session can never open an operator file
+    ///< (parity with `serve-stdio`, 07.0/20 ruling (a), threat model T-118).
+    ///< Mutually exclusive with @ref path_root (rejected at parse time).
+    ///< `false` when the flag was not given (today's local-operator default:
+    ///< full filesystem access).
+    bool no_file_paths = false;
+
+    ///< `--path-root <dir>`: confine `link.import`/`link.export` `path` to this
+    ///< directory (05.0/07 rule 6, threat model T-96). Routed through the same
+    ///< `normalize_path_root` as `serve-stdio`, so `/foo/` normalizes to `/foo`
+    ///< (trailing separator stripped, separator runs collapsed) and the value
+    ///< is never empty and never ends in a separator; a trailing separator or a
+    ///< string-prefix trap (`/foo` vs `/foobar`) would otherwise defeat the
+    ///< component-wise root check in `pair_file_access`. `.`/`..`/`~`/non-
+    ///< absolute values are rejected. Mutually exclusive with @ref
+    ///< no_file_paths. `std::nullopt` when the flag was not given (full
+    ///< filesystem access, local-operator default).
+    std::optional<std::string> path_root;
 };
 
 /// Result returned by CliParser::parse().

@@ -36,6 +36,17 @@ namespace url_shortener::app
 class LinkBackendHandle;
 }  // namespace url_shortener::app
 
+namespace url_shortener::composition
+{
+/// The local-filesystem capability a command runtime grants its pair commands;
+/// defined in url_shortener/composition/command_runtime.hpp. Forward-declared
+/// (returned by value from @ref url_shortener::tui::tui_file_path_policy) so
+/// this seam header pulls in no composition definitions and the TUI include
+/// boundary (contract C8, `tests/unit/tui/02_include_boundary_test.cpp`) stays
+/// intact.
+struct PairFileOptions;
+}  // namespace url_shortener::composition
+
 namespace url_shortener::tui
 {
 
@@ -57,10 +68,14 @@ namespace url_shortener::tui
  *    `LinkBackendHandle` `main` installed - via
  *    `composition::build_command_runtime`, so the TUI reads and writes the one
  *    installed store, never a second one (contracts C8/C11, threat model T-114,
- *    the serve-stdio split-store bug fixed in ba2d150). The local operator opts
- *    explicitly into file paths (`allow_paths = true`, T-95 default-deny
- * lifted) so `link.import`/`link.export` `path` works. Constructs no registry,
- * job runner or service bundle of its own. A wiring failure exits 4.
+ *    the serve-stdio split-store bug fixed in ba2d150). The file-path
+ *    capability comes from @ref tui_file_path_policy (07.0/20 ruling (a)): with
+ *    neither flag the local operator keeps full-filesystem access
+ *    (`allow_paths = true`, T-95 default-deny lifted) so `link.import`/
+ *    `link.export` `path` works; `--no-file-paths` makes `path` return
+ *    `unsupported`, and `--path-root <DIR>` confines it to the normalized root
+ *    (T-96/T-118). Constructs no registry, job runner or service bundle of its
+ *    own. A wiring failure exits 4.
  * 5. Wrap the runtime's registry in an @ref InProcessClient as the
  *    `"local-operator"` principal - `ControlSet::Admin`, or `User` under
  *    `--read-only` - and run @ref App, which restores the terminal on every
@@ -103,6 +118,33 @@ int run_tui(const TuiCliOptions& cli,
 std::optional<TuiOptions> to_tui_options(const TuiCliOptions& cli,
                                          const ServerConfig& config,
                                          std::string* error);
+
+/**
+ * @brief Maps the parsed `tui` path flags to the command runtime's file-path
+ * capability (07.0/20 ruling (a), threat model T-95/T-96/T-118).
+ *
+ * The single place `run_tui` derives `runtime_options.file_paths` from the two
+ * flags, so the wiring is testable without an interactive terminal. The
+ * local-operator default is preserved: with **neither** flag the TUI opts into
+ * full-filesystem paths (`allow_paths == true`, no root), exactly as before the
+ * flags existed.
+ *
+ * - `--no-file-paths` -> `allow_paths == false` (every `path` returns
+ *   `unsupported`), with no root.
+ * - `--path-root <DIR>` -> `allow_paths == true` and `root == <DIR>`, the
+ *   already-normalized absolute root from @ref TuiCliOptions::path_root (a
+ *   target outside it is refused `invalid_field`).
+ * - neither flag -> `allow_paths == true` with `root` unset.
+ *
+ * The parser enforces mutual exclusion, so at most one branch is engaged here;
+ * both forms still require `write`, so a `--read-only` session cannot use
+ * `path` regardless of these options (the registry denies it).
+ *
+ * @param cli The parsed launch options (only `no_file_paths` / `path_root` are
+ *        read).
+ * @return The file-path capability to install on the runtime.
+ */
+composition::PairFileOptions tui_file_path_policy(const TuiCliOptions& cli);
 
 /**
  * @brief Derives the logging configuration for `tui` mode (decision log D14).
