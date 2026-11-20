@@ -263,8 +263,11 @@ def parse_error_codes(catalog_path: Path) -> Set[str]:
     silently accepting any code.
 
     :param catalog_path: Path to the command catalog Markdown file.
-    :return: The set of valid ``error.code`` values.
+    :return: The non-empty set of valid ``error.code`` values.
     :raises FileNotFoundError: If ``catalog_path`` does not exist.
+    :raises RuntimeError: If no codes were parsed (the ``### Error codes`` table
+        moved or changed format); failing loudly keeps rule 4 from silently
+        accepting every code.
     """
     lines = catalog_path.read_text(encoding="utf-8").splitlines()
     codes: Set[str] = set()
@@ -291,6 +294,11 @@ def parse_error_codes(catalog_path: Path) -> Set[str]:
             continue
         if cells:
             codes.update(_backticked(cells[0]))
+    if not codes:
+        raise RuntimeError(
+            f"no error codes parsed from {catalog_path}; the '### Error codes' "
+            "table is missing or its format changed (rule 4 would fail open)"
+        )
     return codes
 
 
@@ -303,7 +311,10 @@ def parse_mutating_commands(catalog_path: Path) -> Set[str]:
     12 (a mutating command run by a ``user`` caller must be denied).
 
     :param catalog_path: Path to the command catalog Markdown file.
-    :return: The set of command names whose ``Mut`` column is ``yes``.
+    :return: The non-empty set of command names whose ``Mut`` column is ``yes``.
+    :raises RuntimeError: If no mutating command was found (the generated
+        summary table moved or changed format); failing loudly keeps rule 12
+        from silently passing every ``user`` mutation.
     """
     lines = catalog_path.read_text(encoding="utf-8").splitlines()
     mutating: Set[str] = set()
@@ -333,6 +344,12 @@ def parse_mutating_commands(catalog_path: Path) -> Set[str]:
             continue
         if cells[mut_idx].strip().lower() == "yes":
             mutating.update(names)
+    if not mutating:
+        raise RuntimeError(
+            f"no mutating commands parsed from {catalog_path}; the generated "
+            "'| Command | Perm | Kind | Mut | ... |' table is missing or its "
+            "format changed (rule 12 would fail open)"
+        )
     return mutating
 
 
@@ -354,11 +371,47 @@ def _is_var(value: str) -> bool:
 def _collect_var_refs(node: Any) -> Set[str]:
     """Return every ``${var}`` name referenced anywhere inside *node*.
 
+    The walk is iterative (explicit stack) so arbitrarily deep input cannot
+    overflow the Python call stack.
+
     :param node: Any JSON value (dict/list/str/scalar).
     :return: The set of referenced variable names (without ``${}``).
     """
-    text = json.dumps(node)
-    return set(VAR_REF_RE.findall(text))
+    refs: Set[str] = set()
+    stack: List[Any] = [node]
+    while stack:
+        current = stack.pop()
+        if isinstance(current, str):
+            refs.update(VAR_REF_RE.findall(current))
+        elif isinstance(current, dict):
+            for key, value in current.items():
+                # ``${var}`` never appears in a key, but scan them defensively.
+                refs.update(VAR_REF_RE.findall(key))
+                stack.append(value)
+        elif isinstance(current, list):
+            stack.extend(current)
+    return refs
+
+
+def _bad_file_name_reason(key: str) -> Optional[str]:
+    """Return why *key* is an unsafe ``files`` name, or ``None`` if it is safe.
+
+    A ``files`` key is materialized as a bare file name inside the per-case temp
+    dir, so it must not be empty, contain a path separator, be a directory alias
+    (``.`` / ``..``), or start with ``~`` (home-dir expansion / tilde trap).
+
+    :param key: The ``files`` map key to validate.
+    :return: A short human reason string, or ``None`` when the key is safe.
+    """
+    if key == "":
+        return "empty name"
+    if "/" in key or "\\" in key:
+        return "contains a path separator"
+    if key in (".", ".."):
+        return "is a directory alias"
+    if key.startswith("~"):
+        return "starts with '~'"
+    return None
 
 
 def _step_id(index: int, step: Any) -> str:
@@ -419,6 +472,16 @@ class _Linter:
         try:
             doc = json.loads(raw)
         except json.JSONDecodeError as exc:
+            self._emit(1, file, None, None, f"invalid JSON: {exc}")
+            return
+        except RecursionError:
+            # Pathologically nested JSON overflows the decoder; treat as a
+            # structural (rule 1) failure rather than letting it crash the run.
+            self._emit(1, file, None, None, "JSON nesting too deep to parse")
+            return
+        except ValueError as exc:  # pragma: no cover - defensive
+            # Any other json value error (e.g. a surrogate decode issue) is a
+            # structural problem, not a linter crash.
             self._emit(1, file, None, None, f"invalid JSON: {exc}")
             return
 
@@ -508,17 +571,18 @@ class _Linter:
         # Rule 9: transports.
         self._lint_transports(file, name_str, case)
 
-        # Rule 11: files key separators.
+        # Rule 11: files keys must be safe bare file names.
         files = case.get("files")
         if isinstance(files, dict):
             for key in files:
-                if "/" in key or "\\" in key:
+                reason = _bad_file_name_reason(key)
+                if reason is not None:
                     self._emit(
                         11,
                         file,
                         name_str,
                         None,
-                        f"files key '{key}' must not contain a path separator",
+                        f"files key '{key}' is not a safe bare file name: {reason}",
                     )
 
         steps = case.get("steps")
@@ -802,25 +866,31 @@ class _Linter:
     def _lint_literals(
         self, file: str, name: Optional[str], sid: str, node: Any, where: str
     ) -> None:
-        if isinstance(node, dict):
-            for key, value in node.items():
-                if key in TIMESTAMP_KEYS and not (isinstance(value, str) and value == "<ts>"):
-                    self._emit(
-                        6, file, name, sid, f"{where}.{key} must be the <ts> matcher, not a literal"
-                    )
-                if key == "id" and isinstance(value, str):
-                    if not (_is_matcher(value) or _is_var(value)):
+        # Iterative walk (explicit stack) so deep input cannot overflow the
+        # Python call stack and crash the linter.
+        stack: List[Any] = [node]
+        while stack:
+            current = stack.pop()
+            if isinstance(current, dict):
+                for key, value in current.items():
+                    if key in TIMESTAMP_KEYS and not (
+                        isinstance(value, str) and value == "<ts>"
+                    ):
                         self._emit(
-                            6,
-                            file,
-                            name,
-                            sid,
-                            f"{where} 'id' value '{value}' must be a matcher token or ${{var}}",
+                            6, file, name, sid, f"{where}.{key} must be the <ts> matcher, not a literal"
                         )
-                self._lint_literals(file, name, sid, value, where)
-        elif isinstance(node, list):
-            for item in node:
-                self._lint_literals(file, name, sid, item, where)
+                    if key == "id" and isinstance(value, str):
+                        if not (_is_matcher(value) or _is_var(value)):
+                            self._emit(
+                                6,
+                                file,
+                                name,
+                                sid,
+                                f"{where} 'id' value '{value}' must be a matcher token or ${{var}}",
+                            )
+                    stack.append(value)
+            elif isinstance(current, list):
+                stack.extend(current)
 
 
 # ---------------------------------------------------------------------------

@@ -52,7 +52,7 @@ All keys are lower_snake_case; unknown keys are lint errors.
 | `command` | string | yes | Primary command under test (feeds the coverage matrix). |
 | `caller` | `"admin"` \| `"user"` | no, default `admin` | Default role for all steps (`user` = `ControlSet::User`). |
 | `backend` | `"sqlite"` \| `"inmemory"` | no, default `sqlite` | `inmemory` is legal only if `transports.only` is present and excludes every out-of-process runner (see rule 10). |
-| `files` | object name -> text | no | Materialized in the per-case temp dir; referenced as `${tmp}/<name>`. Keys must be bare names (no path separator). |
+| `files` | object name -> text | no | Materialized in the per-case temp dir; referenced as `${tmp}/<name>`. Keys must be safe bare names (non-empty, no path separator, not `.`/`..`, not starting with `~`). |
 | `transports` | `{ "only": [ids] }` or `{ "skip": { id: "reason" } }` | no | ids: `direct`, `rest_generic`, `rest_resource`, `cli_cmd`, `stdio`, `tui`; every skip needs a non-empty reason; `only` and `skip` are mutually exclusive. |
 | `steps` | array of Step, length >= 1 | yes | Executed in order on one fresh store; **all** steps are asserted. |
 
@@ -136,7 +136,8 @@ Each rule has a negative fixture under
     `transports.only` list that excludes every out-of-process runner
     (`cli_cmd`, `stdio`, `rest_generic`, `rest_resource`) - only the in-process
     `direct` and `tui` transports can share an in-memory store.
-11. **File names.** `files` keys contain no path separator (`/` or `\`).
+11. **File names.** `files` keys are safe bare file names: non-empty, no path
+    separator (`/` or `\`), not `.` or `..`, and not starting with `~`.
 12. **Role sanity.** A step whose `command` is mutating (per the catalog) and
     whose effective caller is `user` must expect `error.code ==
     "not_authorized"`.

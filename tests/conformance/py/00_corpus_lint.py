@@ -18,8 +18,10 @@ from any working directory (CTest runs it from the build tree) and on Windows
 
 from __future__ import annotations
 
+import json
 import re
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -125,6 +127,95 @@ class CorpusLintTest(unittest.TestCase):
     def test_main_accepts_a_directory(self) -> None:
         """``main`` globs a directory argument (the PowerShell-safe form)."""
         self.assertEqual(main([str(CORPUS_DIR)]), 0)
+
+    # -- regression: hardening follow-ups (07.0/01 review) ------------------
+
+    @staticmethod
+    def _valid_get_steps() -> list:
+        """A single valid ``link.get`` step reused by the in-test fixtures."""
+        return [
+            {
+                "request": {"v": 1, "command": "link.get", "args": {"slug": "a"}},
+                "expect": {"ok": True, "result": {"slug": "a"}, "match": "subset"},
+            }
+        ]
+
+    def _lint_doc(self, doc: dict) -> list:
+        """Write *doc* to a temp corpus file and return the findings."""
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "case.json"
+            path.write_text(json.dumps(doc), encoding="utf-8")
+            return lint_paths([path])
+
+    def test_deeply_nested_json_is_rule1_not_a_crash(self) -> None:
+        """Pathologically deep JSON is reported as RULE-1, never a traceback.
+
+        The document is built in memory (no giant fixture file on disk): a
+        100k-deep array overflows the JSON decoder's recursion, which the
+        linter must catch and surface as a structural finding.
+        """
+        depth = 100_000
+        raw = "[" * depth + "]" * depth
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "deep.json"
+            path.write_text(raw, encoding="utf-8")
+            findings = lint_paths([path])
+        self.assertTrue(findings, "deep JSON produced no finding")
+        self.assertEqual(
+            {f.rule for f in findings},
+            {1},
+            "deep JSON must be a single RULE-1 finding, got "
+            + ", ".join(f.format() for f in findings),
+        )
+
+    def test_rule11_rejects_unsafe_bare_names(self) -> None:
+        """``.``, ``..``, empty and ``~``-prefixed files keys are RULE-11."""
+        for bad_key in (".", "..", "", "~secret"):
+            with self.subTest(key=bad_key):
+                doc = {
+                    "corpus_version": 1,
+                    "suite": "neg",
+                    "cases": [
+                        {
+                            "name": "neg_bad_file_name",
+                            "doc": "unsafe files key",
+                            "command": "link.get",
+                            "files": {bad_key: "x"},
+                            "steps": self._valid_get_steps(),
+                        }
+                    ],
+                }
+                findings = self._lint_doc(doc)
+                self.assertTrue(findings, f"key {bad_key!r} produced no finding")
+                self.assertEqual(
+                    {f.rule for f in findings},
+                    {11},
+                    f"key {bad_key!r} must be only RULE-11, got "
+                    + ", ".join(f.format() for f in findings),
+                )
+
+    def test_rule10_inmemory_requires_transports_only(self) -> None:
+        """``backend: inmemory`` without any ``transports.only`` is RULE-10."""
+        doc = {
+            "corpus_version": 1,
+            "suite": "neg",
+            "cases": [
+                {
+                    "name": "neg_inmemory_no_only",
+                    "doc": "inmemory with no transport restriction",
+                    "command": "link.get",
+                    "backend": "inmemory",
+                    "steps": self._valid_get_steps(),
+                }
+            ],
+        }
+        findings = self._lint_doc(doc)
+        self.assertEqual(
+            {f.rule for f in findings},
+            {10},
+            "inmemory without transports.only must be only RULE-10, got "
+            + ", ".join(f.format() for f in findings),
+        )
 
 
 if __name__ == "__main__":
