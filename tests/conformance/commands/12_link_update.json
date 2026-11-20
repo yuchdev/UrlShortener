@@ -1,0 +1,381 @@
+{
+  "corpus_version": 1,
+  "suite": "link_update",
+  "description": "link.update PATCH semantics: present replaces, absent is untouched, explicit null clears; replacement of tags/metadata; the not_found/invalid_field errors; dry-run and the user authorization gate.",
+  "cases": [
+    {
+      "name": "link_update_enabled_only",
+      "doc": "updating only enabled flips the lifecycle status and leaves everything else intact",
+      "command": "link.update",
+      "steps": [
+        {
+          "label": "seed",
+          "request": {
+            "v": 1,
+            "command": "link.create",
+            "args": { "target_url": "https://example.com/u1", "slug": "upd-enabled" }
+          },
+          "rest_resource": {
+            "method": "POST",
+            "path": "/api/v1/links",
+            "body": { "target_url": "https://example.com/u1", "slug": "upd-enabled" },
+            "status": 201
+          },
+          "expect": { "ok": true, "result": { "slug": "upd-enabled", "status": "active" }, "match": "subset" }
+        },
+        {
+          "label": "update",
+          "request": {
+            "v": 1,
+            "id": "upd-1",
+            "command": "link.update",
+            "args": { "slug": "upd-enabled", "enabled": false }
+          },
+          "rest_resource": {
+            "method": "PATCH",
+            "path": "/api/v1/links/upd-enabled",
+            "body": { "enabled": false },
+            "status": 200
+          },
+          "expect": { "ok": true, "result": { "slug": "upd-enabled", "status": "disabled" }, "match": "subset" }
+        }
+      ]
+    },
+    {
+      "name": "link_update_untouched_fields_preserved",
+      "doc": "an update that omits tags and metadata leaves the previously stored values unchanged",
+      "command": "link.update",
+      "steps": [
+        {
+          "label": "seed",
+          "request": {
+            "v": 1,
+            "command": "link.create",
+            "args": {
+              "target_url": "https://example.com/u2",
+              "slug": "upd-preserve",
+              "tags": ["keep-a", "keep-b"],
+              "metadata": { "m": "v" }
+            }
+          },
+          "rest_resource": {
+            "method": "POST",
+            "path": "/api/v1/links",
+            "body": {
+              "target_url": "https://example.com/u2",
+              "slug": "upd-preserve",
+              "tags": ["keep-a", "keep-b"],
+              "metadata": { "m": "v" }
+            },
+            "status": 201
+          },
+          "expect": { "ok": true, "result": { "slug": "upd-preserve" }, "match": "subset" }
+        },
+        {
+          "label": "update",
+          "request": {
+            "v": 1,
+            "command": "link.update",
+            "args": { "slug": "upd-preserve", "enabled": false }
+          },
+          "rest_resource": {
+            "method": "PATCH",
+            "path": "/api/v1/links/upd-preserve",
+            "body": { "enabled": false },
+            "status": 200
+          },
+          "expect": {
+            "ok": true,
+            "result": { "slug": "upd-preserve", "status": "disabled", "tags": ["keep-a", "keep-b"], "metadata": { "m": "v" } },
+            "match": "subset"
+          }
+        }
+      ]
+    },
+    {
+      "name": "link_update_clear_expires_with_null",
+      "doc": "an explicit null expires_at clears a past expiry, so the link resolves active again",
+      "command": "link.update",
+      "steps": [
+        {
+          "label": "seed",
+          "request": {
+            "v": 1,
+            "command": "link.create",
+            "args": { "target_url": "https://example.com/u3", "slug": "upd-expires", "expires_at": "2000-01-01T00:00:00Z" }
+          },
+          "rest_resource": {
+            "method": "POST",
+            "path": "/api/v1/links",
+            "body": { "target_url": "https://example.com/u3", "slug": "upd-expires", "expires_at": "2000-01-01T00:00:00Z" },
+            "status": 201
+          },
+          "expect": { "ok": true, "result": { "slug": "upd-expires", "status": "expired" }, "match": "subset" }
+        },
+        {
+          "label": "update",
+          "request": {
+            "v": 1,
+            "command": "link.update",
+            "args": { "slug": "upd-expires", "expires_at": null }
+          },
+          "rest_resource": {
+            "method": "PATCH",
+            "path": "/api/v1/links/upd-expires",
+            "body": { "expires_at": null },
+            "status": 200
+          },
+          "expect": { "ok": true, "result": { "slug": "upd-expires", "status": "active" }, "match": "subset" }
+        }
+      ]
+    },
+    {
+      "name": "link_update_clear_campaign_with_null",
+      "doc": "an explicit null campaign clears a previously stored campaign",
+      "command": "link.update",
+      "steps": [
+        {
+          "label": "seed",
+          "request": {
+            "v": 1,
+            "command": "link.create",
+            "args": { "target_url": "https://example.com/u4", "slug": "upd-campaign", "campaign": { "name": "old" } }
+          },
+          "rest_resource": {
+            "method": "POST",
+            "path": "/api/v1/links",
+            "body": { "target_url": "https://example.com/u4", "slug": "upd-campaign", "campaign": { "name": "old" } },
+            "status": 201
+          },
+          "expect": { "ok": true, "result": { "slug": "upd-campaign", "campaign": { "name": "old" } }, "match": "subset" }
+        },
+        {
+          "label": "update",
+          "request": {
+            "v": 1,
+            "command": "link.update",
+            "args": { "slug": "upd-campaign", "campaign": null }
+          },
+          "rest_resource": {
+            "method": "PATCH",
+            "path": "/api/v1/links/upd-campaign",
+            "body": { "campaign": null },
+            "status": 200
+          },
+          "expect": { "ok": true, "result": { "slug": "upd-campaign", "campaign": null }, "match": "subset" }
+        }
+      ]
+    },
+    {
+      "name": "link_update_replace_tags",
+      "doc": "a present tags list replaces the full stored list",
+      "command": "link.update",
+      "steps": [
+        {
+          "label": "seed",
+          "request": {
+            "v": 1,
+            "command": "link.create",
+            "args": { "target_url": "https://example.com/u5", "slug": "upd-tags", "tags": ["old"] }
+          },
+          "rest_resource": {
+            "method": "POST",
+            "path": "/api/v1/links",
+            "body": { "target_url": "https://example.com/u5", "slug": "upd-tags", "tags": ["old"] },
+            "status": 201
+          },
+          "expect": { "ok": true, "result": { "slug": "upd-tags", "tags": ["old"] }, "match": "subset" }
+        },
+        {
+          "label": "update",
+          "request": {
+            "v": 1,
+            "command": "link.update",
+            "args": { "slug": "upd-tags", "tags": ["new", "second"] }
+          },
+          "rest_resource": {
+            "method": "PATCH",
+            "path": "/api/v1/links/upd-tags",
+            "body": { "tags": ["new", "second"] },
+            "status": 200
+          },
+          "expect": { "ok": true, "result": { "slug": "upd-tags", "tags": ["new", "second"] }, "match": "subset" }
+        }
+      ]
+    },
+    {
+      "name": "link_update_replace_metadata",
+      "doc": "a present metadata map replaces the full stored map",
+      "command": "link.update",
+      "steps": [
+        {
+          "label": "seed",
+          "request": {
+            "v": 1,
+            "command": "link.create",
+            "args": { "target_url": "https://example.com/u6", "slug": "upd-metadata", "metadata": { "old": "v" } }
+          },
+          "rest_resource": {
+            "method": "POST",
+            "path": "/api/v1/links",
+            "body": { "target_url": "https://example.com/u6", "slug": "upd-metadata", "metadata": { "old": "v" } },
+            "status": 201
+          },
+          "expect": { "ok": true, "result": { "slug": "upd-metadata", "metadata": { "old": "v" } }, "match": "subset" }
+        },
+        {
+          "label": "update",
+          "request": {
+            "v": 1,
+            "command": "link.update",
+            "args": { "slug": "upd-metadata", "metadata": { "k": "v2" } }
+          },
+          "rest_resource": {
+            "method": "PATCH",
+            "path": "/api/v1/links/upd-metadata",
+            "body": { "metadata": { "k": "v2" } },
+            "status": 200
+          },
+          "expect": { "ok": true, "result": { "slug": "upd-metadata", "metadata": { "k": "v2" } }, "match": "subset" }
+        }
+      ]
+    },
+    {
+      "name": "link_update_empty_args_noop_or_invalid",
+      "doc": "an update with only the slug is a no-op that returns the unchanged view (current UpdateLinkCommand behavior)",
+      "command": "link.update",
+      "steps": [
+        {
+          "label": "seed",
+          "request": {
+            "v": 1,
+            "command": "link.create",
+            "args": { "target_url": "https://example.com/u7", "slug": "upd-noop" }
+          },
+          "rest_resource": {
+            "method": "POST",
+            "path": "/api/v1/links",
+            "body": { "target_url": "https://example.com/u7", "slug": "upd-noop" },
+            "status": 201
+          },
+          "expect": { "ok": true, "result": { "slug": "upd-noop", "status": "active" }, "match": "subset" }
+        },
+        {
+          "label": "update",
+          "request": {
+            "v": 1,
+            "command": "link.update",
+            "args": { "slug": "upd-noop" }
+          },
+          "rest_resource": {
+            "method": "PATCH",
+            "path": "/api/v1/links/upd-noop",
+            "body": {},
+            "status": 200
+          },
+          "expect": { "ok": true, "result": { "slug": "upd-noop", "status": "active" }, "match": "subset" }
+        }
+      ]
+    },
+    {
+      "name": "link_update_not_found",
+      "doc": "updating an unknown slug is not_found",
+      "command": "link.update",
+      "steps": [
+        {
+          "label": "update",
+          "request": {
+            "v": 1,
+            "command": "link.update",
+            "args": { "slug": "upd-ghost", "enabled": false }
+          },
+          "rest_resource": {
+            "method": "PATCH",
+            "path": "/api/v1/links/upd-ghost",
+            "body": { "enabled": false },
+            "status": 404
+          },
+          "expect": { "ok": false, "error": { "code": "not_found" } }
+        }
+      ]
+    },
+    {
+      "name": "link_update_unknown_arg",
+      "doc": "an unknown argument key is rejected invalid_field",
+      "command": "link.update",
+      "steps": [
+        {
+          "label": "seed",
+          "request": {
+            "v": 1,
+            "command": "link.create",
+            "args": { "target_url": "https://example.com/u8", "slug": "upd-unknown" }
+          },
+          "expect": { "ok": true, "result": { "slug": "upd-unknown" }, "match": "subset" }
+        },
+        {
+          "label": "update",
+          "request": {
+            "v": 1,
+            "command": "link.update",
+            "args": { "slug": "upd-unknown", "bogus": "x" }
+          },
+          "expect": { "ok": false, "error": { "code": "invalid_field" } }
+        }
+      ]
+    },
+    {
+      "name": "link_update_dry_run",
+      "doc": "dry_run validates an update but persists nothing; a follow-up get shows the original value (rest_resource cannot carry options)",
+      "command": "link.update",
+      "transports": { "skip": { "rest_resource": "resource routes cannot carry request.options (dry_run)" } },
+      "steps": [
+        {
+          "label": "seed",
+          "request": {
+            "v": 1,
+            "command": "link.create",
+            "args": { "target_url": "https://example.com/u9", "slug": "upd-dry" }
+          },
+          "expect": { "ok": true, "result": { "slug": "upd-dry", "status": "active" }, "match": "subset" }
+        },
+        {
+          "label": "update-dry-run",
+          "request": {
+            "v": 1,
+            "command": "link.update",
+            "args": { "slug": "upd-dry", "enabled": false },
+            "options": { "dry_run": true }
+          },
+          "expect": { "ok": true, "result": { "slug": "upd-dry", "status": "disabled" }, "match": "subset" }
+        },
+        {
+          "label": "get-after-dry-run",
+          "request": {
+            "v": 1,
+            "command": "link.get",
+            "args": { "slug": "upd-dry" }
+          },
+          "expect": { "ok": true, "result": { "slug": "upd-dry", "status": "active" }, "match": "subset" }
+        }
+      ]
+    },
+    {
+      "name": "link_update_user_not_authorized",
+      "doc": "a read-only user cannot update a link; authorization is refused before any mutation",
+      "command": "link.update",
+      "caller": "user",
+      "steps": [
+        {
+          "label": "update",
+          "request": {
+            "v": 1,
+            "command": "link.update",
+            "args": { "slug": "upd-denied", "enabled": false }
+          },
+          "expect": { "ok": false, "error": { "code": "not_authorized" } }
+        }
+      ]
+    }
+  ]
+}

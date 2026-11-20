@@ -1,0 +1,416 @@
+{
+  "corpus_version": 1,
+  "suite": "link_create",
+  "description": "link.create: every argument, generated and custom slugs, the URL/slug/reserved/conflict errors, dry-run and the user authorization gate.",
+  "cases": [
+    {
+      "name": "link_create_minimal",
+      "doc": "minimal create mints a generated slug, temporary redirect, active status and zeroed stats",
+      "command": "link.create",
+      "steps": [
+        {
+          "label": "create",
+          "request": {
+            "v": 1,
+            "id": "create-min-1",
+            "command": "link.create",
+            "args": { "target_url": "https://example.com/minimal" }
+          },
+          "rest_resource": {
+            "method": "POST",
+            "path": "/api/v1/links",
+            "body": { "target_url": "https://example.com/minimal" },
+            "status": 201
+          },
+          "expect": {
+            "ok": true,
+            "result": {
+              "id": "<id>",
+              "slug": "<slug:7>",
+              "url": "https://example.com/minimal",
+              "short_url": "<regex:.*/[0-9A-Za-z]{7}>",
+              "created_at": "<ts>",
+              "updated_at": "<ts>",
+              "status": "active",
+              "redirect_type": "temporary",
+              "tags": [],
+              "metadata": {},
+              "campaign": null,
+              "stats": {
+                "total_redirects": 0,
+                "redirects_24h": 0,
+                "redirects_7d": 0,
+                "last_accessed_at": null
+              }
+            },
+            "match": "exact"
+          }
+        }
+      ]
+    },
+    {
+      "name": "link_create_custom_slug",
+      "doc": "a custom slug is honored verbatim and echoed in short_url",
+      "command": "link.create",
+      "steps": [
+        {
+          "label": "create",
+          "request": {
+            "v": 1,
+            "command": "link.create",
+            "args": { "target_url": "https://example.com/docs", "slug": "docs-page" }
+          },
+          "rest_resource": {
+            "method": "POST",
+            "path": "/api/v1/links",
+            "body": { "target_url": "https://example.com/docs", "slug": "docs-page" },
+            "status": 201
+          },
+          "expect": {
+            "ok": true,
+            "result": {
+              "id": "<id>",
+              "slug": "docs-page",
+              "url": "https://example.com/docs",
+              "short_url": "<regex:.*/docs-page>",
+              "created_at": "<ts>",
+              "updated_at": "<ts>",
+              "status": "active",
+              "redirect_type": "temporary",
+              "tags": [],
+              "metadata": {},
+              "campaign": null,
+              "stats": {
+                "total_redirects": 0,
+                "redirects_24h": 0,
+                "redirects_7d": 0,
+                "last_accessed_at": null
+              }
+            },
+            "match": "exact"
+          }
+        }
+      ]
+    },
+    {
+      "name": "link_create_all_fields",
+      "doc": "tags, metadata, a campaign object, a future expiry and a permanent redirect are all accepted; the view has no expires_at key",
+      "command": "link.create",
+      "steps": [
+        {
+          "label": "create",
+          "request": {
+            "v": 1,
+            "command": "link.create",
+            "args": {
+              "target_url": "https://example.com/promo",
+              "slug": "promo-page",
+              "redirect_type": "permanent",
+              "expires_at": "2999-01-01T00:00:00Z",
+              "enabled": true,
+              "tags": ["spring", "sale"],
+              "metadata": { "owner": "growth", "team": "ads" },
+              "campaign": { "name": "spring", "source": "newsletter" }
+            }
+          },
+          "rest_resource": {
+            "method": "POST",
+            "path": "/api/v1/links",
+            "body": {
+              "target_url": "https://example.com/promo",
+              "slug": "promo-page",
+              "redirect_type": "permanent",
+              "expires_at": "2999-01-01T00:00:00Z",
+              "enabled": true,
+              "tags": ["spring", "sale"],
+              "metadata": { "owner": "growth", "team": "ads" },
+              "campaign": { "name": "spring", "source": "newsletter" }
+            },
+            "status": 201
+          },
+          "expect": {
+            "ok": true,
+            "result": {
+              "id": "<id>",
+              "slug": "promo-page",
+              "url": "https://example.com/promo",
+              "short_url": "<regex:.*/promo-page>",
+              "created_at": "<ts>",
+              "updated_at": "<ts>",
+              "status": "active",
+              "redirect_type": "permanent",
+              "tags": ["spring", "sale"],
+              "metadata": { "owner": "growth", "team": "ads" },
+              "campaign": { "name": "spring", "source": "newsletter" },
+              "stats": {
+                "total_redirects": 0,
+                "redirects_24h": 0,
+                "redirects_7d": 0,
+                "last_accessed_at": null
+              }
+            },
+            "match": "exact"
+          }
+        }
+      ]
+    },
+    {
+      "name": "link_create_url_alias_rest_only",
+      "doc": "the REST resource body accepts the legacy url alias and it wins over target_url when both are present (generic transports use target_url only)",
+      "command": "link.create",
+      "transports": { "only": ["rest_resource"] },
+      "steps": [
+        {
+          "label": "create",
+          "request": {
+            "v": 1,
+            "command": "link.create",
+            "args": { "target_url": "https://example.com/url-wins", "slug": "alias-page" }
+          },
+          "rest_resource": {
+            "method": "POST",
+            "path": "/api/v1/links",
+            "body": {
+              "url": "https://example.com/url-wins",
+              "target_url": "https://example.com/should-lose",
+              "slug": "alias-page"
+            },
+            "status": 201
+          },
+          "expect": {
+            "ok": true,
+            "result": { "slug": "alias-page", "url": "https://example.com/url-wins", "status": "active" },
+            "match": "subset"
+          }
+        }
+      ]
+    },
+    {
+      "name": "link_create_invalid_url",
+      "doc": "a non-http(s) target is rejected invalid_url",
+      "command": "link.create",
+      "steps": [
+        {
+          "label": "create",
+          "request": {
+            "v": 1,
+            "command": "link.create",
+            "args": { "target_url": "not-a-url", "slug": "bad-url" }
+          },
+          "rest_resource": {
+            "method": "POST",
+            "path": "/api/v1/links",
+            "body": { "target_url": "not-a-url", "slug": "bad-url" },
+            "status": 400
+          },
+          "expect": { "ok": false, "error": { "code": "invalid_url" } }
+        }
+      ]
+    },
+    {
+      "name": "link_create_private_target_blocked",
+      "doc": "a private/loopback target is blocked with the same invalid_url code as a malformed URL (SSRF indistinguishability)",
+      "command": "link.create",
+      "steps": [
+        {
+          "label": "create",
+          "request": {
+            "v": 1,
+            "command": "link.create",
+            "args": { "target_url": "http://127.0.0.1/", "slug": "ssrf-page" }
+          },
+          "rest_resource": {
+            "method": "POST",
+            "path": "/api/v1/links",
+            "body": { "target_url": "http://127.0.0.1/", "slug": "ssrf-page" },
+            "status": 400
+          },
+          "expect": { "ok": false, "error": { "code": "invalid_url" } }
+        }
+      ]
+    },
+    {
+      "name": "link_create_invalid_slug",
+      "doc": "a slug that fails the slug grammar is rejected invalid_slug",
+      "command": "link.create",
+      "steps": [
+        {
+          "label": "create",
+          "request": {
+            "v": 1,
+            "command": "link.create",
+            "args": { "target_url": "https://example.com/x", "slug": "ab" }
+          },
+          "rest_resource": {
+            "method": "POST",
+            "path": "/api/v1/links",
+            "body": { "target_url": "https://example.com/x", "slug": "ab" },
+            "status": 400
+          },
+          "expect": { "ok": false, "error": { "code": "invalid_slug" } }
+        }
+      ]
+    },
+    {
+      "name": "link_create_reserved_slug",
+      "doc": "a reserved slug is refused reserved_slug (HTTP 409 on the resource route)",
+      "command": "link.create",
+      "steps": [
+        {
+          "label": "create",
+          "request": {
+            "v": 1,
+            "command": "link.create",
+            "args": { "target_url": "https://example.com/x", "slug": "api" }
+          },
+          "rest_resource": {
+            "method": "POST",
+            "path": "/api/v1/links",
+            "body": { "target_url": "https://example.com/x", "slug": "api" },
+            "status": 409
+          },
+          "expect": { "ok": false, "error": { "code": "reserved_slug" } }
+        }
+      ]
+    },
+    {
+      "name": "link_create_slug_conflict",
+      "doc": "a second create on the same slug conflicts",
+      "command": "link.create",
+      "steps": [
+        {
+          "label": "first",
+          "request": {
+            "v": 1,
+            "id": "conflict-1",
+            "command": "link.create",
+            "args": { "target_url": "https://example.com/a", "slug": "dup-page" }
+          },
+          "rest_resource": {
+            "method": "POST",
+            "path": "/api/v1/links",
+            "body": { "target_url": "https://example.com/a", "slug": "dup-page" },
+            "status": 201
+          },
+          "expect": {
+            "ok": true,
+            "result": { "slug": "dup-page", "url": "https://example.com/a", "status": "active" },
+            "match": "subset"
+          }
+        },
+        {
+          "label": "second",
+          "request": {
+            "v": 1,
+            "id": "conflict-2",
+            "command": "link.create",
+            "args": { "target_url": "https://example.com/b", "slug": "dup-page" }
+          },
+          "rest_resource": {
+            "method": "POST",
+            "path": "/api/v1/links",
+            "body": { "target_url": "https://example.com/b", "slug": "dup-page" },
+            "status": 409
+          },
+          "expect": { "ok": false, "error": { "code": "slug_conflict" } }
+        }
+      ]
+    },
+    {
+      "name": "link_create_unknown_arg",
+      "doc": "an unknown argument key is rejected invalid_field by the command model (asserted via the generic endpoint; the legacy POST /api/v1/links resource route silently ignores unknown body keys, so it is not driven here)",
+      "command": "link.create",
+      "steps": [
+        {
+          "label": "create",
+          "request": {
+            "v": 1,
+            "command": "link.create",
+            "args": { "target_url": "https://example.com/x", "invalid_field": "y" }
+          },
+          "expect": { "ok": false, "error": { "code": "invalid_field" } }
+        }
+      ]
+    },
+    {
+      "name": "link_create_wrong_type",
+      "doc": "a boolean argument supplied as a string is rejected invalid_field by the command model (asserted via the generic endpoint; the legacy resource route returns its per-field invalid_enabled code, which the rest_resource shim does not translate, so it is not driven here)",
+      "command": "link.create",
+      "steps": [
+        {
+          "label": "create",
+          "request": {
+            "v": 1,
+            "command": "link.create",
+            "args": { "target_url": "https://example.com/x", "enabled": "yes" }
+          },
+          "expect": { "ok": false, "error": { "code": "invalid_field" } }
+        }
+      ]
+    },
+    {
+      "name": "link_create_missing_target",
+      "doc": "omitting the required target_url is rejected invalid_field by the command model (asserted via the generic endpoint; the legacy resource route reports invalid_url for an empty URL, so it is not driven here)",
+      "command": "link.create",
+      "steps": [
+        {
+          "label": "create",
+          "request": {
+            "v": 1,
+            "command": "link.create",
+            "args": { "slug": "no-target" }
+          },
+          "expect": { "ok": false, "error": { "code": "invalid_field" } }
+        }
+      ]
+    },
+    {
+      "name": "link_create_dry_run",
+      "doc": "dry_run validates and returns a view but writes no row; a follow-up get is not_found (rest_resource cannot carry options)",
+      "command": "link.create",
+      "transports": { "skip": { "rest_resource": "resource routes cannot carry request.options (dry_run)" } },
+      "steps": [
+        {
+          "label": "create-dry-run",
+          "request": {
+            "v": 1,
+            "command": "link.create",
+            "args": { "target_url": "https://example.com/dry", "slug": "dry-run-page" },
+            "options": { "dry_run": true }
+          },
+          "expect": {
+            "ok": true,
+            "result": { "slug": "dry-run-page", "url": "https://example.com/dry", "status": "active" },
+            "match": "subset"
+          }
+        },
+        {
+          "label": "get-after-dry-run",
+          "request": {
+            "v": 1,
+            "command": "link.get",
+            "args": { "slug": "dry-run-page" }
+          },
+          "expect": { "ok": false, "error": { "code": "not_found" } }
+        }
+      ]
+    },
+    {
+      "name": "link_create_user_not_authorized",
+      "doc": "a read-only user cannot create a link; authorization is refused before any row is written",
+      "command": "link.create",
+      "caller": "user",
+      "steps": [
+        {
+          "label": "create",
+          "request": {
+            "v": 1,
+            "command": "link.create",
+            "args": { "target_url": "https://example.com/denied", "slug": "denied-page" }
+          },
+          "expect": { "ok": false, "error": { "code": "not_authorized" } }
+        }
+      ]
+    }
+  ]
+}

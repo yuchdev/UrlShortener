@@ -19,6 +19,19 @@ they are parsed live from the command catalog
 and section 3.7 generated table), so a code added by Task 01.0 is picked up
 automatically.
 
+## Suite files
+
+Each `*.json` file is one suite, replayed through every transport. The current
+suites:
+
+| File | Suite | Commands covered |
+|---|---|---|
+| [`00_schema_selftest.json`](00_schema_selftest.json) | `schema_selftest` | minimal valid cases for the lint self-test (`allow_unknown_codes`) |
+| [`10_link_create.json`](10_link_create.json) | `link_create` | `link.create` |
+| [`11_link_read.json`](11_link_read.json) | `link_read` | `link.get`, `link.preview`, `link.stats` |
+| [`12_link_update.json`](12_link_update.json) | `link_update` | `link.update` |
+| [`13_link_state.json`](13_link_state.json) | `link_state` | `link.delete`, `link.enable`, `link.disable`, `link.restore` |
+
 ## Corpus file
 
 A corpus file is a UTF-8 JSON object:
