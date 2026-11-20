@@ -677,3 +677,24 @@ pending a ruling unless marked:
 - (4) `SettingsInfo` mirror ratified: it mirrors the `system.info` wire
   contract, not a code dependency.
 - Items 5-7 stay recorded follow-ups.
+
+### 2026-11-20 - 07.0 entry: as-built reconciliation (user rulings)
+
+An as-built probe found Task 07.0 subtasks 22-29 largely satisfied by
+06.0 under other names (`MockCommandClient`, `FormModel`, `d0N_*_80x24`
+goldens, `tui__18_readonly_*`); specs 18-21 and 24 are stale against
+01.0-06.0 (see
+[docs/security/0006-07.0-tests-and-conformance-threat-brief.md](/docs/security/0006-07.0-tests-and-conformance-threat-brief.md)).
+User rulings:
+
+- **Amend specs, fill gaps:** specs 22-29 are rewritten against the as-built
+  names, existing coverage is marked *consumed*, and only real gaps are
+  built. Stems `20_`/`21_` are renumbered into the free 22-69 range.
+- **Keep TUI redaction (defense in depth):** 07.0/28 test 62 drops the
+  "TUI has no redaction logic" structural assertion. It instead asserts the
+  server handlers are the primary control (real-registry frames contain no
+  secret markers) and that the TUI filter also drops secret-named fields
+  (T-125).
+- Spec 20 also carries the `tui --path-root/--no-file-paths` product change
+  (2026-11-19 ruling); spec 19 adds the `resolve_permission` raised-permission
+  assertions (06.0/18 ruling).
