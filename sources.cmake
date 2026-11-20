@@ -715,6 +715,7 @@ set(URL_SHORTENER_SOURCES
       tests/conformance/py/00_corpus_lint.py
       tests/conformance/py/01_matcher_vectors.py
       tests/conformance/py/02_harness_selftest.py
+      tests/conformance/py/10_cli_cmd_corpus.py
   )
 
   # ---- Conformance C++ support library (Task 07.0 subtask 03) ----
