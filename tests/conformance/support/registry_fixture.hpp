@@ -60,11 +60,16 @@ public:
      * length is left at its default (matchers compare it with `<slug:N>`).
      *
      * File-path capability follows the local-operator default the direct
-     * transport maps to (`cmd`/`tui`): `allow_paths = true` with no confinement
-     * root, so corpus `link.import`/`link.export` cases that reference
-     * `${tmp}/<file>` run without being refused `unsupported`. It does not opt
-     * in beyond that default; a `user` caller still cannot use `path` because
-     * the path raise requires write (the registry denies `not_authorized`).
+     * transport maps to (`cmd`/`tui`): `allow_paths = true`, so corpus
+     * `link.import`/`link.export` cases that reference `${tmp}/<file>` run
+     * without being refused `unsupported`. The confinement root is pinned to
+     * @p tmp (defense in depth for the corpus replay: a `path` arg is free text
+     * and, unlike a `files` key, is not checked by the case runner, and `cmd`
+     * ships no `--path-root`), so a case that smuggles an absolute path or a
+     * `${tmp}/..` escape is refused `invalid_field` and the out-of-root file is
+     * never opened or written. It does not opt in beyond that default; a `user`
+     * caller still cannot use `path` because the path raise requires write (the
+     * registry denies `not_authorized`).
      *
      * @param tmp The per-case temporary directory (already created by the case
      * runner). The `sqlite` database file and the storage-config YAML are
@@ -108,9 +113,10 @@ public:
      * The caller role is the corpus `caller` only (ruling (c)); it is never
      * derived from a request body. The transport label is fixed to `"direct"`.
      *
-     * @param role The corpus role: `"user"` selects `ControlSet::User`; any
-     * other value (including `"admin"` and the empty string) selects
-     * `ControlSet::Admin`, the local-operator default.
+     * @param role The corpus role: exactly `"admin"` selects
+     * `ControlSet::Admin`; `"user"` and every other token (including the empty
+     * string) fail closed to `ControlSet::User`, so an unexpected value can
+     * never silently grant Admin.
      * @return A `CallerContext` carrying the resolved control set.
      */
     url_shortener::commands::CallerContext caller(std::string_view role) const;

@@ -160,6 +160,10 @@ VAR_REF_RE = re.compile(r"\$\{([^}]+)\}")
 #: A standalone ``${var}`` value (whole string is a single reference).
 VAR_ONLY_RE = re.compile(r"^\$\{[A-Za-z_][A-Za-z0-9_]*\}$")
 
+#: A confined file ``path`` arg: ``${tmp}/`` followed by a single component
+#: (checked for safety with :func:`_bad_file_name_reason`). Rule 14.
+TMP_PATH_RE = re.compile(r"^\$\{tmp\}/(.+)$")
+
 
 # ---------------------------------------------------------------------------
 # Finding
@@ -170,7 +174,7 @@ VAR_ONLY_RE = re.compile(r"^\$\{[A-Za-z_][A-Za-z0-9_]*\}$")
 class Finding:
     """A single lint violation.
 
-    :ivar rule: The 1-based rule number (1..13) that was violated; matches the
+    :ivar rule: The 1-based rule number (1..14) that was violated; matches the
         numbered rule in ``tests/conformance/commands/README.md`` and the
         ``lint_negative`` fixture ``rule_NN_*.json``.
     :ivar file: Path (as supplied) of the offending corpus file.
@@ -448,6 +452,45 @@ def _step_id(index: int, step: Any) -> str:
     return f"step {index + 1}"
 
 
+def _iter_path_arg_values(args: Any) -> List[str]:
+    """Return every string value under a key named ``path`` within request args.
+
+    Walks *args* iteratively (no recursion, so a hostile depth cannot overflow
+    the stack) and collects the value of every ``path`` key it finds. Used by
+    rule 14; the ``rest_resource.path`` HTTP route is deliberately **not** visited
+    because this is only ever called with a request's ``args`` object.
+
+    :param args: The request ``args`` value (any JSON node), or ``None``.
+    :return: Every ``path`` string value, in traversal order.
+    """
+    out: List[str] = []
+    stack: List[Any] = [args]
+    while stack:
+        current = stack.pop()
+        if isinstance(current, dict):
+            for key, value in current.items():
+                if key == "path" and isinstance(value, str):
+                    out.append(value)
+                stack.append(value)
+        elif isinstance(current, list):
+            stack.extend(current)
+    return out
+
+
+def _step_path_arg_values(step: Any) -> List[str]:
+    """Return the ``path`` arg string values of a step's request, if any.
+
+    :param step: A step object (any value; non-dicts yield an empty list).
+    :return: Every ``path`` arg value under ``step.request.args``.
+    """
+    if not isinstance(step, dict):
+        return []
+    request = step.get("request")
+    if not isinstance(request, dict):
+        return []
+    return _iter_path_arg_values(request.get("args"))
+
+
 # ---------------------------------------------------------------------------
 # Core linter
 # ---------------------------------------------------------------------------
@@ -617,6 +660,27 @@ class _Linter:
             self._emit(1, file, name_str, None, "'steps' must be a non-empty array")
             return
 
+        # Rule 14 (case-level): a case that uses a file `path` arg must scope its
+        # transports, so a "path works" expectation is never measured against a
+        # transport that refuses `path` by default (REST is default-deny
+        # `unsupported`). The per-value shape is checked per step in _lint_step.
+        if any(_step_path_arg_values(step) for step in steps):
+            transports = case.get("transports")
+            scoped = isinstance(transports, dict) and (
+                "only" in transports or "skip" in transports
+            )
+            if not scoped:
+                self._emit(
+                    14,
+                    file,
+                    name_str,
+                    None,
+                    "a case with a 'path' arg must scope transports "
+                    "(transports.only or transports.skip) so a 'path works' "
+                    "expectation is never measured against a transport whose "
+                    "default is to refuse 'path' with 'unsupported' (REST)",
+                )
+
         defined_vars: Set[str] = set()
         for index, step in enumerate(steps):
             if not isinstance(step, dict):
@@ -751,6 +815,35 @@ class _Linter:
                     self._emit(
                         5, file, name, sid, f"request.command '{command}' is not a dotted <group>.<verb>"
                     )
+
+        # Rule 14 (value shape): every file `path` arg must be exactly
+        # `${tmp}/<safe bare name>` - no literal absolute path, no `..`, and a
+        # single component under the per-case temp dir. A `path` arg is free
+        # text the C++/Python runners confine only by replay convention, so this
+        # keeps every transport's replay inside the temp dir (no shim can rely on
+        # a `--path-root`: `cmd` has none).
+        for path_value in _step_path_arg_values(step):
+            match = TMP_PATH_RE.match(path_value)
+            if match is None:
+                self._emit(
+                    14,
+                    file,
+                    name,
+                    sid,
+                    f"path arg '{path_value}' must be '${{tmp}}/<name>' "
+                    "(no literal absolute path, no '..', one component)",
+                )
+                continue
+            reason = _bad_file_name_reason(match.group(1))
+            if reason is not None:
+                self._emit(
+                    14,
+                    file,
+                    name,
+                    sid,
+                    f"path arg '{path_value}' component after '${{tmp}}/' is "
+                    f"not a safe bare name: {reason}",
+                )
 
         # Rule 8: await_job <-> expect_accept coupling.
         has_await = "await_job" in step

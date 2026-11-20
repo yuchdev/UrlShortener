@@ -30,6 +30,10 @@ std::optional<std::string> DirectRegistryAdapter::begin_case(
     const Case& test_case, const std::filesystem::path& tmp)
 {
     m_case_caller_ = test_case.caller;
+    // Tear down any prior fixture before building the next one, so two fixtures
+    // never coexist while the shared process globals (LinkBackend, system.info,
+    // job runner) are being reset by the new fixture's constructor.
+    m_fixture_.reset();
     m_fixture_ = std::make_unique<RegistryFixture>(tmp, test_case.backend);
     return std::nullopt;
 }

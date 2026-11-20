@@ -7,10 +7,13 @@
 #include <atomic>
 #include <chrono>
 #include <cstdlib>
+#include <exception>
 #include <fstream>
+#include <functional>
 #include <string>
 #include <system_error>
 #include <thread>
+#include <utility>
 
 #include "case_runner.hpp"
 
@@ -21,6 +24,40 @@ namespace conformance
 
 namespace
 {
+
+/**
+ * @brief Runs a cleanup callback on scope exit.
+ *
+ * Used to guarantee a case's adapter teardown (@ref
+ * IConformanceAdapter::end_case) and per-case temp-dir removal run even when
+ * @ref IConformanceAdapter::begin_case or a step throws (a fixture-build
+ * failure, a handler bug): without it a throw mid-case would leak the temp
+ * directory and leave the adapter holding a stale per-case resource, so two
+ * fixtures could coexist while process globals are reset.
+ */
+class ScopeGuard
+{
+public:
+    /// @param on_exit Callback invoked once when this guard is destroyed.
+    explicit ScopeGuard(std::function<void()> on_exit)
+        : m_on_exit(std::move(on_exit))
+    {
+    }
+
+    /// Invokes the stored callback.
+    ~ScopeGuard()
+    {
+        if (m_on_exit) {
+            m_on_exit();
+        }
+    }
+
+    ScopeGuard(const ScopeGuard&) = delete;
+    ScopeGuard& operator=(const ScopeGuard&) = delete;
+
+private:
+    std::function<void()> m_on_exit;  ///< The cleanup callback.
+};
 
 /// Reduces @p name to a safe `[A-Za-z0-9_]` token for a directory component.
 /// Never uses the raw case name (which, for an in-process case, is untrusted)
@@ -216,40 +253,60 @@ RunReport CaseRunner::run(const std::vector<Case>& cases,
             stream << file.second;
         }
 
-        const std::optional<std::string> declined =
-            adapter.begin_case(test_case, tmp);
-        if (declined.has_value()) {
-            ++report.skipped;
-            report.skips.emplace_back(test_case.name, *declined);
-            std::filesystem::remove_all(tmp, ec);
-            continue;
-        }
+        // Teardown runs on every exit path (normal, `continue`, or a throw from
+        // begin_case / a step): it calls end_case only when begin_case
+        // succeeded and always removes the temp dir, so a mid-case throw never
+        // leaks the directory nor lets two per-case fixtures coexist.
+        bool began = false;
+        ScopeGuard cleanup(
+            [&]()
+            {
+                if (began) {
+                    adapter.end_case();
+                }
+                std::error_code remove_ec;
+                std::filesystem::remove_all(tmp, remove_ec);
+            });
 
-        // --- Replay steps -------------------------------------------------
-        VariableMap vars;
-        vars["tmp"] = Json::string(tmp.string());
-        bool case_failed = false;
-        for (std::size_t i = 0; i < test_case.steps.size() && !case_failed; ++i)
-        {
-            const Step& step = test_case.steps[i];
-            case_failed = !run_step(adapter,
-                                    transport_name,
-                                    test_case,
-                                    step,
-                                    i,
-                                    caps,
-                                    vars,
-                                    report);
-        }
-        if (case_failed) {
+        try {
+            const std::optional<std::string> declined =
+                adapter.begin_case(test_case, tmp);
+            if (declined.has_value()) {
+                ++report.skipped;
+                report.skips.emplace_back(test_case.name, *declined);
+                continue;  // cleanup guard removes tmp (began == false)
+            }
+            began = true;
+
+            // --- Replay steps ---------------------------------------------
+            VariableMap vars;
+            vars["tmp"] = Json::string(tmp.string());
+            bool case_failed = false;
+            for (std::size_t i = 0; i < test_case.steps.size() && !case_failed;
+                 ++i)
+            {
+                const Step& step = test_case.steps[i];
+                case_failed = !run_step(adapter,
+                                        transport_name,
+                                        test_case,
+                                        step,
+                                        i,
+                                        caps,
+                                        vars,
+                                        report);
+            }
+            if (case_failed) {
+                ++report.failed;
+            }
+            else {
+                ++report.ran;
+            }
+        } catch (const std::exception& error) {
             ++report.failed;
+            report.failures.push_back(transport_name + "/" + test_case.name
+                                      + ": threw during replay: "
+                                      + error.what());
         }
-        else {
-            ++report.ran;
-        }
-
-        adapter.end_case();
-        std::filesystem::remove_all(tmp, ec);
     }
 
     write_summary(transport, report);

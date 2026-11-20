@@ -47,7 +47,7 @@ NEGATIVE_DIR = _THIS.parent / "lint_negative"
 _FIXTURE_RE = re.compile(r"^rule_(\d{2})_.*\.json$")
 
 #: Total number of lint rules that must each own a fixture.
-EXPECTED_RULE_COUNT = 13
+EXPECTED_RULE_COUNT = 14
 
 
 class CorpusLintTest(unittest.TestCase):
@@ -81,7 +81,7 @@ class CorpusLintTest(unittest.TestCase):
         )
 
     def test_every_rule_has_a_fixture(self) -> None:
-        """All thirteen rules are represented by exactly one fixture file."""
+        """All fourteen rules are represented by exactly one fixture file."""
         fixtures = sorted(NEGATIVE_DIR.glob("rule_*.json"))
         rule_ids = set()
         for fixture in fixtures:
@@ -93,7 +93,7 @@ class CorpusLintTest(unittest.TestCase):
         self.assertEqual(
             rule_ids,
             set(range(1, EXPECTED_RULE_COUNT + 1)),
-            "fixtures do not cover exactly rules 1..13",
+            "fixtures do not cover exactly rules 1..14",
         )
 
     def test_each_fixture_yields_only_its_rule(self) -> None:

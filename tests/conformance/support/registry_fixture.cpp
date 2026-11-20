@@ -84,11 +84,19 @@ RegistryFixture::RegistryFixture(const std::filesystem::path& tmp,
 
     composition::CommandRuntimeOptions options;
     // Local-operator default (the direct transport maps to `cmd`/`tui`): grant
-    // the file-path capability, full filesystem, so import/export corpus cases
-    // that reference ${tmp}/<file> are not refused `unsupported`. The
-    // capability is independent of the caller role; a `user` caller still
-    // cannot use `path` (the write raise is denied `not_authorized`).
+    // the file-path capability so import/export corpus cases that reference
+    // ${tmp}/<file> are not refused `unsupported`. The capability is
+    // independent of the caller role; a `user` caller still cannot use `path`
+    // (the write raise is denied `not_authorized`).
+    //
+    // Confine every path to the per-case temp dir (defense in depth for the
+    // corpus replay). A `path` arg is free text and, unlike a `files` key, is
+    // not checked by the case runner; `cmd` ships no `--path-root`, so this
+    // `root` is the only per-shim confinement available. With it, a case that
+    // smuggles an absolute path or a `${tmp}/..` escape is refused
+    // `invalid_field` and the out-of-root file is never opened or written.
     options.file_paths.allow_paths = true;
+    options.file_paths.root = tmp.string();
     m_runtime_ = std::make_unique<composition::CommandRuntime>(
         composition::build_command_runtime(m_server_, m_backend_, options));
 }
@@ -118,8 +126,14 @@ url_shortener::commands::CallerContext RegistryFixture::caller(
     url_shortener::commands::CallerContext context;
     context.principal = "local-operator";
     context.transport = "direct";
-    context.control_set =
-        (role == "user") ? ControlSet::User : ControlSet::Admin;
+    // Map only the exact corpus roles; fail closed to the least-privileged role
+    // for anything else, so an unexpected token can never silently grant Admin.
+    if (role == "admin") {
+        context.control_set = ControlSet::Admin;
+    }
+    else {
+        context.control_set = ControlSet::User;
+    }
     return context;
 }
 

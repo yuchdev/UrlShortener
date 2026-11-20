@@ -215,6 +215,25 @@ Each rule has a negative fixture under
     code point would make the C++ and Python matchers disagree. Requiring
     pre-normalized corpus strings keeps the two verdicts identical; author
     accented text in its composed form.
+14. **Confined `path` arguments.** Any `path` argument in a step's
+    `request.args` must be exactly `${tmp}/<name>`, where `<name>` is a single
+    safe bare name (the rule 11 vocabulary: non-empty, no path separator, not
+    `.`/`..`, not starting with `~`). A literal absolute path, a `..` traversal,
+    or more than one component is rejected. Separately, any case that uses a
+    `path` arg in **any** step must scope its transports (`transports.only` or
+    `transports.skip`), so a "path works" expectation is never measured against a
+    transport that refuses `path` by default (REST is default-deny `unsupported`,
+    `command_runtime.cpp`; only `cmd`, `tui` and `serve-stdio` grant the file-path
+    capability).
+
+    **Why the corpus is the confinement, not the shim.** A `path` arg is free
+    text; unlike a `files` key, neither the C++ case runner nor the Python
+    harness inspects or rewrites it. The in-process `direct`/`tui` shims pin a
+    confinement `root` to the per-case temp dir, but `cmd` ships no `--path-root`
+    flag, so there is no per-shim way to confine the `cmd` replay. This lint
+    rule - requiring every `path` to be `${tmp}/<name>` - is therefore the single
+    control that keeps every transport's replay inside the temp dir and off the
+    real filesystem.
 
 ## Running the linter
 
