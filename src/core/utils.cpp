@@ -204,6 +204,21 @@ bool is_private_ipv4(std::uint32_t addr)
     if (a == 169u && b == 254u) {
         return true;  // 169.254.0.0/16 link-local
     }
+    // Special-use ranges that must not be a redirect target either (07.0/20
+    // review): CGNAT, benchmarking, multicast, reserved and the broadcast
+    // address. Public addresses (8.8.8.8, 1.1.1.1, 93.184.216.34) are in none.
+    if (a == 100u && b >= 64u && b <= 127u) {
+        return true;  // 100.64.0.0/10 carrier-grade NAT
+    }
+    if (a == 198u && (b == 18u || b == 19u)) {
+        return true;  // 198.18.0.0/15 benchmarking
+    }
+    if (a >= 224u && a <= 239u) {
+        return true;  // 224.0.0.0/4 multicast
+    }
+    if (a >= 240u) {
+        return true;  // 240.0.0.0/4 reserved (covers 255.255.255.255)
+    }
     return false;
 }
 
@@ -379,18 +394,48 @@ std::optional<bool> classify_ipv6(const std::string& host)
         return true;  // fe80::/10 link-local
     }
 
+    // Helper: fold a 4-byte window into a host-order IPv4 address.
+    const auto embedded_v4 = [&buf](int offset) -> std::uint32_t
+    {
+        return (static_cast<std::uint32_t>(buf[offset]) << 24)
+            | (static_cast<std::uint32_t>(buf[offset + 1]) << 16)
+            | (static_cast<std::uint32_t>(buf[offset + 2]) << 8)
+            | static_cast<std::uint32_t>(buf[offset + 3]);
+    };
+
     // IPv4-mapped ::ffff:a.b.c.d -> re-check the embedded IPv4.
     bool mapped = buf[10] == 0xFFu && buf[11] == 0xFFu;
     for (int i = 0; i < 10 && mapped; ++i) {
         mapped = buf[i] == 0;
     }
     if (mapped) {
-        const std::uint32_t embedded =
-            (static_cast<std::uint32_t>(buf[12]) << 24)
-            | (static_cast<std::uint32_t>(buf[13]) << 16)
-            | (static_cast<std::uint32_t>(buf[14]) << 8)
-            | static_cast<std::uint32_t>(buf[15]);
-        return is_private_ipv4(embedded);
+        return is_private_ipv4(embedded_v4(12));
+    }
+
+    // IPv4-compatible ::a.b.c.d (bytes 0..11 zero). :: and ::1 were already
+    // handled above; any other address with a zero /96 prefix embeds a v4 in
+    // the low 32 bits, so re-check it (07.0/20 review LOW, e.g. [::127.0.0.1]).
+    bool compatible = true;
+    for (int i = 0; i < 12 && compatible; ++i) {
+        compatible = buf[i] == 0;
+    }
+    if (compatible) {
+        return is_private_ipv4(embedded_v4(12));
+    }
+
+    // NAT64 64:ff9b::/96 -> the low 32 bits are the translated v4.
+    bool nat64 = buf[0] == 0x00u && buf[1] == 0x64u && buf[2] == 0xFFu
+        && buf[3] == 0x9Bu;
+    for (int i = 4; i < 12 && nat64; ++i) {
+        nat64 = buf[i] == 0;
+    }
+    if (nat64) {
+        return is_private_ipv4(embedded_v4(12));
+    }
+
+    // 6to4 2002::/16 -> the embedded v4 is bytes 2..5.
+    if (buf[0] == 0x20u && buf[1] == 0x02u) {
+        return is_private_ipv4(embedded_v4(2));
     }
 
     return false;  // a valid but public IPv6 address
@@ -402,7 +447,18 @@ bool isPrivateHost(const std::string& host)
 {
     const std::string lower_host = [&host]() {
         std::string out = host;
-        std::transform(out.begin(), out.end(), out.begin(), [](const unsigned char c) { return std::tolower(c); });
+        std::transform(out.begin(),
+                       out.end(),
+                       out.begin(),
+                       [](const unsigned char c) { return std::tolower(c); });
+        // Strip ONE trailing '.' (a fully-qualified-name dot, WHATWG "remove
+        // last empty label") before any classification, so "localhost." and
+        // "2130706433." / "0177.0.0.1." cannot slip past the hostname and
+        // numeric checks (07.0/20 review). The IPv4 canonicalizer rejects an
+        // empty last part, so without this a trailing dot would bypass it.
+        if (out.size() > 1 && out.back() == '.') {
+            out.pop_back();
+        }
         return out;
     }();
     if (lower_host == "localhost" || lower_host == "::1" || lower_host == "::" || lower_host == "0.0.0.0"
@@ -514,6 +570,14 @@ std::optional<std::string> normalizeTargetUrl(const std::string& input_url, cons
                    host.begin(),
                    [](const unsigned char c) { return std::tolower(c); });
     if (host.empty()) {
+        return std::nullopt;
+    }
+    // Percent-encoding in the host is not decoded here; a '%' is refused
+    // outright (treated as an invalid URL). Decoding would reopen the
+    // encoded-dot / encoded-IP bypass the private-target check exists to close
+    // (e.g. "2130706433%2e" -> "2130706433." -> 127.0.0.1), so the host must be
+    // literal before classification (07.0/20 review, WHATWG host parsing).
+    if (host.find('%') != std::string::npos) {
         return std::nullopt;
     }
     if (!config.shortener_allow_private_targets && isPrivateHost(host)) {
