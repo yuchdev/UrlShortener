@@ -161,8 +161,10 @@ def normalize_actual(
         ``carries_id``); when ``False`` the server is expected to mint an
         ``srv-<n>`` id regardless of any request id.
     :return: ``(normalized_envelope, findings)`` where *findings* is the list of
-        human-readable N4/N5 violations (empty when the envelope is well-formed);
-        a non-empty list means the envelope fails to match.
+        human-readable violations and covers **both** N4 (id echo / generated-id)
+        and N5 (extra top-level key) checks (empty when the envelope is
+        well-formed); a non-empty list means the envelope fails to match,
+        regardless of the ``match`` mode later used.
     """
     env = copy.deepcopy(envelope)
     findings: List[str] = []
@@ -548,8 +550,16 @@ def forbidden_regex_reason(pattern: str) -> Optional[str]:
 
     The ``<regex:...>`` token must use only constructs valid in both Python
     ``re`` and C++ ``std::regex`` ECMAScript, so the two matchers agree. This
-    rejects lookbehind, named groups / named backreferences, and possessive
-    quantifiers.
+    rejects:
+
+    * lookbehind, named groups / named backreferences, and possessive
+      quantifiers (dialect mismatches); and
+    * patterns prone to catastrophic backtracking / ReDoS (CWE-1333) - a
+      conservative syntactic rule flags a quantified group whose body itself
+      contains a quantifier or an alternation (``(a+)+``, ``(a*)*``,
+      ``(.*a){20}``, ``(a|a)+``). ``std::regex`` in subtask 03 is even more
+      prone to blowing up on these, so the pattern must be *refused as a
+      finding* rather than executed by either matcher.
 
     :param pattern: The regex pattern (the text after ``<regex:``).
     :return: A short human reason when *pattern* uses a disallowed construct,
@@ -558,4 +568,93 @@ def forbidden_regex_reason(pattern: str) -> Optional[str]:
     for compiled, reason in _FORBIDDEN_REGEX:
         if compiled.search(pattern):
             return reason
+    return _nested_quantifier_reason(pattern)
+
+
+def _nested_quantifier_reason(pattern: str) -> Optional[str]:
+    """Flag a quantified group whose body risks catastrophic backtracking.
+
+    Scans *pattern* with paren/character-class/escape awareness and rejects any
+    group ``(...)`` immediately followed by a quantifier (``*``/``+``/``?``/
+    ``{...}``) when the group body contains a quantifier or an alternation. This
+    is a deliberately conservative syntactic check (it may reject some linear
+    patterns such as ``(ab){3}+``-style bodies); it never executes the regex.
+
+    :param pattern: The regex pattern to inspect.
+    :return: A short human reason when a nested/ambiguous quantifier is found,
+        else ``None``.
+    """
+    length = len(pattern)
+    index = 0
+    open_stack: List[int] = []
+    while index < length:
+        char = pattern[index]
+        if char == "\\":
+            index += 2
+            continue
+        if char == "[":
+            index = _skip_char_class(pattern, index)
+            continue
+        if char == "(":
+            open_stack.append(index)
+            index += 1
+            continue
+        if char == ")":
+            if open_stack:
+                open_index = open_stack.pop()
+                nxt = index + 1
+                if nxt < length and pattern[nxt] in "*+?{":
+                    body_start = open_index + 1
+                    # Skip a non-capturing / lookaround group prefix so the
+                    # ``?`` of ``(?:...)`` is not mistaken for a quantifier.
+                    if pattern[body_start:body_start + 2] in ("?:", "?=", "?!"):
+                        body_start += 2
+                    body = pattern[body_start:index]
+                    if _body_has_quantifier_or_alternation(body):
+                        return (
+                            "nested or ambiguous quantifier "
+                            "(catastrophic backtracking risk)"
+                        )
+            index += 1
+            continue
+        index += 1
     return None
+
+
+def _skip_char_class(pattern: str, start: int) -> int:
+    """Return the index just past the ``[...]`` character class at *start*.
+
+    Quantifier characters inside a character class are literal, so the ReDoS
+    scan must step over the whole class.
+    """
+    length = len(pattern)
+    pos = start + 1
+    if pos < length and pattern[pos] == "^":
+        pos += 1
+    if pos < length and pattern[pos] == "]":
+        pos += 1
+    while pos < length and pattern[pos] != "]":
+        pos += 2 if pattern[pos] == "\\" else 1
+    return pos + 1
+
+
+def _body_has_quantifier_or_alternation(body: str) -> bool:
+    """Return ``True`` if a group body contains a quantifier or alternation.
+
+    Escapes and nested character classes are skipped so a literal ``\\*`` or a
+    ``[*]`` class does not count.
+    """
+    length = len(body)
+    pos = 0
+    while pos < length:
+        char = body[pos]
+        if char == "\\":
+            pos += 2
+            continue
+        if char == "[":
+            pos = _skip_char_class(body, pos)
+            continue
+        if char in "*+?{|":
+            return True
+        pos += 1
+    return False

@@ -144,9 +144,17 @@ one of the tokens below is exact text (so `<foo>` matches only the literal
 | `<ts>` | an RFC 3339 UTC timestamp `YYYY-MM-DDThh:mm:ss[.fff]Z` (ASCII, UTC only) |
 | `<int>` / `<uint>` | an integer / an integer >= 0 (an integral JSON number such as `3.0` counts; a boolean does not) |
 | `<slug:N>` | a string of exactly `N` characters from the slug alphabet `[0-9A-Za-z]` (generated slugs; `N` is the configured generated length, default `SHORTENER_GENERATED_SLUG_LENGTH` = 7) |
-| `<regex:PATTERN>` | a full-string match of `PATTERN`, restricted to constructs valid in both Python `re` and C++ `std::regex` ECMAScript (no lookbehind, no named groups, no possessive quantifiers) |
+| `<regex:PATTERN>` | a full-string match of `PATTERN`, restricted to constructs valid in both Python `re` and C++ `std::regex` ECMAScript (no lookbehind, no named groups, no possessive quantifiers) and free of catastrophic-backtracking shapes (see below) |
 | `<var:name>` | the value previously saved as `name` (compared with the N3 / N6 value rules) |
 | `<absent>` | used only as an object field value; asserts the key is **not** present |
+
+A `<regex:PATTERN>` is additionally rejected **before it is ever executed** when
+`PATTERN` risks catastrophic backtracking / ReDoS: the conservative syntactic
+rule flags a quantified group whose body itself contains a quantifier or an
+alternation (`(a+)+`, `(a*)*`, `(.*a){20}`, `(a|a)+`). Such a pattern produces a
+mismatch finding rather than running. Both the Python and the C++ matcher apply
+this rule identically - `std::regex` is more prone to blowing up on these - so
+the check lives in the shared vector file and must not diverge.
 
 ### Variable substitution
 

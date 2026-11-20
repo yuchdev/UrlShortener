@@ -63,16 +63,19 @@ def _run_vector(vector: dict) -> list:
     mode = vector.get("mode", "exact")
     try:
         expected = cm.substitute(vector["expected"], variables)
+        actual = vector["actual"]
+        findings: list = []
+        if vector.get("normalize"):
+            actual, findings = cm.normalize_actual(
+                actual, vector.get("request"), vector.get("carries_id", False)
+            )
+        return findings + cm.match(expected, actual, mode, variables)
     except ValueError as exc:
         return [f"$: substitution error: {exc}"]
-
-    actual = vector["actual"]
-    findings: list = []
-    if vector.get("normalize"):
-        actual, findings = cm.normalize_actual(
-            actual, vector.get("request"), vector.get("carries_id", False)
-        )
-    return findings + cm.match(expected, actual, mode, variables)
+    except RecursionError:
+        # CWE-674: a pathologically deep input must become a clean mismatch
+        # finding, never an uncaught error that aborts the whole suite.
+        return ["$: input nested too deeply to evaluate"]
 
 
 class MatcherVectorTest(unittest.TestCase):
@@ -113,23 +116,91 @@ class MatcherVectorTest(unittest.TestCase):
                         f"reasons={reasons}",
                     )
 
-    def test_regex_tokens_use_shared_dialect(self) -> None:
-        """Every ``<regex:...>`` token in the vectors is ECMAScript-compatible.
-
-        The C++ runner matches the same tokens with ``std::regex``; a pattern
-        using a Python-only construct (lookbehind, named group, possessive
-        quantifier) would drift, so it is rejected here as data lint.
+    def test_forbidden_regex_tokens_are_rejection_vectors(self) -> None:
+        """A vector whose ``<regex:...>`` token is outside the shared dialect
+        must declare ``match: false`` - the matcher is required to refuse such a
+        pattern (dialect drift or ReDoS), never execute it and let it pass.
         """
         for vector in _load_vectors():
             for value in _iter_strings(vector.get("expected")):
                 token = cm._parse_token(value)
-                if token and token[0] == "regex":
+                if token and token[0] == "regex" and cm.forbidden_regex_reason(
+                    token[1]
+                ):
                     with self.subTest(vector=vector["name"], pattern=token[1]):
-                        self.assertIsNone(
-                            cm.forbidden_regex_reason(token[1]),
-                            f"{vector['name']}: <regex> pattern {token[1]!r} "
-                            "uses a construct outside the shared dialect",
+                        self.assertFalse(
+                            vector["match"],
+                            f"{vector['name']}: forbidden regex {token[1]!r} "
+                            "must be a rejection (match: false) vector",
                         )
+
+    def test_regex_dialect_guard(self) -> None:
+        """``forbidden_regex_reason`` accepts the shared dialect and rejects
+        both dialect mismatches and catastrophic-backtracking patterns."""
+        for safe in ("[a-z]+", "[0-9]{3}", "a.c", "(ab)+", "(?:ab)c", "a|b"):
+            self.assertIsNone(
+                cm.forbidden_regex_reason(safe), f"{safe!r} should be allowed"
+            )
+        for bad in (
+            "(a+)+",       # nested quantifier
+            "(a*)*",       # nested quantifier
+            "(.*a){20}",   # quantified group with inner quantifier
+            "(a|a)+",      # quantified alternation
+            "(?<=x)y",     # lookbehind (dialect)
+            "a*+",         # possessive (dialect)
+        ):
+            self.assertIsNotNone(
+                cm.forbidden_regex_reason(bad), f"{bad!r} should be rejected"
+            )
+
+    def test_matcher_refuses_catastrophic_regex_without_running_it(self) -> None:
+        """``<regex:(a+)+>`` is refused as a finding before ``re.fullmatch`` ever
+        runs, so a ReDoS input cannot hang the matcher (CWE-1333)."""
+        reason = cm._match_token("regex", "(a+)+", "a" * 40 + "!", {})
+        self.assertIsNotNone(reason)
+        self.assertIn("disallowed", reason)
+
+    def test_deeply_nested_input_yields_clean_finding(self) -> None:
+        """An approximately 100k-deep nested structure becomes a clean mismatch
+        finding, not an uncaught ``RecursionError`` (CWE-674).
+
+        Both the ``normalize_actual`` deepcopy path and the ``match`` recursion
+        path are exercised.
+        """
+        depth = 100_000
+
+        def deep() -> dict:
+            root: dict = {}
+            node = root
+            for _ in range(depth):
+                child: dict = {}
+                node["n"] = child
+                node = child
+            return root
+
+        normalize_vector = {
+            "name": "deep_normalize",
+            "mode": "exact",
+            "normalize": True,
+            "expected": {"v": 1, "ok": True, "result": {}},
+            "actual": {"v": 1, "ok": True, "result": deep()},
+            "match": False,
+        }
+        match_vector = {
+            "name": "deep_match",
+            "mode": "exact",
+            "expected": {"root": deep()},
+            "actual": {"root": deep()},
+            "match": False,
+        }
+        for vector in (normalize_vector, match_vector):
+            with self.subTest(vector=vector["name"]):
+                reasons = _run_vector(vector)
+                self.assertTrue(reasons, "expected a non-empty finding list")
+                self.assertTrue(
+                    any("nested too deeply" in reason for reason in reasons),
+                    f"expected a depth finding, got {reasons}",
+                )
 
     def test_substitute_raises_on_unknown_variable(self) -> None:
         """``substitute`` rejects a reference to an unsaved variable."""
