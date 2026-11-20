@@ -1,9 +1,14 @@
 #pragma once
 
+#include <chrono>
+#include <cstdio>
 #include <cstdlib>
 #include <filesystem>
 #include <memory>
 #include <optional>
+#include <random>
+#include <string>
+#include <system_error>
 #include <vector>
 
 #include <boost/test/unit_test.hpp>
@@ -24,6 +29,47 @@ struct MetadataHarness {
     std::shared_ptr<IMetadataRepository> repo;
 };
 
+/**
+ * @brief Path of this process's SQLite contract database.
+ *
+ * The 12 `metadata__*` contract binaries run concurrently under `ctest -j`.
+ * A single fixed file under `temp_directory_path()` would be shared by all of
+ * them, so one binary's reset would delete rows another binary had just
+ * written. The name therefore carries a per-process token: a random-device
+ * draw plus the steady-clock start time, computed once.
+ *
+ * @return The same path for every call within one process.
+ */
+inline const std::filesystem::path& ContractSqlitePath()
+{
+    static const std::filesystem::path path = []
+    {
+        std::random_device device;
+        const auto draw = (static_cast<unsigned long long>(device()) << 32U)
+            ^ static_cast<unsigned long long>(device());
+        const auto start = static_cast<unsigned long long>(
+            std::chrono::steady_clock::now().time_since_epoch().count());
+        char buffer[48];
+        std::snprintf(buffer, sizeof(buffer), "%llx_%llx", draw, start);
+        return std::filesystem::temp_directory_path()
+            / ("url_shortener_contract_" + std::string(buffer) + ".sqlite3");
+    }();
+    // Constructed after `path`, so destroyed before it: removes this
+    // process's database (and any SQLite side files) at exit.
+    static const struct Cleanup
+    {
+        ~Cleanup()
+        {
+            std::error_code ignored;
+            for (const char* suffix : {"", "-journal", "-wal", "-shm"}) {
+                std::filesystem::remove(path.string() + suffix, ignored);
+            }
+        }
+    } cleanup;
+    (void)cleanup;
+    return path;
+}
+
 // Defined below; resets a single harness to an empty `links` table so
 // MakeMetadataHarnesses can give the Postgres harness the same per-case
 // isolation the SQLite file removal already provides (threat model T-50).
@@ -40,7 +86,7 @@ inline std::vector<MetadataHarness> MakeMetadataHarnesses()
 
     {
         auto clock = std::make_shared<ManualClock>(std::chrono::system_clock::time_point{});
-        auto db = std::filesystem::temp_directory_path() / std::filesystem::path("url_shortener_contract.sqlite3");
+        const auto& db = ContractSqlitePath();
         SqlConnectionConfig config;
         config.backend = SqlBackendKind::sqlite;
         config.dsn = db.string();
@@ -104,8 +150,7 @@ inline void ResetMetadataHarness(MetadataHarness& harness)
         return;
     }
     if (harness.name == "sqlite") {
-        auto db = std::filesystem::temp_directory_path()
-            / std::filesystem::path("url_shortener_contract.sqlite3");
+        const auto& db = ContractSqlitePath();
         SqlConnectionConfig config;
         config.backend = SqlBackendKind::sqlite;
         config.dsn = db.string();
