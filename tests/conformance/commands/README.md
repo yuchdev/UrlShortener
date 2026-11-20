@@ -100,8 +100,66 @@ Exactly one of `request` / `raw_request` is required per step.
 - Literal timestamps are forbidden under `created_at` / `updated_at` /
   `deleted_at` / `started_at` / `finished_at`: use the `<ts>` matcher. Any value
   under a key named `id` must be a matcher token (`<id>`) or a `${var}`.
-- Matcher tokens and `${var}` substitution are defined fully in Task 07.0
-  subtask 02.
+- Matcher tokens and `${var}` substitution are defined fully in the
+  "Matchers and normalization" section below.
+
+## Matchers and normalization
+
+The corpus is replayed by two independent implementations - a Python harness and
+a C++ runner - so the rules for turning a live response envelope into a
+pass/fail verdict are defined **once, as data**, in
+[`../normalizer_vectors.json`](/tests/conformance/normalizer_vectors.json). That
+file is the single normative source: both implementations must pass every vector
+in it unchanged, and any rule change edits the vectors first. Its executable
+Python mirror is
+[`../py/conformance_match.py`](/tests/conformance/py/conformance_match.py), run
+in CI by `conformance_01_matcher_vectors`. The prose below documents the rules
+the vector file pins down.
+
+### Normalization (applied to the *actual* envelope before matching)
+
+| Rule | Effect |
+|---|---|
+| N1 | `error.message` and any `error.details` are deleted (the message is for humans and is never compared). |
+| N2 | Object key order is ignored; objects compare structurally. |
+| N3 | Numbers compare by value (`1` equals `1.0`); a boolean is never equal to a number. |
+| N4 | Envelope `id`: if the request carried an `id` and the transport has capability `carries_id`, the actual `id` must equal it; otherwise the actual `id` must match `^srv-[0-9]+$`. After the check the value is replaced by the sentinel `"<id>"`, so `expect` need not restate it. |
+| N5 | A response carrying any top-level key other than `v`, `id`, `ok`, and one of `result` / `job` / `error` fails, regardless of `match` mode. |
+| N6 | Strings compare after Unicode NFC normalization; there is no trimming. |
+
+N1, N4 and N5 are performed by `normalize_actual`; N2, N3 and N6 are realized by
+the matcher itself.
+
+### Matcher tokens
+
+A token is a whole-string value in `expect`; tokens are the only wildcard
+mechanism and never match object keys, only values. A `<...>` string that is not
+one of the tokens below is exact text (so `<foo>` matches only the literal
+`"<foo>"`).
+
+| Token | Matches |
+|---|---|
+| `<any>` | any JSON value, including `null` |
+| `<id>` | a non-empty string, <= 64 chars, drawn from `[A-Za-z0-9_.:-]` (link ids, job ids `j-<n>`, server ids `srv-<n>`) |
+| `<ts>` | an RFC 3339 UTC timestamp `YYYY-MM-DDThh:mm:ss[.fff]Z` (ASCII, UTC only) |
+| `<int>` / `<uint>` | an integer / an integer >= 0 (an integral JSON number such as `3.0` counts; a boolean does not) |
+| `<slug:N>` | a string of exactly `N` characters from the slug alphabet `[0-9A-Za-z]` (generated slugs; `N` is the configured generated length, default `SHORTENER_GENERATED_SLUG_LENGTH` = 7) |
+| `<regex:PATTERN>` | a full-string match of `PATTERN`, restricted to constructs valid in both Python `re` and C++ `std::regex` ECMAScript (no lookbehind, no named groups, no possessive quantifiers) |
+| `<var:name>` | the value previously saved as `name` (compared with the N3 / N6 value rules) |
+| `<absent>` | used only as an object field value; asserts the key is **not** present |
+
+### Variable substitution
+
+`${name}` substitution is applied to every string inside a request and an
+`expect` before use. `${tmp}` expands to the per-case temp directory with `/`
+separators on every OS. A reference to an unsaved variable is an error.
+
+### Match modes
+
+`exact` (default) rejects any extra object key in the actual value; `subset`
+allows extra **object** keys but still compares arrays element-for-element and by
+length. In both modes `<absent>` asserts a key is missing, and an N5 violation
+fails the response regardless of mode.
 
 ## Lint rules
 

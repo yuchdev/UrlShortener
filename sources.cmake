@@ -708,6 +708,7 @@ set(URL_SHORTENER_SOURCES
   # runners here. Registered like CLI_INTEGRATION_SOURCES (Python3 + binary).
   set(CONFORMANCE_PY_SOURCES
       tests/conformance/py/00_corpus_lint.py
+      tests/conformance/py/01_matcher_vectors.py
   )
 
   # ---- Perf benchmarks (Task 07.0 subtask 30; label "perf") ----
