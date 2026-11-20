@@ -911,6 +911,7 @@ set(URL_SHORTENER_SOURCES
         tests/unit/tui/07_field_parsers_test.cpp
         tests/unit/tui/07_form_model_test.cpp
         tests/unit/tui/07_form_model_request_test.cpp
+        tests/unit/tui/30_form_model_property_test.cpp
         tests/unit/tui/11_palette_model_test.cpp
         tests/unit/tui/11_result_viewer_model_test.cpp
         tests/unit/tui/16_jobs_model_test.cpp
