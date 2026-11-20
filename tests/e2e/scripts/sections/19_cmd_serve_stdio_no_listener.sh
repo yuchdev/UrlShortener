@@ -43,6 +43,14 @@ if [[ -z "$BINARY" || ! -x "$BINARY" ]]; then
   exit 2
 fi
 
+# This section depends on python3 for the loopback connect probe and for the
+# byte+mtime fingerprint of the sentinel uri.txt. Guard it explicitly so a host
+# without python3 fails with a clear message rather than a confusing error.
+if ! command -v python3 >/dev/null 2>&1; then
+  echo "ERROR: python3 is required for 19_cmd_serve_stdio_no_listener." >&2
+  exit 2
+fi
+
 TMPDIR_19="$(mktemp -d)"
 trap 'rm -rf "$TMPDIR_19"' EXIT
 
@@ -100,24 +108,66 @@ with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
 PY
 }
 
-# Returns 0 when PID owns a LISTEN socket (a failure), 1 when it owns none.
-# Uses lsof (macOS/Linux) or ss (Linux); falls back to a port-8000 connect probe
-# (no PID attribution) when neither tool is present.
+# Positive control: can lsof actually enumerate a known listening socket here?
+# Opens a throwaway python TCP listener and checks lsof reports it for that pid,
+# so an lsof that silently enumerates nothing (sandbox) is not mistaken for
+# "no listener". Prints "ok" on success. Bounded by the short-lived child.
+_lsof_can_enumerate() {
+  python3 - <<'PY'
+import os, socket, subprocess, sys
+s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+s.bind(("127.0.0.1", 0)); s.listen(1)
+port = s.getsockname()[1]
+try:
+    out = subprocess.run(
+        ["lsof", "-nP", "-a", "-p", str(os.getpid()), "-iTCP", "-sTCP:LISTEN"],
+        capture_output=True, text=True, timeout=10).stdout
+finally:
+    s.close()
+print("ok" if f":{port}" in out and "(LISTEN)" in out else "no")
+PY
+}
+
+# Returns 0 when PID owns a listening TCP socket OR any UNIX-domain socket (a
+# failure), 1 when it owns none. Trusts lsof only after the positive control;
+# also checks UNIX-domain sockets (invisible to a TCP probe). Uses ss on Linux,
+# and falls back to a port-8000 connect probe (no PID attribution) otherwise.
 _pid_listens() {
   local pid="$1"
-  if command -v lsof >/dev/null 2>&1; then
-    lsof -nP -a -p "$pid" -iTCP -sTCP:LISTEN 2>/dev/null | grep -q "(LISTEN)"
-    return $?
+  if command -v lsof >/dev/null 2>&1 && [[ "$(_lsof_can_enumerate)" == "ok" ]]; then
+    if lsof -nP -a -p "$pid" -iTCP -sTCP:LISTEN 2>/dev/null | grep -q "(LISTEN)"; then
+      return 0
+    fi
+    # UNIX-domain sockets: any data line (past the header) is a socket the PID
+    # owns; the local modes open none.
+    if lsof -nP -U -a -p "$pid" 2>/dev/null | tail -n +2 | grep -q .; then
+      return 0
+    fi
+    return 1
   fi
   if command -v ss >/dev/null 2>&1; then
-    ss -ltnp 2>/dev/null | grep -q "pid=${pid},"
-    return $?
+    ss -ltnp 2>/dev/null | grep -q "pid=${pid}," && return 0
+    ss -lxp 2>/dev/null | grep -q "pid=${pid}," && return 0
+    return 1
   fi
-  echo "  NOTE: no lsof/ss; falling back to a port-8000 connect probe (no PID attribution)."
+  echo "  NOTE: no working lsof/ss; falling back to a port-8000 connect probe (no PID attribution)."
   if _port_open 8000; then
     return 0
   fi
   return 1
+}
+
+# Byte+mtime fingerprint of a file (portable via python3): proves the sentinel
+# was neither rewritten nor touched. `cksum` alone would miss a same-content
+# rewrite that still bumps mtime.
+_file_fingerprint() {
+  python3 - "$1" <<'PY'
+import hashlib, os, sys
+p = sys.argv[1]
+with open(p, "rb") as handle:
+    digest = hashlib.sha256(handle.read()).hexdigest()
+print(f"{digest}:{os.stat(p).st_mtime_ns}")
+PY
 }
 
 echo "=== 19_cmd_serve_stdio_no_listener ==="
@@ -202,7 +252,7 @@ for mode in cmd serve-stdio; do
   workdir="$TMPDIR_19/cwd_${mode}"
   mkdir -p "$workdir"
   printf '%s short->http://example.com/\n' "$SENTINEL_MARKER" > "$workdir/uri.txt"
-  before="$(cksum < "$workdir/uri.txt")"
+  before="$(_file_fingerprint "$workdir/uri.txt")"
   if [[ "$mode" == "cmd" ]]; then
     ( cd "$workdir" && run_with_timeout 10 "$BINARY" cmd command.list ) \
       >/dev/null 2>&1 || true
@@ -212,9 +262,9 @@ for mode in cmd serve-stdio; do
            | run_with_timeout 10 "$BINARY" serve-stdio ) \
       >/dev/null 2>&1 || true
   fi
-  after="$(cksum < "$workdir/uri.txt")"
+  after="$(_file_fingerprint "$workdir/uri.txt")"
   if [[ "$before" != "$after" ]]; then
-    echo "FAIL: $mode modified the sentinel uri.txt (URI store was written)." >&2
+    echo "FAIL: $mode changed the sentinel uri.txt bytes or mtime (URI store written)." >&2
     exit 1
   fi
   # The sentinel must remain the only uri*.txt file in the cwd.

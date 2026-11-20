@@ -5,6 +5,7 @@
 #include <fstream>
 #include <optional>
 #include <random>
+#include <regex>
 #include <set>
 #include <sstream>
 #include <string>
@@ -61,10 +62,14 @@ constexpr std::array<std::string_view, 2> k_forbidden_asio_includes = {
 };
 
 /// Identifiers that would betray a local mode constructing the network server,
-/// an acceptor / Asio execution context, or the legacy URI store. A textual
-/// presence of any of these (after comment stripping) in an entry file fails
-/// `local_mode_entries_have_no_listener_or_uri_symbols`.
-constexpr std::array<std::string_view, 8> k_forbidden_symbols = {
+/// an acceptor / Asio execution context, binding any socket (TCP *or* UNIX-
+/// domain, which a PID TCP scan cannot see), or touching the legacy URI store.
+/// A textual presence of any of these (after comment stripping) fails the
+/// listener/URI-store symbol scans. The same set is applied both to the three
+/// entry files and to every `url_shortener/...` header/source reachable from
+/// them through the include closure (security review: a listener introduced one
+/// hop away in a reachable header is just as fatal).
+constexpr std::array<std::string_view, 12> k_forbidden_symbols = {
     "HttpServer",
     "io_context",
     "acceptor",
@@ -73,20 +78,10 @@ constexpr std::array<std::string_view, 8> k_forbidden_symbols = {
     "uri_map_singleton",
     "uri.txt",
     "UriMap",
-};
-
-/// Ad-hoc registry / job-runner construction idioms. Only the one composition
-/// root (`src/composition/command_runtime.cpp` /
-/// `src/composition/job_runtime.cpp`) may create these; a local-mode entry file
-/// that constructs its own fails `local_modes_use_one_composition_root` (C11).
-/// The entry files legitimately *reference* the `CommandRegistry` type (they
-/// execute through it), so the ban targets the construction expression, never
-/// the bare type name.
-constexpr std::array<std::string_view, 4> k_adhoc_registry_builders = {
-    "make_shared<commands::CommandRegistry",
-    "make_shared<commands::JobRunner",
-    "new commands::CommandRegistry",
-    "new commands::JobRunner",
+    "socket(",
+    "bind(",
+    "listen(",
+    "AF_UNIX",
 };
 
 /// The composition-root entry points: a local mode must call exactly one of
@@ -106,6 +101,37 @@ constexpr std::array<std::string_view, 3> k_uri_store_symbols = {
     "UriMapSingleton",
     "uri_map_singleton",
     "uri.txt",
+};
+
+/// Include-target patterns a TUI translation unit may never reach (contract C8,
+/// 06.0/02 is the primary guard; this is the cross-task duplicate). These are
+/// the service / storage layers a screen or client seam must stay above: the
+/// link-command service, any storage adapter, the core link service, and any
+/// `security/*service*` header. `security/control_set.hpp` is deliberately NOT
+/// matched (it carries no "service" token) and stays allowed, as do the
+/// command DTO/scan headers and `tui/command_client.hpp`.
+const std::array<std::string, 4> k_tui_forbidden_service_includes = {
+    "url_shortener/app/link_command_service",
+    "url_shortener/storage/",
+    "url_shortener/core/link_service",
+    "security/.*service",
+};
+
+/// The registry / composition-root headers a TUI file may include ONLY from the
+/// in-process client seam and the entry point (spec case 2, C8). Any other TUI
+/// file that includes one of these has reached past the client boundary.
+constexpr std::array<std::string_view, 2> k_tui_registry_restricted_includes = {
+    "url_shortener/commands/command_registry.hpp",
+    "url_shortener/composition/command_runtime.hpp",
+};
+
+/// The three TUI file names allowed to include the registry / composition-root
+/// headers of @ref k_tui_registry_restricted_includes (the in-process client
+/// seam `in_process_client.{hpp,cpp}` and the entry point `tui_entry.cpp`).
+constexpr std::array<std::string_view, 3> k_tui_registry_allowlisted_files = {
+    "in_process_client.hpp",
+    "in_process_client.cpp",
+    "tui_entry.cpp",
 };
 
 /// One `#include` line: its 1-based line number and the quoted/bracketed
@@ -296,20 +322,24 @@ struct ClosureViolation
 };
 
 /// @brief Walks the transitive `url_shortener/...` include closure of @p seeds
-///        and returns the first header under a forbidden directory.
+///        and returns the first header under a forbidden directory or any
+///        Boost.Asio header reached along the way.
 ///
 /// Every `url_shortener/...` include is resolved to `@p include_root / target`
 /// and followed with a visited set, so a forbidden header reachable only
 /// indirectly - e.g. a composition/TUI header that later begins including
-/// `http/...` - is still caught and its chain reported. Non-`url_shortener`
-/// includes (std/Boost) are not followed; unreadable or missing headers are
-/// skipped and never produce a false positive.
+/// `http/...`, or a reachable header that pulls in `boost/asio` one hop away -
+/// is still caught and its chain reported. Only `url_shortener/...` includes
+/// are *followed*, but every include line (including a `boost/asio/...` line in
+/// a reachable header) is *checked*, so a transitively introduced Asio
+/// dependency cannot hide behind an allowlisted header. Unreadable or missing
+/// headers are skipped and never produce a false positive.
 ///
 /// @param seeds Source files to start from (the three entry `.cpp` files).
 /// @param include_root Directory under which `url_shortener/...` targets
 ///        resolve (the project `include/` tree, or a fixture tree in tests).
-/// @return The first forbidden header with its include chain, or std::nullopt
-///         when the whole reachable closure is clean.
+/// @return The first forbidden/Asio header with its include chain, or
+///         std::nullopt when the whole reachable closure is clean.
 std::optional<ClosureViolation> forbidden_in_include_closure(
     const std::vector<fs::path>& seeds, const fs::path& include_root)
 {
@@ -323,10 +353,16 @@ std::optional<ClosureViolation> forbidden_in_include_closure(
         const std::string chain = stack.back().second;
         stack.pop_back();
         for (const auto& inc : includes_of(path)) {
+            const std::string next_chain = chain + " -> " + inc.target;
+            // Checked for EVERY include line, url_shortener or not: a reachable
+            // header that includes boost/asio has introduced an execution
+            // context / acceptor dependency into a local-mode closure (C5).
+            if (is_asio_include(inc.target)) {
+                return ClosureViolation {next_chain, inc.target};
+            }
             if (inc.target.rfind("url_shortener/", 0) != 0) {
                 continue;
             }
-            const std::string next_chain = chain + " -> " + inc.target;
             if (is_forbidden_include(inc.target)) {
                 return ClosureViolation {next_chain, inc.target};
             }
@@ -341,6 +377,133 @@ std::optional<ClosureViolation> forbidden_in_include_closure(
         }
     }
     return std::nullopt;
+}
+
+/// One reachable file in the include closure, carrying the chain that reached
+/// it (for diagnostics in the content scan).
+struct ClosureFile
+{
+    ///< Absolute path to the reachable file.
+    fs::path path;
+
+    ///< Human-readable include chain from a seed to this file.
+    std::string chain;
+};
+
+/// @brief Collects every file in the transitive `url_shortener/...` include
+///        closure of @p seeds (the seeds themselves plus each reachable,
+///        resolvable header), each with the chain that reached it.
+///
+/// @param seeds Source files to start from.
+/// @param include_root Directory under which `url_shortener/...` targets
+///        resolve.
+/// @return The seeds and every reachable header; order is unspecified.
+std::vector<ClosureFile> collect_include_closure(
+    const std::vector<fs::path>& seeds, const fs::path& include_root)
+{
+    std::vector<ClosureFile> files;
+    std::set<std::string> visited;
+    std::vector<ClosureFile> stack;
+    for (const auto& seed : seeds) {
+        stack.push_back(ClosureFile {seed, seed.filename().string()});
+        files.push_back(ClosureFile {seed, seed.filename().string()});
+    }
+    while (!stack.empty()) {
+        const ClosureFile current = stack.back();
+        stack.pop_back();
+        for (const auto& inc : includes_of(current.path)) {
+            if (inc.target.rfind("url_shortener/", 0) != 0) {
+                continue;
+            }
+            if (!visited.insert(inc.target).second) {
+                continue;
+            }
+            const fs::path header = include_root / inc.target;
+            std::error_code ec;
+            if (fs::exists(header, ec)) {
+                const std::string next_chain =
+                    current.chain + " -> " + inc.target;
+                stack.push_back(ClosureFile {header, next_chain});
+                files.push_back(ClosureFile {header, next_chain});
+            }
+        }
+    }
+    return files;
+}
+
+/// A forbidden symbol found in the comment-stripped content of a closure file.
+struct SymbolViolation
+{
+    ///< The forbidden symbol that was found.
+    std::string symbol;
+
+    ///< Include chain to the offending file.
+    std::string chain;
+};
+
+/// @brief Scans the comment-stripped content of every file in the include
+///        closure of @p seeds for any of @p symbols.
+///
+/// @param seeds Source files to start the closure from.
+/// @param include_root Directory under which `url_shortener/...` targets
+///        resolve.
+/// @param symbols The forbidden symbol set.
+/// @return The first symbol found with the chain to its file, or std::nullopt
+///         when the whole reachable closure is clean.
+std::optional<SymbolViolation> symbol_in_include_closure(
+    const std::vector<fs::path>& seeds,
+    const fs::path& include_root,
+    const std::vector<std::string_view>& symbols)
+{
+    for (const auto& file : collect_include_closure(seeds, include_root)) {
+        const std::string code = strip_comments(read_file(file.path));
+        for (const std::string_view symbol : symbols) {
+            if (code.find(symbol) != std::string::npos) {
+                return SymbolViolation {std::string(symbol), file.chain};
+            }
+        }
+    }
+    return std::nullopt;
+}
+
+/// @brief Whether comment-stripped @p code constructs an ad-hoc
+///        `CommandRegistry` / `JobRunner` (C11), as opposed to merely
+///        referencing the type.
+///
+/// Construction is detected textually in four shapes, for both the
+/// `commands::`-qualified and the unqualified (`using`-brought) spellings:
+/// `make_shared`/`make_unique<...CommandRegistry|JobRunner>`,
+/// `new ...CommandRegistry|JobRunner`, brace init `...CommandRegistry{`, and a
+/// variable definition `...CommandRegistry name;` / `...CommandRegistry name{`.
+/// A reference binding (`const commands::CommandRegistry& r = ...`), a return
+/// type / function declaration (`commands::CommandRegistry make();`) and a
+/// parameter (`void f(commands::CommandRegistry r)`) are deliberately NOT
+/// matched - the `&` breaks the variable-definition pattern, and a `(` / `)` /
+/// `,` after the name is excluded from the `[;{]` terminator set.
+///
+/// @param code Comment-stripped source text.
+/// @param what On a match, set to the matched construction fragment.
+/// @return `true` when an ad-hoc construction is present.
+bool constructs_adhoc_registry(const std::string& code, std::string* what)
+{
+    static const std::array<std::regex, 4> patterns = {
+        std::regex(
+            R"((make_shared|make_unique)\s*<\s*(commands::)?(CommandRegistry|JobRunner))"),
+        std::regex(R"(\bnew\s+(commands::)?(CommandRegistry|JobRunner)\b)"),
+        std::regex(R"(\b(commands::)?(CommandRegistry|JobRunner)\s*\{)"),
+        std::regex(
+            R"(\b(commands::)?(CommandRegistry|JobRunner)\s+[A-Za-z_][A-Za-z0-9_]*\s*[;{])"),
+    };
+    for (const std::regex& pattern : patterns) {
+        std::smatch match;
+        if (std::regex_search(code, match, pattern)) {
+            if (what != nullptr) {
+                *what = match.str();
+            }
+            return true;
+        }
+    }
+    return false;
 }
 
 /// @brief The project source root, or an empty path when `SOURCE_DIR` is not
@@ -440,6 +603,105 @@ bool references_composition_builder(const std::string& code)
                        k_composition_builders.end(),
                        [&](std::string_view builder)
                        { return code.find(builder) != std::string::npos; });
+}
+
+/// @brief Whether an include target names a forbidden service/storage header
+///        for the TUI layer (contract C8).
+///
+/// @param target An include target.
+/// @return `true` when @p target matches any pattern in
+///         @ref k_tui_forbidden_service_includes (`security/.*service` is a
+///         regex; the rest are literal substrings).
+bool is_tui_forbidden_service_include(const std::string& target)
+{
+    for (const std::string& pattern : k_tui_forbidden_service_includes) {
+        if (std::regex_search(target, std::regex(pattern))) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/// @brief Whether a TUI file may include the registry / composition-root
+///        headers (the in-process client seam or the entry point).
+///
+/// @param file Path to the TUI file.
+/// @return `true` when the file's name is one of
+///         @ref k_tui_registry_allowlisted_files.
+bool is_tui_registry_allowlisted_file(const fs::path& file)
+{
+    const std::string name = file.filename().string();
+    return std::any_of(k_tui_registry_allowlisted_files.begin(),
+                       k_tui_registry_allowlisted_files.end(),
+                       [&](std::string_view allowed)
+                       { return name == allowed; });
+}
+
+/// One TUI include-boundary violation: the offending file, the include target,
+/// and a short reason.
+struct TuiIncludeViolation
+{
+    ///< Path (as a string) of the TUI file that included a forbidden header.
+    std::string file;
+
+    ///< The forbidden include target.
+    std::string target;
+
+    ///< Why it is forbidden ("service/storage" or "registry outside seam").
+    std::string reason;
+};
+
+/// @brief Scans every `.cpp`/`.hpp` under @p roots for a C8 include violation.
+///
+/// Two violation classes (spec case 2): a forbidden service/storage include
+/// anywhere, and a registry / composition-root include
+/// (@ref k_tui_registry_restricted_includes) from any file other than the
+/// allowlisted in-process client seam / entry point.
+///
+/// @param roots Directory roots to walk recursively (missing roots are
+/// skipped).
+/// @return The first violation found, or std::nullopt when the whole tree is
+///         clean. The walk skips permission-denied entries so it never throws.
+std::optional<TuiIncludeViolation> tui_service_include_violation(
+    const std::vector<fs::path>& roots)
+{
+    for (const fs::path& root : roots) {
+        std::error_code ec;
+        if (!fs::exists(root, ec)) {
+            continue;
+        }
+        fs::recursive_directory_iterator it(
+            root, fs::directory_options::skip_permission_denied, ec);
+        const fs::recursive_directory_iterator end;
+        for (; !ec && it != end; it.increment(ec)) {
+            const auto& entry = *it;
+            if (!entry.is_regular_file(ec)) {
+                continue;
+            }
+            const auto extension = entry.path().extension();
+            if (extension != ".cpp" && extension != ".hpp") {
+                continue;
+            }
+            const bool allowlisted =
+                is_tui_registry_allowlisted_file(entry.path());
+            for (const auto& inc : includes_of(entry.path())) {
+                if (is_tui_forbidden_service_include(inc.target)) {
+                    return TuiIncludeViolation {
+                        entry.path().string(), inc.target, "service/storage"};
+                }
+                const bool restricted = std::any_of(
+                    k_tui_registry_restricted_includes.begin(),
+                    k_tui_registry_restricted_includes.end(),
+                    [&](std::string_view bad) { return inc.target == bad; });
+                if (restricted && !allowlisted) {
+                    return TuiIncludeViolation {entry.path().string(),
+                                                inc.target,
+                                                "registry outside seam"};
+                }
+            }
+        }
+    }
+    return std::nullopt;
 }
 
 }  // namespace
@@ -553,12 +815,93 @@ BOOST_AUTO_TEST_CASE(local_mode_entries_have_no_listener_or_uri_symbols)
     }
 }
 
+// Type: unit (transitive symbol-closure guard; plan.md C5, security review
+//   MEDIUM x2: a listener (TCP *or* UNIX-domain) or URI-store access introduced
+//   one hop away in a reachable url_shortener header is invisible both to the
+//   three-file symbol scan and to a PID TCP socket probe).
+// Scenario: every url_shortener/... header and source reachable from the three
+//   entry .cpp files through the include closure, comment-stripped, contains
+//   none of the listener/Asio/URI-store/raw-socket tokens (HttpServer,
+//   io_context, acceptor, boost::asio, UriMapSingleton, uri_map_singleton,
+//   uri.txt, UriMap, socket(, bind(, listen(, AF_UNIX).
+// Boundaries: a reachable composition/command/tui/security header that gains a
+//   `::socket(`/`::bind(`/`::listen(`/AF_UNIX call, an Asio type, or a uri.txt
+//   access fails here with the include chain, even though every entry .cpp
+//   stayed clean. The walk follows only url_shortener includes; std/Boost
+//   headers are never scanned for these tokens.
+// On failure first check: read the reported chain to the offending header; a
+//   local mode now transitively depends on a socket/listener or the legacy URI
+//   store. Break that edge - do not widen the token set.
+BOOST_AUTO_TEST_CASE(local_mode_closure_has_no_listener_or_uri_symbols)
+{
+    const fs::path root = source_root();
+    if (root.empty()) {
+        BOOST_TEST_MESSAGE("SOURCE_DIR not defined; skipping (run via CTest)");
+        return;
+    }
+
+    const std::vector<std::string_view> symbols(k_forbidden_symbols.begin(),
+                                                k_forbidden_symbols.end());
+    const auto violation = symbol_in_include_closure(
+        {cmd_dispatch_cpp(), serve_stdio_cpp(), tui_entry_cpp()},
+        root / "include",
+        symbols);
+    BOOST_TEST(
+        !violation.has_value(),
+        "listener/URI-store symbol '"
+            << (violation.has_value() ? violation->symbol : std::string {})
+            << "' reachable from a local-mode entry point via "
+            << (violation.has_value() ? violation->chain : std::string {}));
+}
+
+// Type: unit (TUI service-layer include boundary; plan.md C8, cross-task
+//   duplicate of tests/unit/tui/02_include_boundary_test.cpp which is the
+//   primary guard).
+// Scenario: no file under src/tui/ or include/url_shortener/tui/ includes the
+//   link-command service (app/link_command_service), any storage adapter
+//   (storage/), the core link service (core/link_service) or any
+//   security/*service* header; and commands/command_registry.hpp /
+//   composition/command_runtime.hpp appear only in in_process_client.{hpp,cpp}
+//   and tui_entry.cpp. security/control_set.hpp and the command DTO /
+//   json-scan / command_client headers stay allowed everywhere.
+// Boundaries: a TUI file that includes a service/storage header, or a non-seam
+//   TUI file that includes the registry/composition header, fails here with the
+//   offending file, target and reason (C8).
+// On failure first check: did a TUI file start depending on a service/storage
+//   layer, or did a screen reach the registry directly? A screen reaches the
+//   registry only through AsyncCaller; only the client seam / entry point see
+//   the CommandRegistry.
+BOOST_AUTO_TEST_CASE(tui_sources_include_no_service_headers)
+{
+    const fs::path root = source_root();
+    if (root.empty()) {
+        BOOST_TEST_MESSAGE("SOURCE_DIR not defined; skipping (run via CTest)");
+        return;
+    }
+
+    const std::vector<fs::path> roots = {
+        root / "src" / "tui",
+        root / "include" / "url_shortener" / "tui",
+    };
+    const auto violation = tui_service_include_violation(roots);
+    BOOST_TEST(
+        !violation.has_value(),
+        "TUI file "
+            << (violation.has_value() ? violation->file : std::string {})
+            << " includes forbidden header "
+            << (violation.has_value() ? violation->target : std::string {})
+            << " ["
+            << (violation.has_value() ? violation->reason : std::string {})
+            << "] (C8)");
+}
+
 // Type: unit (composition-root guard; plan.md C11, threat T-114).
 // Scenario: each entry source calls exactly one composition builder
 //   (build_command_runtime for serve-stdio/tui, acquire_command_runtime for
-//   cmd) and constructs no ad-hoc CommandRegistry/JobRunner (the construction
-//   idioms make_shared<commands::CommandRegistry|JobRunner> / new
-//   commands::CommandRegistry|JobRunner), ignoring comments.
+//   cmd) and constructs no ad-hoc CommandRegistry/JobRunner in any spelling -
+//   make_shared/make_unique<...>, new, brace init, or a stack variable
+//   definition, qualified (commands::) or unqualified (using-brought) - while a
+//   reference/return/parameter mention still passes. Comments are stripped.
 // Boundaries: an entry file that builds its own registry (a split store, T-114)
 //   or that stops routing through the composition root fails here. The ban
 //   targets construction, not the bare CommandRegistry type name, which the
@@ -584,13 +927,12 @@ BOOST_AUTO_TEST_CASE(local_modes_use_one_composition_root)
                        << " does not call a composition builder "
                           "(build_command_runtime / acquire_command_runtime); "
                           "C11 requires one composition root");
-        for (const std::string_view builder : k_adhoc_registry_builders) {
-            BOOST_TEST(code.find(builder) == std::string::npos,
-                       "ad-hoc registry/runner construction '"
-                           << builder << "' in " << file.filename().string()
-                           << " (C11: only the composition root builds the "
-                              "registry/job runner)");
-        }
+        std::string what;
+        BOOST_TEST(!constructs_adhoc_registry(code, &what),
+                   "ad-hoc registry/runner construction '"
+                       << what << "' in " << file.filename().string()
+                       << " (C11: only the composition root builds the "
+                          "registry/job runner)");
     }
 }
 
@@ -676,6 +1018,7 @@ BOOST_AUTO_TEST_CASE(guard_flags_planted_violations)
         out << "// HttpServer here is only a line comment\n";  // 4
         out << "/* UriMapSingleton only in a block comment */\n";  // 5
         out << "void f() { io_context ctx; }\n";  // 6
+        out << "int s = ::socket(AF_UNIX, 0, 0); ::listen(s, 1);\n";  // 7
     }
 
     const auto includes = includes_of(tainted);
@@ -695,10 +1038,14 @@ BOOST_AUTO_TEST_CASE(guard_flags_planted_violations)
     BOOST_TEST(found_http);
     BOOST_TEST(found_asio);
 
-    // Symbol scan: io_context (code) is caught; HttpServer (line comment) and
-    // UriMapSingleton (block comment) are both stripped first.
+    // Symbol scan: io_context, socket(, listen( and AF_UNIX (code) are caught;
+    // HttpServer (line comment) and UriMapSingleton (block comment) are both
+    // stripped first. Proves the UNIX-domain / raw-socket tokens are live.
     const std::string stripped = strip_comments(read_file(tainted));
     BOOST_TEST(stripped.find("io_context") != std::string::npos);
+    BOOST_TEST(stripped.find("socket(") != std::string::npos);
+    BOOST_TEST(stripped.find("listen(") != std::string::npos);
+    BOOST_TEST(stripped.find("AF_UNIX") != std::string::npos);
     BOOST_TEST(stripped.find("HttpServer") == std::string::npos);
     BOOST_TEST(stripped.find("UriMapSingleton") == std::string::npos);
 }
@@ -750,19 +1097,190 @@ BOOST_AUTO_TEST_CASE(guard_flags_transitive_http_include)
     BOOST_TEST(!forbidden_in_include_closure({seed}, include_root).has_value());
 }
 
-// Type: unit (negative self-test of the composition-root and URI-store guards).
-// Scenario: a fixture file that both constructs an ad-hoc registry
-//   (make_shared<commands::CommandRegistry>()) and mentions uri.txt in code is
-//   flagged by the construction ban and the URI-store symbol set, while a file
-//   that calls build_command_runtime and keeps uri.txt only in a comment is
-//   clean.
-// Boundaries: proves the C11 construction ban and the URI-store scan are not
-//   vacuous - a real ad-hoc registry and a real uri.txt reference are both
-//   detected, and comment-only prose is ignored.
-// On failure first check: did the construction-idiom list drift from the real
-//   factory call, or did comment stripping regress?
+// Type: unit (negative self-test of the transitive Asio-include and symbol-
+//   closure guards; security review MEDIUM).
+// Scenario: a reachable header that (a) includes boost/asio and (b) names a
+//   raw-socket symbol in code is flagged by forbidden_in_include_closure (Asio
+//   leg) and by symbol_in_include_closure, each reporting the chain; a clean
+//   tree yields no violation from either.
+// Boundaries: proves the closure now checks EVERY include line for Asio (not
+//   only url_shortener targets) and that the content scan follows indirect
+//   edges - not vacuous.
+// On failure first check: did the closure stop checking non-url_shortener
+//   include lines for Asio, or stop scanning reachable header content?
+BOOST_AUTO_TEST_CASE(guard_flags_transitive_asio_and_symbol)
+{
+    const TempDir dir("closure_asio");
+    const fs::path include_root = dir.path() / "include";
+    const fs::path seed = dir.path() / "seed.cpp";
+    fs::create_directories(include_root / "url_shortener" / "composition");
+    {
+        std::ofstream out(seed);
+        out << "#include <url_shortener/composition/hop.hpp>\n";
+    }
+    {
+        std::ofstream out(include_root / "url_shortener" / "composition"
+                          / "hop.hpp");
+        out << "#include <boost/asio.hpp>\n";
+        out << "void g() { ::bind(fd, 0, 0); }\n";
+    }
+
+    const auto asio = forbidden_in_include_closure({seed}, include_root);
+    BOOST_REQUIRE(asio.has_value());
+    BOOST_TEST(asio->target == "boost/asio.hpp");
+    BOOST_TEST(asio->chain
+               == "seed.cpp -> url_shortener/composition/hop.hpp -> "
+                  "boost/asio.hpp");
+
+    const std::vector<std::string_view> symbols = {"bind("};
+    const auto sym = symbol_in_include_closure({seed}, include_root, symbols);
+    BOOST_REQUIRE(sym.has_value());
+    BOOST_TEST(sym->symbol == "bind(");
+    BOOST_TEST(sym->chain == "seed.cpp -> url_shortener/composition/hop.hpp");
+
+    // Clean the header: no Asio include, no raw-socket symbol -> both clean.
+    {
+        std::ofstream out(
+            include_root / "url_shortener" / "composition" / "hop.hpp",
+            std::ios::trunc);
+        out << "#pragma once\n";
+    }
+    BOOST_TEST(!forbidden_in_include_closure({seed}, include_root).has_value());
+    BOOST_TEST(
+        !symbol_in_include_closure({seed}, include_root, symbols).has_value());
+}
+
+// Type: unit (negative self-test of the TUI C8 include boundary scan).
+// Scenario: a forbidden service/storage include in one screen file and a
+//   registry/composition include in a different NON-seam file are both flagged
+//   by tui_service_include_violation; an allowlisted seam file
+//   (in_process_client.{hpp,cpp}) including the registry/composition header,
+//   and a file including only the always-allowed headers (control_set /
+//   command_client / command DTO), are not flagged.
+// Boundaries: proves the C8 scan is not vacuous for either violation class and
+//   that the allowlist holds - control_set.hpp (no "service" token) and the
+//   command DTOs stay allowed, and the registry header is tolerated only in the
+//   seam / entry point.
+// On failure first check: did the forbidden-pattern set or the registry
+//   allowlist drift?
+BOOST_AUTO_TEST_CASE(guard_flags_tui_service_header)
+{
+    // Tree 1: a forbidden service/storage include is flagged.
+    {
+        const TempDir dir("tui_c8_service");
+        {
+            std::ofstream out(dir.path() / "bad_screen.cpp");
+            out << "#include <url_shortener/storage/metadata_repository.hpp>\n";
+        }
+        const auto violation = tui_service_include_violation({dir.path()});
+        BOOST_REQUIRE(violation.has_value());
+        BOOST_TEST(violation->target
+                   == "url_shortener/storage/metadata_repository.hpp");
+        BOOST_TEST(violation->reason == "service/storage");
+        BOOST_TEST(violation->file.find("bad_screen.cpp") != std::string::npos);
+    }
+
+    // Tree 2: a NON-seam file including the registry header is flagged, while
+    // the allowlisted seam file including the composition header is permitted
+    // (both planted; the scan must flag only the non-seam one).
+    {
+        const TempDir dir("tui_c8_registry");
+        {
+            std::ofstream out(dir.path() / "links_screen.cpp");
+            out << "#include "
+                   "<url_shortener/commands/command_registry.hpp>\n";
+        }
+        {
+            std::ofstream out(dir.path() / "in_process_client.cpp");
+            out << "#include "
+                   "<url_shortener/composition/command_runtime.hpp>\n";
+        }
+        const auto violation = tui_service_include_violation({dir.path()});
+        BOOST_REQUIRE(violation.has_value());
+        BOOST_TEST(violation->reason == "registry outside seam");
+        BOOST_TEST(violation->file.find("links_screen.cpp")
+                   != std::string::npos);
+    }
+
+    // Tree 3: the allowlisted seam includes and the always-allowed headers in
+    // isolation produce no violation.
+    {
+        const TempDir dir("tui_c8_clean");
+        {
+            std::ofstream out(dir.path() / "in_process_client.hpp");
+            out << "#include "
+                   "<url_shortener/commands/command_registry.hpp>\n";
+            out << "#include "
+                   "<url_shortener/composition/command_runtime.hpp>\n";
+        }
+        {
+            std::ofstream out(dir.path() / "palette_screen.cpp");
+            out << "#include <url_shortener/security/control_set.hpp>\n";
+            out << "#include <url_shortener/tui/command_client.hpp>\n";
+            out << "#include <url_shortener/commands/envelope.hpp>\n";
+        }
+        BOOST_TEST(!tui_service_include_violation({dir.path()}).has_value());
+    }
+
+    // A security/*service* header is caught; control_set.hpp is not.
+    BOOST_TEST(is_tui_forbidden_service_include(
+        "url_shortener/security/auth_service.hpp"));
+    BOOST_TEST(is_tui_forbidden_service_include(
+        "url_shortener/app/link_command_service.hpp"));
+    BOOST_TEST(is_tui_forbidden_service_include(
+        "url_shortener/core/link_service.hpp"));
+    BOOST_TEST(!is_tui_forbidden_service_include(
+        "url_shortener/security/control_set.hpp"));
+    BOOST_TEST(!is_tui_forbidden_service_include(
+        "url_shortener/tui/command_client.hpp"));
+    BOOST_TEST(!is_tui_forbidden_service_include(
+        "url_shortener/commands/envelope.hpp"));
+}
+
+// Type: unit (negative self-test of the composition-root construction ban and
+//   the URI-store scan; verifier review).
+// Scenario: fixture files that construct a registry/runner in each banned
+//   spelling (make_shared, make_unique, new, brace init, qualified and
+//   unqualified stack variable) are flagged by constructs_adhoc_registry, while
+//   a reference binding, a return type / function declaration and a value
+//   parameter are NOT flagged; the URI-store scan still catches a real uri.txt
+//   reference and ignores comment-only prose.
+// Boundaries: proves the C11 ban covers every construction spelling without
+//   flagging a legitimate reference/return/parameter mention - the exact gap
+//   the verifier flagged.
+// On failure first check: did a construction pattern stop matching, or did a
+//   reference form start matching (over-broad regex)?
 BOOST_AUTO_TEST_CASE(guard_flags_adhoc_registry_and_uri_store)
 {
+    // Every one of these must be detected as construction.
+    const std::array<std::string, 6> constructions = {
+        "auto r = std::make_shared<commands::CommandRegistry>();",
+        "auto j = std::make_unique<commands::JobRunner>(clock);",
+        "auto n = new commands::CommandRegistry();",
+        "commands::CommandRegistry reg;",
+        "commands::JobRunner runner{clock};",
+        "CommandRegistry local_registry;",  // unqualified (using-brought)
+    };
+    for (const std::string& line : constructions) {
+        std::string what;
+        BOOST_TEST(constructs_adhoc_registry(line, &what),
+                   "construction not detected: " << line);
+    }
+
+    // Every one of these legitimate references/returns/parameters must pass.
+    const std::array<std::string, 5> references = {
+        "const commands::CommandRegistry& registry = *runtime->registry;",
+        "commands::CommandRegistry make_registry();",  // return type / decl
+        "void run(commands::CommandRegistry& r);",  // reference parameter
+        "void take(commands::CommandRegistry reg);",  // value parameter
+        "adapter->run(*runtime.registry);",  // no type name at all
+    };
+    for (const std::string& line : references) {
+        std::string what;
+        BOOST_TEST(!constructs_adhoc_registry(line, &what),
+                   "reference wrongly flagged as construction: " << line);
+    }
+
     const TempDir dir("adhoc");
     const fs::path bad = dir.path() / "bad.cpp";
     const fs::path good = dir.path() / "good.cpp";
@@ -774,26 +1292,19 @@ BOOST_AUTO_TEST_CASE(guard_flags_adhoc_registry_and_uri_store)
     {
         std::ofstream out(good);
         out << "auto rt = composition::build_command_runtime(cfg, be, opt);\n";
+        out << "const commands::CommandRegistry& reg = *rt.registry;\n";
         out << "// never opens uri.txt / UriMapSingleton\n";
     }
 
     const std::string bad_code = strip_comments(read_file(bad));
-    bool adhoc_flagged = false;
-    for (const std::string_view builder : k_adhoc_registry_builders) {
-        if (bad_code.find(builder) != std::string::npos) {
-            adhoc_flagged = true;
-        }
-    }
-    BOOST_TEST(adhoc_flagged);
+    BOOST_TEST(constructs_adhoc_registry(bad_code, nullptr));
     BOOST_TEST(bad_code.find("uri.txt") != std::string::npos);
     BOOST_TEST(!references_composition_builder(bad_code));
 
     const std::string good_code = strip_comments(read_file(good));
     BOOST_TEST(references_composition_builder(good_code));
+    BOOST_TEST(!constructs_adhoc_registry(good_code, nullptr));
     for (const std::string_view symbol : k_uri_store_symbols) {
         BOOST_TEST(good_code.find(symbol) == std::string::npos);
-    }
-    for (const std::string_view builder : k_adhoc_registry_builders) {
-        BOOST_TEST(good_code.find(builder) == std::string::npos);
     }
 }

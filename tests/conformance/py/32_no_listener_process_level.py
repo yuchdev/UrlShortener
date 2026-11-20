@@ -3,46 +3,57 @@
 
 Out-of-process proof (Milestone 0006, Task 07.0 subtask 21, contract C5, threats
 T-18/T-83/T-114) that the three new local-mode entry points never bind a
-listening socket and never create or read the legacy ``uri.txt`` / URI-store,
-exercised against the **real** binary (the structural scan in
-``tests/unit/commands/79_no_http_server_in_local_modes_test.cpp`` is only the
-tripwire; these are the proof):
+listening socket (TCP *or* UNIX-domain) and never create or read the legacy
+``uri.txt`` / URI-store, exercised against the **real** binary (the structural
+scan in ``tests/unit/commands/79_no_http_server_in_local_modes_test.cpp`` is
+only the tripwire; these are the proof):
 
   * ``cmd`` exits after a one-shot command and no default HTTP/HTTPS port is
-    listening afterwards; while a ``cmd`` process is alive (blocked reading
-    ``--json -`` from an open pipe) it owns no LISTEN socket.
-  * ``serve-stdio`` answers a request and, while alive, owns no LISTEN socket.
+    listening afterwards; while a ``cmd`` process actually executes a command it
+    owns no listening socket (sampled in a bounded loop across its lifetime).
+  * ``serve-stdio`` answers requests (responses read back for synchronization)
+    and owns no listening socket before, between or after handling them.
   * ``tui`` refuses a non-TTY stdin (exit 2) within a bounded wait and never
-    owns a LISTEN socket (as-built reconciliation 2026-11-20: no skip hedge).
-  * a sentinel ``uri.txt`` placed in the working directory is byte-identical and
-    unmodified after ``cmd`` / ``serve-stdio`` / ``tui`` run there, no new
-    ``uri.txt`` appears, and the sentinel's unique marker is never echoed by any
-    command (the store is never read).
-  * ``--port 9999`` is rejected or ignored for every mode: port 9999 never
-    listens and the process still exits.
+    owns a listening socket.
+  * a sentinel ``uri.txt`` placed in the working directory (and ``$HOME`` when
+    present) is byte-identical and mtime-unchanged after each mode runs, no new
+    ``uri.txt`` appears, and the sentinel's unique marker is never echoed.
+  * ``--port 9999`` is rejected or ignored for every mode: 9999 never listens.
 
-PID socket ownership is platform-specific: ``lsof`` on macOS/Linux, ``netstat
--ano`` on Windows, and a bounded loopback connect probe as the documented
-fallback when neither tool is present (a weaker, non-PID-attributed check,
-reported as a skip-note so subtask 34 can count it).
+PID socket ownership is platform-specific and only trusted after a **positive
+control**: the test opens its own throwaway listening socket and confirms the
+enumeration tool (``lsof`` / ``netstat``) actually reports it. When the tool is
+absent or the control fails, the test falls back to a bounded loopback connect
+probe and records a counted skip-note (a weaker, non-PID-attributed check) so
+subtask 34 can account for it. The UNIX-domain leg uses ``lsof -U`` (no portable
+LISTEN state, so the real binary's zero-UNIX-socket invariant is asserted).
 
 Reuses ``conformance_common`` (``conformance_env`` / ``spawn`` /
-``terminate_and_reap`` / ``free_port``). Standard library only; ``python3 -I``.
+``terminate_and_reap`` / ``free_port`` / ``find_binary``). Standard library
+only; ``python3 -I``.
 """
 
 from __future__ import annotations
 
 import json
+import os
 import re
 import shutil
 import socket
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import unittest
 from pathlib import Path
-from typing import List, Optional, Set, Tuple
+from typing import Callable, List, Optional, Set, Tuple
+
+try:
+    import select  # POSIX: bound a pipe read with a timeout.
+    _HAVE_SELECT = hasattr(select, "select")
+except ImportError:  # pragma: no cover - select is always present on POSIX/Win
+    _HAVE_SELECT = False
 
 _THIS = Path(__file__).resolve()
 if str(_THIS.parent) not in sys.path:
@@ -51,8 +62,7 @@ if str(_THIS.parent) not in sys.path:
 import conformance_common as cc  # noqa: E402
 
 #: Unique marker written into the sentinel ``uri.txt``; a local mode that opened
-#: or echoed the legacy store would surface it, so it must never appear in any
-#: command output.
+#: or echoed the legacy store would surface it, so it must never appear.
 _SENTINEL_MARKER = "SENTINEL-32-URI-DO-NOT-READ-OR-ECHO-9f8e7d"
 
 #: Default and conventional listener ports that must stay closed for a local
@@ -67,8 +77,14 @@ _REJECT_PORT = 9999
 #: assertion; just an upper bound so a hung child fails the case).
 _CHILD_TIMEOUT_S = 10.0
 
-#: Bounded ceiling on sampling a short-lived child's listener set while alive.
+#: Bounded ceiling on sampling a child's listener set across its lifetime.
 _SAMPLE_BUDGET_S = 3.0
+
+#: Bounded ceiling on reading one response line back from ``serve-stdio``.
+_READLINE_TIMEOUT_S = 5.0
+
+#: Cached positive-control results, keyed by family ("tcp" / "unix").
+_ENUMERATION_OK: dict = {}
 
 
 def _envelope(command: str, args: Optional[dict] = None) -> str:
@@ -88,99 +104,165 @@ def _port_is_open(port: int, host: str = "127.0.0.1") -> bool:
             return False
 
 
-def _lsof_listeners(pid: int) -> Optional[Set[int]]:
-    """Return the set of LISTEN ports owned by *pid* via ``lsof``, or ``None``.
-
-    ``lsof -nP -a -p <pid> -iTCP -sTCP:LISTEN`` lists only this PID's listening
-    TCP sockets. ``lsof`` exits non-zero with empty output when the PID owns no
-    such socket, which is the expected, passing case, so the return code is
-    ignored and only the parsed NAME column matters.
-
-    :param pid: The process id to inspect.
-    :return: The set of listening ports (empty when none), or ``None`` when
-        ``lsof`` is unavailable.
-    """
-    tool = shutil.which("lsof")
-    if tool is None:
-        return None
+def _run_tool(argv: List[str]) -> Optional[subprocess.CompletedProcess]:
+    """Run a short enumeration tool; return the result or ``None`` on failure."""
     try:
-        proc = subprocess.run(
-            [tool, "-nP", "-a", "-p", str(pid), "-iTCP", "-sTCP:LISTEN"],
-            capture_output=True,
-            text=True,
-            timeout=_CHILD_TIMEOUT_S,
+        return subprocess.run(
+            argv, capture_output=True, text=True, timeout=_CHILD_TIMEOUT_S
         )
     except (subprocess.TimeoutExpired, OSError):
         return None
+
+
+def _parse_lsof_tcp(tool: str, pid: int) -> Optional[Set[int]]:
+    """Parse ``lsof`` TCP LISTEN ports for *pid*.
+
+    ``lsof`` exits 1 with empty output when the PID owns no listening socket,
+    which is a legitimate "no listener" result; the return code is therefore not
+    used to decide availability (that is what the positive control is for). A
+    tool that could not be launched at all returns ``None``.
+    """
+    result = _run_tool(
+        [tool, "-nP", "-a", "-p", str(pid), "-iTCP", "-sTCP:LISTEN"]
+    )
+    if result is None:
+        return None
     ports: Set[int] = set()
-    for line in proc.stdout.splitlines():
+    for line in result.stdout.splitlines():
         if "(LISTEN)" not in line:
             continue
         fields = line.split()
-        # The address is the field immediately before the "(LISTEN)" state,
-        # e.g. "127.0.0.1:8000", "[::1]:8000" or "*:8000".
         for index, token in enumerate(fields):
             if token == "(LISTEN)" and index > 0:
-                addr = fields[index - 1]
-                match = re.search(r":(\d+)$", addr)
+                match = re.search(r":(\d+)$", fields[index - 1])
                 if match:
                     ports.add(int(match.group(1)))
     return ports
 
 
-def _netstat_listeners(pid: int) -> Optional[Set[int]]:
-    """Return the set of LISTEN ports owned by *pid* via ``netstat`` (Windows).
+def _parse_lsof_unix(tool: str, pid: int) -> Optional[Set[str]]:
+    """Parse the UNIX-domain socket NAMEs *pid* owns via ``lsof -U``.
 
-    :param pid: The process id to inspect.
-    :return: The set of listening ports, or ``None`` when ``netstat`` is
-        unavailable or produced no parseable output.
+    macOS ``lsof`` does not expose a portable LISTEN state for UNIX sockets, so
+    this returns every UNIX-domain socket the PID holds; the caller asserts the
+    real binary owns none (it opens zero UNIX sockets in any local mode). A tool
+    that could not be launched returns ``None``.
+    """
+    result = _run_tool([tool, "-nP", "-U", "-a", "-p", str(pid)])
+    if result is None:
+        return None
+    names: Set[str] = set()
+    for line in result.stdout.splitlines():
+        if line.startswith("COMMAND") or not line.strip():
+            continue
+        # The NAME (socket path or peer) is the last field of a data line.
+        if " unix " in line or "\tunix\t" in line or " unix\t" in line:
+            names.add(line.split()[-1])
+    return names
+
+
+def _netstat_listeners(pid: int) -> Optional[Set[int]]:
+    """Return the TCP/TCPv6 LISTEN ports owned by *pid* via ``netstat`` (Win).
+
+    Returns ``None`` (unavailable) when ``netstat`` is absent, fails, or
+    produces no parseable ``LISTENING`` line at all (unparseable output must not
+    masquerade as an empty, "no listener" set).
     """
     tool = shutil.which("netstat")
     if tool is None:
         return None
-    try:
-        proc = subprocess.run(
-            [tool, "-ano", "-p", "tcp"],
-            capture_output=True,
-            text=True,
-            timeout=_CHILD_TIMEOUT_S,
-        )
-    except (subprocess.TimeoutExpired, OSError):
-        return None
     ports: Set[int] = set()
-    for line in proc.stdout.splitlines():
-        fields = line.split()
-        # TCP  <local>  <remote>  LISTENING  <pid>
-        if len(fields) >= 5 and fields[0].upper() == "TCP" \
-                and fields[3].upper() == "LISTENING" and fields[-1] == str(pid):
-            match = re.search(r":(\d+)$", fields[1])
-            if match:
-                ports.add(int(match.group(1)))
+    saw_any_listening_row = False
+    for proto in ("tcp", "tcpv6"):
+        result = _run_tool([tool, "-ano", "-p", proto])
+        if result is None:
+            return None
+        for line in result.stdout.splitlines():
+            fields = line.split()
+            if (
+                len(fields) >= 5
+                and fields[0].upper().startswith("TCP")
+                and fields[3].upper() == "LISTENING"
+            ):
+                saw_any_listening_row = True
+                if fields[-1] == str(pid):
+                    match = re.search(r":(\d+)$", fields[1])
+                    if match:
+                        ports.add(int(match.group(1)))
+    if not saw_any_listening_row:
+        # No LISTENING row anywhere is implausible on a live host -> treat the
+        # output as unparseable rather than as "pid owns nothing".
+        return None
     return ports
 
 
-def _pid_listeners(pid: int) -> Tuple[Optional[Set[int]], str]:
-    """Return ``(ports, method)`` for *pid*'s LISTEN sockets.
+def _enumeration_works(family: str) -> bool:
+    """Positive control: does ``lsof`` actually enumerate *family* sockets here?
 
-    Tries ``lsof`` then ``netstat``; returns ``(None, "unavailable")`` when no
-    enumeration tool is present so the caller can fall back to a bounded connect
-    probe (documented, weaker, non-PID-attributed).
-
-    :param pid: The process id to inspect.
-    :return: ``(set_of_ports, method_name)``; *set_of_ports* is ``None`` only
-        when enumeration is unavailable.
+    Opens a throwaway listening socket in this process and checks the tool
+    reports it for our own PID. Cached per family. When it returns ``False`` the
+    caller treats PID enumeration as unavailable and falls back to the probe,
+    rather than trusting an empty tool result (which could be a sandbox denying
+    enumeration, not a genuine "no listener").
     """
-    if sys.platform.startswith("win"):
-        ports = _netstat_listeners(pid)
+    if family in _ENUMERATION_OK:
+        return _ENUMERATION_OK[family]
+    tool = shutil.which("lsof")
+    if tool is None:
+        _ENUMERATION_OK[family] = False
+        return False
+    ok = False
+    if family == "tcp":
+        probe = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        try:
+            probe.bind(("127.0.0.1", 0))
+            probe.listen(1)
+            port = probe.getsockname()[1]
+            seen = _parse_lsof_tcp(tool, os.getpid())
+            ok = seen is not None and port in seen
+        finally:
+            probe.close()
+    elif family == "unix":
+        tmp = tempfile.mkdtemp(prefix="conf32_ctl_")
+        path = os.path.join(tmp, "control.sock")
+        probe = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        try:
+            probe.bind(path)
+            probe.listen(1)
+            seen = _parse_lsof_unix(tool, os.getpid())
+            ok = seen is not None and any(path in name for name in seen)
+        finally:
+            probe.close()
+            shutil.rmtree(tmp, ignore_errors=True)
+    _ENUMERATION_OK[family] = ok
+    return ok
+
+
+def _pid_tcp_listeners(pid: int) -> Tuple[Optional[Set[int]], str]:
+    """Return ``(ports, method)`` for *pid*'s TCP LISTEN sockets.
+
+    Trusts ``lsof`` only when the TCP positive control passed; otherwise tries
+    ``netstat`` (Windows); otherwise reports ``(None, "unavailable")`` so the
+    caller falls back to a connect probe.
+    """
+    tool = shutil.which("lsof")
+    if tool is not None and _enumeration_works("tcp"):
+        ports = _parse_lsof_tcp(tool, pid)
         if ports is not None:
-            return ports, "netstat"
-        return None, "unavailable"
-    ports = _lsof_listeners(pid)
-    if ports is not None:
-        return ports, "lsof"
+            return ports, "lsof"
     ports = _netstat_listeners(pid)
     if ports is not None:
         return ports, "netstat"
+    return None, "unavailable"
+
+
+def _pid_unix_sockets(pid: int) -> Tuple[Optional[Set[str]], str]:
+    """Return ``(names, method)`` for *pid*'s UNIX-domain sockets (lsof only)."""
+    tool = shutil.which("lsof")
+    if tool is not None and _enumeration_works("unix"):
+        names = _parse_lsof_unix(tool, pid)
+        if names is not None:
+            return names, "lsof-U"
     return None, "unavailable"
 
 
@@ -199,42 +281,75 @@ class NoListenerProcessLevel(unittest.TestCase):
         for note in cls.skip_notes:
             print(f"NOTE (counted skip): {note}")
 
-    # ---- shared assertions -------------------------------------------------
+    # ---- shared sampling / assertions -------------------------------------
 
-    def _assert_pid_not_listening(self, pid: int, context: str) -> None:
-        """Assert *pid* owns no LISTEN socket; fall back to a connect probe.
+    def _sample_once(self, pid: int) -> Tuple[Optional[Set[int]], Set[str], str]:
+        """One sample: ``(tcp_ports_or_None, unix_names, method)`` for *pid*."""
+        tcp, method = _pid_tcp_listeners(pid)
+        unix, _umethod = _pid_unix_sockets(pid)
+        return tcp, (unix or set()), method
 
-        :param pid: The process id to inspect (must still be alive for an
-            accurate PID-attributed result).
-        :param context: Human label for the failure message.
+    def _assert_no_listener_over_lifetime(
+        self, proc: "subprocess.Popen", context: str,
+        drive: Optional[Callable[[], None]] = None,
+    ) -> None:
+        """Sample *proc* in a bounded loop and assert it never listens.
+
+        Samples TCP and UNIX-domain sockets repeatedly while the process is
+        alive (and once more after it exits), so a listener that appears only
+        transiently during command execution is caught. *drive*, when given, is
+        invoked once after the first sample to make the process actually execute
+        (e.g. send its request). Falls back to a connect probe with a counted
+        note when PID enumeration is unavailable.
         """
-        ports, method = _pid_listeners(pid)
-        if ports is None:
-            # Documented fallback: no PID-attribution tool. Probe the ports the
-            # modes could ever bind; record the weaker coverage for subtask 34.
+        tcp_seen: Set[int] = set()
+        unix_seen: Set[str] = set()
+        tool_available = False
+        deadline = time.monotonic() + _SAMPLE_BUDGET_S
+        driven = False
+        while True:
+            tcp, unix, method = self._sample_once(proc.pid)
+            if tcp is not None:
+                tool_available = True
+                tcp_seen |= tcp
+                unix_seen |= unix
+            if drive is not None and not driven:
+                driven = True
+                drive()
+            if proc.poll() is not None:
+                # One final post-exit sample already taken this iteration.
+                break
+            if time.monotonic() >= deadline:
+                break
+            time.sleep(0.02)
+
+        if not tool_available:
             self.skip_notes.append(
-                f"{context}: no lsof/netstat; used connect-probe fallback "
-                "(no PID attribution)"
+                f"{context}: PID enumeration unavailable (no working "
+                "lsof/netstat); used connect-probe fallback"
             )
             for port in (*_DEFAULT_LISTENER_PORTS, _REJECT_PORT):
                 self.assertFalse(
                     _port_is_open(port),
-                    f"{context}: port {port} is open (connect-probe fallback)",
+                    f"{context}: port {port} open (connect-probe fallback)",
                 )
             return
+
         self.assertEqual(
-            ports,
-            set(),
-            f"{context}: pid {pid} owns LISTEN socket(s) {sorted(ports)} "
-            f"via {method} - a local mode bound a listener (C5 violation)",
+            tcp_seen, set(),
+            f"{context}: pid owned TCP LISTEN socket(s) {sorted(tcp_seen)} "
+            "(C5 violation)",
+        )
+        self.assertEqual(
+            unix_seen, set(),
+            f"{context}: pid owned UNIX-domain socket(s) {sorted(unix_seen)} "
+            "(C5: a UNIX listener is invisible to a TCP probe)",
         )
 
     def _assert_default_ports_closed(self, context: str) -> None:
         """Assert every default listener port is closed (bounded connect)."""
         for port in _DEFAULT_LISTENER_PORTS:
             if _port_is_open(port):
-                # Match section 13's convention: a port already in use by an
-                # unrelated process is a skip, not a false failure.
                 self.skip_notes.append(
                     f"{context}: port {port} already in use by another process"
                 )
@@ -242,6 +357,17 @@ class NoListenerProcessLevel(unittest.TestCase):
             self.assertFalse(
                 _port_is_open(port), f"{context}: port {port} open after exit"
             )
+
+    def _readline_bounded(self, proc: "subprocess.Popen") -> Optional[bytes]:
+        """Read one line from *proc.stdout* within a bounded timeout."""
+        assert proc.stdout is not None
+        if _HAVE_SELECT:
+            ready, _, _ = select.select(
+                [proc.stdout], [], [], _READLINE_TIMEOUT_S
+            )
+            if not ready:
+                return None
+        return proc.stdout.readline()
 
     # ---- cmd ---------------------------------------------------------------
 
@@ -263,10 +389,14 @@ class NoListenerProcessLevel(unittest.TestCase):
         self.assertNotIn(_SENTINEL_MARKER, out.decode("utf-8", "replace"))
         self._assert_default_ports_closed("cmd")
 
-    def test_cmd_pid_no_listener_during_run(self) -> None:
+    def test_cmd_executes_and_never_listens(self) -> None:
         # `cmd <name> --json -` blocks reading args from stdin until EOF, so the
-        # process stays alive while its stdin pipe is held open - a genuine live
-        # `cmd`-mode process whose PID can be sampled for LISTEN sockets.
+        # process is alive to sample before it executes. The `drive` callback
+        # then writes the request body + EOF so the command actually executes;
+        # the sampling loop keeps sampling through execution and teardown. A
+        # reader thread drains stdout concurrently so the child never blocks on
+        # a full pipe (which would otherwise deadlock), and `wait` (not
+        # `communicate`) is used because `drive` already closed stdin.
         proc = cc.spawn(
             [self.binary, "cmd", "command.list", "--json", "-"],
             env=self.env,
@@ -274,21 +404,47 @@ class NoListenerProcessLevel(unittest.TestCase):
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
         )
+        drained: dict = {}
+
+        def reader() -> None:
+            assert proc.stdout is not None
+            try:
+                drained["out"] = proc.stdout.read()
+            except (ValueError, OSError):
+                drained["out"] = b""
+
+        reader_thread = threading.Thread(target=reader, daemon=True)
+        reader_thread.start()
+
+        def drive() -> None:
+            assert proc.stdin is not None
+            try:
+                proc.stdin.write(b"{}")
+                proc.stdin.close()
+            except (BrokenPipeError, ValueError, OSError):
+                pass
+
         try:
             self.assertIsNone(proc.poll(), "cmd exited before stdin EOF")
-            self._assert_pid_not_listening(proc.pid, "cmd (during run)")
+            self._assert_no_listener_over_lifetime(proc, "cmd (executing)",
+                                                   drive=drive)
         finally:
-            # Send a valid empty args object and EOF so the child finishes.
             try:
-                out, _err = proc.communicate(input=b"{}", timeout=_CHILD_TIMEOUT_S)
+                proc.wait(timeout=_CHILD_TIMEOUT_S)
             except subprocess.TimeoutExpired:
                 cc.terminate_and_reap(proc)
                 self.fail("cmd --json - did not finish after stdin EOF")
+            reader_thread.join(timeout=_CHILD_TIMEOUT_S)
+            for stream in (proc.stdin, proc.stdout, proc.stderr):
+                if stream is not None and not stream.closed:
+                    stream.close()
         self.assertEqual(proc.returncode, 0, "cmd command.list should succeed")
+        self.assertNotIn(_SENTINEL_MARKER,
+                         drained.get("out", b"").decode("utf-8", "replace"))
 
     # ---- serve-stdio -------------------------------------------------------
 
-    def test_serve_stdio_pid_no_listener(self) -> None:
+    def test_serve_stdio_handles_requests_and_never_listens(self) -> None:
         proc = cc.spawn(
             [self.binary, "serve-stdio"],
             env=self.env,
@@ -297,32 +453,46 @@ class NoListenerProcessLevel(unittest.TestCase):
             stderr=subprocess.PIPE,
         )
         try:
-            self.assertIsNone(proc.poll(), "serve-stdio exited immediately")
-            # Send one request line but keep stdin open: the session answers it
-            # and waits for the next line, staying alive to be sampled.
             assert proc.stdin is not None
-            proc.stdin.write((_envelope("command.list") + "\n").encode("utf-8"))
-            proc.stdin.flush()
-            self._assert_pid_not_listening(proc.pid, "serve-stdio (during run)")
+            # Sample before handling anything.
+            tcp0, unix0, _m0 = self._sample_once(proc.pid)
+            if tcp0 is not None:
+                self.assertEqual(tcp0, set(), "serve-stdio listened pre-request")
+                self.assertEqual(unix0, set(),
+                                 "serve-stdio owned a UNIX socket pre-request")
+            # Handle two requests, reading each response back to synchronize.
+            for _ in range(2):
+                proc.stdin.write((_envelope("command.list") + "\n").encode())
+                proc.stdin.flush()
+                line = self._readline_bounded(proc)
+                self.assertTrue(line, "serve-stdio produced no response line")
+                parsed = json.loads(line.decode("utf-8"))
+                self.assertTrue(parsed.get("ok") is True,
+                                f"unexpected response: {parsed!r}")
+                tcp, unix, _m = self._sample_once(proc.pid)
+                if tcp is not None:
+                    self.assertEqual(tcp, set(),
+                                     "serve-stdio listened while handling")
+                    self.assertEqual(unix, set(),
+                                     "serve-stdio owned a UNIX socket")
+                else:
+                    self.skip_notes.append(
+                        "serve-stdio: PID enumeration unavailable; relied on "
+                        "the default-port check"
+                    )
+                    self._assert_default_ports_closed("serve-stdio")
         finally:
             try:
-                out, _err = proc.communicate(timeout=_CHILD_TIMEOUT_S)
+                proc.communicate(timeout=_CHILD_TIMEOUT_S)
             except subprocess.TimeoutExpired:
                 cc.terminate_and_reap(proc)
                 self.fail("serve-stdio did not exit after stdin EOF")
-        self.assertNotIn(_SENTINEL_MARKER, out.decode("utf-8", "replace"))
 
     # ---- no uri.txt --------------------------------------------------------
 
     def _run_in_cwd(self, argv: List[str], cwd: Path,
                     stdin_bytes: Optional[bytes]) -> Tuple[int, str]:
-        """Run *argv* in *cwd*, return ``(exit_code, stdout+stderr)``.
-
-        :param argv: The child argument vector (program first).
-        :param cwd: Working directory the child runs in.
-        :param stdin_bytes: Bytes to feed on stdin then EOF, or ``None`` for an
-            immediate EOF (``DEVNULL``).
-        """
+        """Run *argv* in *cwd*, return ``(exit_code, stdout+stderr)``."""
         proc = cc.spawn(
             argv,
             cwd=str(cwd),
@@ -340,45 +510,51 @@ class NoListenerProcessLevel(unittest.TestCase):
             self.fail(f"child hung: {argv!r}")
         return proc.returncode, (out + err).decode("utf-8", "replace")
 
+    @staticmethod
+    def _snapshot(path: Path) -> Optional[Tuple[bytes, int]]:
+        """Return ``(bytes, mtime_ns)`` of *path*, or ``None`` when absent."""
+        if not path.exists():
+            return None
+        return path.read_bytes(), path.stat().st_mtime_ns
+
     def test_no_uri_txt_created(self) -> None:
         modes = [
             (["cmd", "command.list"], None),
             (["cmd", "link.list"], None),
-            (["serve-stdio"], (_envelope("command.list") + "\n").encode("utf-8")),
+            (["serve-stdio"], (_envelope("command.list") + "\n").encode()),
             (["tui", "--help"], None),
         ]
+        # $HOME/uri.txt is snapshotted if it happens to exist: a local mode must
+        # never write outside its cwd either (LOW finding). We never create it.
+        home_uri = Path(os.path.expanduser("~")) / "uri.txt"
+        home_before = self._snapshot(home_uri)
+
         for argv, stdin_bytes in modes:
             with tempfile.TemporaryDirectory(prefix="conf32_cwd_") as tmp:
                 cwd = Path(tmp)
                 sentinel = cwd / "uri.txt"
                 sentinel.write_bytes(
-                    (_SENTINEL_MARKER + " short->http://example.com/\n")
-                    .encode("utf-8")
+                    (_SENTINEL_MARKER + " short->http://example.com/\n").encode()
                 )
-                before_bytes = sentinel.read_bytes()
-                before_mtime = sentinel.stat().st_mtime_ns
+                before = self._snapshot(sentinel)
 
                 _rc, combined = self._run_in_cwd(
                     [self.binary, *argv], cwd, stdin_bytes
                 )
 
-                # The sentinel is byte-identical and its mtime is unchanged.
-                self.assertTrue(sentinel.exists(),
-                                f"{argv}: sentinel uri.txt vanished")
-                self.assertEqual(sentinel.read_bytes(), before_bytes,
-                                 f"{argv}: sentinel uri.txt bytes changed")
-                self.assertEqual(sentinel.stat().st_mtime_ns, before_mtime,
-                                 f"{argv}: sentinel uri.txt mtime changed")
-                # No *new* uri.txt-family file appeared; the sentinel is the only
-                # uri.txt in the cwd.
+                self.assertEqual(self._snapshot(sentinel), before,
+                                 f"{argv}: sentinel uri.txt bytes/mtime changed")
                 uri_files = sorted(p.name for p in cwd.iterdir()
                                    if p.name.startswith("uri")
                                    and p.name.endswith(".txt"))
                 self.assertEqual(uri_files, ["uri.txt"],
                                  f"{argv}: unexpected uri files {uri_files}")
-                # The store is never read: its unique marker is never echoed.
                 self.assertNotIn(_SENTINEL_MARKER, combined,
                                  f"{argv}: sentinel marker echoed in output")
+
+        # $HOME/uri.txt is unchanged (never created, never modified).
+        self.assertEqual(self._snapshot(home_uri), home_before,
+                         "$HOME/uri.txt changed - a mode wrote outside its cwd")
 
     # ---- --port rejected / ignored ----------------------------------------
 
@@ -421,22 +597,9 @@ class NoListenerProcessLevel(unittest.TestCase):
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
         )
-        # Sample the PID's listener set while it is (briefly) alive; a non-TTY
-        # tui exits 2 almost immediately, so accumulate any listeners seen
-        # within a bounded budget. An already-exited process that never bound a
-        # socket yields an empty set, which is the passing case.
-        observed: Set[int] = set()
-        deadline = time.monotonic() + _SAMPLE_BUDGET_S
-        sampled = False
-        while time.monotonic() < deadline:
-            if proc.poll() is not None:
-                break
-            ports, _method = _pid_listeners(proc.pid)
-            if ports is not None:
-                observed |= ports
-                sampled = True
-            else:
-                break
+        # Non-TTY tui exits 2 almost immediately; sample across its (brief)
+        # lifetime, then assert the refusal exit code and no listener.
+        self._assert_no_listener_over_lifetime(proc, "tui (non-interactive)")
         try:
             proc.communicate(timeout=_CHILD_TIMEOUT_S)
         except subprocess.TimeoutExpired:
@@ -444,13 +607,6 @@ class NoListenerProcessLevel(unittest.TestCase):
             self.fail("tui non-interactive invocation did not exit")
         self.assertEqual(proc.returncode, 2,
                          "tui must refuse a non-TTY stdin with exit 2")
-        self.assertEqual(observed, set(),
-                         f"tui owned LISTEN socket(s) {sorted(observed)}")
-        if not sampled:
-            self.skip_notes.append(
-                "tui: PID listener sampling unavailable or process too short-"
-                "lived; relied on exit 2 + default-port check"
-            )
         self._assert_default_ports_closed("tui")
 
 
