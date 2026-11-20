@@ -201,9 +201,22 @@ BOOST_AUTO_TEST_CASE(import_row_invalid_url_matches_create)
     for (const ssrf_vectors::UrlVector& vector : ssrf_vectors::url_vectors()) {
         const std::string via_create = create_code(harness, vector.url);
         const std::string via_import = import_row_code(harness, vector.url);
+        // Parity: the two paths must produce the identical code.
         BOOST_TEST(via_create == via_import,
                    "parity mismatch for " + vector.name
                        + ": create=" + via_create + " import=" + via_import);
+        // Positive SSRF assertion (07.0/20 review): a refused vector must be
+        // exactly invalid_url on BOTH paths, not merely "equal"; an accepted
+        // vector must be "ok" on both. This catches a regression that lets a
+        // private target through while keeping create/import in lockstep.
+        const std::string expected =
+            vector.expected_refused ? "invalid_url" : "ok";
+        BOOST_TEST(via_create == expected,
+                   "create outcome for " + vector.name + ": got " + via_create
+                       + " expected " + expected);
+        BOOST_TEST(via_import == expected,
+                   "import outcome for " + vector.name + ": got " + via_import
+                       + " expected " + expected);
     }
 }
 

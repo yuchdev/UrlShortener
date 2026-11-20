@@ -189,8 +189,24 @@ BOOST_AUTO_TEST_CASE(path_root_policy)
         LineSource::from_path((dir.path / "outside.csv").string(), policy),
         "invalid_field"));
 
-    // Sentinel outside the root: a create-new export escaping to it is refused
-    // and the sentinel content is provably untouched (file never opened).
+    // Pre-open lexical reject (07.0/20 review): a create-new export whose
+    // target is OUTSIDE the root but does NOT exist must still be refused
+    // invalid_field. Because the target does not exist, the only possible
+    // reason is the root escape - this proves the reject is lexical/pre-open,
+    // not a "file exists" (T-99) outcome - and no temp artifact may be left in
+    // the directory.
+    const fs::path escape_target = dir.path / "escape_out.csv";
+    BOOST_REQUIRE(!fs::exists(escape_target));
+    const std::variant<AtomicFileSink, PathError> escape_sink =
+        AtomicFileSink::create_new(escape_target.string(), policy);
+    BOOST_REQUIRE(std::holds_alternative<PathError>(escape_sink));
+    BOOST_TEST(std::get<PathError>(escape_sink).code
+               == std::string("invalid_field"));
+    BOOST_TEST(!fs::exists(escape_target));  // never created
+
+    // Sentinel outside the root: a create-new export escaping to an existing
+    // file is refused and the sentinel content is provably untouched (never
+    // opened for write).
     const fs::path sentinel = dir.path / "sentinel.txt";
     const std::string sentinel_body = "SENTINEL-UNIQUE-DO-NOT-TOUCH";
     write_file(sentinel, sentinel_body);
@@ -201,6 +217,13 @@ BOOST_AUTO_TEST_CASE(path_root_policy)
     BOOST_TEST(std::get<PathError>(export_escape).code
                == std::string("invalid_field"));
     BOOST_TEST(read_file(sentinel) == sentinel_body);  // unmodified
+
+    // No .tmp-* residue anywhere in the directory after the rejected escapes.
+    for (const auto& entry : fs::directory_iterator(dir.path)) {
+        BOOST_TEST(
+            entry.path().filename().string().find(".tmp-") == std::string::npos,
+            "unexpected temp residue: " + entry.path().string());
+    }
 }
 
 // Type: unit (default-deny capability / T-95).

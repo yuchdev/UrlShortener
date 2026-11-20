@@ -25,7 +25,8 @@
 namespace ssrf_vectors
 {
 
-/// One URL validation vector: a human label and the untrusted target URL.
+/// One URL validation vector: a human label, the untrusted target URL, and the
+/// expected outcome with `shortener_allow_private_targets == false`.
 struct UrlVector
 {
     ///< Short human label for the finding message (never a secret).
@@ -34,16 +35,23 @@ struct UrlVector
     ///< The untrusted `target_url` fed verbatim to both `link.create` and a
     ///< single-row `link.import`. Never resolved or fetched.
     std::string url;
+
+    ///< `true` when this target must be refused `invalid_url` by URL validation
+    ///< (every SSRF/private/scheme vector); `false` for a target that must be
+    ///< accepted (a public host). The parity test asserts both the code parity
+    ///< and this expected outcome, so a vector is not merely "create == import"
+    ///< but also provably refused/accepted (07.0/20 review).
+    bool expected_refused;
 };
 
 /**
  * @brief The shared SSRF / URL vector list.
  *
- * Every entry is expected (with `shortener_allow_private_targets == false`) to
- * be refused by URL validation, except where noted; the parity test asserts
- * only that `link.create` and `link.import` agree on the code, so the list may
- * include accepted targets too (a public host) to prove the accept path is
- * shared as well.
+ * With `shortener_allow_private_targets == false` every entry marked
+ * @ref UrlVector::expected_refused must be refused `invalid_url`, and the rest
+ * (a public host) must be accepted. The parity test asserts both that
+ * `link.create` and `link.import` agree on the code AND the expected outcome,
+ * so the list is a positive SSRF-refusal check, not only a parity check.
  *
  * @return A reference to the immutable, function-local vector list.
  */
@@ -51,42 +59,50 @@ inline const std::vector<UrlVector>& url_vectors()
 {
     static const std::vector<UrlVector> vectors = {
         // Private / loopback / link-local IPv4.
-        {"ipv4_loopback", "http://127.0.0.1/admin"},
-        {"ipv4_private_10", "http://10.0.0.1/"},
-        {"ipv4_private_192", "http://192.168.1.1/"},
-        {"ipv4_private_172", "http://172.16.0.1/"},
-        {"ipv4_link_local_metadata", "http://169.254.169.254/latest/meta-data"},
-        {"ipv4_unspecified", "http://0.0.0.0/"},
+        {"ipv4_loopback", "http://127.0.0.1/admin", true},
+        {"ipv4_private_10", "http://10.0.0.1/", true},
+        {"ipv4_private_192", "http://192.168.1.1/", true},
+        {"ipv4_private_172", "http://172.16.0.1/", true},
+        {"ipv4_link_local_metadata",
+         "http://169.254.169.254/latest/meta-data",
+         true},
+        {"ipv4_unspecified", "http://0.0.0.0/", true},
 
-        // Loopback in alternative numeric encodings.
-        {"ipv4_decimal_loopback", "http://2130706433/"},
-        {"ipv4_octal_loopback", "http://0177.0.0.1/"},
-        {"ipv4_hex_loopback", "http://0x7f000001/"},
+        // Loopback in alternative numeric encodings (07.0/20 review HIGH).
+        {"ipv4_decimal_loopback", "http://2130706433/", true},
+        {"ipv4_octal_loopback", "http://0177.0.0.1/", true},
+        {"ipv4_hex_loopback", "http://0x7f000001/", true},
+        {"ipv4_short_form_loopback", "http://127.1/", true},
 
         // Hostname forms.
-        {"hostname_localhost", "http://localhost/"},
+        {"hostname_localhost", "http://localhost/", true},
 
-        // IPv6 loopback / ULA / link-local.
-        {"ipv6_loopback_bracket", "http://[::1]/"},
-        {"ipv6_ula", "http://[fc00::1]/"},
-        {"ipv6_link_local", "http://[fe80::1]/"},
+        // IPv6 loopback / ULA / link-local / IPv4-mapped (bracketed).
+        {"ipv6_loopback_bracket", "http://[::1]/", true},
+        {"ipv6_unspecified", "http://[::]/", true},
+        {"ipv6_ula", "http://[fc00::1]/", true},
+        {"ipv6_link_local", "http://[fe80::1]/", true},
+        {"ipv6_mapped_loopback", "http://[::ffff:127.0.0.1]/", true},
 
         // Userinfo `@` tricks: any '@' in the authority is refused.
-        {"userinfo_at_private", "http://user@127.0.0.1/"},
-        {"userinfo_at_public", "http://127.0.0.1@example.com/"},
+        {"userinfo_at_private", "http://user@127.0.0.1/", true},
+        {"userinfo_at_public", "http://127.0.0.1@example.com/", true},
 
         // Non-http(s) schemes.
-        {"scheme_file", "file:///etc/passwd"},
-        {"scheme_javascript", "javascript:alert(1)"},
-        {"scheme_data", "data:text/plain;base64,QQ=="},
-        {"scheme_ftp", "ftp://example.com/x"},
+        {"scheme_file", "file:///etc/passwd", true},
+        {"scheme_javascript", "javascript:alert(1)", true},
+        {"scheme_data", "data:text/plain;base64,QQ==", true},
+        {"scheme_ftp", "ftp://example.com/x", true},
 
-        // An over-long URL on a private host: rejected either way, with parity.
-        {"overlong_private", "http://127.0.0.1/" + std::string(4000, 'a')},
+        // An over-long URL on a private host: refused either way, with parity.
+        {"overlong_private",
+         "http://127.0.0.1/" + std::string(4000, 'a'),
+         true},
 
         // A long URL on a PUBLIC host: accepted by both paths (accept parity).
         {"long_public_accepted",
-         "http://example.com/" + std::string(4000, 'b')},
+         "http://example.com/" + std::string(4000, 'b'),
+         false},
     };
     return vectors;
 }
