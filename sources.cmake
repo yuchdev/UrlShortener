@@ -488,6 +488,9 @@ set(URL_SHORTENER_SOURCES
       tests/unit/commands/63_stdio_adapter.cpp
       tests/unit/commands/64_command_runtime_jobs.cpp
       tests/unit/commands/65_jobs_table_source.cpp
+      tests/unit/commands/70_db_table_allowlist_test.cpp
+      tests/unit/commands/71_jobs_rows_no_secrets_test.cpp
+      tests/unit/commands/72_system_info_key_set_test.cpp
   )
 
   set(COMMON_CPP_SOURCES
