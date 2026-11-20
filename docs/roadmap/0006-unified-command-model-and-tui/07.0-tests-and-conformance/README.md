@@ -78,7 +78,7 @@ G gates             04, 06-10, 30, 32 -> 33 (CI wiring) -> 34 (coverage gap + re
 | 30 | [Perf label registration](30-perf-label-registration.md) | ✅ Complete | none | 32, 33 |
 | 31 | [Redirect isolation structural guard](31-redirect-isolation-structural-guard.md) | ✅ Complete | Task 01.0, 02.0/08 | 34 |
 | 32 | [Redirect fast-path timing guard](32-redirect-fast-path-timing-guard.md) | ✅ Complete | 30, Task 02.0, Task 04.0 | 33, 34 |
-| 33 | [CI wiring](33-ci-wiring.md) | ⬜ Not started | 04, 06, 07, 08, 09, 10, 30, 32 | 34 |
+| 33 | [CI wiring](33-ci-wiring.md) | ✅ Complete | 04, 06, 07, 08, 09, 10, 30, 32 | 34 |
 | 34 | [Coverage-gap run and review gates](34-coverage-gap-run-and-review-gates.md) | ⬜ Not started | 15, 16, 17, 18, 19, 20, 21, 24, 25, 26, 27, 28, 29, 31, 32, 33 | 08.0/01 |
 
 ## Conventions shared by all subtasks (read once)
