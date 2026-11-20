@@ -117,6 +117,15 @@ inline const std::vector<UrlVector>& url_vectors()
         {"scheme_data", "data:text/plain;base64,QQ==", true},
         {"scheme_ftp", "ftp://example.com/x", true},
 
+        // Malformed authority a browser would re-normalize to loopback
+        // (07.0/20 review): a backslash ends the host and maps to '/', leading
+        // whitespace is stripped, and a double trailing dot collapses. All are
+        // refused as malformed URLs (in BOTH allow/deny modes).
+        {"backslash_after_decimal", "http://2130706433\\x", true},
+        {"backslash_after_hex", "http://0x7f000001\\x", true},
+        {"whitespace_before_decimal", "http:// 2130706433/", true},
+        {"double_trailing_dot_decimal", "http://2130706433../", true},
+
         // An over-long URL on a private host: refused either way, with parity.
         {"overlong_private",
          "http://127.0.0.1/" + std::string(4000, 'a'),
@@ -129,12 +138,17 @@ inline const std::vector<UrlVector>& url_vectors()
 
         // Public controls that MUST stay accepted, including a NAT64 / 6to4
         // address whose embedded IPv4 is public (8.8.8.8): the embedded-v4
-        // re-check must not over-block a legitimate translated address.
+        // re-check must not over-block a legitimate translated address. A
+        // single FQDN trailing dot, a punycode (xn--) host and a host:port are
+        // valid registered names and must survive the strict host allowlist.
         {"ipv4_public_decimal", "http://134744072/", false},  // 8.8.8.8
         {"ipv6_nat64_public", "http://[64:ff9b::8.8.8.8]/", false},
         {"ipv6_6to4_public",
          "http://[2002:808:808::]/",
          false},  // 6to4 8.8.8.8
+        {"public_fqdn_trailing_dot", "http://example.com./", false},
+        {"public_punycode_host", "http://xn--bcher-kva.example/", false},
+        {"public_host_with_port", "http://example.com:8080/", false},
     };
     return vectors;
 }
