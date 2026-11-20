@@ -1,0 +1,20 @@
+{
+  "policy": "Reviewed error-code coverage waivers for tools/conformance_coverage.py (Task 07.0 subtask 15). A waiver applies ONLY to a catalog error code that cannot be produced by a replayable corpus case; it NEVER waives a command, a route, or a transport. Each entry MUST carry an owner, a reason, and the repo-relative path of a test that covers the code instead; the gate verifies that evidence file exists, and rejects a waiver for a code the corpus already covers or that is not a catalog code. Adding or changing a waiver requires reviewer approval in the PR that edits this file.",
+  "waivers": {
+    "storage_failure": {
+      "owner": "testing-expert",
+      "reason": "A backend failure cannot be injected through a replayable corpus case without a fault-injection transport; it is proven at the app/command layer by a unit test.",
+      "evidence": "tests/unit/app/18_link_command_service_update_storage_failure.cpp"
+    },
+    "internal": {
+      "owner": "testing-expert",
+      "reason": "An unexpected/internal failure is not reachable from the corpus without fault injection; the full catalog code set, including 'internal', is exercised by the command-layer error-code coverage unit test (Task 01.0).",
+      "evidence": "tests/unit/commands/13_error_code_coverage.cpp"
+    },
+    "busy": {
+      "owner": "testing-expert",
+      "reason": "The job queue cannot be overflowed deterministically by a corpus case against the production queue bounds; the 'busy' (queue full) edge is covered by a C++ fixture-runner case that shrinks the queue to capacity 1 and matches {ok:false, error:{code:'busy'}} with the shared Matcher on the direct transport (commit 0c57fe4).",
+      "evidence": "tests/conformance/runners/01_direct_registry_corpus.cpp"
+    }
+  }
+}

@@ -730,6 +730,7 @@ set(URL_SHORTENER_SOURCES
       tests/conformance/py/12_stdio_framing.py
       tests/conformance/py/13_rest_generic_corpus.py
       tests/conformance/py/14_rest_resource_corpus.py
+      tests/conformance/py/20_coverage_gate.py
       tests/conformance/py/30_authz_process_level.py
       tests/conformance/py/31_import_limits_process_level.py
       tests/conformance/py/32_no_listener_process_level.py

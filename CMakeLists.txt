@@ -447,6 +447,23 @@ include(CTest)
     )
   endforeach()
 
+  # ---- Authorization-matrix drift guard (Task 07.0 subtask 15 carry-forward) --
+  # tools/conformance_gen_authz.py regenerates 42_authorization_matrix.json from
+  # the live registry; its --check mode fails if the committed file is stale (a
+  # mutating command added without regenerating). Registered as its own test next
+  # to conformance_00_corpus_lint so the committed matrix is drift-guarded on
+  # every run, independent of the coverage gate that consumes it.
+  add_test(
+    NAME conformance_authz_matrix_check
+    COMMAND ${Python3_EXECUTABLE} -I
+      ${CMAKE_CURRENT_SOURCE_DIR}/tools/conformance_gen_authz.py --check
+  )
+  set_tests_properties(conformance_authz_matrix_check PROPERTIES
+    ENVIRONMENT "SIMPLE_HTTP_BIN=$<TARGET_FILE:url_shortener>"
+    TIMEOUT 120
+    LABELS "integration;conformance"
+  )
+
   # ---- Conformance C++ support library + runners (Task 07.0 subtask 03) ----
   # conformance_support is a test-only static library holding the mini JSON DOM,
   # corpus loader, matcher/normalizer and case runner. It links
@@ -519,6 +536,28 @@ include(CTest)
         COMMAND conformance__02_tui_client_corpus)
     set_tests_properties(conformance__02_tui_client_corpus PROPERTIES
         LABELS "integration;conformance")
+  endif()
+
+  # ---- Coverage-gate ordering (Task 07.0 subtask 15) ----
+  # The coverage gate (conformance_20_coverage_gate, registered by the
+  # CONFORMANCE_PY_SOURCES loop) reads the per-transport run summaries, so order
+  # it after every corpus runner that writes one. This block is placed after all
+  # runner tests are registered so each if(TEST ...) guard sees a real target;
+  # DEPENDS only affects scheduling and never the gate's own verdict, and an
+  # absent runner (e.g. the TUI runner with TUI=OFF) is simply skipped.
+  if(TEST conformance_20_coverage_gate)
+    foreach(runner_test
+        conformance__01_direct_registry_corpus
+        conformance__02_tui_client_corpus
+        conformance_10_cli_cmd_corpus
+        conformance_11_stdio_corpus
+        conformance_13_rest_generic_corpus
+        conformance_14_rest_resource_corpus)
+      if(TEST ${runner_test})
+        set_property(TEST conformance_20_coverage_gate APPEND PROPERTY
+            DEPENDS ${runner_test})
+      endif()
+    endforeach()
   endif()
 
   # The shared-SQLite scenario (subtask 02.0/14) spawns a long-lived server
