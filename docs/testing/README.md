@@ -156,6 +156,7 @@ Companion documents:
   - [`testplans/storage.md`](./testplans/storage.md)
   - [`testplans/analytics.md`](./testplans/analytics.md)
   - [`testplans/security.md`](./testplans/security.md)
+  - [`testplans/tui.md`](./testplans/tui.md)
 - `docs/agent/testing-requirements.md` defines the project quality bar for new
   changes.
 
