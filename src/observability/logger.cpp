@@ -69,7 +69,15 @@ void Logger::log(LogLevel lvl,
         return;
     }
 
-    static std::mutex stream_mutex;
+    // Never destroyed (intentional leak): a log call can still happen during
+    // static destruction at program exit - e.g. the process-wide JobRunner
+    // logs "job_runner_shutdown" from its teardown before joining its workers.
+    // A Meyers-style `static std::mutex` would already have been destroyed by
+    // then, and locking a destroyed mutex throws, which would break that
+    // shutdown and leave a worker thread joinable (-> std::terminate).
+    // std::cout / std::cerr themselves survive teardown (ios_base::Init keeps
+    // the standard streams alive), so the guard protecting them must too.
+    static std::mutex& stream_mutex = *new std::mutex;
     std::ostream& stream = (c.sink == LogSink::Stdout) ? std::cout : std::cerr;
     std::lock_guard<std::mutex> lock(stream_mutex);
     stream.write(line.data(), static_cast<std::streamsize>(line.size()));
