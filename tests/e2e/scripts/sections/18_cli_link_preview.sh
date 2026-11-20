@@ -12,6 +12,10 @@
 # not the command's success payload (Task 04.0).
 set -euo pipefail
 
+# Shared helpers (run_with_timeout: portable `timeout`/`gtimeout`/watchdog).
+# shellcheck source=tests/e2e/scripts/common.sh
+source "$(dirname "$0")/../common.sh"
+
 BINARY="${URLSHORTENER_BIN:-}"
 if [[ -z "$BINARY" ]]; then
   for candidate in \
@@ -61,7 +65,7 @@ trap 'rm -f "$stderr_file"' EXIT
 # and preserves the real code); `! timeout ...` would instead force rc=0 in the
 # then-branch and make the 124 check unreachable.
 rc=0
-timeout 5 "$BINARY" link preview \
+run_with_timeout 5 "$BINARY" link preview \
        --slug e2e-preview-slug \
        >/dev/null 2>"$stderr_file" || rc=$?
 if [[ "$rc" -eq 124 ]]; then

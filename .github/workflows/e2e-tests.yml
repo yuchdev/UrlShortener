@@ -10,7 +10,9 @@ on:
   pull_request:
     paths:
       - "docs/qa/**"
+      - "docs/commands/**"
       - "tests/e2e/**"
+      - "tests/conformance/**"
       - "tools/sqlite_state_assert.py"
       - "tests/integration/test_sqlite_state_assert_runtime_cli.py"
       - ".github/workflows/e2e-tests.yml"

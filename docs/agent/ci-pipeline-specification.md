@@ -168,6 +168,25 @@ CI adds analytics pipeline tests and optional perf-smoke comparison.
 
 CI adds hardening/negative/fuzz-oriented coverage where practical and finalizes documentation checks.
 
+### Milestone 0006 (unified command model and TUI)
+
+CI wiring for the command-model / TUI milestone (07.0 subtask 33) adds the
+following to the baseline jobs. Reproduce each locally with the commands in
+`docs/roadmap/0006-unified-command-model-and-tui/07.0-tests-and-conformance/33-ci-wiring.md`.
+
+| Job (workflow) | What it runs | Mandatory |
+|---|---|---|
+| `unit-tests` (`ubuntu-unit-tests.yml`) | `-L unit` in a `tui: [ON, OFF]` matrix; the OFF leg asserts no `tui__*` test is registered | yes |
+| `integration-tests` (`ubuntu-integration-tests.yml`) | `-L integration` (includes the `conformance` suite and security process tests), then the CLI e2e sections `-L e2e -E "^e2e_(0[1-9]|10)_"`; uploads the per-transport conformance summaries (and `coverage_matrix.md` when present) | yes |
+| `qa` (`e2e-tests.yml`) | live-service e2e sections 01-10; path-filtered on `tests/e2e/**`, `tests/conformance/**`, `docs/commands/**`, `docs/qa/**` | yes (when paths match) |
+| `perf-analytics` (`perf-analytics.yml`) | nightly `-L perf` on a Release build; publishes the redirect fast-path guard table to the job summary | no (advisory; `continue-on-error`) |
+
+The redirect guard stays advisory: `URLSHORTENER_PERF_GATE` is left unset, and
+the committed `tests/perf/redirect/baseline.json` is a placeholder until a
+maintainer records a real baseline on the nightly runner class (the guard
+refuses `--write-baseline` under `CI=true`; see `tests/perf/README.md`).
+Windows and macOS have no CI; conformance runs there are manual (`-C Debug`).
+
 ---
 
 ## 11. Agent completion expectations

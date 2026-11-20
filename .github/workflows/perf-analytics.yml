@@ -6,9 +6,21 @@ on:
     - cron: '0 4 * * *'
 
 jobs:
+  # Nightly advisory performance job: runs every perf-labelled check (the
+  # analytics placeholders and the redirect fast-path timing guard, subtask 32)
+  # on a Release build and publishes the guard's table to the job summary. It is
+  # advisory only - URLSHORTENER_PERF_GATE is left unset, so the guard's
+  # baseline/registry checks never fail the build. Recording the first real
+  # baseline is a manual maintainer step (see tests/perf/README.md): the guard
+  # refuses --write-baseline whenever CI=true, so a committed baseline is
+  # produced by hand on the nightly runner class, never by this job.
   perf-analytics:
     runs-on: ubuntu-24.04
     continue-on-error: true
+    env:
+      # Advisory: leave the perf gate unset so a regression never fails CI.
+      # Set to "1" only on a job that intentionally promotes the guard to a gate.
+      URLSHORTENER_PERF_GATE: ""
     steps:
       - uses: actions/checkout@v4
       - name: Install dependencies
@@ -19,3 +31,16 @@ jobs:
         run: cmake --build build
       - name: Run perf-labelled tests
         run: ctest --test-dir build --output-on-failure -L "perf" || true
+      - name: Publish redirect guard table to job summary
+        if: always()
+        run: |
+          guard="$(find build -type f -name 'redirect__redirect_fast_path_guard' | head -n1)"
+          {
+            echo '## Redirect fast-path guard (advisory)'
+            echo
+            if [ -n "$guard" ]; then
+              "$guard" || true
+            else
+              echo '_redirect guard binary not found_'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"

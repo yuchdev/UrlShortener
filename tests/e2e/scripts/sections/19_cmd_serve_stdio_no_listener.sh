@@ -18,12 +18,13 @@
 # bounded loopback connect probe as the documented fallback. Every wait is
 # bounded via run_with_timeout (prefer `timeout`, then `gtimeout`, else a
 # pure-shell watchdog) - no wall-clock assertions.
-#
-# NOTE for subtask 33: this script defines `run_with_timeout` locally because
-# no shared helper exists in tests/e2e/scripts/common.sh yet. When subtask 33
-# adds a shared `run_with_timeout` to common.sh, this local copy should be
-# replaced by sourcing it.
 set -euo pipefail
+
+# Shared helpers (run_with_timeout: portable `timeout`/`gtimeout`/watchdog).
+# Defined once in common.sh (subtask 33); this section no longer carries a
+# local copy.
+# shellcheck source=tests/e2e/scripts/common.sh
+source "$(dirname "$0")/../common.sh"
 
 BINARY="${URLSHORTENER_BIN:-}"
 if [[ -z "$BINARY" ]]; then
@@ -53,45 +54,6 @@ fi
 
 TMPDIR_19="$(mktemp -d)"
 trap 'rm -rf "$TMPDIR_19"' EXIT
-
-# Bounded command runner: prefer GNU `timeout`, then `gtimeout` (macOS/MacPorts),
-# else a pure-shell watchdog. Returns the child's exit code, or 124 when the
-# watchdog had to terminate a hung child (matching `timeout`'s convention).
-run_with_timeout() {
-  local secs="$1"
-  shift
-  if command -v timeout >/dev/null 2>&1; then
-    timeout "$secs" "$@"
-    return $?
-  fi
-  if command -v gtimeout >/dev/null 2>&1; then
-    gtimeout "$secs" "$@"
-    return $?
-  fi
-  # Pure-shell fallback watchdog.
-  "$@" &
-  local cmd_pid=$!
-  (
-    sleep "$secs"
-    kill -TERM "$cmd_pid" 2>/dev/null || true
-  ) &
-  local wd_pid=$!
-  local rc=0
-  if wait "$cmd_pid" 2>/dev/null; then
-    rc=0
-  else
-    rc=$?
-  fi
-  # If the watchdog is still alive, the child finished first: cancel it. If it
-  # already exited, the child was killed (hang) -> normalize to 124.
-  if kill -0 "$wd_pid" 2>/dev/null; then
-    kill "$wd_pid" 2>/dev/null || true
-    wait "$wd_pid" 2>/dev/null || true
-  else
-    rc=124
-  fi
-  return $rc
-}
 
 _port_open() {
   local port="$1"

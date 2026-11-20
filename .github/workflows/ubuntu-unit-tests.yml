@@ -9,6 +9,15 @@ jobs:
   unit-tests:
     runs-on: ubuntu-24.04
 
+    # Build and run the unit gate in both TUI configurations so the TUI-less
+    # build keeps compiling (ADR 0003: FTXUI is optional behind
+    # URLSHORTENER_ENABLE_TUI). The OFF leg additionally asserts that no
+    # tui__* test is registered when the option is disabled.
+    strategy:
+      fail-fast: false
+      matrix:
+        tui: ["ON", "OFF"]
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -17,10 +26,24 @@ jobs:
         run: ./scripts/setup_ubuntu_dependencies.sh
 
       - name: Configure
-        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+        run: >-
+          cmake -S . -B build -G Ninja
+          -DCMAKE_BUILD_TYPE=Release
+          -DURLSHORTENER_ENABLE_TUI=${{ matrix.tui }}
 
       - name: Build
         run: cmake --build build
 
       - name: Run unit tests
         run: ctest --test-dir build --output-on-failure -L "unit"
+
+      - name: Assert no TUI tests when TUI is OFF
+        if: matrix.tui == 'OFF'
+        run: |
+          # With the TUI disabled, no tui__* test must be registered.
+          if ctest --test-dir build -N -R '^tui__' | grep -Eq 'Test +#'; then
+            echo "ERROR: tui__* tests are registered with URLSHORTENER_ENABLE_TUI=OFF" >&2
+            ctest --test-dir build -N -R '^tui__'
+            exit 1
+          fi
+          echo "OK: no tui__* tests registered with TUI=OFF"

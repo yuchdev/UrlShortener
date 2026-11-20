@@ -7,6 +7,48 @@ PID_PATH="tests/e2e/tmp/mock_service.pid"
 
 mkdir -p tests/e2e/tmp tests/e2e/failures
 
+# run_with_timeout <seconds> <cmd...> : bound a command's runtime portably.
+# Prefers GNU `timeout`, then `gtimeout` (macOS/MacPorts), else a pure-shell
+# background watchdog. Preserves the command's own exit status, and returns 124
+# on timeout - matching GNU `timeout` so the sections' existing
+# "capture rc with || rc=$?" logic (and the `[[ rc -eq 124 ]]` checks) is
+# unchanged whether or not a GNU `timeout` binary is on PATH.
+run_with_timeout() {
+  local secs="$1"
+  shift
+  if command -v timeout >/dev/null 2>&1; then
+    timeout "$secs" "$@"
+    return $?
+  fi
+  if command -v gtimeout >/dev/null 2>&1; then
+    gtimeout "$secs" "$@"
+    return $?
+  fi
+  # Pure-shell fallback watchdog.
+  "$@" &
+  local cmd_pid=$!
+  (
+    sleep "$secs"
+    kill -TERM "$cmd_pid" 2>/dev/null || true
+  ) &
+  local wd_pid=$!
+  local rc=0
+  if wait "$cmd_pid" 2>/dev/null; then
+    rc=0
+  else
+    rc=$?
+  fi
+  # If the watchdog is still alive, the child finished first: cancel it. If it
+  # already exited, the child was killed (hang) -> normalize to 124.
+  if kill -0 "$wd_pid" 2>/dev/null; then
+    kill "$wd_pid" 2>/dev/null || true
+    wait "$wd_pid" 2>/dev/null || true
+  else
+    rc=124
+  fi
+  return $rc
+}
+
 init_db() {
   python3 - <<'PY'
 import sqlite3
