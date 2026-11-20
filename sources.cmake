@@ -870,6 +870,7 @@ set(URL_SHORTENER_SOURCES
         tests/unit/tui/17_dashboard_model_test.cpp
         tests/unit/tui/18_capability_test.cpp
         tests/unit/tui/21_settings_model_test.cpp
+        tests/unit/tui/22_mock_support_helpers_test.cpp
     )
 
     # Render/snapshot unit tests link url_shortener_tui (FTXUI).
