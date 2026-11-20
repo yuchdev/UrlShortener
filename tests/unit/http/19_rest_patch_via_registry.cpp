@@ -13,6 +13,7 @@
  *  by `18_target_requires_peer.cpp` (subtask 04 peer plumbing), so it is `19_`.
  */
 #define BOOST_TEST_MODULE RestPatchViaRegistry
+#include <cctype>
 #include <string>
 
 #include <boost/test/unit_test.hpp>
@@ -99,6 +100,62 @@ std::string preview_body(const std::string& slug)
                make_request(bhttp::verb::get,
                             "/api/v1/links/" + slug + "/preview"))
         .body();
+}
+
+/// Extracts the `"updated_at":"..."` value from a serialized link view body, or
+/// "" when the field is absent.
+std::string extract_updated_at(const std::string& body)
+{
+    const std::string key = "\"updated_at\":\"";
+    const auto pos = body.find(key);
+    if (pos == std::string::npos) {
+        return {};
+    }
+    const auto start = pos + key.size();
+    const auto end = body.find('"', start);
+    return end == std::string::npos ? std::string {}
+                                    : body.substr(start, end - start);
+}
+
+/// Returns the view body with the whole `"updated_at":"..."` member elided, so
+/// two views can be compared for equality on every field except updated_at.
+/// Both operands of a comparison are passed through this same transform, so any
+/// structural artifact (e.g. an adjacent comma) is identical on both sides and
+/// cancels out.
+std::string without_updated_at(const std::string& body)
+{
+    const std::string key = "\"updated_at\":\"";
+    const auto pos = body.find(key);
+    if (pos == std::string::npos) {
+        return body;
+    }
+    const auto start = pos + key.size();
+    const auto end = body.find('"', start);
+    if (end == std::string::npos) {
+        return body;
+    }
+    return body.substr(0, pos) + body.substr(end + 1);
+}
+
+/// True when `value` is an RFC 3339 UTC timestamp of the exact fixed-width shape
+/// the serializer emits (`currentTimestamp`): `YYYY-MM-DDTHH:MM:SSZ` - length
+/// 20, digits in the numeric positions, `-`/`T`/`:` separators and a `Z`
+/// suffix. Because the width is fixed, lexicographic ordering of two such
+/// strings equals chronological ordering.
+bool is_rfc3339_utc(const std::string& value)
+{
+    if (value.size() != 20 || value[19] != 'Z') {
+        return false;
+    }
+    static const int digit_positions[] = {
+        0, 1, 2, 3, 5, 6, 8, 9, 11, 12, 14, 15, 17, 18};
+    for (const int p : digit_positions) {
+        if (std::isdigit(static_cast<unsigned char>(value[p])) == 0) {
+            return false;
+        }
+    }
+    return value[4] == '-' && value[7] == '-' && value[10] == 'T'
+        && value[13] == ':' && value[16] == ':';
 }
 
 std::string patch(const std::string& slug, const std::string& body)
@@ -371,6 +428,8 @@ BOOST_AUTO_TEST_CASE(patch_noop_bodies_return_200_unchanged)
     create_link("p19noop");
     patch("p19noop", R"({"tags":["keep"],"metadata":{"team":"core"}})");
     const auto before = get_body("p19noop");
+    const auto before_updated = extract_updated_at(before);
+    BOOST_TEST(is_rfc3339_utc(before_updated));
 
     BOOST_TEST(patch("p19noop", "{}").find("\"tags\":[\"keep\"]")
                != std::string::npos);
@@ -380,8 +439,17 @@ BOOST_AUTO_TEST_CASE(patch_noop_bodies_return_200_unchanged)
                    .find("\"tags\":[\"keep\"]")
                != std::string::npos);
 
-    // The stored view is unchanged by the no-op bodies.
-    BOOST_TEST(get_body("p19noop") == before);
+    // The stored view is unchanged by the no-op bodies on every field except
+    // updated_at, which a no-op PATCH refreshes to the current wall-clock
+    // second (so a naive full-body comparison flakes across a second
+    // boundary). Compare all other fields byte-for-byte, and assert separately
+    // that updated_at stays a valid RFC 3339 UTC timestamp that never moves
+    // backwards.
+    const auto after = get_body("p19noop");
+    const auto after_updated = extract_updated_at(after);
+    BOOST_TEST(without_updated_at(after) == without_updated_at(before));
+    BOOST_TEST(is_rfc3339_utc(after_updated));
+    BOOST_TEST(after_updated >= before_updated);
 }
 
 // Type: unit (target_url/url in the body is ignored).

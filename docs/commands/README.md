@@ -225,12 +225,16 @@ Maps to: `PATCH /api/v1/links/{slug}`, `link update`.
 
 Args: `slug` (string, required). Soft delete (sets `deleted_at`). Maps to
 `DELETE /api/v1/links/{slug}`, `link delete`.
+Errors: `not_found`, `storage_failure`.
 
 #### `link.enable`, `link.disable`, `link.restore` - `write`, sync, Mut
 
 Args: `slug` (string, required). One handler family (`SetLinkEnabledCommand` /
 `RestoreLinkCommand`). Maps to `POST /api/v1/links/{slug}/enable|disable|restore`,
 `link enable|disable|restore`.
+`link.enable` Errors: `not_found`, `storage_failure`.
+`link.disable` Errors: `not_found`, `storage_failure`.
+`link.restore` Errors: `not_found`, `storage_failure`.
 
 #### `link.preview` - `read`, sync
 

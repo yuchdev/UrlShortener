@@ -319,6 +319,11 @@ class CoverageGateCatalogParsingTest(unittest.TestCase):
         ``link.list``, ``link.export``) are keyed by their ``####`` heading;
         ``job.get`` / ``job.cancel`` live in a table with no heading and are keyed
         by the dotted command backticked inline before ``Errors:``.
+        ``link.delete`` is keyed by its single-command ``####`` heading, while
+        ``link.enable`` / ``link.disable`` / ``link.restore`` share one combined
+        heading (whose regex captures only the first command), so ``disable`` and
+        ``restore`` rely on the dotted command backticked inline before
+        ``Errors:``.
         """
         documented = covg.parse_documented_errors(_CATALOG)
         self.assertEqual(
@@ -327,6 +332,7 @@ class CoverageGateCatalogParsingTest(unittest.TestCase):
                 "link.create", "link.get", "link.update", "db.rows",
                 "link.stats", "link.preview", "link.list", "link.export",
                 "job.get", "job.cancel",
+                "link.delete", "link.enable", "link.disable", "link.restore",
             },
         )
         self.assertIn("not_found", documented["link.get"])
@@ -335,6 +341,13 @@ class CoverageGateCatalogParsingTest(unittest.TestCase):
         # link.update's Errors: line must NOT hijack its codes.
         self.assertEqual(documented["job.cancel"], {"not_found", "not_authorized"})
         self.assertEqual(documented["job.get"], {"not_found"})
+        # Combined-heading inline attribution: disable/restore are not the first
+        # command in their shared heading, so they are only attributed via the
+        # inline backticked command before Errors:.
+        self.assertEqual(
+            documented["link.disable"], {"not_found", "storage_failure"})
+        self.assertEqual(
+            documented["link.restore"], {"not_found", "storage_failure"})
 
 
 class CoverageMatrixAndSkipNotesTest(unittest.TestCase):

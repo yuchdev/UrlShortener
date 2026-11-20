@@ -210,6 +210,23 @@
       ]
     },
     {
+      "name": "link_disable_not_found",
+      "doc": "disabling an unknown slug is not_found",
+      "command": "link.disable",
+      "steps": [
+        {
+          "label": "disable",
+          "request": {
+            "v": 1,
+            "command": "link.disable",
+            "args": { "slug": "disable-ghost" }
+          },
+          "rest_resource": { "method": "POST", "path": "/api/v1/links/disable-ghost/disable", "status": 404 },
+          "expect": { "ok": false, "error": { "code": "not_found" } }
+        }
+      ]
+    },
+    {
       "name": "link_restore_after_delete",
       "doc": "restoring a soft-deleted link clears deleted_at so the link resolves active again",
       "command": "link.restore",
