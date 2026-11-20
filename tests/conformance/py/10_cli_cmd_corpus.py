@@ -162,8 +162,9 @@ class CliCmdAdapter(cc.Adapter):
             argv.append("--async")
 
         stdin_bytes = json.dumps(req.get("args", {})).encode("utf-8")
-        proc = cc.spawn(argv, cwd=str(ctx.tmp), stdin=subprocess.PIPE,
-                        stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        proc = cc.spawn(argv, cwd=str(ctx.tmp), env=cc.conformance_env(),
+                        stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE)
         try:
             out, err = proc.communicate(input=stdin_bytes,
                                         timeout=_SEND_TIMEOUT_S)

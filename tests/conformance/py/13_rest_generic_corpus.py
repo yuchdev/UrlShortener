@@ -42,13 +42,20 @@ from typing import Any, Dict, Optional
 _THIS = Path(__file__).resolve()
 if str(_THIS.parent) not in sys.path:
     sys.path.insert(0, str(_THIS.parent))
-_CLI_DIR = _THIS.parents[3] / "tests" / "integration" / "cli"
-if str(_CLI_DIR) not in sys.path:
-    sys.path.insert(0, str(_CLI_DIR))
 
 import conformance_common as cc  # noqa: E402
 import conformance_rest as cr  # noqa: E402
-from cli_integration_common import clean_env  # noqa: E402
+
+#: Max characters of a response body echoed into an assertion message, so a
+#: failure stays readable even if a server returns an unexpectedly large body.
+_RAW_SNIPPET_CHARS = 500
+
+
+def _snippet(text: str) -> str:
+    """Return *text* truncated to :data:`_RAW_SNIPPET_CHARS` with an elision tag."""
+    if len(text) <= _RAW_SNIPPET_CHARS:
+        return text
+    return f"{text[:_RAW_SNIPPET_CHARS]}... (+{len(text) - _RAW_SNIPPET_CHARS} chars)"
 
 
 class RestGenericAdapter(cc.Adapter):
@@ -101,7 +108,8 @@ class RestGenericAdapter(cc.Adapter):
             return
         log_path = (self._log_dir or Path(".")) / f"server_{role}.log"
         server = cr.ServerProcess(self._binary, self._storage_args, role,
-                                  log_path, cwd=self._cwd, env=clean_env())
+                                  log_path, cwd=self._cwd,
+                                  env=cc.conformance_env())
         server.start()
         self._servers[role] = server
         self._ports[role] = server.port
@@ -128,9 +136,10 @@ class RestGenericAdapter(cc.Adapter):
         media = content_type.split(";", 1)[0].strip().lower()
         assert media == "application/json", (
             f"rest_generic response Content-Type {content_type!r} is not JSON "
-            f"(status {status}, body {raw!r})")
+            f"(status {status}, body {_snippet(raw)!r})")
         assert envelope is not None, (
-            f"rest_generic response body is not JSON (status {status}): {raw!r}")
+            f"rest_generic response body is not JSON (status {status}): "
+            f"{_snippet(raw)!r}")
         return {"envelope": envelope, "http_status": status}
 
     def end_case(self) -> None:

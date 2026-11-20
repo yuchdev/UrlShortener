@@ -43,7 +43,6 @@ if str(_CLI_DIR) not in sys.path:
     sys.path.insert(0, str(_CLI_DIR))
 
 import conformance_common as cc  # noqa: E402
-from cli_integration_common import clean_env  # noqa: E402
 from stdio_client import StdioProc  # noqa: E402
 
 
@@ -96,7 +95,8 @@ class StdioAdapter(cc.Adapter):
             args = ["serve-stdio", *self._storage_args]
             if role == "user":
                 args.append("--read-only")
-            proc = StdioProc(self._binary, *args, cwd=self._cwd, env=clean_env())
+            proc = StdioProc(self._binary, *args, cwd=self._cwd,
+                             env=cc.conformance_env())
             self._procs[role] = proc
         return proc
 

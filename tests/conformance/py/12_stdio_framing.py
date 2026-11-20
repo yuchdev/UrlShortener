@@ -52,7 +52,6 @@ if str(_CLI_DIR) not in sys.path:
     sys.path.insert(0, str(_CLI_DIR))
 
 import conformance_common as cc  # noqa: E402
-from cli_integration_common import clean_env  # noqa: E402
 from stdio_client import StdioProc  # noqa: E402
 
 #: Terminal job states that stop ``job.get`` polling.
@@ -69,7 +68,8 @@ class StdioFramingTest(unittest.TestCase):
 
     def _proc(self, *args: str) -> StdioProc:
         """Spawn a serve-stdio child under a sanitised env, reaped on teardown."""
-        proc = StdioProc(self._binary, "serve-stdio", *args, env=clean_env())
+        proc = StdioProc(self._binary, "serve-stdio", *args,
+                         env=cc.conformance_env())
         self.addCleanup(proc.stop)
         return proc
 

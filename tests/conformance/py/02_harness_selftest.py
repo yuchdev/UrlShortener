@@ -383,6 +383,47 @@ class HarnessSelfTest(unittest.TestCase):
         self.assertIsNotNone(code)
         self.assertIsNotNone(proc.poll())
 
+    def test_conformance_env_strips_binary_overrides(self) -> None:
+        # Every shim spawns the binary under conformance_env() so an ambient
+        # SHORTENER_* / salt variable cannot change a case verdict (hermetic
+        # replay). Prove the behavioral overrides are gone and a harness-needed
+        # URLSHORTENER_* / SIMPLE_HTTP_BIN variable survives.
+        injected = {
+            "SHORTENER_ALLOW_PRIVATE_TARGETS": "true",
+            "SHORTENER_BASE_DOMAIN": "http://evil.test",
+            "SHORTENER_GENERATED_SLUG_LENGTH": "3",
+            "URL_SHORTENER_ANALYTICS_HASH_SALT": "ambient-salt",
+            "URL_SHORTENER_STORAGE_CONFIG": "/tmp/ambient.yaml",
+            "URLSHORTENER_CONFORMANCE_DIR": "/keep/me",
+            "SIMPLE_HTTP_BIN": "/keep/bin",
+        }
+        saved = {k: os.environ.get(k) for k in injected}
+        try:
+            os.environ.update(injected)
+            env = cc.conformance_env()
+            for name in (
+                "SHORTENER_ALLOW_PRIVATE_TARGETS",
+                "SHORTENER_BASE_DOMAIN",
+                "SHORTENER_GENERATED_SLUG_LENGTH",
+                "URL_SHORTENER_ANALYTICS_HASH_SALT",
+                "URL_SHORTENER_STORAGE_CONFIG",
+            ):
+                self.assertNotIn(name, env, name)
+            # No residual SHORTENER_ / URL_SHORTENER_ key leaks through.
+            self.assertFalse(
+                [k for k in env
+                 if k.startswith("SHORTENER_") or k.startswith("URL_SHORTENER_")],
+                env)
+            # Harness-needed variables are preserved.
+            self.assertEqual(env.get("URLSHORTENER_CONFORMANCE_DIR"), "/keep/me")
+            self.assertEqual(env.get("SIMPLE_HTTP_BIN"), "/keep/bin")
+        finally:
+            for k, v in saved.items():
+                if v is None:
+                    os.environ.pop(k, None)
+                else:
+                    os.environ[k] = v
+
     def test_build_suite_and_summary(self) -> None:
         # build_suite over a tiny on-disk corpus, then the summary writer.
         with tempfile.TemporaryDirectory() as root:

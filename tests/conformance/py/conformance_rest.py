@@ -18,9 +18,20 @@ Security model (threat brief ruling (c)):
   * File paths are left at the production default-deny: no ``--path-root`` or
     ``--no-file-paths`` flag is ever passed, so a ``path`` argument comes back
     ``unsupported``.
-  * Requests only ever go to ``127.0.0.1`` (never ``0.0.0.0``) and every HTTP
-    call is timeout-bounded, so a hung server fails a step by timeout rather than
-    blocking CTest.
+  * The *client* connects only to ``127.0.0.1``. The *server*, however, listens
+    on all IPv4 interfaces: ``HttpServer`` always binds ``0.0.0.0``
+    (``src/http/http_server.cpp``) and exposes no bind-host flag - that is by
+    design for the public redirect server, and Admin is still gated on a loopback
+    *peer* (``is_loopback_peer`` / ``command_api_caller`` in
+    ``src/http/command_bridge.cpp``), not on the bind address. The test-window
+    exposure this implies: while a case runs, any **local** process able to reach
+    the ephemeral port over loopback would be granted Admin on that throwaway
+    server's per-case SQLite database. This is acceptable for a short-lived test
+    server on a developer/CI host and is not changed here (no product code is
+    touched); it is called out so the loopback-client wording is not read as a
+    loopback *bind*.
+  * Every HTTP call is timeout-bounded, so a hung server fails a step by timeout
+    rather than blocking CTest.
 
 The module is Python standard library only and runs under ``python3 -I``; the
 sibling ``conformance_common`` import is resolved from ``__file__``.
@@ -54,6 +65,11 @@ _START_ATTEMPTS = 3
 
 #: Bytes of the server log tailed into a start-failure message.
 _LOG_TAIL_BYTES = 2000
+
+#: Hard cap on a single response body read. A conformance envelope is tiny (well
+#: under a KiB); this ceiling bounds memory if a server ever streams an unbounded
+#: body, failing the step clearly instead of reading without limit.
+_MAX_RESPONSE_BYTES = 4 * 1024 * 1024
 
 
 class ServerProcess:
@@ -197,6 +213,8 @@ class RestClient:
         :return: ``(http_status, parsed_json_or_None, raw_text, content_type)``;
             *parsed_json_or_None* is ``None`` when the body is not valid JSON.
         :raises KeyError: If no server for *role* has been started.
+        :raises AssertionError: If the response body exceeds
+            :data:`_MAX_RESPONSE_BYTES`.
         """
         port = self._ports[role]
         conn = http.client.HTTPConnection("127.0.0.1", port,
@@ -206,11 +224,17 @@ class RestClient:
                          body=body.encode("utf-8"),
                          headers={"Content-Type": "application/json"})
             response = conn.getresponse()
-            raw = response.read().decode("utf-8", "replace")
+            # Read one byte past the cap so an over-cap body is detected exactly.
+            body_bytes = response.read(_MAX_RESPONSE_BYTES + 1)
             status = response.status
             content_type = response.getheader("Content-Type", "") or ""
         finally:
             conn.close()
+        if len(body_bytes) > _MAX_RESPONSE_BYTES:
+            raise AssertionError(
+                f"rest_generic response body exceeded {_MAX_RESPONSE_BYTES} "
+                f"bytes (status {status}); refusing to buffer it")
+        raw = body_bytes.decode("utf-8", "replace")
         try:
             parsed = json.loads(raw)
         except json.JSONDecodeError:

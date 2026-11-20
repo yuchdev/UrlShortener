@@ -520,6 +520,44 @@ def find_binary() -> str:
     return _find()
 
 
+#: Env-var name prefixes the ``url_shortener`` binary reads as behavioral
+#: overrides (``getenv`` under ``src/``: ``SHORTENER_ALLOW_PRIVATE_TARGETS``,
+#: ``SHORTENER_BASE_DOMAIN``, ``SHORTENER_GENERATED_SLUG_LENGTH``,
+#: ``SHORTENER_DEFAULT_REDIRECT_TYPE``, ``SHORTENER_DEFAULT_EXPIRY_SECONDS``,
+#: ``URL_SHORTENER_STORAGE_CONFIG``, ``URL_SHORTENER_ANALYTICS_HASH_SALT``, ...).
+#: Stripping the whole prefix future-proofs against a new variable the binary
+#: starts reading. The harness's own vars begin ``URLSHORTENER_`` (no underscore,
+#: e.g. ``URLSHORTENER_CONFORMANCE_DIR``) or ``SIMPLE_HTTP_BIN`` and so survive.
+_BINARY_ENV_PREFIXES = ("SHORTENER_", "URL_SHORTENER_")
+
+
+def conformance_env() -> Dict[str, str]:
+    """Return a child environment with every binary behavioral override removed.
+
+    Builds on ``cli_integration_common.clean_env`` (which already drops
+    ``URL_SHORTENER_STORAGE_CONFIG``) and additionally strips every variable
+    whose name starts with a prefix in :data:`_BINARY_ENV_PREFIXES`, so a spawned
+    server or CLI child reads only the flags the shim passes and never an ambient
+    ``SHORTENER_ALLOW_PRIVATE_TARGETS`` / base domain / slug length / analytics
+    salt. Every shim that spawns the binary passes this as the child ``env`` so a
+    developer or CI environment cannot change a case's verdict (hermetic replay).
+
+    :return: A fresh ``dict`` copy of ``os.environ`` with the storage-config var
+        and all ``SHORTENER_`` / ``URL_SHORTENER_`` prefixed vars removed; the
+        harness-only ``URLSHORTENER_*`` and ``SIMPLE_HTTP_BIN`` vars are kept.
+    """
+    cli_dir = _REPO_ROOT / "tests" / "integration" / "cli"
+    if str(cli_dir) not in sys.path:
+        sys.path.insert(0, str(cli_dir))
+    from cli_integration_common import clean_env  # noqa: E402
+
+    env = clean_env()
+    for key in list(env):
+        if any(key.startswith(prefix) for prefix in _BINARY_ENV_PREFIXES):
+            env.pop(key, None)
+    return env
+
+
 def free_port() -> int:
     """Return a currently-free loopback TCP port.
 
