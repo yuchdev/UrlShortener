@@ -51,6 +51,7 @@ from __future__ import annotations
 import http.client
 import json
 import os
+import re
 import shutil
 import socket
 import subprocess
@@ -95,10 +96,24 @@ TRANSPORT_CAPS: Dict[str, Caps] = {
     "direct": Caps(id=True, raw=True, options=True),
     "rest_generic": Caps(id=True, raw=True, options=True),
     "rest_resource": Caps(id=False, raw=False, options=False),
-    "cli_cmd": Caps(id=False, raw=False, options=True),
+    "cli_cmd": Caps(id=True, raw=False, options=True),
     "stdio": Caps(id=True, raw=True, options=True),
     "tui": Caps(id=True, raw=False, options=True),
 }
+
+#: Regex (anchored by :func:`re.fullmatch`) that a *server-minted* envelope id -
+#: the id a transport returns when the request carried none - must match, per
+#: transport. N4 defaults every transport to ``srv-<n>``; the ``cmd`` CLI instead
+#: mints its own client id ``cli-<n>`` (``src/cli/cmd_dispatch.cpp``), which is a
+#: Python-only transport rule (``cli_cmd`` has no C++ runner), so it does not
+#: belong in the shared N4 vectors. A transport absent here uses the default.
+_GENERATED_ID_PATTERN: Dict[str, str] = {
+    "cli_cmd": "cli-[0-9]+",
+}
+
+#: Default server-minted id shape (N4), used for every transport not overridden
+#: in :data:`_GENERATED_ID_PATTERN`.
+_DEFAULT_GENERATED_ID_PATTERN = "srv-[0-9]+"
 
 #: Out-of-process transports that cannot share an in-process ``inmemory`` store
 #: (corpus lint rule 10). Only ``direct`` and ``tui`` run in the test process.
@@ -723,11 +738,55 @@ def _skip_or_findings(
     return ("run", None)
 
 
+def _normalize_actual(
+    actual: Any,
+    request: Optional[Dict[str, Any]],
+    caps: Caps,
+    transport: str,
+) -> Tuple[Dict[str, Any], List[str]]:
+    """Run N1/N4/N5 normalization, honouring a transport's server-minted id shape.
+
+    This is a thin wrapper over :func:`conformance_match.normalize_actual` that
+    keeps the shared N4 vectors unchanged. When the request carried **no** id and
+    the transport mints a non-``srv-<n>`` id (only ``cli_cmd``, which has no C++
+    runner), the server id is validated against that transport's own pattern here
+    rather than against N4's ``^srv-[0-9]+$``. Every other case - including id
+    echo when the request carried an id - delegates unchanged.
+
+    :param actual: The actual response envelope.
+    :param request: The request envelope, or ``None`` for a raw-text replay.
+    :param caps: The transport capabilities (``caps.id`` drives the echo check).
+    :param transport: The adapter's transport id (selects the generated-id shape).
+    :return: ``(normalized_envelope, findings)``; findings is ``[]`` when the id
+        and top-level shape are valid, else one finding per violation.
+    """
+    pattern = _GENERATED_ID_PATTERN.get(transport)
+    has_request_id = isinstance(request, dict) and "id" in request
+    if (
+        pattern is not None
+        and not has_request_id
+        and isinstance(actual, dict)
+        and isinstance(actual.get("id"), str)
+    ):
+        actual_id = actual["id"]
+        # Treat the already-validated id as an echo of itself so normalize_actual
+        # applies N1/N5 and the sentinel without re-imposing the srv-<n> rule.
+        normalized, findings = cm.normalize_actual(actual, {"id": actual_id}, True)
+        if not re.fullmatch(pattern, actual_id):
+            findings = list(findings) + [
+                f"$.id: generated id {actual_id!r} does not match "
+                f"^{pattern}$ (N4, {transport})"
+            ]
+        return normalized, findings
+    return cm.normalize_actual(actual, request, caps.id)
+
+
 def _check_envelope(
     expect: Dict[str, Any],
     actual: Any,
     request: Optional[Dict[str, Any]],
     caps: Caps,
+    transport: str,
     variables: Dict[str, Any],
     label: str,
 ) -> List[str]:
@@ -742,6 +801,8 @@ def _check_envelope(
     :param actual: The response envelope the adapter returned.
     :param request: The request envelope (for the N4 id-echo check), or ``None``.
     :param caps: The transport capabilities (``caps.id`` drives N4).
+    :param transport: The adapter's transport id (selects the server-minted id
+        shape when the request carried no id).
     :param variables: Variable map consulted by ``<var:name>``.
     :param label: Step label used to locate findings.
     :return: ``[]`` when the envelope matches, else one finding per violation.
@@ -757,7 +818,7 @@ def _check_envelope(
                 expected[key] = expect[key]
     mode = expect.get("match", "exact")
     try:
-        normalized, findings = cm.normalize_actual(actual, request, caps.id)
+        normalized, findings = _normalize_actual(actual, request, caps, transport)
         reasons = cm.match(expected, normalized, mode, variables)
     except RecursionError:
         return [f"{label}: envelope nesting too deep to match"]
@@ -909,7 +970,9 @@ def _run_step(
         except ValueError as exc:
             return [f"{label}: expect substitution failed: {exc}"]
         findings = _status_findings(wrapper, transport, step.get("expect", {}), step, label)
-        findings += _check_envelope(expect, actual, request, caps, variables, label)
+        findings += _check_envelope(
+            expect, actual, request, caps, transport, variables, label
+        )
         if findings:
             return findings
         return _apply_save(step, actual, variables, label)
@@ -925,7 +988,7 @@ def _run_step(
         wrapper, transport, step.get("expect_accept", {}), step, f"{label} (accept)"
     )
     findings += _check_envelope(
-        accept, actual, request, caps, variables, f"{label} (accept)"
+        accept, actual, request, caps, transport, variables, f"{label} (accept)"
     )
     findings += _apply_save(step, actual, variables, label)
     if findings:
@@ -941,7 +1004,9 @@ def _run_step(
             findings.append(f"{label}: expect substitution failed: {exc}")
             return findings
         outcome = _project_terminal_job(terminal)
-        findings += _check_envelope(expect, outcome, None, caps, variables, label)
+        findings += _check_envelope(
+            expect, outcome, None, caps, transport, variables, label
+        )
     return findings
 
 

@@ -427,5 +427,81 @@ class HarnessSelfTest(unittest.TestCase):
             self.assertEqual(len(payload["cases"]), 1)
 
 
+def _cli_create_case(request_id: Optional[str] = None) -> Dict[str, Any]:
+    """Build a one-step ``link.create`` case, optionally carrying a request id."""
+    request: Dict[str, Any] = {
+        "v": 1,
+        "command": "link.create",
+        "args": {"target_url": "https://example.com/d", "slug": "docs"},
+    }
+    if request_id is not None:
+        request["id"] = request_id
+    return {
+        "name": "selftest_cli_id",
+        "doc": "cli id handling",
+        "command": "link.create",
+        "steps": [
+            {
+                "label": "create",
+                "request": request,
+                "expect": {
+                    "ok": True,
+                    "result": {"slug": "docs"},
+                    "match": "subset",
+                },
+            }
+        ],
+    }
+
+
+def _cli_wrap(env_id: str) -> Dict[str, Any]:
+    """Wrap an ``ok`` create envelope with *env_id* as a ``cli_cmd`` send result."""
+    envelope = {"v": 1, "ok": True, "id": env_id, "result": {"slug": "docs"}}
+    return {"envelope": envelope, "cli_exit": 0}
+
+
+class CliCmdIdTest(unittest.TestCase):
+    """Envelope-id rules specific to the echo-capable ``cli_cmd`` transport."""
+
+    def test_echoes_request_id(self) -> None:
+        # Request carries an id; cli_cmd now echoes it, so a matching response id
+        # passes.
+        adapter = FakeAdapter(transport="cli_cmd", main=[_cli_wrap("req-7")])
+        findings = cc.run_case(_cli_create_case("req-7"), adapter)
+        self.assertEqual(findings, [])
+
+    def test_wrong_echo_is_finding(self) -> None:
+        adapter = FakeAdapter(transport="cli_cmd", main=[_cli_wrap("other")])
+        findings = cc.run_case(_cli_create_case("req-7"), adapter)
+        self.assertTrue(
+            any("id" in f for f in findings),
+            f"expected an id echo finding, got {findings!r}",
+        )
+
+    def test_default_client_id_accepted(self) -> None:
+        # No request id: the CLI mints cli-<n>, which cli_cmd accepts (whereas the
+        # default srv-<n> rule would reject it).
+        adapter = FakeAdapter(transport="cli_cmd", main=[_cli_wrap("cli-1")])
+        findings = cc.run_case(_cli_create_case(None), adapter)
+        self.assertEqual(findings, [])
+
+    def test_bad_default_id_is_finding(self) -> None:
+        adapter = FakeAdapter(transport="cli_cmd", main=[_cli_wrap("boom")])
+        findings = cc.run_case(_cli_create_case(None), adapter)
+        self.assertTrue(
+            any("id" in f for f in findings),
+            f"expected a generated-id finding, got {findings!r}",
+        )
+
+    def test_srv_id_rejected_for_cli_cmd(self) -> None:
+        # A srv-<n> id is correct for other transports but wrong for cli_cmd.
+        adapter = FakeAdapter(transport="cli_cmd", main=[_cli_wrap("srv-1")])
+        findings = cc.run_case(_cli_create_case(None), adapter)
+        self.assertTrue(
+            any("id" in f for f in findings),
+            f"expected a generated-id finding, got {findings!r}",
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
