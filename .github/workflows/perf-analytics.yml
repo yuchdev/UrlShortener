@@ -17,6 +17,9 @@ jobs:
   perf-analytics:
     runs-on: ubuntu-24.04
     continue-on-error: true
+    # Least privilege: the step-summary write and perf run need only read access.
+    permissions:
+      contents: read
     env:
       # Advisory: leave the perf gate unset so a regression never fails CI.
       # Set to "1" only on a job that intentionally promotes the guard to a gate.

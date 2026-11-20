@@ -9,6 +9,11 @@ jobs:
   integration-tests:
     runs-on: ubuntu-24.04
 
+    # Least privilege: uploading artifacts uses the job token but needs no
+    # contents:write; reading the repo is sufficient.
+    permissions:
+      contents: read
+
     # The conformance runners (C++ and Python) write a per-transport summary
     # JSON to $URLSHORTENER_CONFORMANCE_OUT; setting it here lets the suite
     # populate it during the integration run so the summaries can be uploaded.

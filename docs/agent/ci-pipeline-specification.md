@@ -181,6 +181,10 @@ following to the baseline jobs. Reproduce each locally with the commands in
 | `qa` (`e2e-tests.yml`) | live-service e2e sections 01-10; path-filtered on `tests/e2e/**`, `tests/conformance/**`, `docs/commands/**`, `docs/qa/**` | yes (when paths match) |
 | `perf-analytics` (`perf-analytics.yml`) | nightly `-L perf` on a Release build; publishes the redirect fast-path guard table to the job summary | no (advisory; `continue-on-error`) |
 
+All jobs declare a least-privilege `permissions: contents: read`. By repo
+convention, GitHub Actions are pinned by release tag (e.g. `actions/checkout@v4`)
+rather than by commit SHA; keep new workflow steps consistent with that choice.
+
 The redirect guard stays advisory: `URLSHORTENER_PERF_GATE` is left unset, and
 the committed `tests/perf/redirect/baseline.json` is a placeholder until a
 maintainer records a real baseline on the nightly runner class (the guard

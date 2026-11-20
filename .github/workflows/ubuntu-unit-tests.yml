@@ -9,6 +9,11 @@ jobs:
   unit-tests:
     runs-on: ubuntu-24.04
 
+    # Least privilege: this job only reads the repo (no artifact write, no
+    # step-summary needs write to contents).
+    permissions:
+      contents: read
+
     # Build and run the unit gate in both TUI configurations so the TUI-less
     # build keeps compiling (ADR 0003: FTXUI is optional behind
     # URLSHORTENER_ENABLE_TUI). The OFF leg additionally asserts that no
