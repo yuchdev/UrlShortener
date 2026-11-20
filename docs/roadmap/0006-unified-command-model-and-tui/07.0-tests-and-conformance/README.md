@@ -69,8 +69,8 @@ G gates             04, 06-10, 30, 32 -> 33 (CI wiring) -> 34 (coverage gap + re
 | 21 | [Security: no listener, no URI store](21-security-no-listener-and-no-uri-store.md) | ⬜ Not started | Task 04.0, Task 05.0, Task 06.0 | 34 |
 | 22 | [TUI mock command client (extends the 06.0 mock)](22-tui-mock-command-client.md) | ⬜ Not started | Task 06.0 | 23, 26, 27, 28, 29, 08.0/11 |
 | 23 | [TUI snapshot renderer and golden compare (extends the 06.0 harness)](23-tui-snapshot-renderer-and-golden-compare.md) | ⬜ Not started | 22 | 24, 25, 27, 28, 29, 08.0/11 |
-| 24 | [TUI snapshots: navigation screens](24-tui-snapshots-navigation-screens.md) | ⬜ Not started | 23, Task 06.0 | 29, 34, 08.0/10, 08.0/11 |
-| 25 | [TUI snapshots: forms, jobs, palette, dialogs](25-tui-snapshots-forms-jobs-palette-dialogs.md) | ⬜ Not started | 23, Task 06.0 | 29, 34, 08.0/10, 08.0/11 |
+| 24 | [TUI snapshots: navigation screens](24-tui-snapshots-navigation-screens.md) | ✅ Complete (consumed by 06.0) | 23, Task 06.0 | 29, 34, 08.0/10, 08.0/11 |
+| 25 | [TUI snapshots: forms, jobs, palette, dialogs](25-tui-snapshots-forms-jobs-palette-dialogs.md) | ✅ Complete (consumed by 06.0) | 23, Task 06.0 | 29, 34, 08.0/10, 08.0/11 |
 | 26 | [FormModel property tests](26-form-builder-property-tests.md) | ⬜ Not started | 22, Task 01.0, Task 06.0 | 29, 34, 08.0/11 |
 | 27 | [TUI state machine and non-blocking tests](27-tui-state-machine-and-nonblocking-tests.md) | ⬜ Not started | 22, 23, Task 06.0 | 29, 34, 08.0/11 |
 | 28 | [TUI confirm and read-only tests](28-tui-confirm-and-read-only-tests.md) | ⬜ Not started | 22, 23, Task 06.0 | 29, 34, 08.0/11 |

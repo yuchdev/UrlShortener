@@ -22,9 +22,9 @@
 
 | Diagram | Delivered by (consumed) | Goldens |
 |---|---|---|
-| D1 frame (header, tabs, footer, memory banner, read-only, narrow) | `tui__04_frame_render_test` | `d01_frame_80x24`, `d01_frame_mono_80x24`, `d01_frame_light_80x24`, `d01_frame_memory_banner_80x24`, `d01_frame_readonly_80x24`, `d01_frame_narrow_60x20` |
+| D1 frame (header, tabs, footer, memory banner, read-only, narrow) | `tui__04_frame_render_test` (base, memory banner, narrow); `tui__05_theme_render_test` (mono, light); `tui__18_readonly_render_test` (read-only) | `d01_frame_80x24`, `d01_frame_mono_80x24`, `d01_frame_light_80x24`, `d01_frame_memory_banner_80x24`, `d01_frame_readonly_80x24`, `d01_frame_narrow_60x20` |
 | D2 dashboard (populated, empty/partial, memory, stats, mono) | `tui__17_dashboard_screen_test` | `d02_dashboard_80x24`, `d02_dashboard_partial_failure_80x24`, `d02_dashboard_memory_80x24`, `d02_dashboard_stats_summary_80x24`, `d02_dashboard_mono_80x24` |
-| D3 links table + request assertions | `tui__12_links_screen_test`, `tui__10_table_view_render_test` | `d03_links_80x24`, `d03_links_error_80x24`, `d03_links_empty_80x24`, `d03_links_filter_80x24`, `d03_links_readonly_80x24`, `d03_table_20x_80x24`, `12_request_link_list_all.json`, `12_request_link_list_active.json` |
+| D3 links table + request assertions | `tui__12_links_screen_test`, `tui__10_table_view_render_test` (`d03_table_20x`); `tui__12_links_query_test` (`12_request_link_list_*.json`) | `d03_links_80x24`, `d03_links_error_80x24`, `d03_links_empty_80x24`, `d03_links_filter_80x24`, `d03_links_readonly_80x24`, `d03_table_20x_80x24`, `12_request_link_list_all.json`, `12_request_link_list_active.json` |
 | D4 link detail/stats | `tui__13_link_detail_screen_test` | `d04_detail_80x24`, `d04_detail_stats_error_80x24`, `d04_detail_deleted_80x24`, `d04_detail_no_stats_80x24`, `d04_detail_mono_80x24` |
 | D6 tables browser + inline row JSON | `tui__14_tables_screen_test` | `d06_tables_80x24`, `d06_tables_events_80x24`, `d06_tables_row_json_80x24`, `d06_tables_mono_80x24`, `d06_tables_empty_80x24`, `d06_tables_error_80x24` |
 
@@ -61,7 +61,7 @@ keep box glyphs and get the shipped `d0N_*_80x24` naming.
 ## Commands
 
 ```bash
-ctest --test-dir cmake-build -R "^tui__(04|10|12|13|14|17)_" --output-on-failure
+ctest --test-dir cmake-build -R "^tui__(04|05|10|12|13|14|17|18)_" --output-on-failure
 ```
 
 ## Tests

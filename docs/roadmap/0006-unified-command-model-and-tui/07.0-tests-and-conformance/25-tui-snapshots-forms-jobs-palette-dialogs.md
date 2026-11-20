@@ -21,8 +21,8 @@
 
 | Diagram | Delivered by (consumed) | Goldens / request fixtures |
 |---|---|---|
-| D5 new/edit form, enum dropdown, scroll, read-only, validation errors | `tui__08_form_screen_test`, `tui__08_form_widgets_render_test`, `tui__07_form_model_request_test` | `d05_new_link_80x24`, `d05_edit_link_80x24`, `d05_new_link_errors_80x24`, `d05_generic_enum_dropdown_80x24`, `d05_form_scroll_80x12`, `d05_new_link_readonly_80x24`, `07_request_link_create.json`, `07_request_link_update_clear.json`, `07_request_link_list_all.json` |
-| D7 import/export (paste, file, too-large, export, read-only) | `tui__15_import_export_screen_test` | `d07_import_80x24`, `d07_import_file_80x24`, `d07_import_toolarge_80x24`, `d07_export_80x24`, `d07_import_readonly_80x24` |
+| D5 new/edit form, enum dropdown, scroll, read-only, validation errors | `tui__08_form_screen_test`, `tui__08_form_widgets_render_test`, `tui__07_form_model_request_test`; `tui__18_readonly_render_test` (`d05_new_link_readonly`) | `d05_new_link_80x24`, `d05_edit_link_80x24`, `d05_new_link_errors_80x24`, `d05_generic_enum_dropdown_80x24`, `d05_form_scroll_80x12`, `d05_new_link_readonly_80x24`, `07_request_link_create.json`, `07_request_link_update_clear.json`, `07_request_link_list_all.json` |
+| D7 import/export (paste, file, too-large, export, read-only) | `tui__15_import_export_screen_test`; `tui__18_readonly_render_test` (`d07_import_readonly`) | `d07_import_80x24`, `d07_import_file_80x24`, `d07_import_toolarge_80x24`, `d07_export_80x24`, `d07_import_readonly_80x24` |
 | D8 jobs (mixed states, empty, mono, job detail) + poll guard | `tui__16_jobs_screen_test`, `tui__16_poll_ticker_test` | `d08_jobs_80x24`, `d08_jobs_empty_80x24`, `d08_jobs_mono_80x24`, `d08_job_detail_failed_80x24` |
 | D9 palette + generic command flow (zero-TUI-code form) | `tui__11_palette_render_test`, `tui__11_generic_command_flow_test` | `d09_palette_empty_80x24`, `d09_palette_link_prefix_80x24`, `d09_palette_readonly_80x24`, `d09_result_view_80x24` |
 | D10 confirm (typed-slug + y/n) and toasts | `tui__06_dialog_render_test`, `tui__06_confirm_test` | `d10_confirm_delete_80x24`, `d10_confirm_yesno_80x24`, `d10_toast_error_80x24`, `d10_toast_details_80x24` |
@@ -52,7 +52,7 @@ request assertions use the shipped `*_request_*.json` fixtures plus
 ## Commands
 
 ```bash
-ctest --test-dir cmake-build -R "^tui__(06|07|08|11|15|16)_" --output-on-failure
+ctest --test-dir cmake-build -R "^tui__(06|07|08|11|15|16|18)_" --output-on-failure
 ```
 
 ## Tests
