@@ -298,6 +298,19 @@ include(CTest)
       PRIVATE SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
   target_compile_definitions(docs__05_api_reference_matches_registry
       PRIVATE SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
+  # Authoritative drift check: run the REAL route_registry_dump generator (in
+  # ALL, so a default build produces it) and byte-compare its output against the
+  # committed docs/api/README.md. docs__05 stays as a fast in-process renderer.
+  add_test(
+    NAME docs__06_api_reference_matches_generator
+    COMMAND ${CMAKE_COMMAND}
+      -DTOOL=$<TARGET_FILE:route_registry_dump>
+      -DDOC=${CMAKE_CURRENT_SOURCE_DIR}/docs/api/README.md
+      -DOUT=${CMAKE_CURRENT_BINARY_DIR}/api_reference_generated.md
+      -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/unit/docs/compare_generated_doc.cmake
+  )
+  set_tests_properties(docs__06_api_reference_matches_generator
+      PROPERTIES LABELS "unit")
   register_labeled_cpp_tests(ANALYTICS_UNIT_SOURCES      "unit")
   register_labeled_cpp_tests(ANALYTICS_INTEGRATION_SOURCES "integration")
   register_labeled_cpp_tests(CONTRACT_METADATA_SOURCES   "contract")

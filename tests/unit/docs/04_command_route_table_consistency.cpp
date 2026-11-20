@@ -453,15 +453,13 @@ BOOST_AUTO_TEST_CASE(route_command_exists_in_registry)
 //   documentation-metadata case), so the new command/job routes cannot collide
 //   with or diverge from the generated-reference identifiers.
 // Boundaries: this asserts the C++ registry invariant the generated doc depends
-//   on; it does not read the doc (docs__05 pins the rendered bytes).
+//   on; it reads only registeredRoutes() (not the committed doc), so it runs
+//   unconditionally - no SOURCE_DIR / loaded gate. docs__05 pins the rendered
+//   bytes.
 // On failure first check: a new route reused an operation id, left it empty, or
 //   used characters outside [a-z0-9_].
 BOOST_AUTO_TEST_CASE(operation_ids_unique_and_documented)
 {
-#ifdef SOURCE_DIR
-    if (!loaded) {
-        return;
-    }
     std::set<std::string> seen;
     for (const RouteDescriptor& route : registeredRoutes()) {
         BOOST_TEST(!route.operation_id.empty(),
@@ -477,7 +475,6 @@ BOOST_AUTO_TEST_CASE(operation_ids_unique_and_documented)
                                         << "' breaks the lower_snake pattern");
         }
     }
-#endif
 }
 
 // Scenario: the compatibility aliases (/api/v1/short-urls*) and the prefixed
