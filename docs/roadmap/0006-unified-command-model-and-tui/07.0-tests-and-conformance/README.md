@@ -73,7 +73,7 @@ G gates             04, 06-10, 30, 32 -> 33 (CI wiring) -> 34 (coverage gap + re
 | 25 | [TUI snapshots: forms, jobs, palette, dialogs](25-tui-snapshots-forms-jobs-palette-dialogs.md) | ✅ Complete (consumed by 06.0) | 23, Task 06.0 | 29, 34, 08.0/10, 08.0/11 |
 | 26 | [FormModel property tests](26-form-builder-property-tests.md) | ⬜ Not started | 22, Task 01.0, Task 06.0 | 29, 34, 08.0/11 |
 | 27 | [TUI state machine and non-blocking tests](27-tui-state-machine-and-nonblocking-tests.md) | ⬜ Not started | 22, 23, Task 06.0 | 29, 34, 08.0/11 |
-| 28 | [TUI confirm and read-only tests](28-tui-confirm-and-read-only-tests.md) | ⬜ Not started | 22, 23, Task 06.0 | 29, 34, 08.0/11 |
+| 28 | [TUI confirm and read-only tests](28-tui-confirm-and-read-only-tests.md) | ✅ Complete | 22, 23, Task 06.0 | 29, 34, 08.0/11 |
 | 29 | [TUI test plan and checklist traceability](29-tui-test-plan-and-checklist-traceability.md) | ⬜ Not started | 22, 23, 24, 25, 26, 27, 28, 06.0/20 | 34 |
 | 30 | [Perf label registration](30-perf-label-registration.md) | ✅ Complete | none | 32, 33 |
 | 31 | [Redirect isolation structural guard](31-redirect-isolation-structural-guard.md) | ✅ Complete | Task 01.0, 02.0/08 | 34 |
