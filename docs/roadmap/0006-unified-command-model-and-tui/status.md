@@ -12,7 +12,7 @@ Tracks progress against [plan.md](/docs/roadmap/0006-unified-command-model-and-t
 | 04.0 | REST and CLI adapters | ✅ Complete (15/15 subtasks) | 22 (`commands__40`, http `15`-`25`; `cli__06`-`12`; cli int `20`, `21`; `observability__04`; `ratelimiter__08`) |
 | 05.0 | Jobs, pair import/export, stdio | ✅ Complete (21/21 subtasks) | 23 (`commands__50`-`65`; `app__60`; `cli__20`, `cli__21`; http `40`; cli int `40`, `41`; e2e `30`) |
 | 06.0 | Terminal UI | ✅ Complete | 58 (`tui__01`, `tui__02_*` x3, `tui__03`, `tui__04_*` x6, `tui__05_*` x4, `tui__06_*` x4, `tui__07_*` x3, `tui__08_*` x3, `tui__09_*` x3, `tui__10_*` x2, `tui__11_*` x4, `tui__12_*` x3, `tui__13_*` x2, `tui__14_*` x2, `tui__15_*` x3, `tui__16_*` x3, `tui__17_*` x2, `tui__18_*` x3, `tui__19_*` x2, `tui__20_app_navigation_test`, `tui__21_*` x2, `cli__30`) |
-| 07.0 | Tests and conformance | 🔶 In progress (33/34 subtasks) | 20 (`conformance_00_corpus_lint`, `conformance_01_matcher_vectors`, `conformance_02_harness_selftest`, `conformance_20_coverage_gate`, `conformance_authz_matrix_check`, `conformance_10_cli_cmd_corpus`, `conformance_11_stdio_corpus`, `conformance_12_stdio_framing`, `conformance_13_rest_generic_corpus`, `conformance_14_rest_resource_corpus`, `conformance__00_support_selftest`, `conformance__01_direct_registry_corpus`, `conformance__02_tui_client_corpus` (+ link corpus 57 cases, browse/system corpus 39 cases, jobs/import/export corpus 39 cases, envelope/authz corpus 34 cases), `commands__70`..`72`, `commands__74`, `commands__75`, `commands__76`..`78`, `cli__31`, `tui__23`, `conformance_31_import_limits_process_level`, `tui__37`, `conformance_30_authz_process_level`, `commands__79_no_http_server_in_local_modes_test`, `commands__80_redirect_isolation_test`, `conformance_32_no_listener_process_level`, `e2e_19`, `docs__03`..`06`, `tui__22_mock_support_helpers_test`, `tui__30_form_model_property_test`, `tui__31`..`33`, `tui__34_no_secrets_real_registry_test`; perf label: `analytics__*` x3, `redirect__redirect_fast_path_guard`; `32_redirect_fallback_no_command`) |
+| 07.0 | Tests and conformance | ✅ Complete | 20 (`conformance_00_corpus_lint`, `conformance_01_matcher_vectors`, `conformance_02_harness_selftest`, `conformance_20_coverage_gate`, `conformance_authz_matrix_check`, `conformance_10_cli_cmd_corpus`, `conformance_11_stdio_corpus`, `conformance_12_stdio_framing`, `conformance_13_rest_generic_corpus`, `conformance_14_rest_resource_corpus`, `conformance__00_support_selftest`, `conformance__01_direct_registry_corpus`, `conformance__02_tui_client_corpus` (+ link corpus 57 cases, browse/system corpus 39 cases, jobs/import/export corpus 39 cases, envelope/authz corpus 34 cases), `commands__70`..`72`, `commands__74`, `commands__75`, `commands__76`..`78`, `cli__31`, `tui__23`, `conformance_31_import_limits_process_level`, `tui__37`, `conformance_30_authz_process_level`, `commands__79_no_http_server_in_local_modes_test`, `commands__80_redirect_isolation_test`, `conformance_32_no_listener_process_level`, `e2e_19`, `docs__03`..`06`, `tui__22_mock_support_helpers_test`, `tui__30_form_model_property_test`, `tui__31`..`33`, `tui__34_no_secrets_real_registry_test`; perf label: `analytics__*` x3, `redirect__redirect_fast_path_guard`; `32_redirect_fallback_no_command`) |
 | 08.0 | Docs and registry sync | ⬜ Not started | 0 |
 
 **Legend:** ✅ Complete · 🔶 In progress / partial · ⬜ Not started
@@ -384,6 +384,101 @@ ADR 0003 "As-built amendments"). All other 06.0 subtask specs are
 **Open decisions raised at close:** see the 2026-11-19 "06.0 close"
 entry in Notes & decisions.
 
+### Task 07.0 - Tests and conformance (✅)
+
+Completed 2026-11-21 on branch `milestone/0006-unified-command-model-and-tui`.
+
+**Delivered:**
+
+- **Conformance framework.**
+  - Corpus schema with lint rules 1-14.
+  - Matcher and normalizer vectors (71), shared by the Python harness
+    (`conformance_common.py`, `conformance_match.py`) and the C++ support
+    library (`tests/conformance/support/`, never linked into the product).
+  - Six transport shims: direct, tui, `cmd` CLI, serve-stdio, REST generic and
+    REST resource routes.
+  - A 173-185 case corpus covering link, browse, system, jobs,
+    import/export, envelope and authz.
+  - Coverage gate (`tools/conformance_coverage.py`, three recorded waivers) and
+    a local 6 x 19 matrix; authz-matrix drift check.
+- **Catalog drift.** Command sections, the route table (`docs__03`..`06`) and
+  formal `Errors:` lines for every command.
+- **Security suites.**
+  - Allowlist and redaction (18).
+  - Authorization matrix (19).
+  - Import SSRF, size and path (20). The SSRF private-target fix lands in
+    `src/core/utils.cpp` in three review rounds: `752dad8`, `5d970c8` and
+    `0bfb543` (strict host allowlist).
+  - `tui --path-root`/`--no-file-paths`.
+  - No listener and no URI store (21).
+- **TUI test layer.** Mock client, FormModel property tests, state machine and
+  non-blocking tests, confirm/read-only, and a test plan with traceability
+  (`docs/testing/testplans/tui.md`).
+- **Redirect.** Structural isolation guard (31) and fast-path timing guard
+  (32, Release-measured).
+- **CI wiring** (33) and a portable e2e timeout.
+- **Defects found and fixed in-task:**
+  - the SSRF bypass (3 rounds);
+  - C++ `CaseRunner` `await_job` parity (`ca2c535`);
+  - the rest_resource id echo (`7eba818`);
+  - the `link.list` doc gap (`0701ff1`);
+  - the tui__18 settle race (`62e36ac`);
+  - harness temp-dir collisions under `ctest -j` (`503e3fe`);
+  - the shared contract SQLite file (`03a9e3b`);
+  - the no-op PATCH wall-clock flake (`4bc641a`);
+  - a Logger stream data race found by TSan (`6e121e7`, `7b6909a`);
+  - the `app__23` fake-repository race (`9dad96c`).
+
+**Tests / gate (subtask 34):**
+
+- Full suite, all labels, `-j6`, at `7b6909a`: **484/484**. That is unit 331,
+  contract 12, integration 117, e2e 20, conformance 16 and perf 4.
+- Matrix
+  ([0006-test-matrix-evidence.md](../../reviews/0006-test-matrix-evidence.md)):
+  - Release: unit 331/331 and perf 4/4. Redirect p50 is about 38 us on a cache
+    hit; the registry-presence ratio is 1.011 against a 1.100 limit.
+  - TUI OFF: unit 266/266, with 0 `tui__*` registered.
+  - Flake reruns: conformance x3 and `tui__31`..`33` x20, both clean.
+- Coverage (llvm-cov fallback; lcov is not installed): 87.3% of lines
+  combined.
+  - `src/commands` 92.7%, `src/app` 93.2%, `src/transport` 91.1%,
+    `src/composition` 90.7%, `src/tui` 85.4%, `src/http` 77.9%.
+- ThreadSanitizer (`cmake-build-tsan`, `-L "unit|conformance"`): **0 warnings**,
+  down from 18.
+  - Remaining non-passes under TSan are slowdown or environment only:
+    the Python corpus runners hit the 300 s cap under `-j4` and pass alone;
+    `commands__53`/`76`/`74` fail on timing bounds; `conformance_32` sees a
+    transient system UNIX socket.
+- Test gap ([0006-test-gap-report.md](../../reviews/0006-test-gap-report.md)):
+  0 P0, 0 P1, 3 P2, 2 P3. `Result::detail` is waived because every source
+  writes a fixed message.
+- Verification
+  ([0006-07.0-subtask-verification.md](../../reviews/0006-07.0-subtask-verification.md)):
+  all 34 subtasks have a final verdict, and accepted deviations are recorded.
+- `/pr-review` ([0006-pr-review.md](../../reviews/0006-pr-review.md)):
+  **APPROVE**.
+  - Feature: LGTM.
+  - Security: PASS after the round-3 re-check
+    ([0006-07.0-security-review.md](../../reviews/0006-07.0-security-review.md)).
+- `/link-check`: clean.
+- Manual TUI smoke: the >= 2 terminals criterion is met only on macOS. Windows,
+  Linux, conhost and tmux are a ratified deferral to a human pass (user ruling
+  2026-11-20).
+
+**Spec reconciliation:**
+
+- 23-25 are *consumed*: 06.0 built them, per the 2026-11-20 amendment.
+- Spec 34 step 2 names `tui__5[0-2]`, which does not exist. The as-built
+  equivalent is `tui__3[1-3]`.
+- Spec 34 step 3: llvm-cov replaces lcov on macOS.
+- Spec 15: three coverage waivers instead of two (orchestrator decision,
+  2026-11-20).
+- All other 07.0 specs are *consumed* as written, with the accepted deviations
+  listed in the verification record.
+
+**Open decisions raised at close:** see the 2026-11-21 "07.0 close" entry
+in Notes & decisions.
+
 ## Open risks
 
 - **Storage unification (02.0)** touches the path every link command and the
@@ -746,3 +841,58 @@ codes, which raises the spec's "at most two documented waivers" to three:
 
 Each waiver names an owner, a reason and an evidence file, and the gate
 checks that the evidence file exists.
+
+### 2026-11-21 - 07.0 close: open decisions and follow-ups
+
+Decisions for the user:
+
+1. **SSRF fix backport.** Backport the SSRF fix (all three rounds) to
+   `master`, which is affected too.
+2. **Host allowlist side effects.**
+   - Underscore hosts (`foo_bar.example.com`) are now refused. This is
+     fail-closed; allow them or keep them refused.
+   - A `%` in the host is always refused.
+   - Malformed hosts are refused even with `allow_private_targets=true`.
+3. **Bind address.** `HttpServer` always binds `0.0.0.0`. With the command API
+   enabled, any local process gets Admin through the loopback peer check.
+   Consider a `--bind-address` option.
+4. **Wrong HTTP method.** A wrong method returns 400 `invalid_method` rather
+   than 405 with `Allow`. Keep and document it, or change it (API-visible).
+5. **Lenient timestamps.** `parseRfc3339Zulu` accepts `2026-02-29`, date-only
+   and missing-`Z` values. Harden it or document it.
+6. **`cmd LINK.CREATE` crash.**
+   - `cmd LINK.CREATE --json '{}'` crashes with FATAL, exit 1 and empty stdout
+     instead of returning an `invalid_envelope` envelope with exit 2.
+   - The catalog is ambiguous about upper-case command names
+     (`invalid_envelope` vs `unknown_command`).
+7. **Redirect perf baseline.** It is still a placeholder; a maintainer
+   records it on the Release CI runner.
+
+Follow-ups (not blocking):
+
+- **Deferred cases.** The export size-cap case and the busy mirror in the TUI
+  runner.
+- **Postgres contract harness.** It shares one database across binaries when
+  `URL_SHORTENER_TEST_POSTGRES_DSN` is set; it needs per-process isolation for
+  `ctest -j`.
+- **TSan timing.**
+  - Under TSan, the Python corpus runners need a longer CTest timeout, or a
+    sanitizer-aware cap.
+  - `commands__53`, `commands__76` and `commands__74` carry timing bounds that
+    fail under sanitizer load.
+- **`currentTimestamp()`.** It calls `system_clock::now()` directly. An
+  injectable clock would let REST tests use `ManualClock`.
+- **Test-gap P2/P3 items.** In `0006-test-gap-report.md`, including the `src/http`
+  error and TLS branches (77.9% coverage).
+- **CI.** Actions are pinned to `@v4` tags, not SHAs. GNU `timeout` runs
+  without `-k`. Some workflow behaviour can only be verified on GitHub.
+- **Local machine.** An agent installed `actionlint` with `go install`.
+- **Carried from 06.0.**
+  - Remote-client `required_permission`.
+  - Ctrl-C with a wedged UI.
+  - `clang-format` pinning.
+  - The vcpkg baseline.
+  - 0002 T-92, T-100 and T-108.
+  - The SME transcript.
+  - Y2038.
+  - Commit-trailer variance.

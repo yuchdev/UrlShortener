@@ -10,7 +10,7 @@
 > 06.0/21, not 07.0/24-25.
 
 **Parent milestone:** [Milestone 0006 - Unified Command Model and TUI](/docs/roadmap/0006-unified-command-model-and-tui/plan.md)
-**Status:** ⬜ Not started
+**Status:** ✅ Complete
 **Depends on:** [01.0](/docs/roadmap/0006-unified-command-model-and-tui/01.0-command-model-core/README.md) (registry, envelope), [03.0](/docs/roadmap/0006-unified-command-model-and-tui/03.0-link-and-browse-commands/README.md) (commands), [04.0](/docs/roadmap/0006-unified-command-model-and-tui/04.0-rest-and-cli-adapters/README.md) (REST, `cmd`), [05.0](/docs/roadmap/0006-unified-command-model-and-tui/05.0-jobs-pairs-and-stdio/README.md) (jobs, stdio), [06.0](/docs/roadmap/0006-unified-command-model-and-tui/06.0-tui/README.md) (TUI). Work is incremental: groups A-D can start as soon as 01.0 lands and grow with each task; the final gate (group G) runs after 06.0.
 
 ## Scope
@@ -79,7 +79,7 @@ G gates             04, 06-10, 30, 32 -> 33 (CI wiring) -> 34 (coverage gap + re
 | 31 | [Redirect isolation structural guard](31-redirect-isolation-structural-guard.md) | ✅ Complete | Task 01.0, 02.0/08 | 34 |
 | 32 | [Redirect fast-path timing guard](32-redirect-fast-path-timing-guard.md) | ✅ Complete | 30, Task 02.0, Task 04.0 | 33, 34 |
 | 33 | [CI wiring](33-ci-wiring.md) | ✅ Complete | 04, 06, 07, 08, 09, 10, 30, 32 | 34 |
-| 34 | [Coverage-gap run and review gates](34-coverage-gap-run-and-review-gates.md) | ⬜ Not started | 15, 16, 17, 18, 19, 20, 21, 24, 25, 26, 27, 28, 29, 31, 32, 33 | 08.0/01 |
+| 34 | [Coverage-gap run and review gates](34-coverage-gap-run-and-review-gates.md) | ✅ Complete | 15, 16, 17, 18, 19, 20, 21, 24, 25, 26, 27, 28, 29, 31, 32, 33 | 08.0/01 |
 
 ## Conventions shared by all subtasks (read once)
 

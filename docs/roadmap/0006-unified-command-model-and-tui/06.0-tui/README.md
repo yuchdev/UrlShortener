@@ -1,7 +1,7 @@
 # Task 06.0 - Terminal UI
 
 **Parent milestone:** [Milestone 0006 - Unified Command Model and TUI](/docs/roadmap/0006-unified-command-model-and-tui/plan.md)
-**Status:** ⬜ Not started
+**Status:** ✅ Complete
 **Depends on:** 01.0, 02.0, 03.0, 05.0 (04.0 is not required: the TUI uses the in-process client over `build_command_runtime`)
 
 ## Scope
