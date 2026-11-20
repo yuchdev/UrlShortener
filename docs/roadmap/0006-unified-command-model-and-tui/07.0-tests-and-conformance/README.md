@@ -64,7 +64,7 @@ G gates             04, 06-10, 30, 32 -> 33 (CI wiring) -> 34 (coverage gap + re
 | 16 | [Catalog drift: command sections](16-catalog-drift-command-sections.md) | ✅ Complete | Task 01.0, Task 03.0 | 34, 08.0/03 |
 | 17 | [Catalog drift: route table](17-catalog-drift-route-table.md) | ✅ Complete | Task 04.0 | 34, 08.0/09 |
 | 18 | [Security: allowlist and redaction](18-security-allowlist-and-redaction.md) | ✅ Complete | Task 01.0, Task 03.0, Task 05.0 | 34 |
-| 19 | [Security: authorization matrix](19-security-authorization-matrix.md) | ⬜ Not started | Task 01.0, Task 04.0, Task 05.0, Task 06.0 | 34 |
+| 19 | [Security: authorization matrix](19-security-authorization-matrix.md) | ✅ Complete | Task 01.0, Task 04.0, Task 05.0, Task 06.0 | 34 |
 | 20 | [Security: import SSRF, size and path limits](20-security-import-ssrf-size-and-path-limits.md) | ⬜ Not started | Task 05.0, Task 06.0 | 34 |
 | 21 | [Security: no listener, no URI store](21-security-no-listener-and-no-uri-store.md) | ⬜ Not started | Task 04.0, Task 05.0, Task 06.0 | 34 |
 | 22 | [TUI mock command client (extends the 06.0 mock)](22-tui-mock-command-client.md) | ✅ Complete | Task 06.0 | 23, 26, 27, 28, 29, 08.0/11 |
