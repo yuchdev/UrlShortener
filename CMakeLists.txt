@@ -277,6 +277,8 @@ include(CTest)
       PRIVATE SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
   target_compile_definitions(commands__14_include_hygiene
       PRIVATE SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
+  target_compile_definitions(commands__79_no_http_server_in_local_modes_test
+      PRIVATE SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
   target_compile_definitions(commands__80_redirect_isolation_test
       PRIVATE SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
   register_labeled_cpp_tests(CLI_UNIT_SOURCES            "unit")

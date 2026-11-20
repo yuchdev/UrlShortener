@@ -463,6 +463,7 @@ set(URL_SHORTENER_SOURCES
       tests/unit/commands/12_catalog_drift.cpp
       tests/unit/commands/13_error_code_coverage.cpp
       tests/unit/commands/14_include_hygiene.cpp
+      tests/unit/commands/79_no_http_server_in_local_modes_test.cpp
       tests/unit/commands/80_redirect_isolation_test.cpp
       tests/unit/commands/20_link_command_codec.cpp
       tests/unit/commands/21_link_create_command.cpp
@@ -730,6 +731,7 @@ set(URL_SHORTENER_SOURCES
       tests/conformance/py/14_rest_resource_corpus.py
       tests/conformance/py/30_authz_process_level.py
       tests/conformance/py/31_import_limits_process_level.py
+      tests/conformance/py/32_no_listener_process_level.py
   )
 
   # ---- Conformance C++ support library (Task 07.0 subtask 03) ----
@@ -809,6 +811,7 @@ set(URL_SHORTENER_SOURCES
           16_cli_link_enable_disable
           17_cli_link_restore
           18_cli_link_preview
+          19_cmd_serve_stdio_no_listener
           30_serve_stdio
       )
 
