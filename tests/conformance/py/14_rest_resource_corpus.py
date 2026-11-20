@@ -23,9 +23,12 @@ synthesis rules (subtask 09):
     where the envelope code is read from the legacy body at ``error.code`` (the
     key the legacy handlers emit, ``makeApiErrorResponse`` in
     ``src/http/request_handlers.cpp``) and translated from the legacy REST
-    vocabulary (``invalid_request``/``repository``/``internal_error`` and the
-    promoted ``invalid_bucket``/``invalid_timestamp``) to the envelope vocabulary
-    through :data:`rest_resource_status.json`'s ``legacy_code_to_envelope`` map.
+    vocabulary (the error-table ``invalid_request``/``repository``/
+    ``internal_error`` and the per-field REST decoder codes ``invalid_enabled``/
+    ``invalid_expires_at``/``invalid_tags``/... and the stats ``invalid_bucket``/
+    ``invalid_timestamp``, which all mean the envelope's ``invalid_field``) to the
+    envelope vocabulary through :data:`rest_resource_status.json`'s
+    ``legacy_code_to_envelope`` map.
 
   The synthesized top-level ``id`` is the minimal N4-conformant server id
   sentinel (``srv-0``): a resource route carries no envelope id, but the shared
@@ -485,6 +488,32 @@ class ResourceRouteSanity(unittest.TestCase):
         self.assertIsInstance(body["error"], dict, _snippet(raw))
         self.assertIn("code", body["error"], _snippet(raw))
         self.assertNotIn("code", body, "legacy error code is nested under error, not top-level")
+
+    def test_field_level_code_maps_to_invalid_field(self) -> None:
+        """A per-field REST decoder code translates to the envelope invalid_field.
+
+        Type: integration (contract / parity).
+        Scenario: a PATCH with a non-boolean ``enabled`` returns the legacy
+          field-level body code ``invalid_enabled`` with status 400; the wrapper's
+          ``legacy_code_to_envelope`` map translates it to ``invalid_field`` - the
+          same failure class the generic/registry transport reports - so a corpus
+          case written once as ``error.code: invalid_field`` matches on both REST
+          transports (subtask 09 implementation step 3).
+        Boundaries: the field-level 400 codes the body decoder emits
+          (``src/http/handlers/link_handlers.cpp``) are reconciled test-side, never
+          by reformatting the legacy body.
+        On failure first check: did the PATCH body decoder change its field code,
+          or is a field-level code missing from legacy_code_to_envelope?
+        """
+        status, body, raw = self._call(
+            "PATCH", "/api/v1/links/docs", None, {"enabled": "false"})
+        self.assertEqual(status, self._table["error_status"]["invalid_field"],
+                         _snippet(raw))
+        legacy = self._error_code(body)
+        self.assertEqual(legacy, "invalid_enabled", _snippet(raw))
+        self.assertEqual(
+            self._table["legacy_code_to_envelope"].get(legacy), "invalid_field",
+            f"field-level code {legacy!r} must map to invalid_field")
 
     def test_wrong_method_returns_invalid_method_not_405(self) -> None:
         """Wrong methods keep today's 400 invalid_method shape (no 405 / no Allow).
