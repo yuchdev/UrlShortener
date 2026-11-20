@@ -167,6 +167,7 @@ BOOST_AUTO_TEST_CASE(denied_call_does_not_touch_repository)
             .ok);
     BOOST_REQUIRE_EQUAL(h.store.size(), 1u);
     const std::size_t create_calls_after_seed = h.store.create_calls();
+    const std::size_t update_calls_after_seed = h.store.update_calls();
     const auto seeded = h.store.findBySlug(slug);
     BOOST_REQUIRE(seeded.has_value());
     const std::string seeded_target = seeded->target_url;
@@ -188,9 +189,15 @@ BOOST_AUTO_TEST_CASE(denied_call_does_not_touch_repository)
                    "expected not_authorized for " << req.command);
     }
 
-    // Zero touches: no new create, the size is unchanged, and the seeded link's
-    // content is byte-identical (no update/delete reached the store).
+    // Zero touches: no mutating repository call fired. create_calls counts
+    // link.create; update_calls counts the write path link.update/link.delete
+    // persist through (ILinkStore soft-deletes via update, no distinct delete
+    // method), so both staying at their pre-denial value proves the denied
+    // create, update AND delete reached no store method.
     BOOST_TEST(h.store.create_calls() == create_calls_after_seed);
+    BOOST_TEST(h.store.update_calls() == update_calls_after_seed);
+    // The state is also byte-identical: the size is unchanged and the seeded
+    // link's content is intact.
     BOOST_TEST(h.store.size() == 1u);
     const auto reread = h.store.findBySlug(slug);
     BOOST_REQUIRE(reread.has_value());

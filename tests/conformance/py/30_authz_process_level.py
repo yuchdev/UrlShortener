@@ -349,14 +349,23 @@ class CmdReadOnlyTests(unittest.TestCase):
         self.assertTrue(created.get("ok"), created)
 
     def test_read_only_flag_cannot_be_overridden_by_args(self) -> None:
-        """A caller/role/read_only/principal arg is rejected, not honoured.
+        """A caller/role/read_only/principal/control_set arg is rejected.
 
         ``system.info`` is a read command, so a read-only caller clears the
         permission gate and reaches argument validation; the closed envelope then
         rejects each unknown key with ``invalid_field`` (exit 2). None is treated
-        as a role override.
+        as a role override. ``control_set`` is included because it is the exact
+        field the registry authorizes on (``CallerContext::control_set``,
+        ``command_descriptor.hpp:92``), so a caller trying to inject it must be
+        rejected, never honoured.
+
+        The ``cmd`` transport conveys only the *args* object on stdin; its
+        ``options`` come from CLI flags (``--dry-run`` / ``--async``), not a body
+        ``options`` object, so there is no envelope ``options`` to inject here --
+        the ``options`` override path is proven over ``serve-stdio`` in
+        :meth:`StdioReadOnlyTests.test_role_override_in_options_is_rejected`.
         """
-        for key in ("caller", "role", "read_only", "principal"):
+        for key in ("caller", "role", "read_only", "principal", "control_set"):
             with self.subTest(key=key):
                 value: Any = False if key == "read_only" else "admin"
                 envelope, exit_code = self._cmd(
@@ -461,6 +470,43 @@ class StdioReadOnlyTests(unittest.TestCase):
         self.assertTrue(info.get("ok"), info)
         self.assertIs(info.get("result", {}).get("read_only"), True, info)
         self.assertIsNone(ro.returncode, "serve-stdio exited after a denial")
+
+    def test_role_override_in_options_is_rejected(self) -> None:
+        """An options object carrying a role key is rejected, not honoured.
+
+        Unlike ``cmd`` (args-on-stdin only), ``serve-stdio`` carries a full
+        request envelope, so it can convey an ``options`` object. The envelope's
+        ``options`` is a closed object of boolean ``dry_run`` / ``async`` only
+        (``src/commands/envelope.cpp``), so a caller/role/read_only/principal/
+        control_set key inside ``options`` is refused as ``invalid_envelope``
+        before any command runs -- it can never be smuggled in as a role
+        override, on top of the args-level rejection proven for ``cmd``.
+        """
+        proc = StdioProc(
+            self.binary,
+            "serve-stdio",
+            "--read-only",
+            *self.storage_args,
+            cwd=self.cwd,
+            env=cc.conformance_env(),
+        )
+        self.addCleanup(proc.stop)
+
+        for key in ("caller", "role", "read_only", "principal", "control_set"):
+            with self.subTest(key=key):
+                value: Any = False if key == "read_only" else "admin"
+                response = proc.request(
+                    {
+                        "v": 1,
+                        "command": "system.info",
+                        "options": {key: value},
+                    },
+                    timeout=_STDIO_TIMEOUT_S,
+                )
+                self.assertFalse(response.get("ok"), response)
+                self.assertEqual(
+                    _error_code(response), "invalid_envelope", response
+                )
 
 
 # ---------------------------------------------------------------------------

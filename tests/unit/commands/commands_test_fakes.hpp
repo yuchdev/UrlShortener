@@ -59,6 +59,18 @@ public:
         return create_calls_;
     }
 
+    /// The number of @ref update calls made so far. `link.update`,
+    /// `link.delete`, `link.enable`, `link.disable` and `link.restore` all
+    /// persist through @ref update (`ILinkStore` has no distinct delete method;
+    /// soft-delete and lifecycle changes are writes through `update`), so this
+    /// counts every mutating repository touch other than @ref create. A denial
+    /// proof asserts both counters stay at their pre-denial value.
+    std::size_t update_calls() const
+    {
+        std::lock_guard<std::mutex> guard(mutex_);
+        return update_calls_;
+    }
+
     /// The number of links currently stored.
     std::size_t size() const
     {
@@ -139,6 +151,7 @@ public:
                 url_shortener::app::AppError* /*error*/ = nullptr) override
     {
         std::lock_guard<std::mutex> guard(mutex_);
+        ++update_calls_;
         by_slug_[link.slug] = link;
         by_id_[link.id] = link;
         return true;
@@ -150,6 +163,7 @@ private:
     std::unordered_map<std::string, url_shortener::Link> by_id_;
     std::unordered_set<std::string> existing_slugs_;
     std::size_t create_calls_ = 0;
+    std::size_t update_calls_ = 0;
 };
 
 /**
