@@ -184,6 +184,16 @@ struct LinksFixture
 // loading state (the model is only advanced on drain, so nothing has arrived),
 // and the in-flight count is still 1 - the UI thread never waited on the call.
 // Draining then shows the data.
+//
+// The chosen proof is `in_flight() == 1` with the loading frame, NOT a
+// steady_clock upper bound on the event/render path. That is deliberate project
+// policy: the wall-clock bound on `tui__10` was removed after it flaked under
+// CI load, so these tests synchronize on posted completions and in_flight()
+// only (set_delay models latency, nothing asserts on its duration). A handler
+// that blocked the UI thread on the call would be caught here regardless:
+// on_enter would not return until the call finished, so the data (not
+// "loading...") would already be in the frame and in_flight() would be 0.
+//
 // On failure first check: a Links handler that calls the client synchronously
 // on the UI thread instead of through AsyncCaller::submit.
 // ---------------------------------------------------------------------------

@@ -1,6 +1,8 @@
 #define BOOST_TEST_MODULE TuiScreenTransitionRequestsTest
 
+#include <algorithm>
 #include <cstddef>
+#include <iterator>
 #include <memory>
 #include <optional>
 #include <set>
@@ -677,4 +679,177 @@ BOOST_AUTO_TEST_CASE(unmapped_key_issues_no_request)
     fx.settle();
 
     BOOST_TEST(fx.requests().size() == before);
+}
+
+namespace
+{
+
+/// Sends @p text as one character event per glyph into the focused control
+/// (a text `Input` consumes per-character events like a real keyboard).
+std::vector<ftxui::Event> type_text(const std::string& text)
+{
+    std::vector<ftxui::Event> events;
+    for (char ch : text) {
+        events.push_back(ftxui::Event::Character(std::string(1, ch)));
+    }
+    return events;
+}
+
+}  // namespace
+
+// ---------------------------------------------------------------------------
+// LinkDetail --e--> LinkForm: from the inline detail (opened by Enter, which
+// issued link.get + link.stats), `e` opens the prefilled link.update form from
+// the already-fetched JSON and issues NO new request. Admin session (the
+// AppFixture is not read-only), so the write form is enabled.
+// On failure first check: open_detail_selected / the detail screen's `e` edit
+// path refetching instead of reusing the fetched link.
+// ---------------------------------------------------------------------------
+BOOST_AUTO_TEST_CASE(link_detail_edit_opens_form_without_request)
+{
+    AppFixture fx;
+    fx.client.enqueue("link.list", ok(one_link_page()));
+    fx.client.enqueue("link.get", ok(full_link()));
+    fx.client.enqueue("link.stats", ok(stats_empty()));
+
+    fx.links->on_enter();
+    fx.settle();
+    render_to_text(fx.links->component(), 80, 24);
+    send_events(fx.links->component(), {ftxui::Event::Return});  // open detail
+    fx.settle();
+
+    const std::size_t before = fx.requests().size();  // list + get + stats
+    send_events(fx.links->component(), {ftxui::Event::Character("e")});
+    fx.settle();
+
+    const std::string grid = render_to_text(fx.links->component(), 80, 24);
+    BOOST_TEST(grid.find("(command: link.update") != std::string::npos);
+    BOOST_TEST(fx.requests().size() == before);  // no new request
+    BOOST_TEST(
+        tui::Router::is_legal(ScreenId::link_detail, ScreenId::link_form));
+}
+
+// ---------------------------------------------------------------------------
+// LinkForm --submit--> Confirm: `n` opens the create form; filling the required
+// target_url and submitting (Ctrl-S) a mutating command opens the confirm and
+// issues NO request until the operator confirms (ADR 0003 Decision 2 rule 4,
+// the confirm choke point). Admin session, so the write submit is enabled.
+// On failure first check: MutationFlow routing submit before the confirm.
+// ---------------------------------------------------------------------------
+BOOST_AUTO_TEST_CASE(link_form_submit_opens_confirm_without_request)
+{
+    AppFixture fx;
+    fx.client.enqueue("link.list", ok(one_link_page()));
+
+    fx.links->on_enter();
+    fx.settle();
+    render_to_text(fx.links->component(), 80, 24);
+
+    send_events(fx.links->component(), {ftxui::Event::Character("n")});
+    render_to_text(fx.links->component(), 80, 24);
+    const std::size_t before = fx.requests().size();  // just the initial list
+
+    send_events(fx.links->component(), type_text("https://example.com/new"));
+    send_events(fx.links->component(), {ftxui::Event::CtrlS});  // submit
+    fx.settle();
+
+    BOOST_TEST(fx.requests().size() == before);  // confirm gates the request
+    BOOST_TEST(tui::Router::is_legal(ScreenId::link_form, ScreenId::confirm));
+}
+
+// ---------------------------------------------------------------------------
+// Confirm --ok--> Links: confirming the create form sends exactly the
+// link.create mutation and THEN a link.list refresh, in that order, and returns
+// to the list. The order is asserted against recorded_requests(): the mutation
+// precedes its post-mutation refresh (the Links screen refreshes only from the
+// mutation's completion handler). Admin session. On failure first check: the
+// Links screen's post-mutation refresh (a missing link.list after OK, or a
+// refresh issued before the mutation, is a real bug).
+// ---------------------------------------------------------------------------
+BOOST_AUTO_TEST_CASE(confirm_ok_sends_mutation_then_link_list_refresh)
+{
+    AppFixture fx;
+    fx.client.enqueue("link.list", ok(one_link_page()));
+    fx.client.enqueue("link.create", ok(R"({"slug":"new"})"));
+    fx.client.enqueue("link.list",
+                      ok(one_link_page()));  // post-mutation refresh
+
+    fx.links->on_enter();
+    fx.settle();
+    render_to_text(fx.links->component(), 80, 24);
+
+    send_events(fx.links->component(), {ftxui::Event::Character("n")});
+    render_to_text(fx.links->component(), 80, 24);
+    send_events(fx.links->component(), type_text("https://example.com/new"));
+    send_events(fx.links->component(), {ftxui::Event::CtrlS});  // -> confirm
+    send_events(fx.links->component(), {ftxui::Event::Return});  // OK
+    fx.settle();
+
+    std::vector<std::string> names;
+    std::string create_args;
+    for (const commands::CommandRequest& r : fx.requests()) {
+        names.push_back(r.command);
+        if (r.command == "link.create") {
+            create_args = r.args_json;
+        }
+    }
+    const auto create_it = std::find(names.begin(), names.end(), "link.create");
+    BOOST_REQUIRE(create_it != names.end());
+    BOOST_REQUIRE(std::next(create_it) != names.end());
+    BOOST_TEST(*std::next(create_it) == "link.list");  // refresh follows
+    BOOST_TEST(create_args.find("https://example.com/new")
+               != std::string::npos);
+    BOOST_TEST(tui::Router::is_legal(ScreenId::confirm, ScreenId::links));
+}
+
+// ---------------------------------------------------------------------------
+// Palette --pick--> GenericForm: filtering to a mutating command and picking it
+// (Enter) opens its generic form and issues NO wire request (the form is filled
+// before any call). The catalog is already cached, so the pick is local.
+// On failure first check: the palette forwarding Enter to open the command, or
+// the generic command auto-running a mutating command.
+// ---------------------------------------------------------------------------
+BOOST_AUTO_TEST_CASE(palette_pick_opens_generic_form_without_request)
+{
+    AppFixture fx;
+    fx.palette->on_enter();
+    render_to_text(fx.palette->component(), 80, 24);  // measure
+
+    send_events(fx.palette->component(), type_text("link.create"));
+    send_events(fx.palette->component(), {ftxui::Event::Return});  // pick
+    render_to_text(fx.palette->component(), 80, 24);
+    fx.settle();
+
+    const std::string grid = render_to_text(fx.palette->component(), 80, 24);
+    BOOST_TEST(grid.find("(command: link.create") != std::string::npos);
+    BOOST_TEST(fx.requests().empty());  // picking issues no wire request
+    BOOST_TEST(
+        tui::Router::is_legal(ScreenId::palette, ScreenId::generic_form));
+}
+
+// ---------------------------------------------------------------------------
+// GenericForm --submit--> Confirm: filling a mutating generic command's
+// required arg and submitting (Ctrl-S) opens the confirm and issues NO request
+// until the operator confirms (the same confirm choke point as the link form).
+// On failure first check: GenericCommandComponent routing submit before the
+// confirm.
+// ---------------------------------------------------------------------------
+BOOST_AUTO_TEST_CASE(generic_form_submit_opens_confirm_without_request)
+{
+    AppFixture fx;
+    fx.palette->on_enter();
+    render_to_text(fx.palette->component(), 80, 24);
+
+    send_events(fx.palette->component(), type_text("link.create"));
+    send_events(fx.palette->component(), {ftxui::Event::Return});  // pick
+    render_to_text(fx.palette->component(), 80, 24);
+
+    const std::size_t before = fx.requests().size();  // none yet
+    send_events(fx.palette->component(), type_text("https://example.com/new"));
+    send_events(fx.palette->component(), {ftxui::Event::CtrlS});  // submit
+    fx.settle();
+
+    BOOST_TEST(fx.requests().size() == before);  // confirm gates the request
+    BOOST_TEST(
+        tui::Router::is_legal(ScreenId::generic_form, ScreenId::confirm));
 }
