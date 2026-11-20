@@ -40,6 +40,7 @@
 #include "inline_poster.hpp"
 #include "mock_command_client.hpp"
 #include "render_helpers.hpp"
+#include "settle.hpp"
 
 /**
  * @file 18_readonly_matrix_test.cpp
@@ -77,6 +78,7 @@ using tui::testing::InlinePoster;
 using tui::testing::MockCommandClient;
 using tui::testing::render_to_text;
 using tui::testing::send_events;
+using tui::testing::settle_until_idle;
 
 namespace
 {
@@ -275,11 +277,14 @@ struct Fixture
 
     void settle()
     {
-        // Drain whatever reads the screen posted; several passes cover a screen
-        // that fans out (Dashboard) or chains a refresh.
-        for (int i = 0; i < 12; ++i) {
-            poster.run_pending();
-        }
+        // Drain whatever reads the screen posted, waiting for the real worker
+        // to finish rather than pumping a fixed number of passes: under CPU
+        // load a fixed loop can assert before an in-flight request is recorded,
+        // which both flakes and weakens the read-only proof (a stray write
+        // could slip past assert_only_reads). settle_until_idle loops until the
+        // caller reports no outstanding work, covering a screen that fans out
+        // (Dashboard) or chains a refresh.
+        settle_until_idle(caller, poster);
     }
 };
 
@@ -854,15 +859,11 @@ BOOST_AUTO_TEST_CASE(registry_backed_screens_issue_no_raised_requests)
 
             std::unique_ptr<tui::IScreen> screen = sc.make(context);
             screen->on_enter();
-            for (int i = 0; i < 12; ++i) {
-                poster.run_pending();
-            }
+            settle_until_idle(caller, poster);
             render_to_text(screen->component(), 80, 24);
             render_to_text(screen->component(), 80, 24);
             send_events(screen->component(), action_battery());
-            for (int i = 0; i < 12; ++i) {
-                poster.run_pending();
-            }
+            settle_until_idle(caller, poster);
 
             // The server never refused a request (no raised request was sent).
             for (const commands::CommandResponse& response : client.responses())
