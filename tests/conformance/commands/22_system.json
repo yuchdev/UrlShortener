@@ -1,0 +1,226 @@
+{
+  "corpus_version": 1,
+  "suite": "system",
+  "description": "system.info and command.list introspection. system.info discloses a closed key set (version, backend{metadata,cache,analytics,rate_limit}, persistent, read_only, shortener{nine fields}) with no secret value; read_only reflects the caller's authority. command.list reports every command in the catalog with the fixed descriptor shape and the link.list status enum, and is readable by a user.",
+  "cases": [
+    {
+      "name": "system_info_shape",
+      "doc": "system.info returns exactly the documented key set (top level and inside backend and shortener); backend values are shape-only except the harness-configured sqlite metadata, and an admin caller is not read_only over a persistent store",
+      "command": "system.info",
+      "steps": [
+        {
+          "label": "info",
+          "request": { "v": 1, "id": "sys-info-1", "command": "system.info", "args": {} },
+          "expect": {
+            "ok": true,
+            "result": {
+              "version": "<regex:.+>",
+              "backend": {
+                "metadata": "sqlite",
+                "cache": "<regex:.+>",
+                "analytics": "<regex:.+>",
+                "rate_limit": "<regex:.+>"
+              },
+              "persistent": true,
+              "read_only": false,
+              "shortener": {
+                "base_domain": "<any>",
+                "generated_slug_length": "<uint>",
+                "default_redirect_type": "<any>",
+                "default_expiry_seconds": "<any>",
+                "allow_private_targets": "<any>",
+                "analytics_enabled": "<any>",
+                "max_request_body_bytes": "<uint>",
+                "max_request_target_length": "<uint>",
+                "request_id_max_length": "<uint>"
+              }
+            },
+            "match": "exact"
+          }
+        }
+      ]
+    },
+    {
+      "name": "system_info_read_only_reflects_role",
+      "doc": "read_only mirrors the caller's authority: a read-only user sees read_only true (on the out-of-process transports the role is process-level, via --read-only / the user-role server)",
+      "command": "system.info",
+      "caller": "user",
+      "steps": [
+        {
+          "label": "info",
+          "request": { "v": 1, "command": "system.info", "args": {} },
+          "expect": { "ok": true, "result": { "read_only": true }, "match": "subset" }
+        }
+      ]
+    },
+    {
+      "name": "command_list_contains_all_commands",
+      "doc": "command.list names exactly the catalog's command set (checked here as the ordered name list; the coverage gate in subtask 15 cross-checks completeness)",
+      "command": "command.list",
+      "steps": [
+        {
+          "label": "list",
+          "request": { "v": 1, "id": "cmd-list-1", "command": "command.list", "args": {} },
+          "rest_resource": { "method": "GET", "path": "/api/v1/commands", "status": 200 },
+          "expect": {
+            "ok": true,
+            "result": {
+              "commands": [
+                { "name": "command.list" },
+                { "name": "db.rows" },
+                { "name": "db.tables" },
+                { "name": "job.cancel" },
+                { "name": "job.get" },
+                { "name": "job.list" },
+                { "name": "link.create" },
+                { "name": "link.delete" },
+                { "name": "link.disable" },
+                { "name": "link.enable" },
+                { "name": "link.export" },
+                { "name": "link.get" },
+                { "name": "link.import" },
+                { "name": "link.list" },
+                { "name": "link.preview" },
+                { "name": "link.restore" },
+                { "name": "link.stats" },
+                { "name": "link.update" },
+                { "name": "system.info" }
+              ]
+            },
+            "match": "subset"
+          }
+        }
+      ]
+    },
+    {
+      "name": "command_list_descriptor_shape",
+      "doc": "every command.list entry has exactly the fixed descriptor shape (name, summary, perm, kind, mutating, dry_run, args); summary is human prose so it is asserted via <any> (shown for the link.create entry)",
+      "command": "command.list",
+      "steps": [
+        {
+          "label": "list",
+          "request": { "v": 1, "command": "command.list", "args": {} },
+          "rest_resource": { "method": "GET", "path": "/api/v1/commands", "status": 200 },
+          "expect": {
+            "ok": true,
+            "result": {
+              "commands": [
+                { "name": "command.list", "summary": "<any>", "perm": "<any>", "kind": "<any>", "mutating": "<any>", "dry_run": "<any>", "args": "<any>" },
+                { "name": "db.rows", "summary": "<any>", "perm": "<any>", "kind": "<any>", "mutating": "<any>", "dry_run": "<any>", "args": "<any>" },
+                { "name": "db.tables", "summary": "<any>", "perm": "<any>", "kind": "<any>", "mutating": "<any>", "dry_run": "<any>", "args": "<any>" },
+                { "name": "job.cancel", "summary": "<any>", "perm": "<any>", "kind": "<any>", "mutating": "<any>", "dry_run": "<any>", "args": "<any>" },
+                { "name": "job.get", "summary": "<any>", "perm": "<any>", "kind": "<any>", "mutating": "<any>", "dry_run": "<any>", "args": "<any>" },
+                { "name": "job.list", "summary": "<any>", "perm": "<any>", "kind": "<any>", "mutating": "<any>", "dry_run": "<any>", "args": "<any>" },
+                { "name": "link.create", "summary": "<any>", "perm": "<any>", "kind": "<any>", "mutating": "<any>", "dry_run": "<any>", "args": "<any>" },
+                { "name": "link.delete", "summary": "<any>", "perm": "<any>", "kind": "<any>", "mutating": "<any>", "dry_run": "<any>", "args": "<any>" },
+                { "name": "link.disable", "summary": "<any>", "perm": "<any>", "kind": "<any>", "mutating": "<any>", "dry_run": "<any>", "args": "<any>" },
+                { "name": "link.enable", "summary": "<any>", "perm": "<any>", "kind": "<any>", "mutating": "<any>", "dry_run": "<any>", "args": "<any>" },
+                { "name": "link.export", "summary": "<any>", "perm": "<any>", "kind": "<any>", "mutating": "<any>", "dry_run": "<any>", "args": "<any>" },
+                { "name": "link.get", "summary": "<any>", "perm": "<any>", "kind": "<any>", "mutating": "<any>", "dry_run": "<any>", "args": "<any>" },
+                { "name": "link.import", "summary": "<any>", "perm": "<any>", "kind": "<any>", "mutating": "<any>", "dry_run": "<any>", "args": "<any>" },
+                { "name": "link.list", "summary": "<any>", "perm": "<any>", "kind": "<any>", "mutating": "<any>", "dry_run": "<any>", "args": "<any>" },
+                { "name": "link.preview", "summary": "<any>", "perm": "<any>", "kind": "<any>", "mutating": "<any>", "dry_run": "<any>", "args": "<any>" },
+                { "name": "link.restore", "summary": "<any>", "perm": "<any>", "kind": "<any>", "mutating": "<any>", "dry_run": "<any>", "args": "<any>" },
+                { "name": "link.stats", "summary": "<any>", "perm": "<any>", "kind": "<any>", "mutating": "<any>", "dry_run": "<any>", "args": "<any>" },
+                { "name": "link.update", "summary": "<any>", "perm": "<any>", "kind": "<any>", "mutating": "<any>", "dry_run": "<any>", "args": "<any>" },
+                { "name": "system.info", "summary": "<any>", "perm": "<any>", "kind": "<any>", "mutating": "<any>", "dry_run": "<any>", "args": "<any>" }
+              ]
+            },
+            "match": "exact"
+          }
+        }
+      ]
+    },
+    {
+      "name": "command_list_user_can_read",
+      "doc": "command.list is a read command: a read-only user sees the full command set",
+      "command": "command.list",
+      "caller": "user",
+      "steps": [
+        {
+          "label": "list",
+          "request": { "v": 1, "command": "command.list", "args": {} },
+          "rest_resource": { "method": "GET", "path": "/api/v1/commands", "status": 200 },
+          "expect": {
+            "ok": true,
+            "result": {
+              "commands": [
+                { "name": "command.list" },
+                { "name": "db.rows" },
+                { "name": "db.tables" },
+                { "name": "job.cancel" },
+                { "name": "job.get" },
+                { "name": "job.list" },
+                { "name": "link.create" },
+                { "name": "link.delete" },
+                { "name": "link.disable" },
+                { "name": "link.enable" },
+                { "name": "link.export" },
+                { "name": "link.get" },
+                { "name": "link.import" },
+                { "name": "link.list" },
+                { "name": "link.preview" },
+                { "name": "link.restore" },
+                { "name": "link.stats" },
+                { "name": "link.update" },
+                { "name": "system.info" }
+              ]
+            },
+            "match": "subset"
+          }
+        }
+      ]
+    },
+    {
+      "name": "command_list_arg_enum_present",
+      "doc": "the link.list descriptor carries its status enum values (all|active|disabled|expired|deleted) in order, so a client can build the lifecycle filter from command.list alone",
+      "command": "command.list",
+      "steps": [
+        {
+          "label": "list",
+          "request": { "v": 1, "command": "command.list", "args": {} },
+          "rest_resource": { "method": "GET", "path": "/api/v1/commands", "status": 200 },
+          "expect": {
+            "ok": true,
+            "result": {
+              "commands": [
+                { "name": "command.list" },
+                { "name": "db.rows" },
+                { "name": "db.tables" },
+                { "name": "job.cancel" },
+                { "name": "job.get" },
+                { "name": "job.list" },
+                { "name": "link.create" },
+                { "name": "link.delete" },
+                { "name": "link.disable" },
+                { "name": "link.enable" },
+                { "name": "link.export" },
+                { "name": "link.get" },
+                { "name": "link.import" },
+                {
+                  "name": "link.list",
+                  "args": [
+                    { "name": "status", "type": "enum", "required": false, "enum": ["all", "active", "disabled", "expired", "deleted"] },
+                    { "name": "q" },
+                    { "name": "tag" },
+                    { "name": "campaign" },
+                    { "name": "sort" },
+                    { "name": "order" },
+                    { "name": "offset" },
+                    { "name": "limit" }
+                  ]
+                },
+                { "name": "link.preview" },
+                { "name": "link.restore" },
+                { "name": "link.stats" },
+                { "name": "link.update" },
+                { "name": "system.info" }
+              ]
+            },
+            "match": "subset"
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -31,6 +31,9 @@ suites:
 | [`11_link_read.json`](11_link_read.json) | `link_read` | `link.get`, `link.preview`, `link.stats` |
 | [`12_link_update.json`](12_link_update.json) | `link_update` | `link.update` |
 | [`13_link_state.json`](13_link_state.json) | `link_state` | `link.delete`, `link.enable`, `link.disable`, `link.restore` |
+| [`20_link_list.json`](20_link_list.json) | `link_list` | `link.list` |
+| [`21_db_tables.json`](21_db_tables.json) | `db_tables` | `db.tables`, `db.rows` |
+| [`22_system.json`](22_system.json) | `system` | `system.info`, `command.list` |
 
 ## Corpus file
 
