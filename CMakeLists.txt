@@ -298,6 +298,25 @@ include(CTest)
   register_labeled_cpp_tests(PSQL_INTEGRATION_SOURCES    "integration")
   register_labeled_cpp_tests(REDIS_INTEGRATION_SOURCES   "integration")
 
+  # ---- Perf benchmarks (Task 07.0 subtask 30; label "perf") ----
+  # Advisory timing/throughput benchmarks. One naming scheme only: the generic
+  # macro names targets <parent_dir>__<stem> (analytics__..., and redirect__...
+  # after subtask 32) - no perf__ prefix. The follow-up loop marks each test
+  # RUN_SERIAL so parallel ctest -j cannot skew timing, and TIMEOUT 300 bounds a
+  # hung benchmark. The "perf" label is intentionally absent from the
+  # -L "unit|contract|integration|e2e" union, so default developer runs (and the
+  # Stop-hook unit gate) never execute these.
+  register_labeled_cpp_tests(PERF_SOURCES "perf")
+  foreach(perf_src IN LISTS PERF_SOURCES)
+    get_filename_component(perf_stem   ${perf_src} NAME_WE)
+    get_filename_component(perf_dir    ${perf_src} DIRECTORY)
+    get_filename_component(perf_parent ${perf_dir} NAME)
+    set_tests_properties(${perf_parent}__${perf_stem} PROPERTIES
+        RUN_SERIAL TRUE
+        TIMEOUT 300
+    )
+  endforeach()
+
   # ---- App-layer unit tests: dedicated loop with tests/unit/app include dir ----
   # These tests use AppTestFakes.hpp from tests/unit/app/, so the test directory
   # must be on the include path (the generic macro uses tests/contract/metadata).
