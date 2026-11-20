@@ -3,11 +3,21 @@
 #include <array>
 #include <filesystem>
 #include <fstream>
+#include <optional>
+#include <random>
+#include <set>
 #include <sstream>
 #include <string>
 #include <string_view>
 #include <system_error>
+#include <utility>
 #include <vector>
+
+#if defined(_WIN32)
+#    include <process.h>
+#else
+#    include <unistd.h>
+#endif
 
 #include <boost/test/unit_test.hpp>
 #include <url_shortener/http/route_registry.hpp>
@@ -172,34 +182,65 @@ std::vector<IncludeLine> includesOf(const fs::path& path)
     return includes;
 }
 
-/// @brief Drops a `//` line comment from one source line.
+/// @brief Returns the source text with both `//` line comments and
+///        `/* ... */` block comments removed.
 ///
-/// Per the subtask constraint "token scans ignore comments only if they start
-/// with `//`; do not try to parse C++", only `//` comments are removed; block
-/// comments and string literals are left intact.
-///
-/// @param line A single source line.
-/// @return @p line truncated at the first `//`, or unchanged when none.
-std::string strip_line_comment(const std::string& line)
-{
-    const std::size_t pos = line.find("//");
-    return pos == std::string::npos ? line : line.substr(0, pos);
-}
-
-/// @brief Returns the file text with every `//` line comment removed.
+/// A small character state machine (it deliberately does not model string or
+/// character literals, which the scanned files do not use to carry `//` or
+/// `/*`): in code, `//` opens a line comment and `/*` a block comment; a line
+/// comment runs to the next newline, a block comment to the closing `*/`.
+/// Newlines are always preserved so the file's line structure and any
+/// downstream line-based reasoning stay intact. Stripping block comments (not
+/// just `//`) keeps the symbol scan free of false positives from a forbidden
+/// token that appears only inside a Doxygen block comment.
 ///
 /// @param text Full source text.
-/// @return The text with `//`-comment tails stripped, newlines preserved, so a
-///         forbidden token appearing only in a `//` comment is not flagged.
+/// @return @p text with comment bodies removed and newlines preserved.
 std::string strip_line_comments(const std::string& text)
 {
-    std::istringstream in(text);
-    std::ostringstream out;
-    std::string line;
-    while (std::getline(in, line)) {
-        out << strip_line_comment(line) << '\n';
+    std::string out;
+    out.reserve(text.size());
+    enum class State
+    {
+        code,
+        line_comment,
+        block_comment
+    } state = State::code;
+    for (std::size_t i = 0; i < text.size(); ++i) {
+        const char c = text[i];
+        const char next = (i + 1 < text.size()) ? text[i + 1] : '\0';
+        switch (state) {
+            case State::code:
+                if (c == '/' && next == '/') {
+                    state = State::line_comment;
+                    ++i;
+                }
+                else if (c == '/' && next == '*') {
+                    state = State::block_comment;
+                    ++i;
+                }
+                else {
+                    out += c;
+                }
+                break;
+            case State::line_comment:
+                if (c == '\n') {
+                    state = State::code;
+                    out += c;
+                }
+                break;
+            case State::block_comment:
+                if (c == '*' && next == '/') {
+                    state = State::code;
+                    ++i;
+                }
+                else if (c == '\n') {
+                    out += c;
+                }
+                break;
+        }
     }
-    return out.str();
+    return out;
 }
 
 /// @brief Whether an include target lies under a forbidden directory prefix.
@@ -226,6 +267,65 @@ bool is_allowed_url_shortener(const std::string& target)
     return std::any_of(k_allowed_url_shortener_includes.begin(),
                        k_allowed_url_shortener_includes.end(),
                        [&](std::string_view ok) { return target == ok; });
+}
+
+/// One hop that reaches a forbidden header, carrying the include chain that led
+/// to it (seed filename -> ... -> forbidden target).
+struct ClosureViolation
+{
+    ///< Human-readable include chain ending at the forbidden header.
+    std::string chain;
+
+    ///< The forbidden include target that terminated the walk.
+    std::string target;
+};
+
+/// @brief Walks the transitive `url_shortener/...` include closure of @p seeds
+///        and returns the first header that lies under a forbidden directory.
+///
+/// Every `url_shortener/...` include is resolved to `@p include_root / target`
+/// and followed with a visited set, so a forbidden header reachable only
+/// indirectly - e.g. an allowlisted `app/link_backend.hpp` that later begins
+/// including `commands/...` - is still caught and its chain reported.
+/// Non-`url_shortener` includes (std/Boost) are not followed; unreadable or
+/// missing headers are skipped and never produce a false positive.
+///
+/// @param seeds Source files to start from (the redirect `.cpp` and `.hpp`).
+/// @param include_root Directory under which `url_shortener/...` targets
+///        resolve (the project `include/` tree, or a fixture tree in tests).
+/// @return The first forbidden header with its include chain, or std::nullopt
+///         when the whole reachable closure is clean.
+std::optional<ClosureViolation> forbidden_in_include_closure(
+    const std::vector<fs::path>& seeds, const fs::path& include_root)
+{
+    std::set<std::string> visited;
+    std::vector<std::pair<fs::path, std::string>> stack;
+    for (const auto& seed : seeds) {
+        stack.emplace_back(seed, seed.filename().string());
+    }
+    while (!stack.empty()) {
+        const fs::path path = stack.back().first;
+        const std::string chain = stack.back().second;
+        stack.pop_back();
+        for (const auto& inc : includesOf(path)) {
+            if (inc.target.rfind("url_shortener/", 0) != 0) {
+                continue;
+            }
+            const std::string next_chain = chain + " -> " + inc.target;
+            if (is_forbidden_include(inc.target)) {
+                return ClosureViolation {next_chain, inc.target};
+            }
+            if (!visited.insert(inc.target).second) {
+                continue;
+            }
+            const fs::path header = include_root / inc.target;
+            std::error_code ec;
+            if (fs::exists(header, ec)) {
+                stack.emplace_back(header, next_chain);
+            }
+        }
+    }
+    return std::nullopt;
 }
 
 /// @brief The project source root, or an empty path when `SOURCE_DIR` is not
@@ -292,6 +392,138 @@ int route_index(const std::string& method, const std::string& path)
     return -1;
 }
 
+/// The two disjoint buckets of "redirect-ish" routes: those semantically tagged
+/// as redirects, and those that merely share the `redirect_` metric label (the
+/// URI-store fallback) without being redirect surfaces.
+struct RedirectPartition
+{
+    ///< Routes carrying the "Redirects" tag, formatted "METHOD PATH -> label".
+    std::set<std::string> tagged;
+
+    ///< Routes whose `route_label` starts with "redirect_" but are NOT tagged
+    ///< "Redirects" - the `/{path}` URI-store fallback shares the metric label.
+    std::set<std::string> labeled_only;
+};
+
+/// @brief Partitions routes into redirect-tagged and redirect-labeled-only
+///        sets.
+///
+/// The `/{path}` URI-store fallback routes carry the metric label
+/// `redirect_root` yet are tagged "Fallback", not "Redirects"; keeping the two
+/// buckets separate lets the pin assert both the genuine redirect surface and
+/// the known label-sharers exactly. The same logic serves the live registry
+/// and the negative self-test's synthetic routes.
+///
+/// @param routes Route descriptors to classify.
+/// @return A @ref RedirectPartition.
+RedirectPartition partition_redirects(
+    const std::vector<RouteDescriptor>& routes)
+{
+    RedirectPartition parts;
+    for (const auto& route : routes) {
+        const std::string key = route.method + " " + route.path_pattern + " -> "
+            + route.route_label;
+        const bool tagged_redirect =
+            std::find(route.tags.begin(), route.tags.end(), "Redirects")
+            != route.tags.end();
+        const bool redirect_labeled =
+            route.route_label.rfind("redirect_", 0) == 0;
+        if (tagged_redirect) {
+            parts.tagged.insert(key);
+        }
+        else if (redirect_labeled) {
+            parts.labeled_only.insert(key);
+        }
+    }
+    return parts;
+}
+
+/// @brief Joins a set of strings into a single diagnostic line.
+///
+/// @param items The strings to join.
+/// @return The items separated by "; ", or an empty string when @p items is
+///         empty.
+std::string join_set(const std::set<std::string>& items)
+{
+    std::string out;
+    for (const auto& item : items) {
+        if (!out.empty()) {
+            out += "; ";
+        }
+        out += item;
+    }
+    return out;
+}
+
+/// @brief Extracts a top-level Markdown section by heading prefix.
+///
+/// @param doc Full document text.
+/// @param heading_prefix The section heading start (e.g. "## 5.").
+/// @return The text from @p heading_prefix up to (not including) the next
+///         top-level "## " heading, or an empty string when @p heading_prefix
+///         is absent.
+std::string markdown_section(const std::string& doc,
+                             const std::string& heading_prefix)
+{
+    const std::size_t start = doc.find(heading_prefix);
+    if (start == std::string::npos) {
+        return {};
+    }
+    const std::size_t next = doc.find("\n## ", start + heading_prefix.size());
+    return doc.substr(
+        start, next == std::string::npos ? std::string::npos : next - start);
+}
+
+/// @brief The current process id, used to make self-test temp dirs unique.
+unsigned long process_token()
+{
+#if defined(_WIN32)
+    return static_cast<unsigned long>(_getpid());
+#else
+    return static_cast<unsigned long>(::getpid());
+#endif
+}
+
+/// @brief RAII unique temp directory for the negative self-tests.
+///
+/// The directory name combines a caller tag, the process id and two random
+/// draws, so concurrent runs (parallel CTest, multiple agents) never collide;
+/// the destructor removes the whole tree even when an assertion throws out of
+/// the test body.
+class TempDir
+{
+public:
+    /// @brief Creates a fresh unique temp directory.
+    /// @param tag Short human tag embedded in the directory name.
+    explicit TempDir(const std::string& tag)
+    {
+        std::random_device rd;
+        const std::string unique = tag + "_" + std::to_string(process_token())
+            + "_" + std::to_string(rd()) + "_" + std::to_string(rd());
+        m_path_ = fs::temp_directory_path()
+            / ("url_shortener_redirect_guard_" + unique);
+        std::error_code ec;
+        fs::remove_all(m_path_, ec);
+        fs::create_directories(m_path_, ec);
+    }
+
+    ~TempDir()
+    {
+        std::error_code ec;
+        fs::remove_all(m_path_, ec);
+    }
+
+    TempDir(const TempDir&) = delete;
+    TempDir& operator=(const TempDir&) = delete;
+
+    /// @brief The absolute path to the created temp directory.
+    const fs::path& path() const { return m_path_; }
+
+private:
+    ///< Absolute path to the unique temp directory owned by this guard.
+    fs::path m_path_;
+};
+
 }  // namespace
 
 // Type: unit (layering / include-hygiene guard; plan.md C10, CLAUDE.md
@@ -343,10 +575,40 @@ BOOST_AUTO_TEST_CASE(redirect_sources_include_allowlist_only)
     BOOST_TEST(scanned_any, "no includes scanned; redirect sources missing?");
 }
 
+// Type: unit (transitive include-closure guard; plan.md C10, security review
+//   MEDIUM: the flat allowlist alone cannot see a forbidden header pulled in
+//   indirectly through an allowlisted header).
+// Scenario: walking every url_shortener include reachable from the redirect
+//   .cpp/.hpp through include/url_shortener/... (with a visited set) reaches no
+//   header under commands/, tui/, transport/, jobs, or composition/.
+// Boundaries: if a future edit makes an allowlisted header such as
+//   app/link_backend.hpp include url_shortener/commands/..., this fails and
+//   prints the full include chain, even though the redirect .cpp itself stayed
+//   clean. The walk follows only url_shortener includes; std/Boost are ignored.
+// On failure first check: read the reported chain; the last allowlisted header
+//   in it is the one that gained a command/tui/transport/jobs/composition
+//   dependency - break that edge, do not widen the redirect allowlist.
+BOOST_AUTO_TEST_CASE(redirect_include_closure_has_no_forbidden_headers)
+{
+    const fs::path root = source_root();
+    if (root.empty()) {
+        BOOST_TEST_MESSAGE("SOURCE_DIR not defined; skipping (run via CTest)");
+        return;
+    }
+
+    const auto violation = forbidden_in_include_closure(
+        {redirect_cpp(), redirect_hpp()}, root / "include");
+    BOOST_TEST(
+        !violation.has_value(),
+        "forbidden header reachable from the redirect sources via "
+            << (violation.has_value() ? violation->chain : std::string {}));
+}
+
 // Type: unit (textual symbol guard; plan.md C10).
 // Scenario: the redirect sources contain none of the command/job/transport
 //   identifiers (CommandRegistry, CommandRequest, ICommandClient, JobRunner,
-//   ITransportAdapter, ArgSpec, execute(), ignoring `//` comments.
+//   ITransportAdapter, ArgSpec, execute(), ignoring both `//` and `/* */`
+//   comments so prose in a Doxygen block cannot trip the scan.
 // Boundaries: a stray `registry.execute(` or `CommandRequest req;` in redirect
 //   code fails here even if its header slipped past the include allowlist.
 // On failure first check: did redirect logic start building or invoking a
@@ -375,33 +637,40 @@ BOOST_AUTO_TEST_CASE(redirect_sources_have_no_command_symbols)
     }
 }
 
-// Type: unit (route-table guard; plan.md C10).
-// Scenario: the redirect routes GET /{slug} and GET /r/{slug} exist and carry
-//   redirect metadata (route_label redirect_root / redirect_prefixed, tag
-//   "Redirects") rather than any command classification (label api_commands or
-//   tag "Commands"); i.e. they are not modeled as commands.
-// Boundaries: re-labeling a redirect route to api_commands, or tagging it
-//   "Commands", fails this. (The RouteDescriptor has no dedicated
-//   command-mapping field in this milestone, so the route_label/tag are the
-//   available command-association signal; see deviation note in the report.)
-// On failure first check: did a route-table edit reclassify a redirect as a
-//   command surface? Redirects belong to the fast path, not the command plane.
+// Type: unit (route-table guard; plan.md C10, closes the verifier's section-5
+//   gap).
+// Scenario: the redirect routes carry their exact redirect metadata
+//   (GET /{slug} -> redirect_root, GET /r/{slug} -> redirect_prefixed, tag
+//   "Redirects", never tag "Commands"), AND neither redirect route appears in
+//   section 5 "Static route -> command table" of docs/commands/README.md.
+// Boundaries: re-labeling a redirect route (e.g. to api_commands), tagging it
+//   "Commands", or adding a row for it to the command route table fails this.
+//   The RouteDescriptor has no dedicated command-mapping field in this
+//   milestone, so the exact route_label/tag plus the catalog table are the
+//   available command-association signals.
+// On failure first check: did a route-table or catalog edit reclassify a
+//   redirect as a command surface? Redirects belong to the fast path, not the
+//   command plane.
 BOOST_AUTO_TEST_CASE(redirect_routes_not_in_command_route_table)
 {
-    const std::array<std::pair<std::string, std::string>, 2> redirects = {{
-        {"GET", "/{slug}"},
-        {"GET", "/r/{slug}"},
+    const std::array<std::array<std::string, 3>, 2> redirects = {{
+        {"GET", "/{slug}", "redirect_root"},
+        {"GET", "/r/{slug}", "redirect_prefixed"},
     }};
 
-    for (const auto& [method, path] : redirects) {
+    for (const auto& entry : redirects) {
+        const std::string& method = entry[0];
+        const std::string& path = entry[1];
+        const std::string& expected_label = entry[2];
         const RouteDescriptor* route = find_route(method, path);
         BOOST_REQUIRE_MESSAGE(
             route != nullptr,
             "redirect route missing from registry: " << method << ' ' << path);
 
-        BOOST_TEST(route->route_label != "api_commands",
-                   "redirect route " << method << ' ' << path
-                                     << " is labeled as a command surface");
+        BOOST_TEST(route->route_label == expected_label,
+                   "redirect route " << method << ' ' << path << " has label '"
+                                     << route->route_label << "', expected '"
+                                     << expected_label << '\'');
 
         const bool tagged_command =
             std::find(route->tags.begin(), route->tags.end(), "Commands")
@@ -417,6 +686,31 @@ BOOST_AUTO_TEST_CASE(redirect_routes_not_in_command_route_table)
                    "redirect route " << method << ' ' << path
                                      << " lost its Redirects tag");
     }
+
+    // Section 5 of docs/commands/README.md is the static route -> command
+    // table (the REST resource projection). No redirect route may appear there.
+    const fs::path root = source_root();
+    if (root.empty()) {
+        BOOST_TEST_MESSAGE("SOURCE_DIR not defined; skipping catalog scan");
+        return;
+    }
+    const fs::path catalog = root / "docs" / "commands" / "README.md";
+    if (!fs::exists(catalog)) {
+        BOOST_TEST_MESSAGE("docs/commands/README.md absent; skipping scan");
+        return;
+    }
+    const std::string section = markdown_section(readFile(catalog), "## 5.");
+    BOOST_REQUIRE_MESSAGE(
+        !section.empty(),
+        "command catalog section 5 (static route -> command table) not found");
+    // A bare "/{slug}" substring also occurs in the /api/v1/links/{slug} rows,
+    // so match the method-qualified redirect cells instead.
+    BOOST_TEST(section.find("GET /{slug}") == std::string::npos,
+               "redirect route GET /{slug} appears in the command route table "
+               "(docs/commands/README.md section 5)");
+    BOOST_TEST(section.find("/r/{slug}") == std::string::npos,
+               "redirect route /r/{slug} appears in the command route table "
+               "(docs/commands/README.md section 5)");
 }
 
 // Type: unit (router priority guard; plan.md C10, mirrors the ordering checked
@@ -458,10 +752,47 @@ BOOST_AUTO_TEST_CASE(redirect_route_priority_unchanged)
                "GET /{slug} must register before the /{path} fallback");
 }
 
+// Type: unit (redirect-surface pin; plan.md C10, security review MEDIUM: a new
+//   redirect surface must be a reviewed edit to this test).
+// Scenario: the set of redirect-tagged routes in registeredRoutes() is EXACTLY
+//   {GET /{slug} -> redirect_root, GET /r/{slug} -> redirect_prefixed}, and the
+//   only other routes sharing the `redirect_` metric label are the known
+//   {GET,POST,DELETE} /{path} URI-store fallback (tagged "Fallback", not
+//   "Redirects").
+// Boundaries: adding, removing, renaming, or re-labeling a redirect route - or
+//   adding any new route under the `redirect_` metric label - changes one of
+//   the two pinned sets and fails here. The partition keeps the genuine
+//   redirect surface separate from the fallback that merely shares the label.
+// On failure first check: was a redirect endpoint added or a label changed? If
+//   intended, update the expected sets here (reviewed); otherwise revert it.
+BOOST_AUTO_TEST_CASE(redirect_route_set_is_pinned)
+{
+    const RedirectPartition parts = partition_redirects(registeredRoutes());
+
+    const std::set<std::string> expected_redirects = {
+        "GET /{slug} -> redirect_root",
+        "GET /r/{slug} -> redirect_prefixed",
+    };
+    const std::set<std::string> expected_fallback = {
+        "GET /{path} -> redirect_root",
+        "POST /{path} -> redirect_root",
+        "DELETE /{path} -> redirect_root",
+    };
+
+    BOOST_TEST((parts.tagged == expected_redirects),
+               "redirect-tagged route set drifted; found { "
+                   << join_set(parts.tagged) << " }, expected { "
+                   << join_set(expected_redirects) << " }");
+    BOOST_TEST((parts.labeled_only == expected_fallback),
+               "redirect_-labeled (non-redirect) route set drifted; found { "
+                   << join_set(parts.labeled_only) << " }, expected { "
+                   << join_set(expected_fallback) << " }");
+}
+
 // Type: unit (composition-root guard; plan.md C11/C10).
 // Scenario: redirect_handlers.cpp never names the command-runtime or
 //   job-runner builder functions (build_command_runtime, process_job_runner),
-//   ignoring `//` comments.
+//   ignoring `//` and `/* */` comments.
 // Boundaries: calling build_command_runtime() from the redirect path fails
 //   here; the redirect handlers resolve links through LinkBackend only.
 // On failure first check: did redirect code try to build a registry/runtime?
@@ -562,30 +893,28 @@ BOOST_AUTO_TEST_CASE(analytics_path_remains_best_effort)
                "analyticsClickRepository().InsertBatch( (best-effort emit)");
 }
 
-// Type: unit (negative self-test of the guard itself).
-// Scenario: a fixture written to a temp directory that carries a forbidden
-//   include, a forbidden symbol, and a `//`-commented false token is reported
-//   as forbidden by includesOf/is_forbidden_include and by the symbol scan,
-//   while the commented token is correctly ignored.
-// Boundaries: proves the guard would actually catch a real violation (file and
-//   line are reported) instead of passing vacuously; if include_target or the
-//   comment stripper regressed, this case goes red.
-// On failure first check: did include parsing or `//` comment stripping stop
-//   working? Fix the helper; do not weaken the real guards above.
+// Type: unit (negative self-test of the direct include/symbol guards).
+// Scenario: a fixture carrying a forbidden include, a forbidden code symbol,
+//   and the same token in both a `//` and a `/* */` comment is reported
+//   forbidden by includesOf/is_forbidden_include and by the symbol scan, while
+//   the two commented tokens are correctly ignored.
+// Boundaries: proves the direct guards would actually catch a real violation
+//   (file and line are reported) instead of passing vacuously, and proves both
+//   comment forms are stripped; if include_target or the comment stripper
+//   regressed, this case goes red.
+// On failure first check: did include parsing or comment stripping (`//` or
+//   `/* */`) stop working? Fix the helper; do not weaken the real guards above.
 BOOST_AUTO_TEST_CASE(guard_flags_planted_violations)
 {
-    const fs::path dir =
-        fs::temp_directory_path() / "url_shortener_redirect_guard_selftest";
-    fs::remove_all(dir);
-    fs::create_directories(dir);
-
-    const fs::path tainted = dir / "tainted.cpp";
+    const TempDir dir("selftest");
+    const fs::path tainted = dir.path() / "tainted.cpp";
     {
         std::ofstream out(tainted);
         out << "#include <string>\n";  // 1
         out << "#include <url_shortener/commands/command_registry.hpp>\n";  // 2
-        out << "// CommandRegistry here is only a comment\n";  // 3
-        out << "void f() { CommandRequest r; }\n";  // 4
+        out << "// CommandRegistry here is only a line comment\n";  // 3
+        out << "/* ICommandClient only in a block comment */\n";  // 4
+        out << "void f() { CommandRequest r; }\n";  // 5
     }
 
     // Include scan: the forbidden include is found with its exact line number.
@@ -601,11 +930,99 @@ BOOST_AUTO_TEST_CASE(guard_flags_planted_violations)
     }
     BOOST_TEST(found_forbidden_include);
 
-    // Symbol scan: CommandRequest (code) is caught; CommandRegistry only ever
-    // appears in a `//` comment and must therefore be ignored.
+    // Symbol scan: CommandRequest (code) is caught; CommandRegistry (line
+    // comment) and ICommandClient (block comment) are both stripped first.
     const std::string stripped = strip_line_comments(readFile(tainted));
     BOOST_TEST(stripped.find("CommandRequest") != std::string::npos);
     BOOST_TEST(stripped.find("CommandRegistry") == std::string::npos);
+    BOOST_TEST(stripped.find("ICommandClient") == std::string::npos);
+}
 
-    fs::remove_all(dir);
+// Type: unit (negative self-test of the transitive include-closure guard).
+// Scenario: a fixture seed .cpp includes an allowlist-shaped header
+//   app/hop.hpp which itself includes url_shortener/commands/evil.hpp; the
+//   closure walk reports the forbidden header with the full chain.
+// Boundaries: proves forbidden_in_include_closure follows indirect edges (not
+//   just the seed's direct includes) and surfaces the chain; a clean sibling
+//   tree yields no violation.
+// On failure first check: did the closure walk stop following url_shortener
+//   includes or stop resolving them under the include root?
+BOOST_AUTO_TEST_CASE(guard_flags_transitive_forbidden_include)
+{
+    const TempDir dir("closure");
+    const fs::path include_root = dir.path() / "include";
+    const fs::path seed = dir.path() / "seed.cpp";
+    fs::create_directories(include_root / "url_shortener" / "app");
+    fs::create_directories(include_root / "url_shortener" / "commands");
+    {
+        std::ofstream out(seed);
+        out << "#include <url_shortener/app/hop.hpp>\n";
+    }
+    {
+        std::ofstream out(include_root / "url_shortener" / "app" / "hop.hpp");
+        out << "#include <url_shortener/commands/evil.hpp>\n";
+    }
+    {
+        std::ofstream out(include_root / "url_shortener" / "commands"
+                          / "evil.hpp");
+        out << "#pragma once\n";
+    }
+
+    const auto violation = forbidden_in_include_closure({seed}, include_root);
+    BOOST_REQUIRE(violation.has_value());
+    BOOST_TEST(violation->target == "url_shortener/commands/evil.hpp");
+    BOOST_TEST(violation->chain
+               == "seed.cpp -> url_shortener/app/hop.hpp -> "
+                  "url_shortener/commands/evil.hpp");
+
+    // A clean tree (drop the forbidden leaf include) yields no violation.
+    {
+        std::ofstream out(include_root / "url_shortener" / "app" / "hop.hpp",
+                          std::ios::trunc);
+        out << "#pragma once\n";
+    }
+    BOOST_TEST(!forbidden_in_include_closure({seed}, include_root).has_value());
+}
+
+// Type: unit (negative self-test of the redirect-surface pin).
+// Scenario: feeding partition_redirects a synthetic route list that adds a
+//   planted redirect route (GET /evil, tag "Redirects") produces a tagged set
+//   that differs from the pinned expectation, i.e. the pin would fail.
+// Boundaries: proves the pin is not vacuous - a new redirect surface really
+//   does change parts.tagged.
+// On failure first check: did partition_redirects stop keying on the
+//   "Redirects" tag or the redirect_ label?
+BOOST_AUTO_TEST_CASE(guard_flags_redirect_route_drift)
+{
+    std::vector<RouteDescriptor> routes;
+
+    RouteDescriptor good_root;
+    good_root.method = "GET";
+    good_root.path_pattern = "/{slug}";
+    good_root.route_label = "redirect_root";
+    good_root.tags = {"Redirects"};
+    routes.push_back(good_root);
+
+    RouteDescriptor planted;
+    planted.method = "GET";
+    planted.path_pattern = "/evil";
+    planted.route_label = "redirect_prefixed";
+    planted.tags = {"Redirects"};
+    routes.push_back(planted);
+
+    RouteDescriptor fallback;
+    fallback.method = "GET";
+    fallback.path_pattern = "/{path}";
+    fallback.route_label = "redirect_root";
+    fallback.tags = {"Fallback"};
+    routes.push_back(fallback);
+
+    const RedirectPartition parts = partition_redirects(routes);
+    const std::set<std::string> pinned = {"GET /{slug} -> redirect_root"};
+    // The planted redirect surface makes the tagged set exceed the pin.
+    BOOST_TEST((parts.tagged != pinned));
+    BOOST_TEST(parts.tagged.count("GET /evil -> redirect_prefixed") == 1U);
+    // The fallback is partitioned away from the redirect surface.
+    BOOST_TEST(parts.labeled_only.count("GET /{path} -> redirect_root") == 1U);
+    BOOST_TEST(parts.tagged.count("GET /{path} -> redirect_root") == 0U);
 }
