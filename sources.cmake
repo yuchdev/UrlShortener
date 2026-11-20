@@ -495,6 +495,8 @@ set(URL_SHORTENER_SOURCES
       tests/unit/commands/70_db_table_allowlist_test.cpp
       tests/unit/commands/71_jobs_rows_no_secrets_test.cpp
       tests/unit/commands/72_system_info_key_set_test.cpp
+      tests/unit/commands/74_authz_descriptor_matrix_test.cpp
+      tests/unit/commands/75_authz_before_side_effects_test.cpp
       tests/unit/commands/76_import_row_validation_parity_test.cpp
       tests/unit/commands/77_import_limits_test.cpp
       tests/unit/commands/78_path_argument_policy_test.cpp
@@ -726,6 +728,7 @@ set(URL_SHORTENER_SOURCES
       tests/conformance/py/12_stdio_framing.py
       tests/conformance/py/13_rest_generic_corpus.py
       tests/conformance/py/14_rest_resource_corpus.py
+      tests/conformance/py/30_authz_process_level.py
       tests/conformance/py/31_import_limits_process_level.py
   )
 
@@ -919,6 +922,7 @@ set(URL_SHORTENER_SOURCES
         tests/unit/tui/18_capability_test.cpp
         tests/unit/tui/21_settings_model_test.cpp
         tests/unit/tui/22_mock_support_helpers_test.cpp
+        tests/unit/tui/37_required_permission_forward_test.cpp
     )
 
     # Render/snapshot unit tests link url_shortener_tui (FTXUI).
