@@ -731,6 +731,8 @@ set(URL_SHORTENER_SOURCES
       tests/conformance/support/matcher.cpp
       tests/conformance/support/corpus.cpp
       tests/conformance/support/case_runner.cpp
+      tests/conformance/support/registry_fixture.cpp
+      tests/conformance/support/direct_adapter.cpp
   )
 
   # ---- Conformance C++ runners (Task 07.0 subtask 03; label "conformance") ----
@@ -739,6 +741,7 @@ set(URL_SHORTENER_SOURCES
   # (04, 10) append their shim runners here.
   set(CONFORMANCE_CPP_SOURCES
       tests/conformance/runners/00_support_selftest.cpp
+      tests/conformance/runners/01_direct_registry_corpus.cpp
   )
 
   # ---- Perf benchmarks (Task 07.0 subtask 30; label "perf") ----
