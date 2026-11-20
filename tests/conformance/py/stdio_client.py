@@ -30,18 +30,48 @@ from __future__ import annotations
 import json
 import queue
 import subprocess
+import sys
 import threading
-import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
-
-import sys
 
 _THIS = Path(__file__).resolve()
 if str(_THIS.parent) not in sys.path:
     sys.path.insert(0, str(_THIS.parent))
 
 import conformance_common as cc  # noqa: E402
+
+#: Hard cap on a single stdout line (CWE-400 guard). A child that streams bytes
+#: with no newline can otherwise grow the reader's memory without bound. The cap
+#: is the request body limit (``--max-request-body-bytes`` default 64 KiB) plus a
+#: generous ceiling for the largest legitimate response envelope (e.g. a big
+#: ``command.list`` or an inline export), well above anything the corpus emits.
+_MAX_LINE_BYTES = 8 * 1024 * 1024
+
+#: Bound on the number of unread stdout lines buffered in memory. Legitimate
+#: pipelining (``test_ordered_pipeline`` sends 50) stays far under this; a child
+#: that floods lines a stalled consumer never reads is capped here instead.
+_STDOUT_QUEUE_MAX = 4096
+
+#: Bound on retained stderr bytes; the head is kept and the tail is dropped with
+#: a truncation note, so a chatty child cannot grow ``_err_chunks`` without end.
+_MAX_STDERR_BYTES = 1 * 1024 * 1024
+
+#: Deadline (seconds) for the send path: enqueuing onto the writer thread blocks
+#: at most this long, so a child that stops draining stdin fails the caller by
+#: timeout instead of blocking a pipelined burst forever.
+_WRITE_TIMEOUT = 30.0
+
+#: Deadline (seconds) the reader uses to hand a line to a stalled consumer before
+#: declaring the bounded stdout queue overflowed.
+_QUEUE_PUT_TIMEOUT = 30.0
+
+#: Sentinel queued when a stdout line exceeds :data:`_MAX_LINE_BYTES`; surfaced by
+#: :meth:`StdioProc.read_line` as a clear failure rather than a buffered blob.
+_LINE_OVERFLOW = object()
+
+#: Sentinel queued when the bounded stdout queue overflows (consumer not reading).
+_QUEUE_OVERFLOW = object()
 
 
 class StdioProc:
@@ -79,53 +109,146 @@ class StdioProc:
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
         )
-        self._out_queue: "queue.Queue[Optional[bytes]]" = queue.Queue()
+        self._out_queue: "queue.Queue[Any]" = queue.Queue(maxsize=_STDOUT_QUEUE_MAX)
+        self._in_queue: "queue.Queue[Optional[bytes]]" = queue.Queue(
+            maxsize=_STDOUT_QUEUE_MAX)
         self._err_chunks: List[bytes] = []
+        self._err_total = 0
+        self._err_truncated = False
+        self._write_error: Optional[BaseException] = None
         self._out_thread = threading.Thread(target=self._pump_stdout, daemon=True)
         self._err_thread = threading.Thread(target=self._pump_stderr, daemon=True)
+        self._in_thread = threading.Thread(target=self._pump_stdin, daemon=True)
         self._out_thread.start()
         self._err_thread.start()
+        self._in_thread.start()
 
     # -- reader threads -----------------------------------------------------
 
     def _pump_stdout(self) -> None:
-        """Push each stdout line onto the queue; push ``None`` at EOF.
+        """Push each bounded stdout line onto the queue; push ``None`` at EOF.
 
-        The ``None`` sentinel lets :meth:`read_line` and :meth:`expect_quiet`
-        distinguish "no line yet" (a timeout) from "the stream closed" (EOF).
+        Lines are read with a byte cap (:data:`_MAX_LINE_BYTES`): a physical line
+        longer than the cap is drained and discarded, and a
+        :data:`_LINE_OVERFLOW` sentinel is queued so :meth:`read_line` reports it
+        instead of buffering an unbounded blob (CWE-400). The queue itself is
+        bounded, so a stalled consumer makes the bounded ``put`` time out and a
+        :data:`_QUEUE_OVERFLOW` sentinel is queued. The terminal ``None`` sentinel
+        lets :meth:`read_line` / :meth:`expect_quiet` tell "no line yet" (timeout)
+        from "the stream closed" (EOF).
         """
         try:
             stream = self._proc.stdout
             assert stream is not None
-            for raw in iter(stream.readline, b""):
-                self._out_queue.put(raw)
+            while True:
+                raw = stream.readline(_MAX_LINE_BYTES + 1)
+                if not raw:
+                    break
+                if len(raw) > _MAX_LINE_BYTES and not raw.endswith(b"\n"):
+                    # Oversize line: discard the rest of this physical line, then
+                    # report the overflow once rather than keep buffering it.
+                    while True:
+                        tail = stream.readline(_MAX_LINE_BYTES + 1)
+                        if not tail or tail.endswith(b"\n"):
+                            break
+                    if not self._offer(_LINE_OVERFLOW):
+                        break
+                    continue
+                if not self._offer(raw):
+                    break
         except (OSError, ValueError):
             pass
         finally:
-            self._out_queue.put(None)
+            try:
+                self._out_queue.put(None, timeout=_QUEUE_PUT_TIMEOUT)
+            except queue.Full:
+                pass
+
+    def _offer(self, item: Any) -> bool:
+        """Hand *item* to the bounded stdout queue; mark overflow on a stall.
+
+        :param item: A line (``bytes``) or an overflow sentinel.
+        :return: ``True`` if queued, ``False`` if the consumer stalled long enough
+            to overflow the bounded queue (an overflow sentinel is queued and the
+            reader should stop).
+        """
+        try:
+            self._out_queue.put(item, timeout=_QUEUE_PUT_TIMEOUT)
+            return True
+        except queue.Full:
+            try:
+                self._out_queue.put_nowait(_QUEUE_OVERFLOW)
+            except queue.Full:
+                pass
+            return False
 
     def _pump_stderr(self) -> None:
-        """Accumulate the child's stderr bytes until the stream closes."""
+        """Accumulate bounded stderr bytes until the stream closes.
+
+        At most :data:`_MAX_STDERR_BYTES` are retained (the head); further bytes
+        are drained but discarded and a truncation note is appended by
+        :meth:`stderr_text`, so a chatty child cannot grow memory without bound.
+        """
         try:
             stream = self._proc.stderr
             assert stream is not None
             for chunk in iter(lambda: stream.read(4096), b""):
-                self._err_chunks.append(chunk)
+                if self._err_total >= _MAX_STDERR_BYTES:
+                    self._err_truncated = True
+                    continue
+                take = chunk[: _MAX_STDERR_BYTES - self._err_total]
+                self._err_chunks.append(take)
+                self._err_total += len(take)
+                if len(take) < len(chunk):
+                    self._err_truncated = True
         except (OSError, ValueError):
             pass
+
+    def _pump_stdin(self) -> None:
+        """Drain the writer queue, writing each payload to stdin and flushing.
+
+        Running the blocking ``write`` / ``flush`` off the caller's thread is what
+        lets :meth:`write_bytes` enforce a deadline: a child that stops reading
+        stalls this thread, the bounded writer queue fills, and the next enqueue
+        times out instead of blocking a pipelined burst forever.
+        """
+        stream = self._proc.stdin
+        while True:
+            data = self._in_queue.get()
+            if data is None:
+                return
+            try:
+                assert stream is not None
+                stream.write(data)
+                stream.flush()
+            except (OSError, ValueError) as exc:
+                self._write_error = exc
+                return
 
     # -- writing ------------------------------------------------------------
 
     def write_bytes(self, data: bytes) -> None:
-        """Write *data* verbatim to stdin and flush (for exact framing control).
+        """Enqueue *data* for the writer thread with a bounded deadline.
 
-        :param data: The raw bytes to send, including the line terminator the
-            test wants (``\\n``, ``\\r\\n`` or none).
+        The bytes are written verbatim (exact framing control). The send path is
+        bounded: if the child has stopped draining stdin and the writer backlog is
+        full, the enqueue times out rather than blocking indefinitely.
+
+        :param data: The raw bytes to send, including the line terminator the test
+            wants (``\\n``, ``\\r\\n`` or none).
+        :raises TimeoutError: The writer backlog stayed full for
+            :data:`_WRITE_TIMEOUT` seconds (child not draining stdin).
+        :raises OSError: A prior write failed (e.g. the child closed its stdin).
         """
-        stream = self._proc.stdin
-        assert stream is not None
-        stream.write(data)
-        stream.flush()
+        if self._write_error is not None:
+            raise self._write_error
+        try:
+            self._in_queue.put(data, timeout=_WRITE_TIMEOUT)
+        except queue.Full:
+            raise TimeoutError(
+                "serve-stdio stdin backlog stayed full for %.1fs; the child is "
+                "not draining stdin" % _WRITE_TIMEOUT
+            )
 
     def write_line(self, text: str) -> None:
         """Write one UTF-8 text line terminated by a single ``\\n``.
@@ -160,6 +283,16 @@ class StdioProc:
             raise TimeoutError(
                 "no serve-stdio line within %.1fs; stderr=%r"
                 % (timeout, self.stderr_text())
+            )
+        if raw is _LINE_OVERFLOW:
+            raise RuntimeError(
+                "serve-stdio emitted a line exceeding %d bytes without a "
+                "terminator; dropped to bound memory (CWE-400)" % _MAX_LINE_BYTES
+            )
+        if raw is _QUEUE_OVERFLOW:
+            raise RuntimeError(
+                "serve-stdio produced more than %d unread lines; the consumer "
+                "stalled and the bounded queue overflowed" % _STDOUT_QUEUE_MAX
             )
         if raw is None:
             raise EOFError(
@@ -211,7 +344,17 @@ class StdioProc:
     # -- lifecycle ----------------------------------------------------------
 
     def close_stdin(self) -> None:
-        """Close the child's stdin, signalling EOF (the only graceful stop)."""
+        """Flush the writer backlog, stop the writer, then close stdin (EOF).
+
+        The writer thread is asked to stop with a ``None`` sentinel and joined
+        (bounded) so any already-queued payloads are flushed before the EOF; the
+        stdin fd is then closed, which is the only graceful stop. Idempotent.
+        """
+        try:
+            self._in_queue.put(None, timeout=_WRITE_TIMEOUT)
+        except queue.Full:
+            pass
+        self._in_thread.join(timeout=_WRITE_TIMEOUT)
         try:
             if self._proc.stdin is not None:
                 self._proc.stdin.close()
@@ -243,19 +386,28 @@ class StdioProc:
         return self._proc.pid
 
     def stderr_text(self) -> str:
-        """Return the stderr captured so far, decoded as UTF-8 (replacing)."""
-        return b"".join(self._err_chunks).decode("utf-8", "replace")
+        """Return the retained stderr, decoded as UTF-8 (replacing).
+
+        When the stream was truncated at :data:`_MAX_STDERR_BYTES`, a trailing
+        marker is appended so a caller scanning the text sees that the tail was
+        dropped rather than silently missing.
+        """
+        text = b"".join(self._err_chunks).decode("utf-8", "replace")
+        if self._err_truncated:
+            text += "\n...[stderr truncated at %d bytes]" % _MAX_STDERR_BYTES
+        return text
 
     def stop(self) -> None:
         """Close stdin and reap the child via ``terminate_and_reap``.
 
         Idempotent and safe on an already-exited process, so it can run on every
         path (``end_case`` / ``addCleanup``). Only this object's own child is
-        ever signalled. The reader threads are joined and the stdout/stderr pipes
-        are closed so no file handle leaks past teardown.
+        ever signalled. The writer and reader threads are joined and the
+        stdout/stderr pipes are closed so no file handle leaks past teardown.
         """
         self.close_stdin()
         cc.terminate_and_reap(self._proc, timeout=5.0)
+        self._in_thread.join(timeout=2.0)
         self._out_thread.join(timeout=2.0)
         self._err_thread.join(timeout=2.0)
         for stream in (self._proc.stdout, self._proc.stderr):

@@ -155,22 +155,33 @@ class StdioFramingTest(unittest.TestCase):
         self.fail("import job did not reach a terminal state")
 
     def test_stderr_is_not_protocol(self) -> None:
-        secret = "https://stderr-purity.example.invalid/no-leak-abc"
+        # serve-stdio exposes no verbosity/log-level flag (serve-stdio --help);
+        # it always forces logs to stderr at the default level, which already
+        # includes the mutating-command audit sink - the most sensitive log line
+        # - so this default-level check IS the elevated-level proof.
+        leak_marker = "zqx7leak3kv9probe"      # must never reach stderr
+        slug = "stderrpuritycheck"             # audited resource id (control)
+        url = "https://%s.example.invalid/%s" % (leak_marker, leak_marker)
         proc = self._proc()
-        requests = (
-            {"v": 1, "command": "command.list"},
-            {"v": 1, "command": "link.create",
-             "args": {"target_url": secret, "slug": "purity"}},
-            {"v": 1, "command": "no.such_command"},
-        )
-        for req in requests:
-            resp = proc.request(req)  # read_json fails if a log line hits stdout
-            self.assertEqual(resp["v"], 1, resp)
+        created = proc.request(
+            {"v": 1, "id": "id-" + leak_marker, "command": "link.create",
+             "args": {"target_url": url, "slug": slug}})
+        self.assertTrue(created["ok"], created)   # the write really happened
+        for req in ({"v": 1, "command": "command.list"},
+                    {"v": 1, "command": "no.such_command"}):
+            self.assertEqual(proc.request(req)["v"], 1)  # stdout is JSON only
         proc.close_stdin()
         self.assertEqual(proc.wait(timeout=15.0), 0, proc.stderr_text())
         stderr = proc.stderr_text()
         self.assertIn("serve_stdio_start", stderr)
-        self.assertNotIn("no-leak-abc", stderr)
+        # Positive control: the audit path really ran, logging the slug as the
+        # resource `target=` by design (threat brief 18); so stderr capture is
+        # real and the absence check below is meaningful, not a no-op.
+        self.assertIn("command_audit", stderr)
+        self.assertIn(slug, stderr)
+        # The one marker token - placed in the target URL and the envelope id,
+        # neither of which the audit records - never leaks to stderr (C6).
+        self.assertNotIn(leak_marker, stderr)
 
 
 if __name__ == "__main__":
