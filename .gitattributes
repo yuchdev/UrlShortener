@@ -1,0 +1,4 @@
+# TUI golden snapshots are compared byte-exact in binary mode by
+# tests/unit/tui/support/golden.hpp (assert_matches_golden). Pin them to LF so a
+# CRLF checkout (e.g. on Windows) cannot break the golden compare (07.0/23).
+tests/unit/tui/golden/* text eol=lf
