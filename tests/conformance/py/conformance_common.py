@@ -344,7 +344,12 @@ class Adapter(ABC):
 
         A real envelope never carries a top-level ``envelope`` key (N5), so the
         wrapper is detected unambiguously. Omitting the status on a transport
-        that requires one is a finding.
+        that requires one is a finding. A wrapper may additionally carry an
+        optional ``"carries_id": bool`` that overrides the transport's ``caps.id``
+        for that one step (used by a multi-path adapter whose steps take different
+        wire paths - e.g. ``rest_resource`` echoes the request id on a
+        generic-fallback step but not on a synthesized resource-route envelope);
+        when absent the transport default applies.
 
         :param step: The step dict after ``${var}`` / ``${tmp}`` substitution
             (so transport directives like ``rest_resource`` are already expanded).
@@ -779,7 +784,7 @@ def _skip_or_findings(
 def _normalize_actual(
     actual: Any,
     request: Optional[Dict[str, Any]],
-    caps: Caps,
+    carries_id: bool,
     transport: str,
 ) -> Tuple[Dict[str, Any], List[str]]:
     """Run N1/N4/N5 normalization, honouring a transport's server-minted id shape.
@@ -793,7 +798,9 @@ def _normalize_actual(
 
     :param actual: The actual response envelope.
     :param request: The request envelope, or ``None`` for a raw-text replay.
-    :param caps: The transport capabilities (``caps.id`` drives the echo check).
+    :param carries_id: Whether the actual response echoes the request id (the
+        ``caps.id`` capability, or a per-step override - see
+        :func:`_check_envelope`); drives the N4 echo vs ``srv-<n>`` check.
     :param transport: The adapter's transport id (selects the generated-id shape).
     :return: ``(normalized_envelope, findings)``; findings is ``[]`` when the id
         and top-level shape are valid, else one finding per violation.
@@ -816,7 +823,7 @@ def _normalize_actual(
                 f"^{pattern}$ (N4, {transport})"
             ]
         return normalized, findings
-    return cm.normalize_actual(actual, request, caps.id)
+    return cm.normalize_actual(actual, request, carries_id)
 
 
 def _check_envelope(
@@ -827,6 +834,7 @@ def _check_envelope(
     transport: str,
     variables: Dict[str, Any],
     label: str,
+    carries_id: Optional[bool] = None,
 ) -> List[str]:
     """Normalize *actual* and match it against an ``expect`` / ``expect_accept``.
 
@@ -838,11 +846,17 @@ def _check_envelope(
         substituted.
     :param actual: The response envelope the adapter returned.
     :param request: The request envelope (for the N4 id-echo check), or ``None``.
-    :param caps: The transport capabilities (``caps.id`` drives N4).
+    :param caps: The transport capabilities (``caps.id`` drives N4 by default).
     :param transport: The adapter's transport id (selects the server-minted id
         shape when the request carried no id).
     :param variables: Variable map consulted by ``<var:name>``.
     :param label: Step label used to locate findings.
+    :param carries_id: Per-step override of the ``caps.id`` capability. ``None``
+        uses the transport default; a bool forces the N4 echo check for this step
+        regardless of the transport default. A multi-path adapter (``rest_resource``
+        echoes the request id on its generic-fallback steps but not on its
+        synthesized resource-route envelopes) sets it per step so each step is
+        judged by the path it actually took.
     :return: ``[]`` when the envelope matches, else one finding per violation.
     """
     if not isinstance(actual, dict):
@@ -855,8 +869,10 @@ def _check_envelope(
             else:
                 expected[key] = expect[key]
     mode = expect.get("match", "exact")
+    effective_id = caps.id if carries_id is None else carries_id
     try:
-        normalized, findings = _normalize_actual(actual, request, caps, transport)
+        normalized, findings = _normalize_actual(
+            actual, request, effective_id, transport)
         reasons = cm.match(expected, normalized, mode, variables)
     except RecursionError:
         return [f"{label}: envelope nesting too deep to match"]
@@ -1001,6 +1017,13 @@ def _run_step(
     except Exception as exc:  # noqa: BLE001 - surface any adapter fault
         return [f"{label}: adapter.send raised {type(exc).__name__}: {exc}"]
     actual, wrapper = _unwrap_send(result)
+    # Optional per-step id-capability override: a multi-path adapter reports,
+    # per step, whether the response echoed the request id (e.g. rest_resource's
+    # generic-fallback steps do, its resource-route steps do not). ``None`` keeps
+    # the transport default.
+    carries_id = wrapper.get("carries_id")
+    if not isinstance(carries_id, bool):
+        carries_id = None
 
     if "await_job" not in step:
         try:
@@ -1009,7 +1032,7 @@ def _run_step(
             return [f"{label}: expect substitution failed: {exc}"]
         findings = _status_findings(wrapper, transport, step.get("expect", {}), step, label)
         findings += _check_envelope(
-            expect, actual, request, caps, transport, variables, label
+            expect, actual, request, caps, transport, variables, label, carries_id
         )
         if findings:
             return findings
@@ -1026,7 +1049,8 @@ def _run_step(
         wrapper, transport, step.get("expect_accept", {}), step, f"{label} (accept)"
     )
     findings += _check_envelope(
-        accept, actual, request, caps, transport, variables, f"{label} (accept)"
+        accept, actual, request, caps, transport, variables, f"{label} (accept)",
+        carries_id
     )
     findings += _apply_save(step, actual, variables, label)
     if findings:

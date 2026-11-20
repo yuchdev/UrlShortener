@@ -285,16 +285,25 @@ class RestResourceAdapter(cc.Adapter):
         :param request_text: The substituted request text (passed to the generic
             fallback for a step without a ``rest_resource`` block).
         :param ctx: The per-case context.
-        :return: ``{"envelope": <dict>, "http_status": int}`` for
-            :func:`conformance_common.run_case` to assert.
+        :return: ``{"envelope": <dict>, "http_status": int, "carries_id": bool}``
+            for :func:`conformance_common.run_case` to assert. ``carries_id`` is
+            decided per step by the path taken: a generic-fallback step is
+            ``True`` (the ``POST /api/v1/commands`` endpoint echoes the request
+            id, exactly like the ``rest_generic`` transport), a resource-route
+            step is ``False`` (the synthesized envelope carries only the minimal
+            ``srv-0`` sentinel, which N4 accepts as a server-minted id).
         :raises AssertionError: On a status-table mismatch, a server/corpus status
             disagreement, or an unrecoverable legacy error code.
         """
         rr = step.get("rest_resource")
         if rr is None:
             # Setup / non-resource step: run it through the generic endpoint on
-            # this adapter (same per-role server), unchanged.
-            return self._generic.send(step, request_text, ctx)
+            # this adapter (same per-role server), unchanged. That endpoint echoes
+            # the request id, so this step is judged with the echo check on
+            # (carries_id=True) even though the transport default is id=False.
+            out = dict(self._generic.send(step, request_text, ctx))
+            out["carries_id"] = True
+            return out
 
         role = step.get("caller") or self._generic._case_caller
         self._generic._server_for(role)
@@ -329,8 +338,11 @@ class RestResourceAdapter(cc.Adapter):
         # REST transports, and the legacy-exact status is pinned by the guards
         # above. For a resource create (really 201) the generic endpoint returns
         # 200, so this is the only value run_case can assert uniformly.
+        # carries_id=False: the synthesized envelope carries only the srv-0
+        # sentinel (a resource route has no envelope id to echo).
         return {"envelope": envelope,
-                "http_status": cc.expected_http_status(step)}
+                "http_status": cc.expected_http_status(step),
+                "carries_id": False}
 
     def end_case(self) -> None:
         """Reap every server started for this case (delegated, always runs)."""

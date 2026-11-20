@@ -501,6 +501,67 @@ def _cli_wrap(env_id: str) -> Dict[str, Any]:
     return {"envelope": envelope, "cli_exit": 0}
 
 
+def _rr_wrap(
+    env_id: str, carries_id: Optional[bool] = None, status: int = 200
+) -> Dict[str, Any]:
+    """Wrap an ``ok`` create envelope as a ``rest_resource`` send result.
+
+    :param env_id: The top-level id the fake response carries.
+    :param carries_id: The optional per-step id-capability override; omitted from
+        the wrapper when ``None`` so the transport default applies.
+    :param status: The HTTP status the wrapper reports (the status channel).
+    """
+    envelope = {"v": 1, "ok": True, "id": env_id, "result": {"slug": "docs"}}
+    wrapper: Dict[str, Any] = {"envelope": envelope, "http_status": status}
+    if carries_id is not None:
+        wrapper["carries_id"] = carries_id
+    return wrapper
+
+
+class RestResourceIdOverrideTest(unittest.TestCase):
+    """Per-step ``carries_id`` override for the ``rest_resource`` generic fallback.
+
+    ``rest_resource`` defaults to ``caps.id = False`` (resource routes mint a
+    server id), but its generic-fallback steps go through ``POST /api/v1/commands``
+    which echoes the request id. The adapter reports ``carries_id`` per step so the
+    harness judges each step by the path it took; these tests pin that override.
+    """
+
+    def test_override_echo_passes_on_fallback_step(self) -> None:
+        # A fallback step echoes the request id and reports carries_id=True, so a
+        # matching echo passes even though the transport default is id=False.
+        adapter = FakeAdapter(transport="rest_resource",
+                              main=[_rr_wrap("req-9", carries_id=True)])
+        findings = cc.run_case(_cli_create_case("req-9"), adapter)
+        self.assertEqual(findings, [])
+
+    def test_wrong_echo_on_fallback_step_is_finding(self) -> None:
+        # carries_id=True forces the echo check; a non-matching id is a finding.
+        adapter = FakeAdapter(transport="rest_resource",
+                              main=[_rr_wrap("other", carries_id=True)])
+        findings = cc.run_case(_cli_create_case("req-9"), adapter)
+        self.assertTrue(
+            any("id" in f for f in findings),
+            f"expected an id echo finding, got {findings!r}",
+        )
+
+    def test_transport_default_applies_without_flag(self) -> None:
+        # No carries_id flag: the rest_resource default (id=False) applies, so a
+        # server-minted srv-<n> id is accepted even though the request carried an
+        # id (which, under the default, is NOT echo-checked).
+        adapter = FakeAdapter(transport="rest_resource", main=[_rr_wrap("srv-5")])
+        findings = cc.run_case(_cli_create_case("req-9"), adapter)
+        self.assertEqual(findings, [])
+        # And the echoed request id would be rejected under that same default,
+        # proving the override was not silently applied.
+        adapter2 = FakeAdapter(transport="rest_resource", main=[_rr_wrap("req-9")])
+        findings2 = cc.run_case(_cli_create_case("req-9"), adapter2)
+        self.assertTrue(
+            any("id" in f for f in findings2),
+            f"expected a generated-id finding, got {findings2!r}",
+        )
+
+
 class CliCmdIdTest(unittest.TestCase):
     """Envelope-id rules specific to the echo-capable ``cli_cmd`` transport."""
 
