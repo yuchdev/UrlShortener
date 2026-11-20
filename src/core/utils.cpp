@@ -441,6 +441,52 @@ std::optional<bool> classify_ipv6(const std::string& host)
     return false;  // a valid but public IPv6 address
 }
 
+/**
+ * @brief Strict allowlist for the URL host, before any private-target check.
+ *
+ * Fails closed (07.0/20 review): the host must be either a bracketed IPv6
+ * literal (`[...]` whose interior is a valid `inet_pton` AF_INET6 address) or a
+ * registered name / numeric IPv4 made only of ASCII letters, digits, `-` and
+ * `.`, with at most ONE trailing `.`. Anything else - a `\`, whitespace, a
+ * control byte, a non-ASCII byte, or a second trailing dot - is rejected, so a
+ * host a browser would re-normalize (e.g. `2130706433\x` -> loopback,
+ * `2130706433..` -> loopback) can never be stored. IDN hosts must arrive
+ * already punycoded (`xn--...`); this function does not perform IDN/percent
+ * decoding (the caller rejects a `%` in the host separately).
+ *
+ * @param host The already-lower-cased host (brackets kept for IPv6). Must be
+ *        non-empty.
+ * @return `true` when @p host is a valid literal under the rules above.
+ */
+bool is_valid_url_host(const std::string& host)
+{
+    if (host.empty()) {
+        return false;
+    }
+    if (host.front() == '[') {
+        if (host.size() < 3 || host.back() != ']') {
+            return false;
+        }
+        const std::string inner = host.substr(1, host.size() - 2);
+        unsigned char buf[16];
+        return ::inet_pton(AF_INET6, inner.c_str(), buf) == 1;
+    }
+    // Registered name / numeric IPv4: ASCII letters, digits, '-' and '.' only.
+    for (const unsigned char c : host) {
+        const bool allowed = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
+            || (c >= '0' && c <= '9') || c == '-' || c == '.';
+        if (!allowed) {
+            return false;
+        }
+    }
+    // At most one trailing '.' (a single FQDN dot); a second one is malformed.
+    std::size_t trailing_dots = 0;
+    for (std::size_t i = host.size(); i-- > 0 && host[i] == '.';) {
+        ++trailing_dots;
+    }
+    return trailing_dots <= 1;
+}
+
 }  // namespace
 
 bool isPrivateHost(const std::string& host)
@@ -537,6 +583,15 @@ std::optional<std::string> normalizeTargetUrl(const std::string& input_url, cons
         return std::nullopt;
     }
 
+    // Refuse a backslash anywhere in the scheme/authority part (before the
+    // path). WHATWG host parsing ends the host at '\' and a browser normalizes
+    // '\' to '/', so "http://2130706433\x" would navigate to loopback; fail
+    // closed instead of re-normalizing (07.0/20 review). A '\' inside the path
+    // (in @ref suffix) is left untouched.
+    if (authority.find('\\') != std::string::npos) {
+        return std::nullopt;
+    }
+
     // Split host from an optional port. A bracketed IPv6 authority must be
     // split at the closing ']' first, never at an inner ':', so "[::1]:8080"
     // yields host "[::1]" (not "[") and the private-target check actually sees
@@ -578,6 +633,14 @@ std::optional<std::string> normalizeTargetUrl(const std::string& input_url, cons
     // (e.g. "2130706433%2e" -> "2130706433." -> 127.0.0.1), so the host must be
     // literal before classification (07.0/20 review, WHATWG host parsing).
     if (host.find('%') != std::string::npos) {
+        return std::nullopt;
+    }
+    // Strict host allowlist, fail closed (07.0/20 review). A host that is not a
+    // valid bracketed IPv6 literal or an ASCII letter/digit/`-`/`.` registered
+    // name (at most one trailing dot) is rejected in BOTH modes - a malformed
+    // host such as one carrying whitespace or a second trailing dot is an
+    // invalid URL regardless of `allow_private_targets`.
+    if (!is_valid_url_host(host)) {
         return std::nullopt;
     }
     if (!config.shortener_allow_private_targets && isPrivateHost(host)) {
