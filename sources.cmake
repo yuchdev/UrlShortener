@@ -459,6 +459,7 @@ set(URL_SHORTENER_SOURCES
       tests/unit/commands/12_catalog_drift.cpp
       tests/unit/commands/13_error_code_coverage.cpp
       tests/unit/commands/14_include_hygiene.cpp
+      tests/unit/commands/80_redirect_isolation_test.cpp
       tests/unit/commands/20_link_command_codec.cpp
       tests/unit/commands/21_link_create_command.cpp
       tests/unit/commands/22_link_read_commands.cpp
