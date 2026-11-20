@@ -480,6 +480,37 @@ include(CTest)
         LABELS "integration;conformance")
   endforeach()
 
+  # ---- Conformance TUI client-seam runner (Task 07.0 subtask 10) ----
+  # Built only when URLSHORTENER_ENABLE_TUI is ON. The runner and its adapter
+  # (CONFORMANCE_TUI_CPP_SOURCES) compile into one executable that links the
+  # FTXUI-free TUI model library (for tui::InProcessClient) alongside
+  # conformance_support; the adapter is NOT part of conformance_support, so that
+  # library stays TUI-agnostic and still builds with TUI=OFF (decision log D3,
+  # C8). With TUI=OFF the target does not exist and the test is not registered.
+  if(URLSHORTENER_ENABLE_TUI)
+    add_executable(conformance__02_tui_client_corpus
+        ${CONFORMANCE_TUI_CPP_SOURCES}
+    )
+    target_compile_features(conformance__02_tui_client_corpus PRIVATE cxx_std_17)
+    target_include_directories(conformance__02_tui_client_corpus PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/conformance
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/conformance/support
+    )
+    target_compile_definitions(conformance__02_tui_client_corpus PRIVATE
+        CONFORMANCE_CORPUS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/conformance")
+    target_link_libraries(conformance__02_tui_client_corpus
+      PRIVATE
+        conformance_support
+        url_shortener_tui_model
+        Boost::unit_test_framework
+    )
+    add_test(NAME conformance__02_tui_client_corpus
+        COMMAND conformance__02_tui_client_corpus)
+    set_tests_properties(conformance__02_tui_client_corpus PROPERTIES
+        LABELS "integration;conformance")
+  endif()
+
   # The shared-SQLite scenario (subtask 02.0/14) spawns a long-lived server
   # process and polls its redirect path; run it serially so parallel ctest load
   # cannot starve its readiness/convergence deadlines. It already uses a dynamic

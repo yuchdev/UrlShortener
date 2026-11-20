@@ -747,6 +747,17 @@ set(URL_SHORTENER_SOURCES
       tests/conformance/runners/01_direct_registry_corpus.cpp
   )
 
+  # ---- Conformance TUI runner + adapter (Task 07.0 subtask 10) ----
+  # The TUI InProcessClient shim and its runner. Compiled only when
+  # URLSHORTENER_ENABLE_TUI is ON (CMakeLists.txt guards the registration) and
+  # into their OWN executable, never into conformance_support: the support
+  # library stays TUI-agnostic (it must build with TUI=OFF), so the FTXUI-free
+  # TUI model library is linked by this runner alone (decision log D3, C8).
+  set(CONFORMANCE_TUI_CPP_SOURCES
+      tests/conformance/support/tui_adapter.cpp
+      tests/conformance/runners/02_tui_client_corpus.cpp
+  )
+
   # ---- Perf benchmarks (Task 07.0 subtask 30; label "perf") ----
   # Advisory latency/throughput benchmarks (docs/testing/README.md 3.5). Owned by
   # Task 07.0 subtask 30; subtask 32 appends the redirect fast-path guard under
