@@ -32,8 +32,11 @@ suites:
 | [`12_link_update.json`](12_link_update.json) | `link_update` | `link.update` |
 | [`13_link_state.json`](13_link_state.json) | `link_state` | `link.delete`, `link.enable`, `link.disable`, `link.restore` |
 | [`20_link_list.json`](20_link_list.json) | `link_list` | `link.list` |
-| [`21_db_tables.json`](21_db_tables.json) | `db_tables` | `db.tables`, `db.rows` |
+| [`21_db_tables.json`](21_db_tables.json) | `db_tables` | `db.tables`, `db.rows` (incl. `db.rows table=jobs` after an import) |
 | [`22_system.json`](22_system.json) | `system` | `system.info`, `command.list` |
+| [`30_link_import.json`](30_link_import.json) | `link_import` | `link.import` |
+| [`31_link_export.json`](31_link_export.json) | `link_export` | `link.export` |
+| [`32_job_commands.json`](32_job_commands.json) | `job_commands` | `job.get`, `job.list`, `job.cancel` |
 
 ## Corpus file
 
@@ -339,4 +342,31 @@ python tools/conformance_lint.py tests/conformance/commands
     }
   ]
 }
+```
+
+## Standard seeds
+
+### `seed7`
+
+The lifecycle seed used by `link_list_default_active_only` in
+[`20_link_list.json`](20_link_list.json): seven links `seed-a`..`seed-g`, of
+which five end **active**, one **disabled** (`seed-c`) and one **deleted**
+(`seed-d`). Reuse it verbatim as the leading steps of any case that needs a
+populated store spanning the lifecycle states; append your own assertion step
+after it. The slug set is fixed and the tags/campaigns are the ones the list
+filters key on, so a reusing case can filter by `tag:red`, `campaign:spring`,
+etc. without reseeding.
+
+```json
+[
+  { "label": "seed-a", "request": { "v": 1, "command": "link.create", "args": { "target_url": "https://example.com/a", "slug": "seed-a", "tags": ["red"], "campaign": { "name": "spring" } } }, "expect": { "ok": true, "result": { "slug": "seed-a" }, "match": "subset" } },
+  { "label": "seed-b", "request": { "v": 1, "command": "link.create", "args": { "target_url": "https://example.com/b", "slug": "seed-b", "tags": ["blue", "red"] } }, "expect": { "ok": true, "result": { "slug": "seed-b" }, "match": "subset" } },
+  { "label": "seed-c", "request": { "v": 1, "command": "link.create", "args": { "target_url": "https://example.com/c", "slug": "seed-c" } }, "expect": { "ok": true, "result": { "slug": "seed-c" }, "match": "subset" } },
+  { "label": "disable-c", "request": { "v": 1, "command": "link.disable", "args": { "slug": "seed-c" } }, "expect": { "ok": true, "result": { "slug": "seed-c", "status": "disabled" }, "match": "subset" } },
+  { "label": "seed-d", "request": { "v": 1, "command": "link.create", "args": { "target_url": "https://example.com/d", "slug": "seed-d" } }, "expect": { "ok": true, "result": { "slug": "seed-d" }, "match": "subset" } },
+  { "label": "delete-d", "request": { "v": 1, "command": "link.delete", "args": { "slug": "seed-d" } }, "expect": { "ok": true, "result": { "slug": "seed-d", "status": "deleted" }, "match": "subset" } },
+  { "label": "seed-e", "request": { "v": 1, "command": "link.create", "args": { "target_url": "https://example.com/e", "slug": "seed-e", "tags": ["green"] } }, "expect": { "ok": true, "result": { "slug": "seed-e" }, "match": "subset" } },
+  { "label": "seed-f", "request": { "v": 1, "command": "link.create", "args": { "target_url": "https://example.com/f", "slug": "seed-f", "campaign": { "name": "summer" } } }, "expect": { "ok": true, "result": { "slug": "seed-f" }, "match": "subset" } },
+  { "label": "seed-g", "request": { "v": 1, "command": "link.create", "args": { "target_url": "https://example.com/g", "slug": "seed-g" } }, "expect": { "ok": true, "result": { "slug": "seed-g" }, "match": "subset" } }
+]
 ```

@@ -1,0 +1,922 @@
+{
+  "corpus_version": 1,
+  "suite": "link_import",
+  "description": "link.import: csv/ndjson inline and ${tmp} file sources, the job accept/await lifecycle, on_conflict skip/fail/overwrite, per-row error reporting with 1-based lines, the 100-entry error cap, SSRF parity with link.create, dry_run and async options, the data/path argument errors and the write authorization gate.",
+  "cases": [
+    {
+      "name": "link_import_csv_inline_happy",
+      "doc": "csv inline import of three pair rows (one blank slug is generated) runs as a job; the awaited result reports three created and no errors, and a follow-up link.list sees three links",
+      "command": "link.import",
+      "transports": {
+        "skip": {
+          "cli_cmd": "cli_cmd runs a job to completion in one short-lived process, so the queued accept and the in-memory job are gone before job.get can poll; the cmd wait-for-completion mode is pinned by job_cli_cmd_waits_for_completion"
+        }
+      },
+      "steps": [
+        {
+          "label": "import",
+          "request": {
+            "v": 1,
+            "id": "imp-happy-1",
+            "command": "link.import",
+            "args": {
+              "format": "csv",
+              "data": "full_url,slug\nhttps://example.com/a,imp-a\nhttps://example.com/b,imp-b\nhttps://example.com/c,\n"
+            }
+          },
+          "save": {
+            "job_id": "$.job.id"
+          },
+          "expect_accept": {
+            "ok": true,
+            "job": {
+              "id": "<id>",
+              "state": "queued"
+            }
+          },
+          "await_job": {
+            "var": "job_id",
+            "timeout_ms": 5000
+          },
+          "expect": {
+            "ok": true,
+            "result": {
+              "total": 3,
+              "created": 3,
+              "skipped": 0,
+              "overwritten": 0,
+              "failed": 0,
+              "errors": [],
+              "errors_omitted": 0,
+              "dry_run": false
+            },
+            "match": "exact"
+          }
+        },
+        {
+          "label": "list",
+          "request": {
+            "v": 1,
+            "command": "link.list",
+            "args": {
+              "status": "active"
+            }
+          },
+          "expect": {
+            "ok": true,
+            "result": {
+              "total": 3
+            },
+            "match": "subset"
+          }
+        }
+      ]
+    },
+    {
+      "name": "link_import_ndjson_inline_happy",
+      "doc": "ndjson inline import validates each line against the shared link.create schema; two rows are created and the awaited result reports no errors",
+      "command": "link.import",
+      "transports": {
+        "skip": {
+          "cli_cmd": "cli_cmd runs a job to completion in one short-lived process, so the queued accept and the in-memory job are gone before job.get can poll; the cmd wait-for-completion mode is pinned by job_cli_cmd_waits_for_completion"
+        }
+      },
+      "steps": [
+        {
+          "label": "import",
+          "request": {
+            "v": 1,
+            "id": "imp-ndjson-1",
+            "command": "link.import",
+            "args": {
+              "format": "ndjson",
+              "data": "{\"target_url\":\"https://example.com/n1\",\"slug\":\"imp-n1\"}\n{\"target_url\":\"https://example.com/n2\",\"slug\":\"imp-n2\"}\n"
+            }
+          },
+          "save": {
+            "job_id": "$.job.id"
+          },
+          "expect_accept": {
+            "ok": true,
+            "job": {
+              "id": "<id>",
+              "state": "queued"
+            }
+          },
+          "await_job": {
+            "var": "job_id",
+            "timeout_ms": 5000
+          },
+          "expect": {
+            "ok": true,
+            "result": {
+              "total": 2,
+              "created": 2,
+              "skipped": 0,
+              "overwritten": 0,
+              "failed": 0,
+              "errors": [],
+              "errors_omitted": 0,
+              "dry_run": false
+            },
+            "match": "exact"
+          }
+        }
+      ]
+    },
+    {
+      "name": "link_import_csv_path",
+      "doc": "csv import from a confined ${tmp} file path runs on the local-operator transports (direct/tui/stdio); REST refuses path, pinned separately",
+      "command": "link.import",
+      "files": {
+        "pairs.csv": "full_url,slug\nhttps://example.com/p1,imp-p1\nhttps://example.com/p2,imp-p2\n"
+      },
+      "transports": {
+        "skip": {
+          "cli_cmd": "cli_cmd runs a job to completion in one short-lived process, so the queued accept and the in-memory job are gone before job.get can poll; the cmd wait-for-completion mode is pinned by job_cli_cmd_waits_for_completion",
+          "rest_generic": "link.import path is rejected on REST with unsupported; the REST refusal is pinned by link_import_path_rejected_on_rest",
+          "rest_resource": "rest_resource falls back to the generic endpoint, which rejects a path with unsupported; pinned by link_import_path_rejected_on_rest"
+        }
+      },
+      "steps": [
+        {
+          "label": "import",
+          "request": {
+            "v": 1,
+            "command": "link.import",
+            "args": {
+              "format": "csv",
+              "path": "${tmp}/pairs.csv"
+            }
+          },
+          "save": {
+            "job_id": "$.job.id"
+          },
+          "expect_accept": {
+            "ok": true,
+            "job": {
+              "id": "<id>",
+              "state": "queued"
+            }
+          },
+          "await_job": {
+            "var": "job_id",
+            "timeout_ms": 5000
+          },
+          "expect": {
+            "ok": true,
+            "result": {
+              "total": 2,
+              "created": 2,
+              "skipped": 0,
+              "overwritten": 0,
+              "failed": 0,
+              "errors": [],
+              "errors_omitted": 0,
+              "dry_run": false
+            },
+            "match": "exact"
+          }
+        }
+      ]
+    },
+    {
+      "name": "link_import_path_rejected_on_rest",
+      "doc": "the generic REST endpoint refuses a link.import path argument with unsupported before any job is created (REST is default-deny for file paths)",
+      "command": "link.import",
+      "transports": {
+        "only": [
+          "rest_generic"
+        ]
+      },
+      "steps": [
+        {
+          "label": "import",
+          "request": {
+            "v": 1,
+            "command": "link.import",
+            "args": {
+              "format": "csv",
+              "path": "${tmp}/pairs.csv"
+            }
+          },
+          "expect": {
+            "ok": false,
+            "error": {
+              "code": "unsupported"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "link_import_on_conflict_skip",
+      "doc": "with the default on_conflict=skip an existing slug is counted skipped and the fresh row is created",
+      "command": "link.import",
+      "transports": {
+        "skip": {
+          "cli_cmd": "cli_cmd runs a job to completion in one short-lived process, so the queued accept and the in-memory job are gone before job.get can poll; the cmd wait-for-completion mode is pinned by job_cli_cmd_waits_for_completion"
+        }
+      },
+      "steps": [
+        {
+          "label": "seed",
+          "request": {
+            "v": 1,
+            "command": "link.create",
+            "args": {
+              "target_url": "https://example.com/old",
+              "slug": "cf-dup"
+            }
+          },
+          "expect": {
+            "ok": true,
+            "result": {
+              "slug": "cf-dup"
+            },
+            "match": "subset"
+          }
+        },
+        {
+          "label": "import",
+          "request": {
+            "v": 1,
+            "command": "link.import",
+            "args": {
+              "format": "csv",
+              "data": "full_url,slug\nhttps://example.com/x,cf-dup\nhttps://example.com/y,cf-new\n"
+            }
+          },
+          "save": {
+            "job_id": "$.job.id"
+          },
+          "expect_accept": {
+            "ok": true,
+            "job": {
+              "id": "<id>",
+              "state": "queued"
+            }
+          },
+          "await_job": {
+            "var": "job_id",
+            "timeout_ms": 5000
+          },
+          "expect": {
+            "ok": true,
+            "result": {
+              "total": 2,
+              "created": 1,
+              "skipped": 1,
+              "overwritten": 0,
+              "failed": 0,
+              "errors": [],
+              "errors_omitted": 0,
+              "dry_run": false
+            },
+            "match": "exact"
+          }
+        }
+      ]
+    },
+    {
+      "name": "link_import_on_conflict_fail",
+      "doc": "with on_conflict=fail the job stops on the first existing slug and the awaited terminal outcome is a failed job carrying slug_conflict",
+      "command": "link.import",
+      "transports": {
+        "skip": {
+          "cli_cmd": "cli_cmd runs a job to completion in one short-lived process, so the queued accept and the in-memory job are gone before job.get can poll; the cmd wait-for-completion mode is pinned by job_cli_cmd_waits_for_completion"
+        }
+      },
+      "steps": [
+        {
+          "label": "seed",
+          "request": {
+            "v": 1,
+            "command": "link.create",
+            "args": {
+              "target_url": "https://example.com/old",
+              "slug": "cf-fail"
+            }
+          },
+          "expect": {
+            "ok": true,
+            "result": {
+              "slug": "cf-fail"
+            },
+            "match": "subset"
+          }
+        },
+        {
+          "label": "import",
+          "request": {
+            "v": 1,
+            "command": "link.import",
+            "args": {
+              "format": "csv",
+              "on_conflict": "fail",
+              "data": "full_url,slug\nhttps://example.com/x,cf-fail\n"
+            }
+          },
+          "save": {
+            "job_id": "$.job.id"
+          },
+          "expect_accept": {
+            "ok": true,
+            "job": {
+              "id": "<id>",
+              "state": "queued"
+            }
+          },
+          "await_job": {
+            "var": "job_id",
+            "timeout_ms": 5000
+          },
+          "expect": {
+            "ok": false,
+            "error": {
+              "code": "slug_conflict"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "link_import_on_conflict_overwrite",
+      "doc": "on_conflict=overwrite replaces an existing link's target and counts the row overwritten; not offered over REST, so REST is pinned by link_import_overwrite_rejected_on_rest",
+      "command": "link.import",
+      "transports": {
+        "skip": {
+          "cli_cmd": "cli_cmd runs a job to completion in one short-lived process, so the queued accept and the in-memory job are gone before job.get can poll; the cmd wait-for-completion mode is pinned by job_cli_cmd_waits_for_completion",
+          "rest_generic": "on_conflict=overwrite is not offered over REST (pinned by link_import_overwrite_rejected_on_rest)",
+          "rest_resource": "on_conflict=overwrite is not offered over REST (pinned by link_import_overwrite_rejected_on_rest)"
+        }
+      },
+      "steps": [
+        {
+          "label": "seed",
+          "request": {
+            "v": 1,
+            "command": "link.create",
+            "args": {
+              "target_url": "https://example.com/old",
+              "slug": "ow-dup"
+            }
+          },
+          "expect": {
+            "ok": true,
+            "result": {
+              "slug": "ow-dup"
+            },
+            "match": "subset"
+          }
+        },
+        {
+          "label": "import",
+          "request": {
+            "v": 1,
+            "command": "link.import",
+            "args": {
+              "format": "csv",
+              "on_conflict": "overwrite",
+              "data": "full_url,slug\nhttps://example.com/new,ow-dup\n"
+            }
+          },
+          "save": {
+            "job_id": "$.job.id"
+          },
+          "expect_accept": {
+            "ok": true,
+            "job": {
+              "id": "<id>",
+              "state": "queued"
+            }
+          },
+          "await_job": {
+            "var": "job_id",
+            "timeout_ms": 5000
+          },
+          "expect": {
+            "ok": true,
+            "result": {
+              "total": 1,
+              "created": 0,
+              "skipped": 0,
+              "overwritten": 1,
+              "failed": 0,
+              "errors": [],
+              "errors_omitted": 0,
+              "dry_run": false
+            },
+            "match": "exact"
+          }
+        },
+        {
+          "label": "verify",
+          "request": {
+            "v": 1,
+            "command": "link.get",
+            "args": {
+              "slug": "ow-dup"
+            }
+          },
+          "expect": {
+            "ok": true,
+            "result": {
+              "slug": "ow-dup",
+              "url": "https://example.com/new"
+            },
+            "match": "subset"
+          }
+        }
+      ]
+    },
+    {
+      "name": "link_import_overwrite_rejected_on_rest",
+      "doc": "on_conflict=overwrite is a destructive policy not offered over REST; the generic endpoint refuses it with unsupported before any job is created",
+      "command": "link.import",
+      "transports": {
+        "only": [
+          "rest_generic"
+        ]
+      },
+      "steps": [
+        {
+          "label": "import",
+          "request": {
+            "v": 1,
+            "command": "link.import",
+            "args": {
+              "format": "csv",
+              "on_conflict": "overwrite",
+              "data": "full_url,slug\nhttps://example.com/x,ow-rest\n"
+            }
+          },
+          "expect": {
+            "ok": false,
+            "error": {
+              "code": "unsupported"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "link_import_row_errors_reported",
+      "doc": "per-row failures are reported with 1-based physical line numbers and fixed codes (invalid_url, invalid_slug, reserved_slug) while the valid row is still created",
+      "command": "link.import",
+      "transports": {
+        "skip": {
+          "cli_cmd": "cli_cmd runs a job to completion in one short-lived process, so the queued accept and the in-memory job are gone before job.get can poll; the cmd wait-for-completion mode is pinned by job_cli_cmd_waits_for_completion"
+        }
+      },
+      "steps": [
+        {
+          "label": "import",
+          "request": {
+            "v": 1,
+            "command": "link.import",
+            "args": {
+              "format": "csv",
+              "data": "full_url,slug\nnot-a-url,err-badurl\nhttps://example.com/ok1,xy\nhttps://example.com/ok2,api\nhttps://example.com/ok3,err-ok\n"
+            }
+          },
+          "save": {
+            "job_id": "$.job.id"
+          },
+          "expect_accept": {
+            "ok": true,
+            "job": {
+              "id": "<id>",
+              "state": "queued"
+            }
+          },
+          "await_job": {
+            "var": "job_id",
+            "timeout_ms": 5000
+          },
+          "expect": {
+            "ok": true,
+            "result": {
+              "total": 4,
+              "created": 1,
+              "skipped": 0,
+              "overwritten": 0,
+              "failed": 3,
+              "errors": [
+                {
+                  "line": 2,
+                  "code": "invalid_url"
+                },
+                {
+                  "line": 3,
+                  "code": "invalid_slug"
+                },
+                {
+                  "line": 4,
+                  "code": "reserved_slug"
+                }
+              ],
+              "errors_omitted": 0,
+              "dry_run": false
+            },
+            "match": "exact"
+          }
+        }
+      ]
+    },
+    {
+      "name": "link_import_ssrf_invalid_url",
+      "doc": "a decimal-loopback target (http://2130706433/ = 127.0.0.1) is refused invalid_url as an import row, exactly as link.create refuses the same URL (07.0/20 SSRF parity)",
+      "command": "link.import",
+      "transports": {
+        "skip": {
+          "cli_cmd": "cli_cmd runs a job to completion in one short-lived process, so the queued accept and the in-memory job are gone before job.get can poll; the cmd wait-for-completion mode is pinned by job_cli_cmd_waits_for_completion"
+        }
+      },
+      "steps": [
+        {
+          "label": "create-parity",
+          "request": {
+            "v": 1,
+            "command": "link.create",
+            "args": {
+              "target_url": "http://2130706433/",
+              "slug": "ssrf-direct"
+            }
+          },
+          "expect": {
+            "ok": false,
+            "error": {
+              "code": "invalid_url"
+            }
+          }
+        },
+        {
+          "label": "import",
+          "request": {
+            "v": 1,
+            "command": "link.import",
+            "args": {
+              "format": "csv",
+              "data": "full_url,slug\nhttp://2130706433/,ssrf-imp\nhttps://example.com/safe,imp-safe\n"
+            }
+          },
+          "save": {
+            "job_id": "$.job.id"
+          },
+          "expect_accept": {
+            "ok": true,
+            "job": {
+              "id": "<id>",
+              "state": "queued"
+            }
+          },
+          "await_job": {
+            "var": "job_id",
+            "timeout_ms": 5000
+          },
+          "expect": {
+            "ok": true,
+            "result": {
+              "total": 2,
+              "created": 1,
+              "skipped": 0,
+              "overwritten": 0,
+              "failed": 1,
+              "errors": [
+                {
+                  "line": 2,
+                  "code": "invalid_url"
+                }
+              ],
+              "errors_omitted": 0,
+              "dry_run": false
+            },
+            "match": "exact"
+          }
+        }
+      ]
+    },
+    {
+      "name": "link_import_errors_capped_at_100",
+      "doc": "150 invalid rows all fail; the reported errors array is capped and errors_omitted counts the 50 beyond the 100-entry cap (T-109)",
+      "command": "link.import",
+      "transports": {
+        "skip": {
+          "cli_cmd": "cli_cmd runs a job to completion in one short-lived process, so the queued accept and the in-memory job are gone before job.get can poll; the cmd wait-for-completion mode is pinned by job_cli_cmd_waits_for_completion"
+        }
+      },
+      "steps": [
+        {
+          "label": "import",
+          "request": {
+            "v": 1,
+            "command": "link.import",
+            "args": {
+              "format": "csv",
+              "data": "full_url,slug\nnot-a-url,bad-1\nnot-a-url,bad-2\nnot-a-url,bad-3\nnot-a-url,bad-4\nnot-a-url,bad-5\nnot-a-url,bad-6\nnot-a-url,bad-7\nnot-a-url,bad-8\nnot-a-url,bad-9\nnot-a-url,bad-10\nnot-a-url,bad-11\nnot-a-url,bad-12\nnot-a-url,bad-13\nnot-a-url,bad-14\nnot-a-url,bad-15\nnot-a-url,bad-16\nnot-a-url,bad-17\nnot-a-url,bad-18\nnot-a-url,bad-19\nnot-a-url,bad-20\nnot-a-url,bad-21\nnot-a-url,bad-22\nnot-a-url,bad-23\nnot-a-url,bad-24\nnot-a-url,bad-25\nnot-a-url,bad-26\nnot-a-url,bad-27\nnot-a-url,bad-28\nnot-a-url,bad-29\nnot-a-url,bad-30\nnot-a-url,bad-31\nnot-a-url,bad-32\nnot-a-url,bad-33\nnot-a-url,bad-34\nnot-a-url,bad-35\nnot-a-url,bad-36\nnot-a-url,bad-37\nnot-a-url,bad-38\nnot-a-url,bad-39\nnot-a-url,bad-40\nnot-a-url,bad-41\nnot-a-url,bad-42\nnot-a-url,bad-43\nnot-a-url,bad-44\nnot-a-url,bad-45\nnot-a-url,bad-46\nnot-a-url,bad-47\nnot-a-url,bad-48\nnot-a-url,bad-49\nnot-a-url,bad-50\nnot-a-url,bad-51\nnot-a-url,bad-52\nnot-a-url,bad-53\nnot-a-url,bad-54\nnot-a-url,bad-55\nnot-a-url,bad-56\nnot-a-url,bad-57\nnot-a-url,bad-58\nnot-a-url,bad-59\nnot-a-url,bad-60\nnot-a-url,bad-61\nnot-a-url,bad-62\nnot-a-url,bad-63\nnot-a-url,bad-64\nnot-a-url,bad-65\nnot-a-url,bad-66\nnot-a-url,bad-67\nnot-a-url,bad-68\nnot-a-url,bad-69\nnot-a-url,bad-70\nnot-a-url,bad-71\nnot-a-url,bad-72\nnot-a-url,bad-73\nnot-a-url,bad-74\nnot-a-url,bad-75\nnot-a-url,bad-76\nnot-a-url,bad-77\nnot-a-url,bad-78\nnot-a-url,bad-79\nnot-a-url,bad-80\nnot-a-url,bad-81\nnot-a-url,bad-82\nnot-a-url,bad-83\nnot-a-url,bad-84\nnot-a-url,bad-85\nnot-a-url,bad-86\nnot-a-url,bad-87\nnot-a-url,bad-88\nnot-a-url,bad-89\nnot-a-url,bad-90\nnot-a-url,bad-91\nnot-a-url,bad-92\nnot-a-url,bad-93\nnot-a-url,bad-94\nnot-a-url,bad-95\nnot-a-url,bad-96\nnot-a-url,bad-97\nnot-a-url,bad-98\nnot-a-url,bad-99\nnot-a-url,bad-100\nnot-a-url,bad-101\nnot-a-url,bad-102\nnot-a-url,bad-103\nnot-a-url,bad-104\nnot-a-url,bad-105\nnot-a-url,bad-106\nnot-a-url,bad-107\nnot-a-url,bad-108\nnot-a-url,bad-109\nnot-a-url,bad-110\nnot-a-url,bad-111\nnot-a-url,bad-112\nnot-a-url,bad-113\nnot-a-url,bad-114\nnot-a-url,bad-115\nnot-a-url,bad-116\nnot-a-url,bad-117\nnot-a-url,bad-118\nnot-a-url,bad-119\nnot-a-url,bad-120\nnot-a-url,bad-121\nnot-a-url,bad-122\nnot-a-url,bad-123\nnot-a-url,bad-124\nnot-a-url,bad-125\nnot-a-url,bad-126\nnot-a-url,bad-127\nnot-a-url,bad-128\nnot-a-url,bad-129\nnot-a-url,bad-130\nnot-a-url,bad-131\nnot-a-url,bad-132\nnot-a-url,bad-133\nnot-a-url,bad-134\nnot-a-url,bad-135\nnot-a-url,bad-136\nnot-a-url,bad-137\nnot-a-url,bad-138\nnot-a-url,bad-139\nnot-a-url,bad-140\nnot-a-url,bad-141\nnot-a-url,bad-142\nnot-a-url,bad-143\nnot-a-url,bad-144\nnot-a-url,bad-145\nnot-a-url,bad-146\nnot-a-url,bad-147\nnot-a-url,bad-148\nnot-a-url,bad-149\nnot-a-url,bad-150\n"
+            }
+          },
+          "save": {
+            "job_id": "$.job.id"
+          },
+          "expect_accept": {
+            "ok": true,
+            "job": {
+              "id": "<id>",
+              "state": "queued"
+            }
+          },
+          "await_job": {
+            "var": "job_id",
+            "timeout_ms": 15000
+          },
+          "expect": {
+            "ok": true,
+            "result": {
+              "total": 150,
+              "created": 0,
+              "skipped": 0,
+              "overwritten": 0,
+              "failed": 150,
+              "errors_omitted": 50,
+              "dry_run": false
+            },
+            "match": "subset"
+          }
+        }
+      ]
+    },
+    {
+      "name": "link_import_dry_run",
+      "doc": "options.dry_run validates every row and reports counts on the request thread without writing any link; a follow-up link.list total is unchanged; rest_resource cannot carry options",
+      "command": "link.import",
+      "transports": {
+        "skip": {
+          "rest_resource": "rest_resource routes cannot carry request.options"
+        }
+      },
+      "steps": [
+        {
+          "label": "import-dry-run",
+          "request": {
+            "v": 1,
+            "command": "link.import",
+            "args": {
+              "format": "csv",
+              "data": "full_url,slug\nhttps://example.com/d1,dry-1\nhttps://example.com/d2,dry-2\n"
+            },
+            "options": {
+              "dry_run": true
+            }
+          },
+          "expect": {
+            "ok": true,
+            "result": {
+              "total": 2,
+              "created": 2,
+              "skipped": 0,
+              "overwritten": 0,
+              "failed": 0,
+              "errors": [],
+              "errors_omitted": 0,
+              "dry_run": true
+            },
+            "match": "exact"
+          }
+        },
+        {
+          "label": "list-after",
+          "request": {
+            "v": 1,
+            "command": "link.list",
+            "args": {
+              "status": "active"
+            }
+          },
+          "expect": {
+            "ok": true,
+            "result": {
+              "total": 0
+            },
+            "match": "subset"
+          }
+        }
+      ]
+    },
+    {
+      "name": "link_import_async_explicit",
+      "doc": "options.async on the job command link.import is accepted and the command still runs as a job; the awaited result reports one created; rest_resource cannot carry options",
+      "command": "link.import",
+      "transports": {
+        "skip": {
+          "cli_cmd": "cli_cmd runs a job to completion in one short-lived process, so the queued accept and the in-memory job are gone before job.get can poll; the cmd wait-for-completion mode is pinned by job_cli_cmd_waits_for_completion",
+          "rest_resource": "rest_resource routes cannot carry request.options"
+        }
+      },
+      "steps": [
+        {
+          "label": "import",
+          "request": {
+            "v": 1,
+            "command": "link.import",
+            "args": {
+              "format": "csv",
+              "data": "full_url,slug\nhttps://example.com/as,imp-async\n"
+            },
+            "options": {
+              "async": true
+            }
+          },
+          "save": {
+            "job_id": "$.job.id"
+          },
+          "expect_accept": {
+            "ok": true,
+            "job": {
+              "id": "<id>",
+              "state": "queued"
+            }
+          },
+          "await_job": {
+            "var": "job_id",
+            "timeout_ms": 5000
+          },
+          "expect": {
+            "ok": true,
+            "result": {
+              "total": 1,
+              "created": 1,
+              "skipped": 0,
+              "overwritten": 0,
+              "failed": 0,
+              "errors": [],
+              "errors_omitted": 0,
+              "dry_run": false
+            },
+            "match": "exact"
+          }
+        }
+      ]
+    },
+    {
+      "name": "link_import_empty_payload",
+      "doc": "an empty inline data payload is a valid empty source: the job is accepted and succeeds with zero rows and no errors (an empty import is a no-op, not invalid_field)",
+      "command": "link.import",
+      "transports": {
+        "skip": {
+          "cli_cmd": "cli_cmd runs a job to completion in one short-lived process, so the queued accept and the in-memory job are gone before job.get can poll; the cmd wait-for-completion mode is pinned by job_cli_cmd_waits_for_completion"
+        }
+      },
+      "steps": [
+        {
+          "label": "import",
+          "request": {
+            "v": 1,
+            "command": "link.import",
+            "args": {
+              "format": "csv",
+              "data": ""
+            }
+          },
+          "save": {
+            "job_id": "$.job.id"
+          },
+          "expect_accept": {
+            "ok": true,
+            "job": {
+              "id": "<id>",
+              "state": "queued"
+            }
+          },
+          "await_job": {
+            "var": "job_id",
+            "timeout_ms": 5000
+          },
+          "expect": {
+            "ok": true,
+            "result": {
+              "total": 0,
+              "created": 0,
+              "skipped": 0,
+              "overwritten": 0,
+              "failed": 0,
+              "errors": [],
+              "errors_omitted": 0,
+              "dry_run": false
+            },
+            "match": "exact"
+          }
+        }
+      ]
+    },
+    {
+      "name": "link_import_bad_format",
+      "doc": "a format outside the csv|ndjson enum is rejected invalid_field by the descriptor before the handler runs",
+      "command": "link.import",
+      "steps": [
+        {
+          "label": "import",
+          "request": {
+            "v": 1,
+            "command": "link.import",
+            "args": {
+              "format": "xml",
+              "data": "full_url,slug\nhttps://example.com/x,bad-fmt\n"
+            }
+          },
+          "expect": {
+            "ok": false,
+            "error": {
+              "code": "invalid_field"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "link_import_data_and_path_both",
+      "doc": "supplying both data and path is rejected invalid_field (exactly one is required); checked before the path capability, so the path-capable local transports all agree",
+      "command": "link.import",
+      "files": {
+        "pairs.csv": "full_url,slug\nhttps://example.com/p,imp-both\n"
+      },
+      "transports": {
+        "only": [
+          "direct",
+          "cli_cmd",
+          "stdio",
+          "tui"
+        ]
+      },
+      "steps": [
+        {
+          "label": "import",
+          "request": {
+            "v": 1,
+            "command": "link.import",
+            "args": {
+              "format": "csv",
+              "data": "full_url,slug\nhttps://example.com/x,imp-x\n",
+              "path": "${tmp}/pairs.csv"
+            }
+          },
+          "expect": {
+            "ok": false,
+            "error": {
+              "code": "invalid_field"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "link_import_missing_source",
+      "doc": "omitting both data and path is rejected invalid_field (exactly one source is required) before any job is created",
+      "command": "link.import",
+      "steps": [
+        {
+          "label": "import",
+          "request": {
+            "v": 1,
+            "command": "link.import",
+            "args": {
+              "format": "csv"
+            }
+          },
+          "expect": {
+            "ok": false,
+            "error": {
+              "code": "invalid_field"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "link_import_user_not_authorized",
+      "doc": "link.import is a write command; a read-only user is refused not_authorized before any job is created",
+      "command": "link.import",
+      "caller": "user",
+      "steps": [
+        {
+          "label": "import",
+          "request": {
+            "v": 1,
+            "command": "link.import",
+            "args": {
+              "format": "csv",
+              "data": "full_url,slug\nhttps://example.com/x,imp-user\n"
+            }
+          },
+          "expect": {
+            "ok": false,
+            "error": {
+              "code": "not_authorized"
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

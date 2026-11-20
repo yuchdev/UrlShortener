@@ -231,6 +231,58 @@
           }
         }
       ]
+    },
+    {
+      "name": "db_rows_jobs_after_import",
+      "doc": "after a link.import job reaches its terminal state, db.rows table=jobs exposes the single job through exactly the eight documented metadata columns (id, command, state, done, total, error_code, created_at, finished_at); no args, args_digest, result payload or failure message column exists (T-94/C6). The jobs table is the in-process JobRunner, so the one-shot cmd CLI never shares it; the import is awaited so finished_at is a real timestamp, and state is matched (never a literal).",
+      "command": "db.rows",
+      "transports": { "skip": { "cli_cmd": "the jobs table is the in-process JobRunner; the one-shot cmd runs the import to completion and the next cmd process (db.rows) shares no job, so it would read an empty jobs table" } },
+      "steps": [
+        {
+          "label": "import",
+          "request": { "v": 1, "command": "link.import", "args": { "format": "csv", "data": "full_url,slug\nhttps://example.com/jr,jr-one\n" } },
+          "save": { "job_id": "$.job.id" },
+          "expect_accept": { "ok": true, "job": { "id": "<id>", "state": "queued" } },
+          "await_job": { "var": "job_id", "timeout_ms": 5000 },
+          "expect": { "ok": true, "result": { "total": 1, "created": 1, "skipped": 0, "overwritten": 0, "failed": 0, "errors": [], "errors_omitted": 0, "dry_run": false }, "match": "exact" }
+        },
+        {
+          "label": "rows",
+          "request": { "v": 1, "command": "db.rows", "args": { "table": "jobs", "offset": 0, "limit": 50 } },
+          "expect": {
+            "ok": true,
+            "result": {
+              "table": "jobs",
+              "columns": [
+                { "name": "id", "type": "string" },
+                { "name": "command", "type": "string" },
+                { "name": "state", "type": "string" },
+                { "name": "done", "type": "int" },
+                { "name": "total", "type": "int" },
+                { "name": "error_code", "type": "string" },
+                { "name": "created_at", "type": "timestamp" },
+                { "name": "finished_at", "type": "timestamp" }
+              ],
+              "rows": [
+                {
+                  "id": "<id>",
+                  "command": "link.import",
+                  "state": "<regex:queued|running|succeeded>",
+                  "done": "<uint>",
+                  "total": "<uint>",
+                  "error_code": "",
+                  "created_at": "<ts>",
+                  "finished_at": "<ts>"
+                }
+              ],
+              "offset": 0,
+              "limit": 50,
+              "total": 1
+            },
+            "match": "exact"
+          }
+        }
+      ]
     }
   ]
 }

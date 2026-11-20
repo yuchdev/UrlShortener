@@ -1,0 +1,587 @@
+{
+  "corpus_version": 1,
+  "suite": "link_export",
+  "description": "link.export: inline csv/ndjson results, the tag and status=all filters, an export to a confined ${tmp} file with a lossless re-import round trip, the REST path refusal, the inline read permission for a user and the path write-raise that denies a user (D16/T-9).",
+  "cases": [
+    {
+      "name": "link_export_csv_inline",
+      "doc": "an inline csv export returns the full_url,slug header and one row for the single seeded link in the job result data; path is null",
+      "command": "link.export",
+      "transports": {
+        "skip": {
+          "cli_cmd": "cli_cmd runs a job to completion in one short-lived process, so the queued accept and the in-memory job are gone before job.get can poll; the cmd wait-for-completion mode is pinned by job_cli_cmd_waits_for_completion"
+        }
+      },
+      "steps": [
+        {
+          "label": "seed-exp-a",
+          "request": {
+            "v": 1,
+            "command": "link.create",
+            "args": {
+              "target_url": "https://example.com/a",
+              "slug": "exp-a"
+            }
+          },
+          "expect": {
+            "ok": true,
+            "result": {
+              "slug": "exp-a"
+            },
+            "match": "subset"
+          }
+        },
+        {
+          "label": "export",
+          "request": {
+            "v": 1,
+            "command": "link.export",
+            "args": {
+              "format": "csv"
+            }
+          },
+          "save": {
+            "job_id": "$.job.id"
+          },
+          "expect_accept": {
+            "ok": true,
+            "job": {
+              "id": "<id>",
+              "state": "queued"
+            }
+          },
+          "await_job": {
+            "var": "job_id",
+            "timeout_ms": 5000
+          },
+          "expect": {
+            "ok": true,
+            "result": {
+              "rows": 1,
+              "path": null,
+              "data": "full_url,slug\nhttps://example.com/a,exp-a\n"
+            },
+            "match": "exact"
+          }
+        }
+      ]
+    },
+    {
+      "name": "link_export_ndjson_inline",
+      "doc": "an inline ndjson export emits one object per link with the fixed key order; the single seeded link's defaults (temporary, enabled, empty tags/metadata) appear verbatim in the job result data",
+      "command": "link.export",
+      "transports": {
+        "skip": {
+          "cli_cmd": "cli_cmd runs a job to completion in one short-lived process, so the queued accept and the in-memory job are gone before job.get can poll; the cmd wait-for-completion mode is pinned by job_cli_cmd_waits_for_completion"
+        }
+      },
+      "steps": [
+        {
+          "label": "seed-exp-n",
+          "request": {
+            "v": 1,
+            "command": "link.create",
+            "args": {
+              "target_url": "https://example.com/n",
+              "slug": "exp-n"
+            }
+          },
+          "expect": {
+            "ok": true,
+            "result": {
+              "slug": "exp-n"
+            },
+            "match": "subset"
+          }
+        },
+        {
+          "label": "export",
+          "request": {
+            "v": 1,
+            "command": "link.export",
+            "args": {
+              "format": "ndjson"
+            }
+          },
+          "save": {
+            "job_id": "$.job.id"
+          },
+          "expect_accept": {
+            "ok": true,
+            "job": {
+              "id": "<id>",
+              "state": "queued"
+            }
+          },
+          "await_job": {
+            "var": "job_id",
+            "timeout_ms": 5000
+          },
+          "expect": {
+            "ok": true,
+            "result": {
+              "rows": 1,
+              "path": null,
+              "data": "{\"target_url\":\"https://example.com/n\",\"slug\":\"exp-n\",\"redirect_type\":\"temporary\",\"enabled\":true,\"tags\":[],\"metadata\":{}}\n"
+            },
+            "match": "exact"
+          }
+        }
+      ]
+    },
+    {
+      "name": "link_export_filtered_by_tag",
+      "doc": "a tag filter restricts the export to the links carrying that tag; only the tagged link appears in the job result data",
+      "command": "link.export",
+      "transports": {
+        "skip": {
+          "cli_cmd": "cli_cmd runs a job to completion in one short-lived process, so the queued accept and the in-memory job are gone before job.get can poll; the cmd wait-for-completion mode is pinned by job_cli_cmd_waits_for_completion"
+        }
+      },
+      "steps": [
+        {
+          "label": "seed-exp-t1",
+          "request": {
+            "v": 1,
+            "command": "link.create",
+            "args": {
+              "target_url": "https://example.com/t1",
+              "slug": "exp-t1",
+              "tags": [
+                "keep"
+              ]
+            }
+          },
+          "expect": {
+            "ok": true,
+            "result": {
+              "slug": "exp-t1"
+            },
+            "match": "subset"
+          }
+        },
+        {
+          "label": "seed-exp-t2",
+          "request": {
+            "v": 1,
+            "command": "link.create",
+            "args": {
+              "target_url": "https://example.com/t2",
+              "slug": "exp-t2",
+              "tags": [
+                "drop"
+              ]
+            }
+          },
+          "expect": {
+            "ok": true,
+            "result": {
+              "slug": "exp-t2"
+            },
+            "match": "subset"
+          }
+        },
+        {
+          "label": "export",
+          "request": {
+            "v": 1,
+            "command": "link.export",
+            "args": {
+              "format": "csv",
+              "tag": "keep"
+            }
+          },
+          "save": {
+            "job_id": "$.job.id"
+          },
+          "expect_accept": {
+            "ok": true,
+            "job": {
+              "id": "<id>",
+              "state": "queued"
+            }
+          },
+          "await_job": {
+            "var": "job_id",
+            "timeout_ms": 5000
+          },
+          "expect": {
+            "ok": true,
+            "result": {
+              "rows": 1,
+              "path": null,
+              "data": "full_url,slug\nhttps://example.com/t1,exp-t1\n"
+            },
+            "match": "exact"
+          }
+        }
+      ]
+    },
+    {
+      "name": "link_export_status_all_includes_deleted",
+      "doc": "status=all exports the soft-deleted link too (two rows), while the default active export excludes it (one row); the row count differential pins the lifecycle filter without a created_at tie",
+      "command": "link.export",
+      "transports": {
+        "skip": {
+          "cli_cmd": "cli_cmd runs a job to completion in one short-lived process, so the queued accept and the in-memory job are gone before job.get can poll; the cmd wait-for-completion mode is pinned by job_cli_cmd_waits_for_completion"
+        }
+      },
+      "steps": [
+        {
+          "label": "seed-exp-live",
+          "request": {
+            "v": 1,
+            "command": "link.create",
+            "args": {
+              "target_url": "https://example.com/live",
+              "slug": "exp-live"
+            }
+          },
+          "expect": {
+            "ok": true,
+            "result": {
+              "slug": "exp-live"
+            },
+            "match": "subset"
+          }
+        },
+        {
+          "label": "seed-exp-del",
+          "request": {
+            "v": 1,
+            "command": "link.create",
+            "args": {
+              "target_url": "https://example.com/del",
+              "slug": "exp-del"
+            }
+          },
+          "expect": {
+            "ok": true,
+            "result": {
+              "slug": "exp-del"
+            },
+            "match": "subset"
+          }
+        },
+        {
+          "label": "delete",
+          "request": {
+            "v": 1,
+            "command": "link.delete",
+            "args": {
+              "slug": "exp-del"
+            }
+          },
+          "expect": {
+            "ok": true,
+            "result": {
+              "slug": "exp-del",
+              "status": "deleted"
+            },
+            "match": "subset"
+          }
+        },
+        {
+          "label": "export-all",
+          "request": {
+            "v": 1,
+            "command": "link.export",
+            "args": {
+              "format": "csv",
+              "status": "all"
+            }
+          },
+          "save": {
+            "job_id": "$.job.id"
+          },
+          "expect_accept": {
+            "ok": true,
+            "job": {
+              "id": "<id>",
+              "state": "queued"
+            }
+          },
+          "await_job": {
+            "var": "job_id",
+            "timeout_ms": 5000
+          },
+          "expect": {
+            "ok": true,
+            "result": {
+              "rows": 2,
+              "path": null,
+              "data": "<any>"
+            },
+            "match": "exact"
+          }
+        },
+        {
+          "label": "export-active",
+          "request": {
+            "v": 1,
+            "command": "link.export",
+            "args": {
+              "format": "csv"
+            }
+          },
+          "save": {
+            "job_id": "$.job.id"
+          },
+          "expect_accept": {
+            "ok": true,
+            "job": {
+              "id": "<id>",
+              "state": "queued"
+            }
+          },
+          "await_job": {
+            "var": "job_id",
+            "timeout_ms": 5000
+          },
+          "expect": {
+            "ok": true,
+            "result": {
+              "rows": 1,
+              "path": null,
+              "data": "full_url,slug\nhttps://example.com/live,exp-live\n"
+            },
+            "match": "exact"
+          }
+        }
+      ]
+    },
+    {
+      "name": "link_export_to_path",
+      "doc": "an export to a confined ${tmp} file writes the pairs (path echoed, data null); re-importing the same file with on_conflict=skip finds every exported slug already present, a lossless round trip",
+      "command": "link.export",
+      "transports": {
+        "skip": {
+          "cli_cmd": "cli_cmd runs a job to completion in one short-lived process, so the queued accept and the in-memory job are gone before job.get can poll; the cmd wait-for-completion mode is pinned by job_cli_cmd_waits_for_completion",
+          "rest_generic": "link.export path is rejected on REST with unsupported; the REST refusal is pinned by link_export_path_rejected_on_rest",
+          "rest_resource": "rest_resource falls back to the generic endpoint, which rejects a path with unsupported; pinned by link_export_path_rejected_on_rest"
+        }
+      },
+      "steps": [
+        {
+          "label": "seed-exp-rt1",
+          "request": {
+            "v": 1,
+            "command": "link.create",
+            "args": {
+              "target_url": "https://example.com/rt1",
+              "slug": "exp-rt1"
+            }
+          },
+          "expect": {
+            "ok": true,
+            "result": {
+              "slug": "exp-rt1"
+            },
+            "match": "subset"
+          }
+        },
+        {
+          "label": "seed-exp-rt2",
+          "request": {
+            "v": 1,
+            "command": "link.create",
+            "args": {
+              "target_url": "https://example.com/rt2",
+              "slug": "exp-rt2"
+            }
+          },
+          "expect": {
+            "ok": true,
+            "result": {
+              "slug": "exp-rt2"
+            },
+            "match": "subset"
+          }
+        },
+        {
+          "label": "export-file",
+          "request": {
+            "v": 1,
+            "command": "link.export",
+            "args": {
+              "format": "csv",
+              "path": "${tmp}/out.csv"
+            }
+          },
+          "save": {
+            "job_id": "$.job.id"
+          },
+          "expect_accept": {
+            "ok": true,
+            "job": {
+              "id": "<id>",
+              "state": "queued"
+            }
+          },
+          "await_job": {
+            "var": "job_id",
+            "timeout_ms": 5000
+          },
+          "expect": {
+            "ok": true,
+            "result": {
+              "rows": 2,
+              "path": "${tmp}/out.csv",
+              "data": null
+            },
+            "match": "exact"
+          }
+        },
+        {
+          "label": "reimport",
+          "request": {
+            "v": 1,
+            "command": "link.import",
+            "args": {
+              "format": "csv",
+              "path": "${tmp}/out.csv"
+            }
+          },
+          "save": {
+            "job2": "$.job.id"
+          },
+          "expect_accept": {
+            "ok": true,
+            "job": {
+              "id": "<id>",
+              "state": "queued"
+            }
+          },
+          "await_job": {
+            "var": "job2",
+            "timeout_ms": 5000
+          },
+          "expect": {
+            "ok": true,
+            "result": {
+              "total": 2,
+              "created": 0,
+              "skipped": 2,
+              "overwritten": 0,
+              "failed": 0,
+              "errors": [],
+              "errors_omitted": 0,
+              "dry_run": false
+            },
+            "match": "exact"
+          }
+        }
+      ]
+    },
+    {
+      "name": "link_export_path_rejected_on_rest",
+      "doc": "the generic REST endpoint refuses a link.export path argument with unsupported (admin passes the path write-raise, then the file-path capability is default-denied over REST)",
+      "command": "link.export",
+      "transports": {
+        "only": [
+          "rest_generic"
+        ]
+      },
+      "steps": [
+        {
+          "label": "export",
+          "request": {
+            "v": 1,
+            "command": "link.export",
+            "args": {
+              "format": "csv",
+              "path": "${tmp}/out.csv"
+            }
+          },
+          "expect": {
+            "ok": false,
+            "error": {
+              "code": "unsupported"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "link_export_read_only_allowed",
+      "doc": "inline export keeps the base read permission, so a read-only user is permitted to start the export job (a queued accept, never not_authorized); the exported data content is pinned by the admin inline cases",
+      "command": "link.export",
+      "transports": {
+        "skip": {
+          "cli_cmd": "cmd runs the export job to completion and prints the terminal job.get, not the queued accept this case asserts; the cmd wait mode is pinned by job_cli_cmd_waits_for_completion"
+        }
+      },
+      "steps": [
+        {
+          "label": "seed-exp-ro",
+          "request": {
+            "v": 1,
+            "command": "link.create",
+            "args": {
+              "target_url": "https://example.com/ro",
+              "slug": "exp-ro"
+            }
+          },
+          "expect": {
+            "ok": true,
+            "result": {
+              "slug": "exp-ro"
+            },
+            "match": "subset"
+          }
+        },
+        {
+          "label": "export-user",
+          "caller": "user",
+          "request": {
+            "v": 1,
+            "command": "link.export",
+            "args": {
+              "format": "csv"
+            }
+          },
+          "expect": {
+            "ok": true,
+            "job": {
+              "id": "<id>",
+              "state": "queued"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "link_export_to_path_user_not_authorized",
+      "doc": "a path argument raises link.export to the write permission (D16), so a read-only user is refused not_authorized before any job is created, even on the path-capable local transports",
+      "command": "link.export",
+      "caller": "user",
+      "transports": {
+        "only": [
+          "direct",
+          "cli_cmd",
+          "stdio",
+          "tui"
+        ]
+      },
+      "steps": [
+        {
+          "label": "export",
+          "request": {
+            "v": 1,
+            "command": "link.export",
+            "args": {
+              "format": "csv",
+              "path": "${tmp}/out.csv"
+            }
+          },
+          "expect": {
+            "ok": false,
+            "error": {
+              "code": "not_authorized"
+            }
+          }
+        }
+      ]
+    }
+  ]
+}
