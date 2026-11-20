@@ -19,6 +19,7 @@
 
 #include <chrono>
 #include <cstddef>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <vector>
@@ -88,6 +89,16 @@ inline ::LinkRecord makeRecord(const url_shortener::Link& link)
  * matches. `GetById` searches by `LinkRecord::id` and returns
  * inactive/soft-deleted records too (no status filter), mirroring the
  * port contract.
+ *
+ * Thread-safety: like a real `::IMetadataRepository` backend, the
+ * `IMetadataRepository` methods that touch `records`
+ * (`CreateLink`/`GetByShortCode`/`GetById`/`UpdateLink`/`ListLinks`) and the
+ * @ref snapshot accessor are mutually serialized by an internal mutex, so the
+ * `RepositoryLinkStore` stats flusher thread may mutate a record through
+ * `UpdateLink` while a test thread concurrently reads it through @ref snapshot
+ * without a data race. The raw @ref find / @ref put accessors are *not*
+ * synchronized (they hand out a pointer into `records`) and must only be used
+ * from single-threaded tests.
  */
 class FakeMetadataRepository final : public ::IMetadataRepository
 {
@@ -165,11 +176,34 @@ public:
         return nullptr;
     }
 
+    /**
+     * @brief Thread-safe copy of the stored record for `short_code`.
+     *
+     * Unlike @ref find, this takes a snapshot under the internal mutex and
+     * returns it by value, so it is safe to call from a test thread while the
+     * flusher thread concurrently mutates the same record through
+     * @ref UpdateLink.
+     *
+     * @param short_code Short code to look up.
+     * @return A copy of the stored record, or `std::nullopt` if absent.
+     */
+    std::optional<::LinkRecord> snapshot(const std::string& short_code) const
+    {
+        std::lock_guard<std::mutex> lock(m_records_mutex_);
+        for (const auto& record : records) {
+            if (record.short_code == short_code) {
+                return record;
+            }
+        }
+        return std::nullopt;
+    }
+
     bool CreateLink(const ::CreateLinkRequest& request,
                     const std::string& id,
                     const std::chrono::system_clock::time_point& now,
                     ::RepoError* error = nullptr) override
     {
+        std::lock_guard<std::mutex> lock(m_records_mutex_);
         ++create_calls;
         if (create_error != ::RepoError::none) {
             if (error != nullptr) {
@@ -207,6 +241,7 @@ public:
         const std::string& short_code,
         ::RepoError* error = nullptr) const override
     {
+        std::lock_guard<std::mutex> lock(m_records_mutex_);
         ++get_calls;
         if (get_error != ::RepoError::none) {
             if (error != nullptr) {
@@ -225,6 +260,7 @@ public:
     std::optional<::LinkRecord> GetById(
         const std::string& id, ::RepoError* error = nullptr) const override
     {
+        std::lock_guard<std::mutex> lock(m_records_mutex_);
         ++get_by_id_calls;
         if (get_by_id_error != ::RepoError::none) {
             if (error != nullptr) {
@@ -243,6 +279,7 @@ public:
     bool UpdateLink(const ::LinkRecord& record,
                     ::RepoError* error = nullptr) override
     {
+        std::lock_guard<std::mutex> lock(m_records_mutex_);
         ++update_calls;
         if (update_error != ::RepoError::none) {
             if (error != nullptr) {
@@ -271,6 +308,7 @@ public:
         const ::ListLinksQuery& query,
         ::RepoError* error = nullptr) const override
     {
+        std::lock_guard<std::mutex> lock(m_records_mutex_);
         ++list_calls;
         if (list_error != ::RepoError::none) {
             if (error != nullptr) {
@@ -309,6 +347,10 @@ public:
         }
         return exists_result;
     }
+
+private:
+    ///< Serializes `records` access across the flusher and test threads.
+    mutable std::mutex m_records_mutex_;
 };
 
 /**

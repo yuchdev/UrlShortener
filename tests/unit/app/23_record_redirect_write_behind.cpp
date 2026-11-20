@@ -150,8 +150,12 @@ public:
 std::uint64_t persistedTotal(FakeMetadataRepository& repo,
                              const std::string& slug)
 {
-    const ::LinkRecord* record = repo.find(slug);
-    if (record == nullptr) {
+    // snapshot() copies the record under the fake's internal mutex, so this
+    // read is safe to run while the flusher thread mutates the same record
+    // through UpdateLink (the plain find() hands out a pointer into the
+    // records vector and would race).
+    const std::optional<::LinkRecord> record = repo.snapshot(slug);
+    if (!record.has_value()) {
         return 0;
     }
     const auto stats = get_stats_attribute(record->attributes);
