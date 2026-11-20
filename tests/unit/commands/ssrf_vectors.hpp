@@ -74,8 +74,17 @@ inline const std::vector<UrlVector>& url_vectors()
         {"ipv4_hex_loopback", "http://0x7f000001/", true},
         {"ipv4_short_form_loopback", "http://127.1/", true},
 
+        // Trailing-dot / percent-encoded-dot forms resolve to 127.0.0.1 in a
+        // browser (WHATWG removes the empty last label) (07.0/20 review
+        // MEDIUM).
+        {"ipv4_trailing_dot_decimal", "http://2130706433./", true},
+        {"ipv4_trailing_dot_octal", "http://0177.0.0.1./", true},
+        {"ipv4_trailing_dot_octal_single", "http://017700000001./", true},
+        {"ipv4_percent_encoded_dot", "http://2130706433%2e/", true},
+
         // Hostname forms.
         {"hostname_localhost", "http://localhost/", true},
+        {"hostname_localhost_fqdn", "http://localhost./", true},
 
         // IPv6 loopback / ULA / link-local / IPv4-mapped (bracketed).
         {"ipv6_loopback_bracket", "http://[::1]/", true},
@@ -83,6 +92,20 @@ inline const std::vector<UrlVector>& url_vectors()
         {"ipv6_ula", "http://[fc00::1]/", true},
         {"ipv6_link_local", "http://[fe80::1]/", true},
         {"ipv6_mapped_loopback", "http://[::ffff:127.0.0.1]/", true},
+
+        // IPv6 that embeds a private IPv4 (07.0/20 review LOW):
+        // IPv4-compatible,
+        // NAT64 64:ff9b::/96 and 6to4 2002::/16.
+        {"ipv6_compatible_loopback", "http://[::127.0.0.1]/", true},
+        {"ipv6_nat64_loopback", "http://[64:ff9b::7f00:1]/", true},
+        {"ipv6_6to4_loopback", "http://[2002:7f00:1::]/", true},
+
+        // Special-use IPv4 ranges (07.0/20 review LOW).
+        {"ipv4_cgnat", "http://100.64.0.1/", true},
+        {"ipv4_benchmarking", "http://198.18.0.1/", true},
+        {"ipv4_multicast", "http://224.0.0.1/", true},
+        {"ipv4_reserved", "http://240.0.0.1/", true},
+        {"ipv4_broadcast", "http://255.255.255.255/", true},
 
         // Userinfo `@` tricks: any '@' in the authority is refused.
         {"userinfo_at_private", "http://user@127.0.0.1/", true},
@@ -103,6 +126,15 @@ inline const std::vector<UrlVector>& url_vectors()
         {"long_public_accepted",
          "http://example.com/" + std::string(4000, 'b'),
          false},
+
+        // Public controls that MUST stay accepted, including a NAT64 / 6to4
+        // address whose embedded IPv4 is public (8.8.8.8): the embedded-v4
+        // re-check must not over-block a legitimate translated address.
+        {"ipv4_public_decimal", "http://134744072/", false},  // 8.8.8.8
+        {"ipv6_nat64_public", "http://[64:ff9b::8.8.8.8]/", false},
+        {"ipv6_6to4_public",
+         "http://[2002:808:808::]/",
+         false},  // 6to4 8.8.8.8
     };
     return vectors;
 }

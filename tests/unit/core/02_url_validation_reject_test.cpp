@@ -181,3 +181,80 @@ BOOST_AUTO_TEST_CASE(
         BOOST_CHECK_NO_THROW(static_cast<void>(normalizeTargetUrl(url, cfg)));
     }
 }
+
+/**
+ * [Unit][Core][Security] Trailing-dot, FQDN localhost, IPv6-embedded and
+ * special-use private targets are refused (07.0/20 review follow-up).
+ *
+ * Scenario:
+ *   Given private targets written with a trailing '.' (which WHATWG strips, so
+ *   a browser resolves them to 127.0.0.1), the fully-qualified 'localhost.',
+ *   IPv6 addresses that embed a private IPv4 (IPv4-compatible, NAT64, 6to4),
+ *   and special-use IPv4 ranges (CGNAT, benchmarking, multicast, reserved,
+ *   broadcast).
+ *   When normalizeTargetUrl() validates them with allow_private_targets off.
+ *   Then each is refused; with allow_private_targets on each is accepted again
+ *   (the private-target gate is the only thing that changes).
+ *
+ * If this breaks:
+ *   - A crafted create/update target could reach an internal service.
+ *   - First check the trailing-dot strip in isPrivateHost, classify_ipv6's
+ *     embedded-v4 branches, and the special-use ranges in is_private_ipv4.
+ */
+BOOST_AUTO_TEST_CASE(
+    url_validation_rejects_trailing_dot_embedded_and_special_use)
+{
+    ServerConfig denied;  // private targets denied by default
+    ServerConfig allowed;
+    allowed.shortener_allow_private_targets = true;
+
+    const std::vector<std::string> gated = {
+        "http://2130706433./",  // decimal 127.0.0.1 with a trailing dot
+        "http://0177.0.0.1./",  // octal 127.0.0.1 with a trailing dot
+        "http://017700000001./",  // single octal 127.0.0.1 with a trailing dot
+        "http://localhost./",  // FQDN localhost
+        "http://[::127.0.0.1]/",  // IPv4-compatible loopback
+        "http://[64:ff9b::7f00:1]/",  // NAT64 loopback
+        "http://[2002:7f00:1::]/",  // 6to4 loopback
+        "http://100.64.0.1/",  // CGNAT 100.64.0.0/10
+        "http://198.18.0.1/",  // benchmarking 198.18.0.0/15
+        "http://224.0.0.1/",  // multicast 224.0.0.0/4
+        "http://240.0.0.1/",  // reserved 240.0.0.0/4
+        "http://255.255.255.255/",  // broadcast
+    };
+    for (const std::string& url : gated) {
+        BOOST_TEST(!normalizeTargetUrl(url, denied).has_value(),
+                   "should be refused with private targets denied: " + url);
+        BOOST_TEST(normalizeTargetUrl(url, allowed).has_value(),
+                   "should be accepted with private targets allowed: " + url);
+    }
+
+    // Percent-encoding in the host is refused unconditionally (we never decode
+    // it), so an encoded dot cannot reach the canonicalizer in either mode.
+    for (const ServerConfig& cfg : {denied, allowed}) {
+        BOOST_TEST(
+            !normalizeTargetUrl("http://2130706433%2e/", cfg).has_value(),
+            "percent-encoded dot must be refused regardless of mode");
+    }
+}
+
+/**
+ * [Unit][Core][Security] Public addresses - including a NAT64/6to4 address that
+ * embeds a PUBLIC IPv4 - stay accepted after the embedded-v4 and special-use
+ * hardening (07.0/20 review follow-up).
+ */
+BOOST_AUTO_TEST_CASE(url_validation_accepts_public_including_translated)
+{
+    ServerConfig cfg;  // private targets denied
+
+    for (const std::string& url : {std::string("http://8.8.8.8/"),
+                                   std::string("http://1.1.1.1/"),
+                                   std::string("http://93.184.216.34/"),
+                                   std::string("http://[64:ff9b::8.8.8.8]/"),
+                                   std::string("http://[2002:808:808::]/")})
+    {
+        BOOST_TEST(
+            normalizeTargetUrl(url, cfg).has_value(),
+            "public (possibly translated) host should be accepted: " + url);
+    }
+}
