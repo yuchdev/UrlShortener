@@ -896,3 +896,22 @@ Follow-ups (not blocking):
   - The SME transcript.
   - Y2038.
   - Commit-trailer variance.
+
+### 2026-11-21 - 07.0 close decisions (user rulings)
+
+1. **SSRF backport.** Backport now. Cherry-pick the three SSRF fix rounds and
+   their tests onto a branch off `master`, run the URL suites, and open a PR.
+2. **Underscore hosts.** Keep refusing them, since the allowlist is
+   fail-closed and follows RFC 1123. 08.0 documents this in the command
+   catalog's URL rules, together with the `%`-in-host refusal and the
+   pre-punycoded IDN requirement.
+3. **`cmd LINK.CREATE` crash.** Fix it now, before 08.0. The response must be
+   an `invalid_envelope` envelope on stdout with exit 2, and a regression
+   test must cover it. The catalog will say that upper-case command names
+   return `invalid_envelope`.
+4. **`0.0.0.0` bind.** Deferred to milestone 0007, as a `--bind-address`
+   option with the default unchanged. 08.0 documents the risk in the security
+   and ops docs.
+
+Still open, to be raised later: 400 vs 405 for a wrong method, the lenient
+`parseRfc3339Zulu`, and the redirect perf baseline recorded on Release CI.
