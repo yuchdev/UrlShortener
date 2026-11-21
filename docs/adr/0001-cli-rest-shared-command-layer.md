@@ -1,12 +1,16 @@
 # 0001 - CLI/REST Shared Command Layer
 
-> **Status:** Accepted
+> **Status:** Accepted (amended by [ADR 0002](/docs/adr/0002-unified-command-model.md))
 >
 > **Date:** 2026-09-23
 >
 > **Supersedes:** _(none)_
 >
 > **Superseded by:** _(none)_
+>
+> **Amended by:** [ADR 0002](/docs/adr/0002-unified-command-model.md) - adapter
+> layer only (registry + JSON envelope); Config DTOs, one service method per
+> command and shared serializers stand.
 
 ## Context
 

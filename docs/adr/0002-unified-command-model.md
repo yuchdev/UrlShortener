@@ -1,6 +1,8 @@
 # 0002 - Unified Command Model (JSON commands and jobs, pluggable transports)
 
-> **Status:** Proposed
+> **Status:** Implemented
+>
+> **Accepted:** 2026-11-21 (decision-log Q17)
 >
 > **Date:** 2026-10-19
 >
@@ -45,6 +47,30 @@ New requirements (from the TUI request):
 Introduce a **Command Model** one layer above `LinkCommandService`, built from
 four pieces. Business logic stays where ADR 0001 put it; what is new is the
 single, JSON-shaped contract in front of it.
+
+### As built
+
+Deviations from the design above, verified against the shipped binary and
+source (Milestone 0006 implementation run, 2026-11-14 to 2026-11-21):
+
+- **CLI `cmd` default correlation id:** the `cmd` mode assigns `"cli-1"` as the
+  default `id` when `--id` is not supplied (evidence:
+  `cmake-build/url_shortener cmd link.nonexistent` → `"id":"cli-1"`). The
+  design did not pin this value.
+- **Invalid vs. unknown command name:** a command name that is not in the
+  required dotted `<group>.<verb>` form (e.g. `LINK.CREATE`, `nosuchcommand`)
+  is rejected at envelope validation and returns `invalid_envelope` with
+  `"message":"invalid field command"` and exit 2 (commits `fec61ef`,
+  `0ae864d`). A syntactically valid but unregistered name (e.g.
+  `link.nonexistent`) returns `unknown_command`. Both behaviors are now covered
+  by `cli__33` and the conformance corpus.
+- **Wrong HTTP method on resource routes returns 400 `invalid_method`:** a
+  method not allowed on a resource route (`GET /api/v1/links` with `DELETE`,
+  etc.) returns HTTP 400 with `error.code = "invalid_method"` rather than the
+  conventional HTTP 405. This is the as-built behavior per `src/http/router.cpp`
+  and `src/http/handlers/command_handlers.cpp`; whether to change it to 405
+  with an `Allow` header is an open decision deferred to a later milestone
+  (status.md 2026-11-21 "07.0 close" entry, item 4).
 
 ### 1. Command envelope (the wire contract)
 
@@ -318,16 +344,17 @@ operator who needs it passes `--log-file`. This is an open decision (D14).
 - Existing REST resource handlers and `link <verb>` parsers must be re-pointed
   at the registry. REST bodies/status codes must stay unchanged (characterization
   tests from Milestone 0003 are the guard).
-- The storage-path gap becomes much more visible once a long-lived TUI
-  browses "the database". ADR 0001 described it as a duality (redirects on the
-  pluggable repository, commands on the in-memory singleton); reading the code
-  (Milestone 0006 Task 02.0) showed that the pluggable backend is not wired into
-  the live path at all: `BuildStorageAdapters` and `core::LinkService` are used
-  only by tests, `main` never reads a `StorageConfig`, and redirects, REST and
-  CLI all use the legacy in-memory singletons. The fix is therefore to *wire*
-  the configured backend into the live path for the first time (and teach it
-  to carry a full `Link`), not to "reconnect" the redirect path. It must be done
-  in this milestone (Task 02.0) rather than carried forward again.
+- **Storage-path gap resolved (Task 02.0).** The TUI's requirement to browse
+  "the database" made the duality immediately visible: the pluggable
+  `IMetadataRepository` backend was wired only into tests, never into `main`,
+  so redirects, REST and CLI all used the legacy in-memory singleton regardless
+  of `--storage-config`. Milestone 0006 Task 02.0 introduced the
+  `app::LinkBackend` install hook and `RepositoryLinkStore` (subtasks 10-15);
+  the redirect path, REST handlers, and CLI now all obtain their `ILinkStore`
+  from `app::LinkBackend::store()`. With `--storage-config <yaml>` (or
+  `URL_SHORTENER_STORAGE_CONFIG`), all paths share the configured persistent
+  backend; the default remains in-memory for no-config usage. See
+  [`docs/cli/README.md`](../cli/README.md) and ADR 0001's Non-goals section.
 
 ### Non-goals
 
@@ -350,14 +377,20 @@ when this ADR is accepted.
 
 ## Validation / Rollout
 
-Staged by tasks in Milestone 0006: spec and catalog first (docs-only, reviewable),
-then registry with the nine link commands behind a conformance corpus, then
-REST/CLI re-pointed with characterization tests green, then browse/import
-commands, then stdio adapter, then TUI.
+Delivered incrementally across Milestone 0006: command-model core and envelope
+(Task 01.0), storage-path unification (Task 02.0), link and browse commands with
+the nine-command REST parity gate (Task 03.0), REST/CLI re-pointed with
+characterization tests green (Task 04.0), import/export and stdio adapter (Task
+05.0), TUI (Task 06.0), conformance corpus and security suites (Task 07.0), and
+documentation sync (Task 08.0). See
+[status.md](/docs/roadmap/0006-unified-command-model-and-tui/status.md) for the
+per-task delivery record.
 
 ## Links
 
 - [Command catalog](/docs/commands/README.md)
+- [Adding a transport guide](/docs/commands/adding-a-transport.md)
 - [ADR 0003 - TUI](/docs/adr/0003-tui-framework-and-architecture.md)
 - [Milestone 0006 plan](/docs/roadmap/0006-unified-command-model-and-tui/plan.md)
 - [Decision log (questions deferred to the user)](/docs/roadmap/0006-unified-command-model-and-tui/decision-log.md)
+- Conformance corpus (outside `docs/`): `tests/conformance/commands/README.md`

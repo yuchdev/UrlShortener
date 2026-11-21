@@ -1,6 +1,8 @@
 # 0003 - TUI Framework and Architecture
 
-> **Status:** Proposed
+> **Status:** Implemented
+>
+> **Accepted:** 2026-11-21 (decision-log Q17)
 >
 > **Date:** 2026-10-19
 >
@@ -34,14 +36,12 @@ Use **FTXUI** (`ArthurSonzogni/FTXUI`, MIT).
 | ImTui | yes | partial | Dear ImGui | immediate-mode | little maintained; drags ImGui in |
 | Terminal.Gui, Textual, Ratatui, Bubble Tea | n/a | - | - | - | not C++ |
 
-Why FTXUI: the most widely adopted modern C++ TUI library (largest C++ TUI
-community, active releases, used in many open-source tools), zero external
-dependencies, first-class Windows support, an element/component split that
-maps cleanly to our "forms generated from descriptors" design, and it is
-packaged in vcpkg (`ftxui`) and trivially fetched with CMake `FetchContent`,
-matching how `yaml-cpp`/`hiredis`/`SOCI` are already handled. The exact
-version is pinned at implementation time (Task 06.0 subtask 01); the chosen
-release must compile as C++17.
+Why FTXUI: zero external dependencies, first-class Windows support (Win32
+console + VT), an element/component split that maps cleanly to our "forms
+generated from descriptors" design, and it is packaged in vcpkg (`ftxui`) and
+trivially fetched with CMake `FetchContent`, matching how
+`yaml-cpp`/`hiredis`/`SOCI` are already handled. The chosen release compiles
+as C++17 (verified at pin time; see the Dependency pin policy below).
 
 **Dependency pin policy (T-122, supply chain).** FTXUI is pinned by an
 **immutable identifier** - an exact commit SHA given to `FetchContent_Declare`
@@ -117,8 +117,23 @@ Rules:
 ## Launching
 
 ```text
-url_shortener tui [--storage-config <file>] [--read-only] [--yes] [--theme dark|light|mono]
+url_shortener tui [--storage-config <FILE>] [--theme dark|light|mono]
+                  [--read-only] [--yes]
+                  [--no-file-paths | --path-root <DIR>]
+                  [--log-file <PATH>]
 ```
+
+Flag summary (verified against `cmake-build/url_shortener tui --help`):
+
+| Flag | Default | Description |
+|---|---|---|
+| `--storage-config <FILE>` | in-memory | Storage configuration YAML |
+| `--theme dark\|light\|mono` | `dark` | Colour theme |
+| `--read-only` | off | Session runs as `ControlSet::User`; write controls rendered disabled, not hidden |
+| `--yes` | off | Skip mutation confirmation dialogs |
+| `--no-file-paths` | off | Refuse any `path` arg (`unsupported`); mutually exclusive with `--path-root` |
+| `--path-root <DIR>` | off | Confine `path` args to this absolute directory; mutually exclusive with `--no-file-paths` |
+| `--log-file <PATH>` | `./url_shortener-tui.log` | Write logs and audit lines to this file (created 0600) |
 
 Like CLI one-shot mode, TUI mode never starts `HttpServer` or binds a socket.
 Console logging would corrupt the screen and the logger is enabled with a
@@ -449,6 +464,17 @@ matrix); non-rendering/wire deviations already recorded in the milestone
    / "Top slugs" as `n/a` or a bounded sample, because no `stats.summary`
    command exists in Milestone 0006. *Reason:* already noted as aspirational in
    D2; this records the concrete as-built sourcing.
+
+5. **`--path-root` / `--no-file-paths` / `--log-file` flags added to Launching
+   (Task 06.0, verified Task 07.0).** The original Launching synopsis listed
+   only `--storage-config`, `--read-only`, `--yes`, and `--theme`. The shipped
+   binary adds three flags: `--path-root <DIR>` (confine import/export `path`
+   to a directory, per decision-log Q6), `--no-file-paths` (reject any `path`
+   arg as `unsupported`; mutually exclusive with `--path-root`), and
+   `--log-file <PATH>` (default `./url_shortener-tui.log`; never to the
+   terminal, per decision log D14 and ADR 0002 Authorization table). The
+   security behavior (`path` checks, mutually exclusive flags) is covered by
+   Task 07.0 subtask 20. Verified via `cmake-build/url_shortener tui --help`.
 
 ## Alternatives Considered
 

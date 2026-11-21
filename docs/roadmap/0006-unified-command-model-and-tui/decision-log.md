@@ -11,7 +11,7 @@ Nothing here is implemented; only documents changed.
 
 | # | Question | Chosen (recommended) | Alternatives | Reverse cost |
 |---|---|---|---|---|
-| Q1 | Which C++17 TUI library? | **FTXUI** | notcurses, ncurses/PDCurses (+wrappers), cpp-terminal, ImTui | Low until Task 06.0 starts; screens only touch FTXUI inside `src/tui/` |
+| Q1 | Which C++17 TUI library? | **FTXUI** | notcurses, ncurses/PDCurses (+wrappers), cpp-terminal, ImTui | Low until Task 06.0 starts; screens only touch FTXUI inside `src/tui/` **Resolved 2026-11-18: FTXUI v7.0.3 pinned (commit `f921fad208912747c17d129a8ef75ec7624b6eec`), C++17 floor, MSVC support, vcpkg port `ftxui`, `Table` availability, and Windows console behavior all verified; recorded in ADR 0003 Decision 1.** |
 | Q2 | Where does the new work sit in the roadmap? | **New milestone 0006**, executed **before** 0002 and 0004 | Renumber to insert as 0004; fold into 0003 | Renumbering touches every cross-link; folding reopens a completed milestone |
 | Q3 | Shape of the "identical JSON command" contract | **Custom JSON-RPC-shaped envelope** (`v,id,command,args,options` -> `ok,result\|job\|error`) | JSON-RPC 2.0 verbatim; protobuf/gRPC | Envelope is isolated in `envelope.cpp`; JSON-RPC framing is a small adapter-level change |
 | Q4 | Add a JSON library? | **No.** Manual `core/utils.hpp` helpers stay for existing code; **one** sanctioned addition: the bounded top-level scanner `commands::scan_object`/`scan_array` (Task 01.0 subtask 01), reused by envelope, `ArgsView`, args builder and TUI (see "Open decisions" D3) | nlohmann/json, simdjson | Medium: nested `args` (campaign object, NDJSON import) will strain the helpers; a library needs its own ADR |
@@ -27,20 +27,24 @@ Nothing here is implemented; only documents changed.
 | Q14 | What is the "Tauri admin panel"? | **Not found in the repo** (`grep -ri tauri` empty). Treated as a future milestone (unnumbered) that consumes REST `/api/v1/commands` or a `serve-stdio` sidecar. **No Tauri milestone was created.** | Create a placeholder 0007 | Please confirm whether Tauri is meant to replace/complement the React admin of 0002 |
 | Q15 | How 0002's `/admin/api/v1` relates to commands | **Projection**: admin endpoints call the registry; page/page_size is translated to offset/limit; admin error codes map from command error codes | Keep 0002's admin API independent | If independent, `link.list` etc. get a second implementation, contradicting the milestone goal |
 | Q16 | Stale statuses in `docs/roadmap/README.md` | **Corrected** 0003 to complete (its own status.md says complete and master contains the merge) | Leave | n/a |
-| Q17 | ADR status | **Proposed** (not Accepted) so you can veto | Accepted | Edit header |
-| Q18 | `target_url` vs REST's `url` field name | **Verified against `src/http/handlers/link_handlers.cpp` (`createLinkFromRequest`)**: REST `POST /api/v1/links` accepts BOTH `url` and `target_url` (`url` is read first and wins if both are present; either missing gives `400 invalid_url "url is required"`). `slug` is the slug field; `code` is accepted only on the compatibility route (`CreateSlugFieldMode::slug_or_code`). Other accepted keys: `redirect_type`, `expires_at`, `enabled`, `tags`, `metadata`, `campaign`; `deleted_at` is rejected (`400 invalid_request`). The response body field for the target is `url` (not `target_url`). Decision: the command ArgSpec has the single canonical arg `target_url`; the REST resource-route projection (Task 04.0 subtask 04) renames `url` -> `target_url` before `execute` (precedence preserved: `url` wins); the generic `POST /api/v1/commands` and `cmd` accept only `target_url`; CLI sugar keeps `--url`. The catalog sentence "REST body also accepts legacy alias `url`" is accurate only for the resource route. | Use `url` as canonical | Doc + ArgSpec only |
+| Q17 | ADR status | **Proposed** (not Accepted) so you can veto | Accepted | Edit header **Resolved 2026-11-21: ADR 0002 → Implemented, ADR 0003 → Implemented, ADR 0001 → Accepted (amended by 0002); see status.md "08.0 entry" and ADR headers.** |
+| Q18 | `target_url` vs REST's `url` field name | **Verified against `src/http/handlers/link_handlers.cpp` (`createLinkFromRequest`)**: REST `POST /api/v1/links` accepts BOTH `url` and `target_url` (`url` is read first and wins if both are present; either missing gives `400 invalid_url "url is required"`). `slug` is the slug field; `code` is accepted only on the compatibility route (`CreateSlugFieldMode::slug_or_code`). Other accepted keys: `redirect_type`, `expires_at`, `enabled`, `tags`, `metadata`, `campaign`; `deleted_at` is rejected (`400 invalid_request`). The response body field for the target is `url` (not `target_url`). Decision: the command ArgSpec has the single canonical arg `target_url`; the REST resource-route projection (Task 04.0 subtask 04) renames `url` -> `target_url` before `execute` (precedence preserved: `url` wins); the generic `POST /api/v1/commands` and `cmd` accept only `target_url`; CLI sugar keeps `--url`. The catalog sentence "REST body also accepts legacy alias `url`" is accurate only for the resource route. **Resolved 2026-10-22: canonical arg is `target_url` in ArgSpec; REST resource route accepts legacy `url` alias; shipped in Tasks 03.0/04.0.** | Use `url` as canonical | Doc + ArgSpec only |
 | Q19 | Branch name | `roadmap/tui-unified-command-model` (cut from `master`, uncommitted work) | other | `git branch -m` |
 | Q20 | Commit the changes? | The headless design run made no commit; the documents were later committed as `fe78bf6` ("docs(roadmap): add milestone 0006 - unified command model and TUI") on this branch. Review fixes after that commit are uncommitted until someone commits them | n/a | `git revert fe78bf6` |
 | Q21 | `docs/adr/template.md` is referenced by `docs/adr/README.md` but does not exist | New ADRs follow ADR 0001's structure; template **not** created | Create template | Out of scope |
 
 ## Things to research tomorrow (I could not verify offline / without asking)
 
-1. **FTXUI facts** used in ADR 0003 come from prior knowledge, not a fresh
+1. ~~**FTXUI facts** used in ADR 0003 come from prior knowledge, not a fresh
    check: current release number, C++17 floor, MSVC support, vcpkg port name
    (`ftxui`), `Table` component availability, behavior on legacy conhost vs
-   Windows Terminal. Task 06.0 subtask 01 is scoped to verify and pin.
-2. **Whether FTXUI is the "most adopted"** - stated from memory. Compare
-   GitHub stars/activity against notcurses and cpp-terminal before accepting ADR 0003.
+   Windows Terminal. Task 06.0 subtask 01 is scoped to verify and pin.~~
+   Resolved 2026-11-18 (Q1): all facts verified and recorded in ADR 0003
+   Decision 1; FTXUI v7.0.3 pinned in `cmake/FetchFTXUI.cmake`.
+2. ~~**Whether FTXUI is the "most adopted"** - stated from memory. Compare
+   GitHub stars/activity against notcurses and cpp-terminal before accepting
+   ADR 0003.~~ Resolved 2026-11-21: the unverified adoption claim was removed
+   from ADR 0003 Decision 1 (08.0/01).
 3. **Tauri**: confirm intent (Q14) - sidecar over `serve-stdio` vs plain HTTP
    to the server, and whether the React admin (0002) is being replaced.
 4. ~~**Q18** REST body field names.~~ Resolved (see Q18; verified in the Task 03.0 subtask 07 and Task 04.0 subtask 04 specs).
