@@ -25,7 +25,12 @@
  *     `--arg =v` (empty key), `--arg k=` (empty VALUE, well-formed), valid name.
  *   - Usage error (throws `std::invalid_argument`): missing name, unknown
  *     option, a flag missing its value, repeated `--json`, `--json` with
- *     `--arg`, stray positional, `--log-file` with `--verbose`.
+ *     `--arg`, stray positional, `--log-file` with `--verbose`, an over-length
+ *     `--id` value (65 bytes, past the 64-byte request-id cap).
+ *   - Output-injection boundary: an unknown-option NAME carrying control bytes
+ *     (LF, CR, ESC, a C0 byte) still throws `std::invalid_argument`, and the
+ *     echoed diagnostic is scrubbed to printable ASCII so no byte can forge a
+ *     log line or terminal escape at the `main` stderr boundary (CWE-117).
  *
  * On failure first check:
  *   - That `parseCmdCommand` still routes a malformed name / `--arg` through a
@@ -33,6 +38,9 @@
  *     `std::invalid_argument` (not a bare `throw` of another type), and that the
  *     `main` `cmd` branch still catches `std::exception` before the FATAL
  *     handler.
+ *   - If a control byte survives into `what()`, check `sanitizeEchoedOption` in
+ *     `src/cli_parser.cpp` is still applied to the unknown-option stem at every
+ *     throw site (cmd/serve-stdio/tui).
  */
 #define BOOST_TEST_MODULE CliCmdParseNoFatalBoundary
 #include <stdexcept>
@@ -148,4 +156,41 @@ BOOST_AUTO_TEST_CASE(usage_errors_throw_invalid_argument_only)
     for (const auto& argv : usage_errors) {
         BOOST_CHECK_THROW(parse(argv), std::invalid_argument);
     }
+}
+
+/**
+ * [Unit][CLI] An unknown `cmd` option whose NAME carries control bytes still
+ * throws `std::invalid_argument`, and the diagnostic the `main` boundary echoes
+ * to stderr is scrubbed: no CR, LF, ESC or other control byte survives into
+ * `what()`, so a crafted option name cannot forge a log line or inject a
+ * terminal escape sequence (CWE-117). An over-length `--id` value is pinned here
+ * too, as a usage error that likewise never reaches the FATAL path.
+ */
+BOOST_AUTO_TEST_CASE(unknown_option_name_is_control_sanitized_in_message)
+{
+    // An over-length --id (the default request-id cap is 64 bytes) is a usage
+    // error, not a dispatchable envelope and not a FATAL crash.
+    BOOST_CHECK_THROW(parse({"url_shortener", "cmd", "link.get", "--id",
+                             std::string(65, 'a')}),
+                      std::invalid_argument);
+
+    // An unknown option whose stem embeds LF, CR, ESC and a C0 control byte -
+    // the exact CWE-117 injection vector from the 0006 08.0 review.
+    const std::string hostile = std::string("--evil") + '\n' + "FATAL injected"
+        + '\r' + '\x1b' + "[31m" + '\x01' + "x";
+    bool threw = false;
+    try {
+        parse({"url_shortener", "cmd", "link.get", hostile});
+    } catch (const std::invalid_argument& e) {
+        threw = true;
+        const std::string what = e.what();
+        // No raw control byte survives into the echoed diagnostic.
+        BOOST_CHECK(what.find('\n') == std::string::npos);
+        BOOST_CHECK(what.find('\r') == std::string::npos);
+        BOOST_CHECK(what.find('\x1b') == std::string::npos);
+        BOOST_CHECK(what.find('\x01') == std::string::npos);
+        // The scrubbed stem is still a recognizable, useful diagnostic.
+        BOOST_CHECK(what.find("Unknown cmd option: ") != std::string::npos);
+    }
+    BOOST_CHECK(threw);
 }

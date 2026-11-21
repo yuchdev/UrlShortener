@@ -23,6 +23,49 @@ namespace po = boost::program_options;
 namespace
 {
 
+/// Upper bound on the echoed unknown-option stem, before the `"..."` ellipsis,
+/// so a pathologically long argv token cannot bloat a one-line diagnostic.
+constexpr std::size_t k_max_echoed_option_bytes = 64;
+
+/**
+ * @brief Sanitize an untrusted argv token for safe inclusion in a diagnostic
+ * message that may be echoed to stderr or forwarded to the FATAL structured log.
+ *
+ * Every byte outside printable ASCII (`0x20`-`0x7E`) - including CR, LF, ESC,
+ * NUL and any other C0/C1 control byte - is replaced with `'?'`, so no argv byte
+ * can inject a newline, terminal escape sequence or forged log line into a sink
+ * that captures the process's stderr (CWE-117). The result is capped at @ref
+ * k_max_echoed_option_bytes bytes; when the input is longer the cap is applied
+ * first and `"..."` is appended, so the message stays bounded regardless of
+ * argv length. This is deliberately a plain printable-ASCII mapping, not the
+ * UTF-8-aware @ref url_shortener::tui::sanitize_for_terminal (a TUI-display
+ * concern) nor @ref url_shortener::observability::SanitizeField (which only
+ * length-truncates and PII-redacts, and does NOT escape CR/LF).
+ *
+ * @param token Raw argv token stem (already truncated at the first `=` by the
+ * caller, so its value half - which may be a secret - is never passed in).
+ * @return A printable-ASCII, length-bounded rendering safe to concatenate into
+ * an exception message.
+ */
+std::string sanitizeEchoedOption(const std::string& token)
+{
+    const std::size_t n = token.size() < k_max_echoed_option_bytes
+        ? token.size()
+        : k_max_echoed_option_bytes;
+    std::string out;
+    out.reserve(n + 3);
+    for (std::size_t i = 0; i < n; ++i) {
+        const auto byte = static_cast<unsigned char>(token[i]);
+        out.push_back((byte >= 0x20u && byte <= 0x7Eu)
+                          ? static_cast<char>(byte)
+                          : '?');
+    }
+    if (token.size() > k_max_echoed_option_bytes) {
+        out += "...";
+    }
+    return out;
+}
+
 /**
  * @brief Parse a textual boolean representation.
  *
@@ -634,10 +677,14 @@ CmdCliCommand parseCmdCommand(std::vector<std::string>& tokens,
         }
         else if (token.rfind("--", 0) == 0) {
             // Flags match by exact token, so the GNU `--opt=value` form is
-            // unrecognised here. Echo only the stem before the first '=',
-            // never the value, which may be a secret (threat model T-77).
-            throw std::invalid_argument("Unknown cmd option: "
-                                        + token.substr(0, token.find('=')));
+            // unrecognised here. Echo only the stem before the first '=', never
+            // the value, which may be a secret (threat model T-77). The stem is
+            // sanitized to printable, length-bounded ASCII so a crafted option
+            // name cannot inject a newline or escape sequence into the stderr
+            // diagnostic or the FATAL log (CWE-117).
+            throw std::invalid_argument(
+                "Unknown cmd option: "
+                + sanitizeEchoedOption(token.substr(0, token.find('='))));
         }
         else if (!name_set) {
             command.command = token;
@@ -891,9 +938,13 @@ ServeStdioCliOptions parse_serve_stdio(std::vector<std::string>& tokens,
         }
         else if (token.rfind("--", 0) == 0) {
             // Flags match by exact token; the GNU `--opt=value` form is unknown
-            // here. Echo only the stem before the first '=', never the value.
-            throw std::invalid_argument("Unknown serve-stdio option: "
-                                        + token.substr(0, token.find('=')));
+            // here. Echo only the sanitized stem before the first '=', never the
+            // value; sanitizing to printable, length-bounded ASCII keeps a
+            // crafted name from injecting a newline or escape sequence into the
+            // FATAL log this mode's parse errors reach (CWE-117).
+            throw std::invalid_argument(
+                "Unknown serve-stdio option: "
+                + sanitizeEchoedOption(token.substr(0, token.find('='))));
         }
         else {
             throw std::invalid_argument(
@@ -1033,9 +1084,13 @@ TuiCliOptions parseTuiCommand(std::vector<std::string>& tokens,
         }
         else if (token.rfind("--", 0) == 0) {
             // Flags match by exact token; the GNU `--opt=value` form is unknown
-            // here. Echo only the stem before the first '=', never the value.
-            throw std::invalid_argument("Unknown tui option: "
-                                        + token.substr(0, token.find('=')));
+            // here. Echo only the sanitized stem before the first '=', never the
+            // value; sanitizing to printable, length-bounded ASCII keeps a
+            // crafted name from injecting a newline or escape sequence into the
+            // FATAL log this mode's parse errors reach (CWE-117).
+            throw std::invalid_argument(
+                "Unknown tui option: "
+                + sanitizeEchoedOption(token.substr(0, token.find('='))));
         }
         else {
             throw std::invalid_argument(

@@ -80,8 +80,12 @@ int main(int argc, char* argv[])
             // sub-parser (unknown option, a flag missing its value, a repeated
             // or mutually-exclusive flag, a missing command name, ...) is
             // reported here as a value-free diagnostic on stderr and exits 2 (bad
-            // input), not 1. The sub-parser's messages are fixed, value-free text
-            // (threat model T-77), so echoing what() leaks no supplied value.
+            // input), not 1. The sub-parser's messages never echo flag values or
+            // `--arg`/`--json` payload content (threat model T-77), and any flag
+            // NAME they do echo (an unknown-option stem) is sanitized to
+            // printable, length-bounded ASCII, so echoing what() can neither leak
+            // a supplied value nor inject a control byte into this stderr line
+            // (CWE-117).
             // Malformed command NAMES and `--arg` operands never reach here — the
             // parser carries them through to the dispatcher's `invalid_envelope`
             // envelope — so this path covers only genuine CLI usage errors. Every
