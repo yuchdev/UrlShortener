@@ -524,7 +524,11 @@ business logic, no network connection required.
 ╰───────────────────────────────────────────────────────────────────────╯
 ```
 
-See ADR 0003 ([`docs/adr/0003-tui-framework-and-architecture.md`](docs/adr/0003-tui-framework-and-architecture.md))
+_(Simplified illustration; see `tests/unit/tui/golden/d01_frame_80x24.txt` for
+the exact 80×24 render.)_
+
+See [`docs/tui/README.md`](docs/tui/README.md) for the user guide, and ADR 0003
+([`docs/adr/0003-tui-framework-and-architecture.md`](docs/adr/0003-tui-framework-and-architecture.md))
 for the design rationale.
 
 ## Core API

@@ -164,7 +164,8 @@ The optional FTXUI terminal UI (`src/tui/`, built when
 `-DURLSHORTENER_ENABLE_TUI=ON`) provides an interactive client over the shared
 `CommandRegistry` through the `ICommandClient` seam. No business logic lives in
 TUI code; no service or repository headers are included under `src/tui/`. No HTTP
-server is started and no socket is bound in TUI mode. See ADR 0003
+server is started and no socket is bound in TUI mode. See
+[`docs/tui/README.md`](docs/tui/README.md) (user and development guide) and ADR 0003
 ([docs/adr/0003-tui-framework-and-architecture.md](docs/adr/0003-tui-framework-and-architecture.md)).
 The `--read-only` flag downgrades the TUI session to `ControlSet::User`.
 

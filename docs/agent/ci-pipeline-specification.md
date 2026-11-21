@@ -48,6 +48,27 @@ This may be split into:
 - no-external-dependency integration suite
 - service-backed integration suite using PostgreSQL/Redis containers where configured
 
+### 3.3.1 Conformance and TUI jobs
+
+Milestone 0006 extends the minimum pipeline with the following jobs (full
+details and local reproduction commands in
+[section 10](#milestone-0006-unified-command-model-and-tui)):
+
+| Job | Workflow file | What it runs | Mandatory |
+|---|---|---|---|
+| `unit-tests` | `ubuntu-unit-tests.yml` | `-L unit` in a `tui: [ON, OFF]` matrix; the OFF leg asserts no `tui__*` test is registered | yes |
+| `integration-tests` | `ubuntu-integration-tests.yml` | `-L integration` (includes the `conformance` suite) then CLI e2e sections | yes |
+| `qa` | `e2e-tests.yml` | live-service e2e sections; path-filtered on `tests/e2e/**`, `tests/conformance/**`, `docs/commands/**` | yes (when paths match) |
+| `perf-analytics` | `perf-analytics.yml` | nightly `-L perf` on a Release build; publishes the redirect fast-path guard table to the job summary | no (advisory; `continue-on-error`) |
+
+**Failure policy:**
+
+- **Hard gates** (block merge): `unit-tests`, `integration-tests` (which
+  subsumes the conformance suite, catalog-drift check, and authz-matrix drift
+  check), and the structural redirect isolation guard
+  (`commands__80_redirect_isolation_test`, `unit` label).
+- **Advisory** (continue-on-error, never blocks merge): `perf-analytics`.
+
 ### 3.4 Static quality job
 
 When tools are configured, run:
