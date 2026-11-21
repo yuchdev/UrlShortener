@@ -98,6 +98,17 @@ The one-shot `cmd` CLI returns the same `invalid_envelope` envelope on stdout fo
 an invalid name (it never exits with a FATAL log line); e.g. `cmd LINK.CREATE` is
 `invalid_envelope` while `cmd nope.nothing` is `unknown_command`.
 
+**`cmd` never exits with a FATAL log line on malformed input.** A malformed
+`--arg` operand — a token with no `=` (`--arg foo`) or an empty key
+(`--arg =v`) — is `invalid_envelope` on stdout with exit 2 (the operand value is
+never echoed); an empty VALUE (`--arg k=`) is well-formed and assigns the empty
+string. A genuine CLI *usage* error — an unknown option, a flag missing its
+value, a repeated or mutually-exclusive flag (`--json` twice, `--json` with
+`--arg`), a missing command name, or a stray positional — is reported as a
+value-free `cmd failed: invalid_request: <reason>` line on **stderr** with exit
+2 (a usage error, not an envelope). Neither path reaches the process-level
+`unhandled_exception` (FATAL / exit 1) handler.
+
 The envelope (generic endpoint, `cmd`, stdio, TUI) always carries the code
 names of the first column. The existing REST **resource routes** keep their
 current bodies (Milestone 0003 C3): the legacy `error` strings of the last

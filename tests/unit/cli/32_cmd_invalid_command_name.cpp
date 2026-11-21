@@ -154,3 +154,56 @@ BOOST_AUTO_TEST_CASE(invalid_name_raw_mode_is_value_free_stderr)
     BOOST_CHECK(!contains(r.err, "FATAL"));
     BOOST_CHECK(!contains(r.err, "LINK.CREATE"));
 }
+
+/**
+ * [Unit][CLI] A malformed `--arg` operand (the parser's `malformed_arg` marker)
+ * is rejected by the dispatcher with the same `invalid_envelope` envelope on
+ * stdout, exit 2, and no FATAL line - even when the command name is valid. The
+ * id echo follows the CLI rule (`cli-1` by default, `--id` when set).
+ */
+BOOST_AUTO_TEST_CASE(malformed_arg_returns_invalid_envelope_envelope)
+{
+    const ServerConfig config = makeConfig();
+
+    CmdCliCommand command;
+    command.command = "link.get";
+    command.malformed_arg = true;  // e.g. `--arg foo` or `--arg =v`.
+
+    const CmdResult r = run(command, config);
+
+    BOOST_CHECK_EQUAL(r.rc, 2);
+    BOOST_CHECK(contains(r.out, "\"ok\":false"));
+    BOOST_CHECK(contains(r.out, "\"code\":\"invalid_envelope\""));
+    BOOST_CHECK(contains(r.out, "\"id\":\"cli-1\""));
+    BOOST_CHECK(r.err.empty());
+
+    CmdCliCommand with_id = command;
+    with_id.request_id = "corr-7";
+    const CmdResult echoed = run(with_id, config);
+    BOOST_CHECK_EQUAL(echoed.rc, 2);
+    BOOST_CHECK(contains(echoed.out, "\"id\":\"corr-7\""));
+}
+
+/**
+ * [Unit][CLI] A well-formed `--arg k=` (empty VALUE) does NOT set the marker and
+ * is coerced normally, so the dispatcher does not short-circuit to
+ * `invalid_envelope`: the request reaches the registry and resolves on the
+ * command's own argument rules (here `link.get` with no `slug` -> `invalid_field`,
+ * NOT `invalid_envelope`). This pins the empty-value-stays-valid decision.
+ */
+BOOST_AUTO_TEST_CASE(empty_arg_value_is_not_malformed)
+{
+    const ServerConfig config = makeConfig();
+
+    CmdCliCommand command;
+    command.command = "link.get";
+    command.arg_pairs = {{"slug", ""}};  // `--arg slug=` -> empty-string slug.
+    // malformed_arg stays false (an empty VALUE is well-formed).
+
+    const CmdResult r = run(command, config);
+
+    // Whatever the exact registry verdict, it must NOT be the dispatcher's
+    // invalid_envelope short-circuit, and must never crash.
+    BOOST_CHECK(!contains(r.out, "\"code\":\"invalid_envelope\""));
+    BOOST_CHECK(!contains(r.err, "FATAL"));
+}

@@ -70,7 +70,28 @@ int main(int argc, char* argv[])
 {
     try {
         CliParser cli;
-        ParseResult parsed = cli.parse(argc, argv);
+        ParseResult parsed;
+        try {
+            parsed = cli.parse(argc, argv);
+        } catch (const std::exception& e) {
+            // Exception boundary for the one-shot `cmd` mode (user ruling): a
+            // malformed `cmd` invocation must never reach the FATAL
+            // `unhandled_exception` handler below. A usage error from the `cmd`
+            // sub-parser (unknown option, a flag missing its value, a repeated
+            // or mutually-exclusive flag, a missing command name, ...) is
+            // reported here as a value-free diagnostic on stderr and exits 2 (bad
+            // input), not 1. The sub-parser's messages are fixed, value-free text
+            // (threat model T-77), so echoing what() leaks no supplied value.
+            // Malformed command NAMES and `--arg` operands never reach here — the
+            // parser carries them through to the dispatcher's `invalid_envelope`
+            // envelope — so this path covers only genuine CLI usage errors. Every
+            // other top-level mode keeps today's behavior (rethrow -> FATAL).
+            if (argc >= 2 && std::string(argv[1]) == "cmd") {
+                std::cerr << "cmd failed: invalid_request: " << e.what() << '\n';
+                return 2;
+            }
+            throw;
+        }
 
         if (parsed.help_requested) {
             std::cout << parsed.help_text;

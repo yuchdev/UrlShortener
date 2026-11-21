@@ -570,12 +570,16 @@ CmdCliCommand parseCmdCommand(std::vector<std::string>& tokens,
             const std::string& value = cmdFlagValue(tokens, i, "--arg");
             cli::arg_pair pair;
             if (!cli::split_arg_pair(value, &pair)) {
-                // split_arg_pair fails on a token without '=' (bad_pair) or
-                // with an empty name (bad_name); neither echoes the value.
-                if (value.find('=') == std::string::npos) {
-                    throw std::invalid_argument("--arg requires NAME=VALUE.");
-                }
-                throw std::invalid_argument("--arg has an empty NAME.");
+                // A malformed `--arg` operand — a token with no `=` (`foo`) or
+                // an empty name (`=v`) — is NOT a parse error and is never
+                // thrown (which the entry point would surface as a FATAL crash,
+                // exit 1). It is recorded as a value-free marker and carried to
+                // the dispatcher, which maps it to an `invalid_envelope` response
+                // (exit 2). The malformed operand is dropped rather than stored,
+                // so it never reaches arg coercion; `--arg k=` (empty VALUE)
+                // stays well-formed and is handled normally below.
+                command.malformed_arg = true;
+                continue;
             }
             command.arg_pairs.emplace_back(std::move(pair.name),
                                            std::move(pair.value));

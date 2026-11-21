@@ -387,6 +387,22 @@ int DispatchCmdCommand(const CmdCliCommand& command, const ServerConfig& config,
             return print_response(response, command.raw, out, err);
         }
 
+        // Step 0.6: a malformed `--arg` operand (no `=`, or an empty name) is a
+        // CLI-adapter input error that cannot be assembled into the `args`
+        // object. Like the invalid command name above it is rejected with the
+        // `invalid_envelope` envelope on @p out (exit 2), never a thrown
+        // exception or a FATAL log line, with the same id-echo rule and no echo
+        // of the operand (threat model T-77). A well-formed `--arg k=` (empty
+        // VALUE) does not set this marker and is coerced normally below.
+        if (command.malformed_arg) {
+            const commands::CommandResponse response = commands::make_failure(
+                command.request_id.value_or("cli-1"),
+                commands::make_error(
+                    commands::CommandErrorCode::invalid_envelope,
+                    "malformed --arg operand"));
+            return print_response(response, command.raw, out, err);
+        }
+
         // Step 1: the single shared registry (milestone contract C11),
         // obtained through the helper shared with the `link <verb>` dispatcher.
         const std::shared_ptr<composition::CommandRuntime> runtime =

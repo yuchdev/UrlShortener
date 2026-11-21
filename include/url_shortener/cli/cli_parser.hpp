@@ -122,6 +122,14 @@ struct CmdCliCommand
     ///< unvalidated. Empty when `--json` was used instead.
     std::vector<std::pair<std::string, std::string>> arg_pairs;
 
+    ///< `true` when at least one `--arg` operand was malformed — a token with no
+    ///< `=` (`foo`) or an empty name (`=v`). The malformed operand itself is
+    ///< dropped (never added to @ref arg_pairs) and no value is retained, so the
+    ///< marker carries no untrusted text. The dispatcher turns this into an
+    ///< `invalid_envelope` response (exit 2) rather than the parser throwing.
+    ///< `--arg k=` (empty VALUE) is well-formed and does NOT set this.
+    bool malformed_arg = false;
+
     ///< `--id <text>` correlation id, non-empty and at most
     ///< `ServerConfig::request_id_max_length` bytes. `std::nullopt` when the
     ///< flag was not given.
