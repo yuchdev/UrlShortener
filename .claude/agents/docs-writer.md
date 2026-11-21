@@ -77,12 +77,12 @@ Short one-sentence description.
 
 ## Documentation
 
-- [Architecture](/docs/adr/*.md)
-- [Agentic Runbooks](/docs/agent/*.md)
-- [Application Configuration](/docs/config/*.md)
-- [Development Guide](/docs/dev/*.md)
-- [Testing Guide](/docs/test/*.md)
-- [User Manual](/docs/user/*.md)
+- Architecture (`docs/adr/*.md`)
+- Agentic Runbooks (`docs/agent/*.md`)
+- Application Configuration (`docs/config/*.md`)
+- Development Guide (`docs/dev/*.md`)
+- Testing Guide (`docs/test/*.md`)
+- User Manual (`docs/user/*.md`)
 
 
 ### Integration contract stub

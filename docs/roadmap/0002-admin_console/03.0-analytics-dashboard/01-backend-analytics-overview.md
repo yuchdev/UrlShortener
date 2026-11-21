@@ -36,7 +36,7 @@ GET /admin/api/v1/analytics/overview
 
 Query: `from`, `to`, `granularity`, `timezone` (via `TimeRange` from task
 02.0). Response shape (
-[04-admin-api-contract.md §4.1](/docs/roadmap/0002-admin_console/04-admin-api-contract.md)):
+04-admin-api-contract.md §4.1 (`docs/roadmap/0002-admin_console/04-admin-api-contract.md`, planned, not yet written)):
 
 ```json
 {
@@ -55,12 +55,12 @@ Query: `from`, `to`, `granularity`, `timezone` (via `TimeRange` from task
 
 1. Query the immutable redirect-event stream or the `analytics_redirects_by_*`
    aggregate tables (
-   [05-data-model-and-storage.md §2, §8](/docs/roadmap/0002-admin_console/05-data-model-and-storage.md)) -
+   05-data-model-and-storage.md §2, §8 (`docs/roadmap/0002-admin_console/05-data-model-and-storage.md`, planned, not yet written)) -
    never derive totals from mutable URL pair rows.
 2. Return correct zero-valued totals/empty series when the database is
    empty - do not error or return null fields.
 3. Use the indexes defined in
-   [05-data-model-and-storage.md §11](/docs/roadmap/0002-admin_console/05-data-model-and-storage.md)
+   05-data-model-and-storage.md §11 (`docs/roadmap/0002-admin_console/05-data-model-and-storage.md`, planned, not yet written)
    (`redirect_event(timestamp)`, `redirect_event(risk_level, timestamp)`,
    etc.) or aggregate tables for large datasets - do not full-scan
    `redirect_event`.

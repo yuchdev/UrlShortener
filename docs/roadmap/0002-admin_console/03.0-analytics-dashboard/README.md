@@ -32,7 +32,7 @@ milestone's MVP scope (see
   acceptable at this task's `⬜ Not started` stage (see
   [plan.md - Dependency graph](/docs/roadmap/0002-admin_console/plan.md)).
 - Must query the immutable redirect-event stream or aggregate tables (see
-  [05-data-model-and-storage.md §1](/docs/roadmap/0002-admin_console/05-data-model-and-storage.md)),
+  05-data-model-and-storage.md §1 (`docs/roadmap/0002-admin_console/05-data-model-and-storage.md`, planned, not yet written)),
   never derive analytics from mutable URL pair rows.
 - Must enforce `analytics:read` and mask sensitive values per the current
   user's permissions (

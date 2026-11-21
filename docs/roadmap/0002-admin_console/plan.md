@@ -33,7 +33,7 @@ fingerprint against provider signals plus local redirect history regardless
 of which provider produced it.
 
 Full rationale, provider comparison, and naming conventions live in
-[00-decision-record.md](/docs/roadmap/0002-admin_console/00-decision-record.md).
+00-decision-record.md (`docs/roadmap/0002-admin_console/00-decision-record.md`, planned, not yet written).
 
 > **Note (added with Milestone 0006):** Prerequisite:
 > [Milestone 0006](/docs/roadmap/0006-unified-command-model-and-tui/plan.md)
@@ -61,13 +61,13 @@ Full rationale, provider comparison, and naming conventions live in
 | Suspicion model | Provider smart signals + internal SuspicionAnalyzer rules |
 
 The frontend lives under `web/admin/` (see
-[02-react-frontend-architecture.md](/docs/roadmap/0002-admin_console/02-react-frontend-architecture.md)
+02-react-frontend-architecture.md (`docs/roadmap/0002-admin_console/02-react-frontend-architecture.md`, planned, not yet written)
 for the full directory layout, route table, and React Query conventions), and
 is served as static assets by the existing C++ backend under `/admin`. Admin
 backend code lives under `src/admin/`; the fingerprint-provider and suspicion
 layer lives under `src/fingerprint/` and `src/tracking/`, shared with a
 public, unauthenticated tracker bundle under `web/public-tracker/` (see
-[03-fingerprint-and-suspicion-model.md](/docs/roadmap/0002-admin_console/03-fingerprint-and-suspicion-model.md)).
+03-fingerprint-and-suspicion-model.md (`docs/roadmap/0002-admin_console/03-fingerprint-and-suspicion-model.md`, planned, not yet written)).
 
 ## Tasks
 
@@ -97,7 +97,7 @@ All fingerprint collection goes through a `FingerprintProvider` interface
 normalization boundary — every provider result is normalized into
 `ClientFingerprintEnvelope` / `FingerprintSignals` before it reaches storage
 or the admin API. See
-[03-fingerprint-and-suspicion-model.md §6](/docs/roadmap/0002-admin_console/03-fingerprint-and-suspicion-model.md).
+03-fingerprint-and-suspicion-model.md §6 (`docs/roadmap/0002-admin_console/03-fingerprint-and-suspicion-model.md`, planned, not yet written).
 
 ### C2. Auth/session model
 
@@ -107,9 +107,9 @@ CSRF token issued through `GET /auth/me` and attached to every mutating
 request. `PermissionGate` on the frontend hides unavailable actions but is
 **not** a security boundary — the backend authorization middleware is
 authoritative and must independently reject unauthorized requests. See
-[00-decision-record.md §4](/docs/roadmap/0002-admin_console/00-decision-record.md)
+00-decision-record.md §4 (`docs/roadmap/0002-admin_console/00-decision-record.md`, planned, not yet written)
 and
-[06-security-privacy-permissions.md §1](/docs/roadmap/0002-admin_console/06-security-privacy-permissions.md).
+06-security-privacy-permissions.md §1 (`docs/roadmap/0002-admin_console/06-security-privacy-permissions.md`, planned, not yet written).
 
 ### C3. Pagination & query contract
 
@@ -118,7 +118,7 @@ Every list endpoint accepts `page`, `page_size`, `sort_by`, `sort_direction`
 endpoint additionally accepts `from`, `to`, `granularity` (`minute|hour|day`),
 `timezone`. Responses use the shared `PageResponse<T>` envelope. All of this
 is built once in task 02.0 and reused by every later task. See
-[02-react-frontend-architecture.md §3, §6](/docs/roadmap/0002-admin_console/02-react-frontend-architecture.md).
+02-react-frontend-architecture.md §3, §6 (`docs/roadmap/0002-admin_console/02-react-frontend-architecture.md`, planned, not yet written).
 
 Mapping for registry-backed lists: `offset = (page - 1) * page_size`,
 `limit = page_size` (`1..500`, same cap as `link.list`), `sort_by` ->
@@ -137,7 +137,7 @@ Every `/admin/api/v1/*` error response uses:
 with codes drawn from `not_authenticated`, `not_authorized`, `csrf_failed`,
 `validation_error`, `not_found`, `conflict`, `rate_limited`, `internal_error`.
 See
-[04-admin-api-contract.md §2.2](/docs/roadmap/0002-admin_console/04-admin-api-contract.md).
+04-admin-api-contract.md §2.2 (`docs/roadmap/0002-admin_console/04-admin-api-contract.md`, planned, not yet written).
 
 Command error codes from the registry map to this vocabulary as follows:
 
@@ -161,7 +161,7 @@ what it receives and must never reconstruct masked data. Raw fingerprint
 components (canvas/audio/font/WebGL) are hidden by default for every role.
 IPs are masked for read-only users and for admins without `ips:read_full`.
 See
-[06-security-privacy-permissions.md §5, §6](/docs/roadmap/0002-admin_console/06-security-privacy-permissions.md).
+06-security-privacy-permissions.md §5, §6 (`docs/roadmap/0002-admin_console/06-security-privacy-permissions.md`, planned, not yet written).
 
 ### C6. Roles & permissions model
 
@@ -170,7 +170,7 @@ Two roles (`admin`, `read-only`) plus a fixed permission set (`analytics:read`,
 `fingerprints:read`, `ips:read`, `ips:read_full`, `console_users:manage`,
 `exports:create_aggregate`, `exports:create_raw`, `audit_log:read`,
 `settings:read`, `settings:write`). See
-[06-security-privacy-permissions.md §2, §3](/docs/roadmap/0002-admin_console/06-security-privacy-permissions.md).
+06-security-privacy-permissions.md §2, §3 (`docs/roadmap/0002-admin_console/06-security-privacy-permissions.md`, planned, not yet written).
 
 ### C7. Audit logging requirements
 
@@ -179,7 +179,7 @@ creation/disable, role change, permission-denied, URL pair mutation, export
 request/completion, and settings change are all audit-logged with
 `timestamp, console_user, action, target_type, target_id, source_ip_hash,
 result, request_id, metadata_json`. See
-[06-security-privacy-permissions.md §7](/docs/roadmap/0002-admin_console/06-security-privacy-permissions.md).
+06-security-privacy-permissions.md §7 (`docs/roadmap/0002-admin_console/06-security-privacy-permissions.md`, planned, not yet written).
 
 ### C8. Non-goals for the MVP milestone
 

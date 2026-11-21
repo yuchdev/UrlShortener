@@ -23,7 +23,7 @@ src/fingerprint/RiskScore.cpp
 ## Inputs / outputs
 
 Inputs (
-[03-fingerprint-and-suspicion-model.md §7](/docs/roadmap/0002-admin_console/03-fingerprint-and-suspicion-model.md)):
+03-fingerprint-and-suspicion-model.md §7 (`docs/roadmap/0002-admin_console/03-fingerprint-and-suspicion-model.md`, planned, not yet written)):
 
 ```text
 normalized fingerprint envelope, request IP record, user-agent, referrer,
@@ -61,10 +61,10 @@ timezone_ip_geo_inconsistency
 ## Requirements
 
 1. Rule categories per
-   [03-fingerprint-and-suspicion-model.md §7.1](/docs/roadmap/0002-admin_console/03-fingerprint-and-suspicion-model.md):
+   03-fingerprint-and-suspicion-model.md §7.1 (`docs/roadmap/0002-admin_console/03-fingerprint-and-suspicion-model.md`, planned, not yet written):
    provider signal rules, local consistency rules, URL-specific rules.
 2. Scoring draft (
-   [03-fingerprint-and-suspicion-model.md §8](/docs/roadmap/0002-admin_console/03-fingerprint-and-suspicion-model.md)):
+   03-fingerprint-and-suspicion-model.md §8 (`docs/roadmap/0002-admin_console/03-fingerprint-and-suspicion-model.md`, planned, not yet written)):
    bad bot +40, anti-detect browser +40, tampering high +35 / medium +20,
    anomaly_score>0.8 +35 / >0.5 +20, VPN/proxy/Tor/datacenter +10 to +25,
    same-IP-many-visitors/same-visitor-many-IPs +20 each, regeneration burst

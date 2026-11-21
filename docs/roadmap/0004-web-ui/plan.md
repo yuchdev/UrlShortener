@@ -39,7 +39,7 @@ first-class design inputs rather than incidental details:
 
 Rationale for the prefix choice, the "no accounts in V1" line, and the
 reuse-not-fork API decision lives in
-[00-decision-record.md](/docs/roadmap/0004-web-ui/00-decision-record.md).
+00-decision-record.md (`docs/roadmap/0004-web-ui/00-decision-record.md`, planned, not yet written).
 
 > **Note (added with Milestone 0006):** no blocker. This UI keeps using the
 > existing `POST /api/v1/links`; it may optionally use the generic

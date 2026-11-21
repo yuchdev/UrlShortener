@@ -30,7 +30,7 @@ web/admin/src/components/admin/RoleBadge.tsx
    Last Login, Status, Actions`.
 3. `CreateConsoleUserDialog`, `ResetPasswordDialog`, `DisableUserDialog` each
    use React Hook Form + Zod for validation (
-   [00-decision-record.md §1](/docs/roadmap/0002-admin_console/00-decision-record.md)),
+   00-decision-record.md §1 (`docs/roadmap/0002-admin_console/00-decision-record.md`, planned, not yet written)),
    require CSRF (via `apiClient`), and invalidate the
    `['consoleUsers', ...]` query on success.
 4. `RoleBadge` renders role visually consistent with `RiskBadge`/

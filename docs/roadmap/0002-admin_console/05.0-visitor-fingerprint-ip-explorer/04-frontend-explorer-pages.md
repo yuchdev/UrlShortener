@@ -37,7 +37,7 @@ web/admin/src/pages/IpAddressDetailPage.tsx
    `/admin/fingerprints/{id}`, `/admin/ips/{id}`, each with: summary cards,
    risk score + `RiskReasonsList`, related objects, `IdentityTimeline`,
    recent redirect events, suspicious events (
-   [01-product-and-ux-spec.md §7.3-7.5](/docs/roadmap/0002-admin_console/01-product-and-ux-spec.md)).
+   01-product-and-ux-spec.md §7.3-7.5 (`docs/roadmap/0002-admin_console/01-product-and-ux-spec.md`, planned, not yet written)).
 3. `FingerprintDetailPage` additionally renders `FingerprintSignalsPanel`,
    provider + provider confidence, and regeneration history.
 4. `IpAddressDetailPage` additionally renders `MaskedIp`-wrapped IP display,
@@ -45,7 +45,7 @@ web/admin/src/pages/IpAddressDetailPage.tsx
    rate-limit events.
 5. Query keys: `['visitorProfiles', filters, pagination]`,
    `['fingerprints', filters, pagination]`, `['ips', filters, pagination]` (
-   [02-react-frontend-architecture.md §5](/docs/roadmap/0002-admin_console/02-react-frontend-architecture.md)).
+   02-react-frontend-architecture.md §5 (`docs/roadmap/0002-admin_console/02-react-frontend-architecture.md`, planned, not yet written)).
 6. Every raw/sensitive field rendered on these pages must go through
    `MaskedIp`/`FingerprintId`/`SensitiveValue` - no page renders a raw IP or
    fingerprint field directly.

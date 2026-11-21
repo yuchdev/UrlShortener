@@ -33,12 +33,12 @@ POST  /admin/api/v1/console-users/{username}/disable
 ```
 
 All require `console_users:manage` (
-[04-admin-api-contract.md §6](/docs/roadmap/0002-admin_console/04-admin-api-contract.md)).
+04-admin-api-contract.md §6 (`docs/roadmap/0002-admin_console/04-admin-api-contract.md`, planned, not yet written)).
 
 ## Requirements
 
 1. List columns (
-   [01-product-and-ux-spec.md §8.5](/docs/roadmap/0002-admin_console/01-product-and-ux-spec.md)):
+   01-product-and-ux-spec.md §8.5 (`docs/roadmap/0002-admin_console/01-product-and-ux-spec.md`, planned, not yet written)):
    `Username, Role, Created At, Last Login, Status, Actions`.
 2. Only admins can manage console users; every endpoint in this subtask
    rejects a caller lacking `console_users:manage` with `not_authorized`.

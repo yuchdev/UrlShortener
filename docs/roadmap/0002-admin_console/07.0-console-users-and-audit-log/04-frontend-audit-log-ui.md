@@ -22,14 +22,14 @@ web/admin/src/components/audit/AuditLogTable.tsx
 ## Requirements
 
 1. `AuditLogPage` at `/admin/audit-log`, requires `audit_log:read` (
-   [01-product-and-ux-spec.md §8.6](/docs/roadmap/0002-admin_console/01-product-and-ux-spec.md)).
+   01-product-and-ux-spec.md §8.6 (`docs/roadmap/0002-admin_console/01-product-and-ux-spec.md`, planned, not yet written)).
 2. `AuditLogTable` built on `PaginatedTable` (task 02.0) with columns
    `Time, Console User, Action, Target Type, Target ID, Source IP, Result`.
 3. Filter controls for `from, to, console_user, action, target_type,
    target_id, result`, reflected in URL search params via
    `useSearchParamsState` (task 02.0).
 4. Query key `['auditLog', filters, pagination]` (
-   [02-react-frontend-architecture.md §5](/docs/roadmap/0002-admin_console/02-react-frontend-architecture.md)).
+   02-react-frontend-architecture.md §5 (`docs/roadmap/0002-admin_console/02-react-frontend-architecture.md`, planned, not yet written)).
 
 ## Constraints
 

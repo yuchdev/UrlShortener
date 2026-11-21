@@ -44,7 +44,7 @@ it only if `ThumbmarkProvider` alone does not satisfy local/dev needs - the
 interface must support adding it later without changes elsewhere.)
 
 Normalized provider result (
-[03-fingerprint-and-suspicion-model.md §6](/docs/roadmap/0002-admin_console/03-fingerprint-and-suspicion-model.md)):
+03-fingerprint-and-suspicion-model.md §6 (`docs/roadmap/0002-admin_console/03-fingerprint-and-suspicion-model.md`, planned, not yet written)):
 
 ```text
 provider, provider_request_id, visitor_id, fingerprint_hash, confidence,
@@ -80,12 +80,12 @@ fingerprinting:
    proxy/relay indicators, tampering signal + confidence + ML score,
    anomaly score, anti-detect-browser flag, virtual machine flag, developer-
    tools/automation indicators, velocity signals (
-   [03-fingerprint-and-suspicion-model.md §3](/docs/roadmap/0002-admin_console/03-fingerprint-and-suspicion-model.md)).
+   03-fingerprint-and-suspicion-model.md §3 (`docs/roadmap/0002-admin_console/03-fingerprint-and-suspicion-model.md`, planned, not yet written)).
 4. `ThumbmarkProvider` (fallback) must document its explicit limitations in
    code comments: browser-only fingerprint is easier to spoof, server cannot
    fully validate browser-computed values, and its `confidence` must be
    lower than the production provider's (
-   [03-fingerprint-and-suspicion-model.md §4](/docs/roadmap/0002-admin_console/03-fingerprint-and-suspicion-model.md)).
+   03-fingerprint-and-suspicion-model.md §4 (`docs/roadmap/0002-admin_console/03-fingerprint-and-suspicion-model.md`, planned, not yet written)).
 5. `FingerprintConfig` parses the `fingerprinting:` YAML section and is the
    single source of risk thresholds consumed by task 06.0 subtask 02.
 6. Provider selection is config-driven (`provider:` field) with no business-
@@ -98,7 +98,7 @@ fingerprinting:
 - `store_raw_debug_payloads` defaults to `false`; when enabled, raw payloads
   must be stored separately, restricted to admin-only access, and expire
   per `raw_debug_payload_retention_hours` (
-  [03-fingerprint-and-suspicion-model.md §9](/docs/roadmap/0002-admin_console/03-fingerprint-and-suspicion-model.md)) -
+  03-fingerprint-and-suspicion-model.md §9 (`docs/roadmap/0002-admin_console/03-fingerprint-and-suspicion-model.md`, planned, not yet written)) -
   the retention/access mechanics may be a follow-up if storage wiring
   belongs elsewhere, but the config flag and normalizer hook must exist now.
 

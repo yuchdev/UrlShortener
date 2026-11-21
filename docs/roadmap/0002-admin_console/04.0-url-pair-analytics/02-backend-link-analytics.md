@@ -39,7 +39,7 @@ GET /admin/api/v1/analytics/links/{url_pair_id}/events
 ## Requirements
 
 1. `GET /analytics/links` list columns (
-   [01-product-and-ux-spec.md §7.2](/docs/roadmap/0002-admin_console/01-product-and-ux-spec.md)):
+   01-product-and-ux-spec.md §7.2 (`docs/roadmap/0002-admin_console/01-product-and-ux-spec.md`, planned, not yet written)):
 
    ```text
    Short Code, Target URL, Created At, Redirects, Unique Visitors,
@@ -49,14 +49,14 @@ GET /admin/api/v1/analytics/links/{url_pair_id}/events
 2. `GET /analytics/links/{url_pair_id}` returns the detail summary:
    short code, target URL, status, created/updated timestamps, total
    redirects, unique visitors/fingerprints/IPs (
-   [01-product-and-ux-spec.md §7.2](/docs/roadmap/0002-admin_console/01-product-and-ux-spec.md)).
+   01-product-and-ux-spec.md §7.2 (`docs/roadmap/0002-admin_console/01-product-and-ux-spec.md`, planned, not yet written)).
 3. `/timeseries` returns the redirect-volume-over-time series for the link;
    `/referrers` returns per-link referrer breakdown; `/visitors` returns
    associated visitor profiles; `/events` returns recent redirect events
    (paginated via task 02.0 primitives).
 4. `LinkAnalyticsService` queries the immutable redirect-event stream or
    `analytics_redirects_by_url_pair` aggregate (
-   [05-data-model-and-storage.md §8](/docs/roadmap/0002-admin_console/05-data-model-and-storage.md))
+   05-data-model-and-storage.md §8 (`docs/roadmap/0002-admin_console/05-data-model-and-storage.md`, planned, not yet written))
    using the `redirect_event(url_pair_id, timestamp)` index.
 5. `Suspicious %` and per-event `risk_score`/`risk_level` fields are wired
    from `redirect_event.risk_score`/`risk_level`; they will read as `0`/

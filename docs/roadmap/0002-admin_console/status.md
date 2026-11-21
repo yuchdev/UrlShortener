@@ -44,20 +44,20 @@ local/dev fallback behind a shared `FingerprintProvider` interface.
   ThumbmarkJS or FingerprintJS OSS as an explicitly weaker local/dev fallback
   behind the same provider interface. An internal `SuspicionAnalyzer` always
   re-scores every fingerprint regardless of provider. Full rationale:
-  [00-decision-record.md](/docs/roadmap/0002-admin_console/00-decision-record.md).
+  00-decision-record.md (`docs/roadmap/0002-admin_console/00-decision-record.md`, planned, not yet written).
 - **MVP non-goals (first milestone):** public self-registration, full visual
   design polish, complex RBAC editor UI, real-time streaming dashboards,
   deleting analytics data from the UI, exposing raw fingerprint components to
   normal users. See [plan.md - Shared contracts C8](/docs/roadmap/0002-admin_console/plan.md).
 - **Document map (supporting specs, kept at milestone root, untouched by this
   restructuring):**
-  - [00-decision-record.md](/docs/roadmap/0002-admin_console/00-decision-record.md) - stack + fingerprinting + auth + naming decisions
-  - [01-product-and-ux-spec.md](/docs/roadmap/0002-admin_console/01-product-and-ux-spec.md) - navigation, pages, filters, empty/error states
-  - [02-react-frontend-architecture.md](/docs/roadmap/0002-admin_console/02-react-frontend-architecture.md) - directory layout, routes, API client, React Query, tables, charts
-  - [03-fingerprint-and-suspicion-model.md](/docs/roadmap/0002-admin_console/03-fingerprint-and-suspicion-model.md) - provider strategy, envelope schema, suspicion rules, risk scoring
-  - [04-admin-api-contract.md](/docs/roadmap/0002-admin_console/04-admin-api-contract.md) - full endpoint list and response/error shapes
-  - [05-data-model-and-storage.md](/docs/roadmap/0002-admin_console/05-data-model-and-storage.md) - redirect event, fingerprint, IP, visitor profile schemas, indexes, retention
-  - [06-security-privacy-permissions.md](/docs/roadmap/0002-admin_console/06-security-privacy-permissions.md) - roles, permissions, IP/fingerprint masking, audit log, CSRF
+  - 00-decision-record.md (`docs/roadmap/0002-admin_console/00-decision-record.md`, planned, not yet written) - stack + fingerprinting + auth + naming decisions
+  - 01-product-and-ux-spec.md (`docs/roadmap/0002-admin_console/01-product-and-ux-spec.md`, planned, not yet written) - navigation, pages, filters, empty/error states
+  - 02-react-frontend-architecture.md (`docs/roadmap/0002-admin_console/02-react-frontend-architecture.md`, planned, not yet written) - directory layout, routes, API client, React Query, tables, charts
+  - 03-fingerprint-and-suspicion-model.md (`docs/roadmap/0002-admin_console/03-fingerprint-and-suspicion-model.md`, planned, not yet written) - provider strategy, envelope schema, suspicion rules, risk scoring
+  - 04-admin-api-contract.md (`docs/roadmap/0002-admin_console/04-admin-api-contract.md`, planned, not yet written) - full endpoint list and response/error shapes
+  - 05-data-model-and-storage.md (`docs/roadmap/0002-admin_console/05-data-model-and-storage.md`, planned, not yet written) - redirect event, fingerprint, IP, visitor profile schemas, indexes, retention
+  - 06-security-privacy-permissions.md (`docs/roadmap/0002-admin_console/06-security-privacy-permissions.md`, planned, not yet written) - roles, permissions, IP/fingerprint masking, audit log, CSRF
 
 ## Decomposition tree (as built)
 

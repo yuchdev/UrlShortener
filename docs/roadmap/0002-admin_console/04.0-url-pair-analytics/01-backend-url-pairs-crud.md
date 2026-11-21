@@ -33,7 +33,7 @@ PATCH  /admin/api/v1/url-pairs/{url_pair_id}
 
 Write operations (`PATCH`, including status/disable changes) require
 `url_pairs:write` (
-[04-admin-api-contract.md §5](/docs/roadmap/0002-admin_console/04-admin-api-contract.md)).
+04-admin-api-contract.md §5 (`docs/roadmap/0002-admin_console/04-admin-api-contract.md`, planned, not yet written)).
 
 Registry command mapping:
 
@@ -49,7 +49,7 @@ Registry command mapping:
    `PageRequest`/`AdminFilterParser`, and searchable by short code and
    target domain.
 2. `UrlPairAdminDto` fields cover the required list columns (
-   [01-product-and-ux-spec.md §8.1](/docs/roadmap/0002-admin_console/01-product-and-ux-spec.md)):
+   01-product-and-ux-spec.md §8.1 (`docs/roadmap/0002-admin_console/01-product-and-ux-spec.md`, planned, not yet written)):
    `Short Code, Target URL, Created At, Updated At, Status, Redirect Count,
    Unique Visitors, Last Redirect`.
 3. `PATCH /url-pairs/{url_pair_id}` supports at least a disable action
@@ -62,14 +62,14 @@ Registry command mapping:
 5. `Redirect Count`/`Unique Visitors`/`Last Redirect` are sourced from
    `link.stats` (via `AdminCommandBridge`), which queries the immutable
    redirect-event stream or aggregate tables (
-   [05-data-model-and-storage.md §1](/docs/roadmap/0002-admin_console/05-data-model-and-storage.md)),
+   05-data-model-and-storage.md §1 (`docs/roadmap/0002-admin_console/05-data-model-and-storage.md`, planned, not yet written)),
    not by mutating the URL pair row.
 
 ## Constraints
 
 - Do not implement delete in this subtask unless the underlying storage
   backend already supports safe deletion - per
-  [01-product-and-ux-spec.md §8.1](/docs/roadmap/0002-admin_console/01-product-and-ux-spec.md)
+  01-product-and-ux-spec.md §8.1 (`docs/roadmap/0002-admin_console/01-product-and-ux-spec.md`, planned, not yet written)
   delete is conditional ("only if backend supports safe deletion"); disable
   is the required MVP write action.
 

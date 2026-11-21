@@ -24,7 +24,7 @@ cache:
 ```yaml
 metadata:
   backend: postgres
-  postgres_dsn: postgres://user:password@localhost:5432/url_shortener
+  postgres_dsn: postgres://user:${POSTGRES_PASSWORD}@localhost:5432/url_shortener
 cache:
   backend: redis
   redis_address: 127.0.0.1:6379

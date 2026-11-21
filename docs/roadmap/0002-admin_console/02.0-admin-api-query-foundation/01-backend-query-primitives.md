@@ -99,7 +99,7 @@ Error mapping: command codes translate to admin API codes per
 - `PageRequest`/`PageResponse` must be usable by every controller added in
   tasks 03.0-08.0 without per-endpoint duplication.
 - `AdminFilterParser` should parse the shared filter vocabulary from
-  [01-product-and-ux-spec.md §4](/docs/roadmap/0002-admin_console/01-product-and-ux-spec.md)
+  01-product-and-ux-spec.md §4 (`docs/roadmap/0002-admin_console/01-product-and-ux-spec.md`, planned, not yet written)
   (`short_code`, `url_pair_id`, `target_domain`, `visitor_profile_id`,
   `fingerprint_id`, `ip_id`, `referrer_domain`, `risk_level`, `bot_status`,
   `status`) generically rather than one parser per endpoint.

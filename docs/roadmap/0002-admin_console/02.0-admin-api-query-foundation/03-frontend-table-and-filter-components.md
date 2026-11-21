@@ -25,9 +25,9 @@ web/admin/src/components/analytics/GlobalFilterBar.tsx
 ## Requirements
 
 1. `PaginatedTable` is built on TanStack Table + TanStack Virtual (
-   [00-decision-record.md §2](/docs/roadmap/0002-admin_console/00-decision-record.md))
+   00-decision-record.md §2 (`docs/roadmap/0002-admin_console/00-decision-record.md`, planned, not yet written))
    and must support, per
-   [02-react-frontend-architecture.md §6](/docs/roadmap/0002-admin_console/02-react-frontend-architecture.md):
+   02-react-frontend-architecture.md §6 (`docs/roadmap/0002-admin_console/02-react-frontend-architecture.md`, planned, not yet written):
 
    ```text
    server-side pagination
@@ -49,12 +49,12 @@ web/admin/src/components/analytics/GlobalFilterBar.tsx
    by `PaginatedTable`'s column definitions.
 4. `DateRangePicker` and `GlobalFilterBar` implement the shared top-bar
    filter model from
-   [01-product-and-ux-spec.md §3-4](/docs/roadmap/0002-admin_console/01-product-and-ux-spec.md)
+   01-product-and-ux-spec.md §3-4 (`docs/roadmap/0002-admin_console/01-product-and-ux-spec.md`, planned, not yet written)
    (global time range + timezone selector, plus the shared filter fields),
    backed by `useDateRange`/`useSearchParamsState` from subtask 02.
 5. Every empty/error state must use the `EmptyState`/`ErrorState` primitives
    from task 01.0 subtask 01, with page-appropriate copy (
-   [01-product-and-ux-spec.md §9-10](/docs/roadmap/0002-admin_console/01-product-and-ux-spec.md)).
+   01-product-and-ux-spec.md §9-10 (`docs/roadmap/0002-admin_console/01-product-and-ux-spec.md`, planned, not yet written)).
 
 ## Constraints
 

@@ -40,17 +40,17 @@ web/admin/src/pages/SettingsPage.tsx
 ## Requirements
 
 1. Use React + TypeScript + Vite (per
-   [00-decision-record.md](/docs/roadmap/0002-admin_console/00-decision-record.md)).
+   00-decision-record.md (`docs/roadmap/0002-admin_console/00-decision-record.md`, planned, not yet written)).
 2. Wire TanStack Router (`app/router.tsx`, `app/routes.tsx`) with the route
    table from
-   [02-react-frontend-architecture.md §2](/docs/roadmap/0002-admin_console/02-react-frontend-architecture.md) -
+   02-react-frontend-architecture.md §2 (`docs/roadmap/0002-admin_console/02-react-frontend-architecture.md`, planned, not yet written) -
    at minimum register `/admin/login`, `/admin/dashboard`, and
    `/admin/settings` in this subtask; later tasks add their own routes.
 3. Wire TanStack Query in `app/providers.tsx` with the stale-time defaults
    documented in
-   [02-react-frontend-architecture.md §5](/docs/roadmap/0002-admin_console/02-react-frontend-architecture.md).
+   02-react-frontend-architecture.md §5 (`docs/roadmap/0002-admin_console/02-react-frontend-architecture.md`, planned, not yet written).
 4. `Sidebar` must render the full main navigation structure from
-   [01-product-and-ux-spec.md §2](/docs/roadmap/0002-admin_console/01-product-and-ux-spec.md)
+   01-product-and-ux-spec.md §2 (`docs/roadmap/0002-admin_console/01-product-and-ux-spec.md`, planned, not yet written)
    (items for pages that do not exist yet may link to placeholder routes -
    visibility gating by role happens in subtask 03).
 5. `TopBar` must render: global time range selector, timezone selector
@@ -60,7 +60,7 @@ web/admin/src/pages/SettingsPage.tsx
 6. `Button`, `Card`, `Input`, `Spinner`, `EmptyState`, `ErrorState` are
    Tailwind-based internal component wrappers (do not use a third-party
    component library directly in pages - see
-   [00-decision-record.md §2](/docs/roadmap/0002-admin_console/00-decision-record.md)).
+   00-decision-record.md §2 (`docs/roadmap/0002-admin_console/00-decision-record.md`, planned, not yet written)).
 7. `web/admin/package.json` must be buildable with `npm ci && npm run build`
    producing `web/admin/dist/` (final `build`/`dev`/`preview` script wiring
    is finalized in task 09.0, but `npm run build` must already work after

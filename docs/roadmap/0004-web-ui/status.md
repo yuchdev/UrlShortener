@@ -48,7 +48,7 @@ exactly: React + TypeScript + Vite + TanStack Router/Query + React Hook Form
   public and no-auth; the UI consumes them directly and pins their response
   shapes with Zod. No new *read* endpoint is created. See
   [plan.md SC1](/docs/roadmap/0004-web-ui/plan.md) and
-  [00-decision-record.md §3](/docs/roadmap/0004-web-ui/00-decision-record.md).
+  00-decision-record.md §3 (`docs/roadmap/0004-web-ui/00-decision-record.md`, planned, not yet written).
 - **Relationship to 0002.** This milestone borrows 0002's *documented*
   static-SPA-under-a-path-prefix pattern for serving `/app`, but 0002 is
   itself unimplemented (no `web/admin/`, no `src/admin/`). 0004 references
