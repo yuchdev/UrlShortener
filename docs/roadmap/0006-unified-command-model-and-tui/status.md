@@ -915,3 +915,17 @@ Follow-ups (not blocking):
 
 Still open, to be raised later: 400 vs 405 for a wrong method, the lenient
 `parseRfc3339Zulu`, and the redirect perf baseline recorded on Release CI.
+
+### 2026-11-21 - 08.0 entry: ADR status and CWE-113 backport (user rulings)
+
+1. **ADR status.** ADR 0002 and ADR 0003 become **Implemented**, and ADR 0001
+   becomes **Accepted (amended by 0002)**. This is the explicit instruction
+   that decision-log Q17 requires, and it unblocks 08.0/01.
+2. **CWE-113 backport.** Add the 05.0 response-splitting fix `25d66be` and its
+   test to the `master` backport PR #74, next to the SSRF fix.
+
+Other 07.0 close follow-ups, both done on the milestone branch:
+- `cmd` invalid command names (`fec61ef`) and a malformed `--arg` (`0ae864d`)
+  now return an `invalid_envelope` envelope with exit 2.
+- No `cmd` argv input reaches the FATAL `unhandled_exception` path. This is
+  proven by `cli__33`.
