@@ -13,15 +13,21 @@ Tracks progress against [plan.md](/docs/roadmap/0006-unified-command-model-and-t
 | 05.0 | Jobs, pair import/export, stdio | ✅ Complete (21/21 subtasks) | 23 (`commands__50`-`65`; `app__60`; `cli__20`, `cli__21`; http `40`; cli int `40`, `41`; e2e `30`) |
 | 06.0 | Terminal UI | ✅ Complete | 58 (`tui__01`, `tui__02_*` x3, `tui__03`, `tui__04_*` x6, `tui__05_*` x4, `tui__06_*` x4, `tui__07_*` x3, `tui__08_*` x3, `tui__09_*` x3, `tui__10_*` x2, `tui__11_*` x4, `tui__12_*` x3, `tui__13_*` x2, `tui__14_*` x2, `tui__15_*` x3, `tui__16_*` x3, `tui__17_*` x2, `tui__18_*` x3, `tui__19_*` x2, `tui__20_app_navigation_test`, `tui__21_*` x2, `cli__30`) |
 | 07.0 | Tests and conformance | ✅ Complete | 20 (`conformance_00_corpus_lint`, `conformance_01_matcher_vectors`, `conformance_02_harness_selftest`, `conformance_20_coverage_gate`, `conformance_authz_matrix_check`, `conformance_10_cli_cmd_corpus`, `conformance_11_stdio_corpus`, `conformance_12_stdio_framing`, `conformance_13_rest_generic_corpus`, `conformance_14_rest_resource_corpus`, `conformance__00_support_selftest`, `conformance__01_direct_registry_corpus`, `conformance__02_tui_client_corpus` (+ link corpus 57 cases, browse/system corpus 39 cases, jobs/import/export corpus 39 cases, envelope/authz corpus 34 cases), `commands__70`..`72`, `commands__74`, `commands__75`, `commands__76`..`78`, `cli__31`, `tui__23`, `conformance_31_import_limits_process_level`, `tui__37`, `conformance_30_authz_process_level`, `commands__79_no_http_server_in_local_modes_test`, `commands__80_redirect_isolation_test`, `conformance_32_no_listener_process_level`, `e2e_19`, `docs__03`..`06`, `tui__22_mock_support_helpers_test`, `tui__30_form_model_property_test`, `tui__31`..`33`, `tui__34_no_secrets_real_registry_test`; perf label: `analytics__*` x3, `redirect__redirect_fast_path_guard`; `32_redirect_fallback_no_command`) |
-| 08.0 | Docs and registry sync | ⬜ Not started | 0 |
+| 08.0 | Docs and registry sync | 🔶 In progress (5/17 subtasks) | 0 (docs only) |
 
 **Legend:** ✅ Complete · 🔶 In progress / partial · ⬜ Not started
 
-**Current gate status:** design complete, decisions confirmed, implementation
-not started (2026-10-22). Delivered so far:
+**Current gate status (2026-11-21):** Tasks 01.0-07.0 are complete. Task 08.0
+(docs) is in progress. [ADR 0002](/docs/adr/0002-unified-command-model.md) and
+[ADR 0003](/docs/adr/0003-tui-framework-and-architecture.md) are
+**Implemented**, and ADR 0001 is **Accepted (amended by 0002)**; see the
+2026-11-21 "08.0 entry" in Notes & decisions.
+
+*Historical (2026-10-22), kept for the record:* design complete, decisions
+confirmed, implementation not started. Delivered at that point:
 [ADR 0002](/docs/adr/0002-unified-command-model.md) and
-[ADR 0003](/docs/adr/0003-tui-framework-and-architecture.md) (both still
-**Proposed** - intentionally; see below), the [command catalog](/docs/commands/README.md),
+[ADR 0003](/docs/adr/0003-tui-framework-and-architecture.md) (then still
+`Proposed`, intentionally; see below), the [command catalog](/docs/commands/README.md),
 this milestone's plan and task/subtask specs, and (2026-10-22) a human review
 of all D1-D16 open decisions plus a new Settings screen (D13 in ADR 0003,
 Task 06.0 subtask 21) added after the headless design pass. No code has
@@ -34,7 +40,8 @@ was reviewed with the user on 2026-10-22 and adopted as-is (see that file's
 "Human review" section) - none were reversed. This un-blocks every owning
 subtask listed in the decision log.
 
-**ADR 0002/0003 stay `Proposed` on purpose**, even after the D1-D16 review:
+*Historical (2026-10-22), superseded on 2026-11-21:* ADR 0002/0003 were kept
+`Proposed` on purpose, even after the D1-D16 review:
 flipping them to `Accepted` is Task 08.0 subtask 01's job, which requires Task
 07.0's gates to have actually passed and real artifacts (pinned FTXUI
 version, `tui --help` output, as-built deltas) that do not exist before any
