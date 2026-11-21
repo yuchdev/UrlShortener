@@ -72,9 +72,9 @@ absolute-from-repo-root Markdown link:
 > Milestones 0001 and 0003 are **fully implemented** (see their
 > `status.md` files for verified test/build evidence). Milestones 0002, 0004
 > and 0005 are fully specified but **not started**; see each one's `status.md`
-> for open risks. Milestone 0006 is **in progress**: Tasks 01.0–07.0 are
-> complete; Task 08.0 (docs and registry sync) is in progress with final gates
-> pending — see [status.md](/docs/roadmap/0006-unified-command-model-and-tui/status.md).
+> for open risks. Milestone 0006 is **complete** (2026-11-21) on branch
+> `milestone/0006-unified-command-model-and-tui`, not yet merged to `master`;
+> see [status.md](/docs/roadmap/0006-unified-command-model-and-tui/status.md).
 > Note that 0005's plan.md carries an unresolved verification question (no
 > existing Linux `secret-store` implementation could be located in this
 > repository to confirm parity against).
@@ -87,4 +87,4 @@ panel consume the command model (`POST /api/v1/commands`, `link.list`, `db.*`,
 jobs) that 0006 defines. Suggested order: `0006` → (`0002` ∥ `0004`) → Tauri
 (no milestone yet). `0005` is independent. See
 [0006 plan.md](/docs/roadmap/0006-unified-command-model-and-tui/plan.md),
-"Roadmap review and placement".
+"Roadmap review and placement". 0006 completed 2026-11-21 (branch, pending merge), so 0002 and 0004 are unblocked.

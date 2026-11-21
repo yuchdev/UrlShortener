@@ -13,12 +13,15 @@ Tracks progress against [plan.md](/docs/roadmap/0006-unified-command-model-and-t
 | 05.0 | Jobs, pair import/export, stdio | ✅ Complete (21/21 subtasks) | 23 (`commands__50`-`65`; `app__60`; `cli__20`, `cli__21`; http `40`; cli int `40`, `41`; e2e `30`) |
 | 06.0 | Terminal UI | ✅ Complete | 58 (`tui__01`, `tui__02_*` x3, `tui__03`, `tui__04_*` x6, `tui__05_*` x4, `tui__06_*` x4, `tui__07_*` x3, `tui__08_*` x3, `tui__09_*` x3, `tui__10_*` x2, `tui__11_*` x4, `tui__12_*` x3, `tui__13_*` x2, `tui__14_*` x2, `tui__15_*` x3, `tui__16_*` x3, `tui__17_*` x2, `tui__18_*` x3, `tui__19_*` x2, `tui__20_app_navigation_test`, `tui__21_*` x2, `cli__30`) |
 | 07.0 | Tests and conformance | ✅ Complete | 20 (`conformance_00_corpus_lint`, `conformance_01_matcher_vectors`, `conformance_02_harness_selftest`, `conformance_20_coverage_gate`, `conformance_authz_matrix_check`, `conformance_10_cli_cmd_corpus`, `conformance_11_stdio_corpus`, `conformance_12_stdio_framing`, `conformance_13_rest_generic_corpus`, `conformance_14_rest_resource_corpus`, `conformance__00_support_selftest`, `conformance__01_direct_registry_corpus`, `conformance__02_tui_client_corpus` (+ link corpus 57 cases, browse/system corpus 39 cases, jobs/import/export corpus 39 cases, envelope/authz corpus 34 cases), `commands__70`..`72`, `commands__74`, `commands__75`, `commands__76`..`78`, `cli__31`, `tui__23`, `conformance_31_import_limits_process_level`, `tui__37`, `conformance_30_authz_process_level`, `commands__79_no_http_server_in_local_modes_test`, `commands__80_redirect_isolation_test`, `conformance_32_no_listener_process_level`, `e2e_19`, `docs__03`..`06`, `tui__22_mock_support_helpers_test`, `tui__30_form_model_property_test`, `tui__31`..`33`, `tui__34_no_secrets_real_registry_test`; perf label: `analytics__*` x3, `redirect__redirect_fast_path_guard`; `32_redirect_fallback_no_command`) |
-| 08.0 | Docs and registry sync | 🔶 In progress (17/17 subtasks) | 0 (docs only) |
+| 08.0 | Docs and registry sync | ✅ Complete | 0 (docs only) |
 
 **Legend:** ✅ Complete · 🔶 In progress / partial · ⬜ Not started
 
-**Current gate status (2026-11-21):** Tasks 01.0-07.0 are complete. Task 08.0
-(docs) is in progress. [ADR 0002](/docs/adr/0002-unified-command-model.md) and
+**Current gate status (2026-11-21):** **Milestone complete** on branch
+`milestone/0006-unified-command-model-and-tui`; not yet merged to `master`.
+Tasks 01.0-08.0 are complete. Final gates: full suite 486/486 at `b581608`,
+ThreadSanitizer 0 warnings, and Task-close `/pr-review` APPROVE for 07.0 and 08.0.
+The `master` backport of the URL-validation security fixes is PR #74, open. [ADR 0002](/docs/adr/0002-unified-command-model.md) and
 [ADR 0003](/docs/adr/0003-tui-framework-and-architecture.md) are
 **Implemented**, and ADR 0001 is **Accepted (amended by 0002)**; see the
 2026-11-21 "08.0 entry" in Notes & decisions. Task 07.0 artifacts:
@@ -488,6 +491,82 @@ Completed 2026-11-21 on branch `milestone/0006-unified-command-model-and-tui`.
 **Open decisions raised at close:** see the 2026-11-21 "07.0 close" entry
 in Notes & decisions.
 
+### Task 08.0 - Docs and registry sync (✅)
+
+Completed 2026-11-21 on branch `milestone/0006-unified-command-model-and-tui`.
+
+**Delivered:**
+
+- **ADRs** (user ruling 2026-11-21). ADR 0002 and ADR 0003 are
+  **Implemented**, ADR 0001 is **Accepted (amended by 0002)**. The as-built
+  amendments are verified against the binary. `docs/adr/template.md` was
+  added, and Q1, Q17 and Q18 were resolved in the decision log.
+- **Command catalog.** Finalized as generated and normative. It now carries
+  the URL host rules, the `LinkView` key set, the conformance section, and
+  formal `Errors:` lines for every command.
+- **Top-level guides.**
+  - `ARCHITECTURE.md`: the dangling ADR 0001-0005 links are gone and the
+    source layout is real.
+  - `CLAUDE.md`: stale facts corrected (ADR range, `sources.cmake` lists,
+    `redactSecretValue` keys), plus the command model and the C1/C5/C8/C10
+    rules.
+  - `README.md`: other modes, the command endpoint, the TUI, and the
+    corrected CLI storage claim.
+- **References.**
+  - `docs/cli`: all four modes, exit codes 0-5, jobs and security notes.
+  - `docs/api`: regenerated, byte-identical.
+  - New `docs/tui/README.md` user guide, with 20 hotkeys traced to source
+    lines, and `docs/tui/development.md`.
+- **Testing and registry docs.** `docs/testing/**`, including the new
+  `testplans/conformance.md`, plus `docs/agent/**`, the registry
+  `docs/README.md`, and the adding-a-transport guide (verified).
+- **Roadmap.**
+  - 0002 is reconciled with the command model through `AdminCommandBridge`
+    and a 14-code error map.
+  - 0004 is reconciled: the REST-adapter rate limiter shares one bucket for
+    both create paths.
+  - The roadmap index and the plan file map are synced.
+- **Code fixes in range, all user-authorized and reviewed.**
+  - `cmd` invalid command name (`fec61ef`) and malformed `--arg` (`0ae864d`)
+    now return an `invalid_envelope` envelope with exit 2. No `cmd` argv
+    reaches FATAL; `cli__33` proves it.
+  - Echoed option names are sanitized (CWE-117, `cd20a9c`).
+
+**Tests / gate:**
+
+- Full suite, all labels, `-j6`, at `b581608`: **486/486**. `cli__33` was
+  extended at `cd20a9c`; at that point unit was 333/333, `cli__*` 18/18 and
+  conformance 16/16.
+- Doc gates:
+  - `doc_link_check` clean.
+  - Doc registry: **118 to 0**. The 0002/0004 links to planning documents
+    that were never committed now read "planned, not yet written".
+  - An independent scan found 0 dangling links in 492 Markdown files.
+  - The stale-filename grep and the secret scan are clean.
+  - `docs__*` drift tests: 6/6.
+- Claims spot check,
+  [0006-08.0-claims-check.md](/docs/reviews/0006-08.0-claims-check.md):
+  31 claims, all matching after 2 doc fixes. It covered flags, the `curl`
+  examples against a live local server, exit codes, layout, ctest commands,
+  and SQLite persistence across restarts.
+- Every subtask went through spec verification. PARTIAL deviations were
+  fixed or accepted as built: the planned test names `tui__60/61/62` were
+  never created and the guide cites the real ones, and the dev guide is
+  281 lines.
+- `/pr-review`
+  ([0006-08.0-pr-review.md](/docs/reviews/0006-08.0-pr-review.md)):
+  **APPROVE**.
+  - Feature: LGTM.
+  - Security: PASS_WITH_FOLLOWUP. Both LOW findings were fixed before close.
+
+**Spec reconciliation:**
+
+- 09 was *consumed* with no change: the regenerated file was identical.
+- 13 skipped `docs/agent/implementation-taskmap.md`, which is scoped to the
+  original five stages.
+- 16's "five decision-log entries" are four resolution edits plus Q22.
+- All other 08.0 specs are *consumed* as written.
+
 ## Open risks
 
 - **No JSON library**: one bounded top-level scanner (Task 01.0 subtask 01) is
@@ -945,3 +1024,45 @@ Other 07.0 close follow-ups, both done on the milestone branch:
   now return an `invalid_envelope` envelope with exit 2.
 - No `cmd` argv input reaches the FATAL `unhandled_exception` path. This is
   proven by `cli__33`.
+
+### 2026-11-21 - Milestone 0006 close: open decisions and follow-ups
+
+Milestone 0006 is complete on its branch. It is not merged; merging to
+`master` is the user's call.
+
+Decisions for the user:
+
+1. **`maps_to` CLI sugar.** The descriptors list CLI commands that don't
+   exist (`db tables`/`rows`, `job get`/`list`/`cancel`, `system info`,
+   `link import`/`export`), and the generated catalog advertises them.
+   Remove the stale entries, or build the sugar.
+2. **FATAL usage errors.** Top-level usage errors (`url_shortener nonsense`,
+   `link bogus`, `tui --bogus`) log `FATAL unhandled_exception` and exit 1.
+   This is longstanding, and `master` behaves the same. `cmd` is already
+   fixed. Make the usage-error path consistent everywhere (0007 candidate).
+3. **Wrong HTTP method.** It returns 400 `invalid_method`, not 405 with
+   `Allow`. Keep and document it, or change it.
+4. **Lenient timestamps.** `parseRfc3339Zulu` accepts `2026-02-29`,
+   date-only, and missing-`Z` values. Harden it or document it.
+5. **Redirect perf baseline.** Still a placeholder; record it on the Release
+   CI runner.
+6. **Log field sanitizing.** `observability::SanitizeField` does not escape
+   CR/LF, so log fields carrying untrusted text could split log lines
+   (0007 candidate).
+7. **PR #74** (master backport: SSRF, host allowlist, CWE-113) is open and
+   needs the user's review and merge. Also open: whether to backport the
+   `redirect_handlers.cpp` `Location` byte-scan defense in depth.
+
+Already decided: `--bind-address` is deferred to 0007 (user ruling,
+2026-11-21).
+
+Follow-ups, not blocking:
+- Windows, Linux, conhost and tmux TUI smoke (ratified deferral).
+- The 0002 residual `UrlPairsAdminRepository` mentions (plan file map,
+  04.0/04, 08.0/02).
+- Per-process isolation for the Postgres contract harness under `ctest -j`.
+- TSan-aware timeouts.
+- `currentTimestamp()` clock injection.
+- The 0006 test-gap P2/P3 items.
+- Action SHA pinning.
+- The carried 06.0 items.

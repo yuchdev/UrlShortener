@@ -1,7 +1,7 @@
 # Task 08.0 - Docs and registry sync
 
 **Parent milestone:** [Milestone 0006 - Unified Command Model and TUI](/docs/roadmap/0006-unified-command-model-and-tui/plan.md)
-**Status:** 🔶 In progress
+**Status:** ✅ Complete
 **Depends on:** [07.0](/docs/roadmap/0006-unified-command-model-and-tui/07.0-tests-and-conformance/README.md) (subtask 34 gates passed). Documentation drafts that only describe settled contracts (subtasks 01-04, 14-15) may start earlier; subtasks 05-13 describe shipped behavior and must be verified against the built binary.
 
 ## Scope
