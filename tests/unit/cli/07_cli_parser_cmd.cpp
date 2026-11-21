@@ -5,16 +5,18 @@
  *
  * Scenario: `cmd` turns argv into a plain @ref CmdCliCommand (strings and
  * booleans) carried on `ParseResult::cmd`; nothing is executed and the registry
- * is not consulted. The command name is shape-checked only (@ref
- * is_valid_command_name); `--json`/`--arg` values are stored verbatim. The mode
- * is additive: `link <verb>` and server-flag parsing are byte-for-byte
+ * is not consulted. The command name is carried verbatim and NOT shape-checked
+ * here: a malformed name is not a parse error (the dispatcher maps it to an
+ * `invalid_envelope` response); `--json`/`--arg` values are stored verbatim. The
+ * mode is additive: `link <verb>` and server-flag parsing are byte-for-byte
  * unchanged, and `cmd` is recognised only as argv[1].
  *
  * Boundaries: `--json` and `--arg` are mutually exclusive; `--json -` reads
  * stdin later; `--id` is 1..request_id_max_length bytes; `--log-file` and
- * `--verbose` are mutually exclusive; names must be dotted and <=64 bytes;
- * every error message is value-free (never echoes supplied JSON/arg values,
- * threat model T-77).
+ * `--verbose` are mutually exclusive; a malformed command name shape is accepted
+ * by the parser (rejected later by the dispatcher, not here); every error
+ * message is value-free (never echoes supplied JSON/arg values, threat model
+ * T-77).
  *
  * On failure first check: whether the token loop treated the first bare token
  * as the name (options may precede or follow it) and whether `ParseResult::cmd`
@@ -257,24 +259,47 @@ BOOST_AUTO_TEST_CASE(cmd_alone_is_error)
 }
 
 /**
- * [Unit][CLI] Names failing the dotted-name shape (or the length cap) are
- * rejected: upper case, single segment, doubled dot, empty, and 65 bytes.
+ * [Unit][CLI] A malformed command-name shape is NOT a parse error: the parser
+ * carries the name verbatim on `ParseResult::cmd` (the dispatcher rejects it as
+ * `invalid_envelope`, proven in `32_cmd_invalid_command_name.cpp`). This covers
+ * upper case, single segment, doubled dot, an embedded slash, and a 65-byte name
+ * over the length cap — none of which throws here.
+ *
+ * Regression: before the fix these threw `std::invalid_argument`, which the CLI
+ * entry point surfaced as a FATAL crash (exit 1) instead of the catalog's
+ * exit-2 envelope.
  */
-BOOST_AUTO_TEST_CASE(bad_names_are_rejected)
+BOOST_AUTO_TEST_CASE(bad_name_shapes_are_carried_verbatim_not_thrown)
 {
-    BOOST_CHECK_THROW(
-        parse({"url_shortener", "cmd", "Link.Get"}), std::invalid_argument);
-    BOOST_CHECK_THROW(
-        parse({"url_shortener", "cmd", "link"}), std::invalid_argument);
-    BOOST_CHECK_THROW(
-        parse({"url_shortener", "cmd", "link..get"}), std::invalid_argument);
-    BOOST_CHECK_THROW(
-        parse({"url_shortener", "cmd", ""}), std::invalid_argument);
+    for (const std::string& bad :
+         {std::string("Link.Get"), std::string("link"),
+          std::string("link..get"), std::string("a/b")})
+    {
+        const ParseResult r = parse({"url_shortener", "cmd", bad});
+        BOOST_REQUIRE(r.cmd.has_value());
+        BOOST_CHECK(!r.help_requested);
+        BOOST_CHECK_EQUAL(r.cmd->command, bad);
+    }
 
     const std::string name_65 = "a." + std::string(63, 'a');
     BOOST_REQUIRE_EQUAL(name_65.size(), 65u);
-    BOOST_CHECK_THROW(
-        parse({"url_shortener", "cmd", name_65}), std::invalid_argument);
+    const ParseResult over = parse({"url_shortener", "cmd", name_65});
+    BOOST_REQUIRE(over.cmd.has_value());
+    BOOST_CHECK_EQUAL(over.cmd->command, name_65);
+}
+
+/**
+ * [Unit][CLI] An explicit empty-string name (`cmd ""`) is a present-but-invalid
+ * name, not the help-with-no-name case: it engages `ParseResult::cmd` with an
+ * empty command (the dispatcher rejects it as `invalid_envelope`), and must NOT
+ * be mistaken for `cmd --help` and turned into the usage text.
+ */
+BOOST_AUTO_TEST_CASE(empty_name_is_cmd_not_help)
+{
+    const ParseResult r = parse({"url_shortener", "cmd", ""});
+    BOOST_REQUIRE(r.cmd.has_value());
+    BOOST_CHECK(!r.help_requested);
+    BOOST_CHECK(r.cmd->command.empty());
 }
 
 /**

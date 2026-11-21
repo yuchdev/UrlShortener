@@ -68,8 +68,8 @@ humans and may change; `error.code` is the stable contract.
 
 | Code | Meaning | HTTP | CLI exit | Resource-route `error` string (legacy) |
 |---|---|---|---|---|
-| `invalid_envelope` | Request is not valid JSON / missing `command` / bad `v` | 400 | 2 | n/a (generic endpoint only) |
-| `unknown_command` | No such `command` | 404 | 2 | n/a |
+| `invalid_envelope` | Request is not valid JSON / missing `command` / bad `v` / syntactically invalid `command` name (any upper-case letter, empty, embedded space or slash, or over 64 bytes) | 400 | 2 | n/a (generic endpoint only) |
+| `unknown_command` | `command` name is well-formed but not in the registry | 404 | 2 | n/a |
 | `invalid_field` | Unknown/ill-typed/missing arg | 400 | 2 | `invalid_request` (plus today's per-field codes, see below) |
 | `invalid_url` | Target URL malformed **or** blocked (SSRF); intentionally indistinguishable | 400 | 2 | `invalid_url` |
 | `invalid_slug` | Slug malformed | 400 | 2 | `invalid_slug` |
@@ -87,6 +87,16 @@ The codes that exist as `app::AppErrorCode` keep exactly today's HTTP statuses
 (`statusForAppError`, e.g. `reserved_slug` is 409) and CLI exit codes
 (`ExitCodeForAppError`); new codes only add rows. The single table in code is
 `url_shortener::commands::all_error_infos()` (Task 01.0 subtask 02).
+
+**Command-name shape vs. existence.** The `command` grammar is checked before the
+registry lookup, so the two outcomes are distinct and transport-independent: a
+*syntactically invalid* command name — one containing any upper-case letter,
+empty, with an embedded space or slash, or longer than 64 bytes — fails the
+dotted-name grammar and is `invalid_envelope` (CLI exit 2), whereas a *well-formed
+but unregistered* name passes the grammar and is `unknown_command` (CLI exit 2).
+The one-shot `cmd` CLI returns the same `invalid_envelope` envelope on stdout for
+an invalid name (it never exits with a FATAL log line); e.g. `cmd LINK.CREATE` is
+`invalid_envelope` while `cmd nope.nothing` is `unknown_command`.
 
 The envelope (generic endpoint, `cmd`, stdio, TUI) always carries the code
 names of the first column. The existing REST **resource routes** keep their

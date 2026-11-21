@@ -503,32 +503,38 @@ const std::string& cmdFlagValue(const std::vector<std::string>& tokens,
  * error. The global `--storage-config` flag is stripped first (recorded in @p
  * config). Values of `--json`/`--arg` are stored verbatim and never echoed in
  * an error message (threat model T-77). Nothing is executed and the registry is
- * not consulted; only the name *shape* and the simple cross-flag rules are
- * checked here.
+ * not consulted; only the simple cross-flag rules are checked here. The command
+ * name *shape* is deliberately NOT validated: a malformed name is carried
+ * verbatim (not a parse error) so the dispatcher maps it to an `invalid_envelope`
+ * response instead of this parser throwing — which the caller would otherwise
+ * surface as a FATAL crash (exit 1) rather than the catalog's exit-2 envelope.
  *
  * When `--help`/`-h` appears with no command name, the returned command has an
  * empty @ref CmdCliCommand::command and @ref CmdCliCommand::help set, which the
- * caller turns into the static usage text; otherwise a missing name is an
- * error.
+ * caller (together with the help flag) turns into the static usage text;
+ * otherwise a missing name is an error. An explicit empty-string name (e.g.
+ * `cmd ""`) is NOT the no-name case: it is a present-but-invalid name carried
+ * through to the dispatcher's `invalid_envelope` rejection.
  *
  * @param tokens The tokens after the leading `cmd` positional (argv[2..]);
  *        consumed in place by `--storage-config` stripping.
  * @param config ServerConfig receiving `--base-domain`,
  *        `--allow-private-targets` and `--storage-config`.
- * @return CmdCliCommand The parsed one-shot command (empty name only in the
- *         help-with-no-name case).
- * @throws std::invalid_argument If the name is missing (without `--help`),
- *         malformed in shape, or too long; an option is unknown or missing its
- *         value; `--json` is repeated, empty, or combined with `--arg`; `--arg`
- *         lacks `NAME=VALUE` or has an empty name; `--id` is empty or longer
- *         than `config.request_id_max_length`; `--log-file` is empty or
- *         combined with `--verbose`; or a second positional follows the name.
+ * @return CmdCliCommand The parsed one-shot command. @ref CmdCliCommand::command
+ *         is empty in the help-with-no-name case and may also hold an invalid
+ *         (e.g. empty or upper-case) name the dispatcher rejects.
+ * @throws std::invalid_argument If the name is missing (without `--help`); an
+ *         option is unknown or missing its value; `--json` is repeated, empty,
+ *         or combined with `--arg`; `--arg` lacks `NAME=VALUE` or has an empty
+ *         name; `--id` is empty or longer than `config.request_id_max_length`;
+ *         `--log-file` is empty or combined with `--verbose`; or a second
+ *         positional follows the name. A malformed command-name shape is NOT
+ *         thrown here (see above).
  */
 CmdCliCommand parseCmdCommand(std::vector<std::string>& tokens,
                               ServerConfig& config)
 {
     namespace cli = url_shortener::cli;
-    namespace commands = url_shortener::commands;
 
     // Strip the global --storage-config flag (any position) before the flag
     // loop, exactly as the `link <verb>` path does.
@@ -658,15 +664,16 @@ CmdCliCommand parseCmdCommand(std::vector<std::string>& tokens,
             "Missing command name. Expected: cmd <name> [options].");
     }
 
-    // Shape-only check (no registry lookup); value is not echoed.
-    if (!commands::is_valid_command_name(command.command)
-        || command.command.size()
-            > commands::envelope_limits {}.max_command_len)
-    {
-        throw std::invalid_argument(
-            "Invalid command name. Expected a dotted name like link.create.");
-    }
-
+    // The command-name *shape* is deliberately NOT validated here and a
+    // malformed name is NOT a parse error: the name is carried verbatim so the
+    // dispatcher (DispatchCmdCommand) maps a syntactically invalid name — any
+    // upper-case letter, an empty name, one with an embedded space or slash, or
+    // one over the 64-byte cap — to the same `invalid_envelope` response the
+    // other transports return at envelope validation, rather than throwing out
+    // of the parser (which the caller would surface as a FATAL crash, exit 1).
+    // The name is still escaped before it reaches any envelope (threat model
+    // T-78), and the dispatcher re-checks @ref commands::is_valid_command_name
+    // and the length cap before the registry lookup.
     return command;
 }
 
@@ -1145,8 +1152,12 @@ ParseResult CliParser::parse(int argc, char* argv[]) const
     if (argc >= 2 && std::string(argv[1]) == "cmd") {
         std::vector<std::string> cmd_args(argv + 2, argv + argc);
         CmdCliCommand parsed = parseCmdCommand(cmd_args, result.config);
-        if (parsed.command.empty()) {
-            // Only reachable for `cmd --help` with no name.
+        if (parsed.command.empty() && parsed.help) {
+            // The help-with-no-name case (`cmd --help`): an empty name with the
+            // help flag set yields the static usage text. An empty name WITHOUT
+            // `--help` (e.g. `cmd ""`) is a present-but-invalid name and falls
+            // through to the dispatcher, which rejects it as `invalid_envelope`
+            // (never the usage text).
             result.help_text = buildCmdHelpText();
             result.help_requested = true;
             return result;

@@ -192,12 +192,16 @@
     },
     {
       "name": "unknown_command_case_sensitive",
-      "doc": "an upper-case command name (LINK.CREATE) violates the lower-case command grammar and is rejected invalid_envelope at envelope validation, before registry lookup (see DEVIATIONS: spec table expected unknown_command, but the product rejects the malformed name shape first)",
+      "doc": "an upper-case command name (LINK.CREATE) violates the lower-case command grammar and is rejected invalid_envelope at envelope validation, before registry lookup, identically on EVERY capability-eligible transport. Sent as a real request envelope (not raw_request) so the structured transports replay it too - in particular cli_cmd maps the invalid name to this same envelope instead of crashing with a FATAL line and exit 1 (see DEVIATIONS: spec table expected unknown_command, but the product rejects the malformed name shape first)",
       "command": "command.list",
       "steps": [
         {
           "label": "send",
-          "raw_request": "{\"v\":1,\"command\":\"LINK.CREATE\"}",
+          "request": {
+            "v": 1,
+            "command": "LINK.CREATE",
+            "args": {}
+          },
           "expect": {
             "ok": false,
             "error": {

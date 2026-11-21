@@ -388,6 +388,7 @@ set(URL_SHORTENER_SOURCES
       tests/unit/cli/21_serve_stdio_dispatch.cpp
       tests/unit/cli/30_cli_parser_tui_mode.cpp
       tests/unit/cli/31_cli_parser_tui_path_flags.cpp
+      tests/unit/cli/32_cmd_invalid_command_name.cpp
   )
 
   set(ANALYTICS_INTEGRATION_SOURCES

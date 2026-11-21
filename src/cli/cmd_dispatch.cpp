@@ -362,6 +362,31 @@ int DispatchCmdCommand(const CmdCliCommand& command, const ServerConfig& config,
             return 2;
         }
 
+        // Step 0.5: reject a syntactically invalid command name before anything
+        // else. The CLI parser accepts the name verbatim — its dotted-name shape
+        // is not a parse error — so a name with any upper-case letter, an empty
+        // name, one with an embedded space or slash, or one over the 64-byte cap
+        // is rejected here with the same `invalid_envelope` envelope every other
+        // transport produces at envelope validation. It is printed on @p out
+        // (or, under `--raw`, a value-free `cmd failed:` line on @p err) with
+        // exit 2 — never an unhandled exception or a FATAL log line. The id echo
+        // follows the CLI rule (`--id`, else `cli-1`) and the rejected name is
+        // never echoed (threat model T-77). This runs before the runtime is even
+        // acquired, so the outcome does not depend on the storage backend. A
+        // well-formed but unregistered name is distinct: it passes this check and
+        // resolves to `unknown_command` through the registry below.
+        if (!commands::is_valid_command_name(command.command)
+            || command.command.size()
+                > commands::envelope_limits {}.max_command_len)
+        {
+            const commands::CommandResponse response = commands::make_failure(
+                command.request_id.value_or("cli-1"),
+                commands::make_error(
+                    commands::CommandErrorCode::invalid_envelope,
+                    "invalid field command"));
+            return print_response(response, command.raw, out, err);
+        }
+
         // Step 1: the single shared registry (milestone contract C11),
         // obtained through the helper shared with the `link <verb>` dispatcher.
         const std::shared_ptr<composition::CommandRuntime> runtime =
