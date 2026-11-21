@@ -283,7 +283,7 @@ when the option is `ON`.
 | Link management CLI | `url_shortener link <verb>` | Nine verbs: `create`, `get`, `update`, `delete`, `enable`, `disable`, `restore`, `preview`, `stats`. |
 | Generic command CLI | `url_shortener cmd <name>` | Run any registered command by name; `--raw` prints the result field only. |
 | stdio transport | `url_shortener serve-stdio` | NDJSON line-framed command server: one request per line in, one response per line out. |
-| Terminal UI | `url_shortener tui` | Interactive FTXUI terminal; requires `URLSHORTENER_ENABLE_TUI=ON` at build time. |
+| Terminal UI | `url_shortener tui` | Interactive FTXUI terminal; requires `URLSHORTENER_ENABLE_TUI=ON` at build time. See [`docs/tui/README.md`](docs/tui/README.md). |
 
 Full reference: [`docs/cli/README.md`](docs/cli/README.md).
 
@@ -682,6 +682,10 @@ ctest --test-dir cmake-build -L conformance --output-on-failure
 
 # All labeled suites
 ctest --test-dir cmake-build -L "unit|contract|integration|e2e|conformance" --output-on-failure
+
+# Performance guard (advisory — the redirect guard measures only on optimized builds
+# and is not a pass/fail gate in Debug)
+ctest --test-dir cmake-build -L perf --output-on-failure
 ```
 
 Run a single test by name:
@@ -714,6 +718,8 @@ and `tools/sqlite_state_assert.py` for asserting SQLite state directly.
   how to add a new stream transport (`ITransportAdapter` contract, NDJSON framing).
 - [`docs/cli/README.md`](docs/cli/README.md) — CLI reference: all nine `link <verb>`
   subcommands, the `cmd` subcommand, `serve-stdio`, flags, and exit codes.
+- [`docs/tui/README.md`](docs/tui/README.md) — TUI user guide: launching, screens,
+  hotkeys, import/export, jobs, read-only mode, and troubleshooting.
 - [`docs/api/README.md`](docs/api/README.md) — HTTP API reference generated from
   the C++ `RouteRegistry`.
 - [`docs/configuration.md`](docs/configuration.md) — full configuration reference

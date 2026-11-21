@@ -44,9 +44,11 @@ the session and shows a persistent banner: *"memory store – data is lost on ex
 Use a SQLite or PostgreSQL backend (see the CLI reference in [docs/cli/README.md](../cli/README.md))
 for persistent data.
 
-**Relation to server mode.** The TUI never starts `HttpServer` or binds a socket. It
-is safe to run beside a server on the same SQLite file; concurrent access is subject to
-SQLite locking.
+**Relation to server mode.** The TUI never starts `HttpServer` or binds a socket.
+The CLI, TUI, and server share one backend through `--storage-config`; server and CLI
+sharing a SQLite file is covered by integration test `cli_18_server_and_cli_share_sqlite`.
+Concurrent writers rely on SQLite's built-in file locking; heavy concurrent write use
+has not been benchmarked.
 
 ## Screen map
 
@@ -268,7 +270,7 @@ the form is generated automatically from the descriptor.
 | `Ctrl-S` | Submit the current form | `src/tui/screens/generic_command_screen.cpp` line 149 |
 | `Ctrl-R` | Toggle raw-JSON args editor | `src/tui/screens/generic_command_screen.cpp` line 144 |
 | `y` | Copy the equivalent CLI command to a toast | `src/tui/screens/generic_command_screen.cpp` line 289 |
-| `Esc` | Close and return to the palette list | `src/tui/screens/generic_command_screen.cpp` line 153 |
+| `Esc` | Close and return to the palette list (raw-mode handler at line 153; result-viewer close at line 285) | `src/tui/screens/generic_command_screen.cpp` lines 153, 285 |
 
 **Raw-JSON editor.** `Ctrl-R` replaces the generated form with a raw-text editor
 pre-seeded with the current form's args object. Edit the JSON directly and press

@@ -60,6 +60,7 @@ On Windows/multi-config generators add `-C Debug` (or the relevant config) to ev
 - Conformance corpus cases are JSON files in `tests/conformance/commands/`; run `python tools/conformance_lint.py <file>` before committing, and add transport-agnostic cases before handler-specific tests.
 - For other suites: add the `.cpp` under the appropriate `tests/unit|integration|contract/<subdir>/` directory with a numeric prefix, then append its path to the matching source list in `sources.cmake`.
 - `UPDATE_GOLDEN=1` regenerates TUI render goldens locally; never committed via CI.
+- For per-task test prefix ranges and CMake list owners, see ["Test file prefixes and CMake list ownership"](docs/roadmap/0006-unified-command-model-and-tui/plan.md#test-file-prefixes-and-cmake-list-ownership) in the milestone plan.
 
 Integration tests also include a Python harness (`tests/integration/py/`) and `tools/sqlite_state_assert.py` for asserting SQLite state directly.
 

@@ -10,7 +10,7 @@
 >
 > Earlier references to ADRs on system architecture, backend topology, performance contract,
 > security model and SOCI persistence pointed at files that were never committed; their
-> content lives in `docs/backend-selection.md`, `docs/storage/`, and `docs/configuration.md`.
+> content lives in `docs/backend-selection.md`, `docs/storage/`, `docs/configuration.md`, and `docs/security/`.
 
 This document describes the project structure and modular runtime architecture of the
 low-latency URL shortener.
@@ -74,7 +74,7 @@ Data flow:
 ├── src/
 │   ├── core/              # utils.cpp
 │   ├── http/              # server, sessions, request_handlers, handlers/
-│   ├── app/               # link_backend, link_command_service, table sources
+│   ├── app/               # link_backend, link_command_service, repository_link_store, table sources
 │   ├── storage/           # adapter implementations
 │   ├── commands/          # all command implementations, json_scan, ndjson session
 │   ├── transport/         # stdio_adapter.cpp
@@ -93,6 +93,7 @@ Data flow:
     ├── api/               # generated HTTP API reference
     ├── commands/          # command catalog, adding-a-transport.md
     ├── cli/               # CLI reference
+    ├── tui/               # TUI user guide and development guide
     └── storage/           # backend guides
 ```
 
