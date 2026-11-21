@@ -62,19 +62,22 @@ absolute-from-repo-root Markdown link:
 | #    | Milestone                                        | Spec                                                                | Status                                                                  |
 |------|---------------------------------------------------|----------------------------------------------------------------------|---------------------------------------------------------------------------|
 | 0001 | REST API refactoring (router, handlers, OpenAPI docs) | [plan.md](/docs/roadmap/0001-rest-api-refactoring/plan.md)           | [status.md](/docs/roadmap/0001-rest-api-refactoring/status.md)            |
-| 0002 | Web admin console (analytics, fingerprinting, abuse detection) | [plan.md](/docs/roadmap/0002-admin_console/plan.md)                  | [status.md](/docs/roadmap/0002-admin_console/status.md)                   |
+| 0002 | Web admin console (analytics, fingerprinting, abuse detection) | [plan.md](/docs/roadmap/0002-admin_console/plan.md) - requires 0006 first | [status.md](/docs/roadmap/0002-admin_console/status.md)                   |
 | 0003 | CLI & REST command interfaces (shared command layer for link management) | [plan.md](/docs/roadmap/0003-cli_rest_interfaces/plan.md) | [status.md](/docs/roadmap/0003-cli_rest_interfaces/status.md) |
-| 0004 | Public web UI (paste a URL, get a short link, copy it) | [plan.md](/docs/roadmap/0004-web-ui/plan.md)                        | [status.md](/docs/roadmap/0004-web-ui/status.md)                          |
+| 0004 | Public web UI (paste a URL, get a short link, copy it) | [plan.md](/docs/roadmap/0004-web-ui/plan.md) - soft dependency on 0006 | [status.md](/docs/roadmap/0004-web-ui/status.md)                          |
 | 0005 | Windows secret-store backend selection             | [plan.md](/docs/roadmap/0005-windows-backend-selection/plan.md)      | [status.md](/docs/roadmap/0005-windows-backend-selection/status.md)       |
 | 0006 | Unified command model & TUI (JSON commands/jobs shared by REST, CLI, TUI, stdio/IPC; FTXUI terminal UI) | [plan.md](/docs/roadmap/0006-unified-command-model-and-tui/plan.md) | [status.md](/docs/roadmap/0006-unified-command-model-and-tui/status.md) |
 
 > All six milestones are decomposed into the full task → subtask tree.
 > Milestones 0001 and 0003 are **fully implemented** (see their
-> `status.md` files for verified test/build evidence). Milestones 0002, 0004,
-> 0005 and 0006 are fully specified but **not started**; see each one's
-> `status.md` for open risks. Note that 0005's plan.md carries an unresolved
-> verification question (no existing Linux `secret-store` implementation could
-> be located in this repository to confirm parity against).
+> `status.md` files for verified test/build evidence). Milestones 0002, 0004
+> and 0005 are fully specified but **not started**; see each one's `status.md`
+> for open risks. Milestone 0006 is **in progress**: Tasks 01.0–07.0 are
+> complete; Task 08.0 (docs and registry sync) is in progress with final gates
+> pending — see [status.md](/docs/roadmap/0006-unified-command-model-and-tui/status.md).
+> Note that 0005's plan.md carries an unresolved verification question (no
+> existing Linux `secret-store` implementation could be located in this
+> repository to confirm parity against).
 
 ### Execution order
 

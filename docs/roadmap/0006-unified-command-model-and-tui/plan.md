@@ -82,7 +82,7 @@ not order (0006 runs before 0002/0004); the roadmap README states this.
 | [05.0](/docs/roadmap/0006-unified-command-model-and-tui/05.0-jobs-pairs-and-stdio/README.md) | Jobs, pair import/export, stdio | Commands + adapter | `JobRunner`, `job.*`, `link.import/export`, `jobs` table, process-wide job runtime in `build_command_runtime`, `ITransportAdapter`, `serve-stdio`, IPC how-to |
 | [06.0](/docs/roadmap/0006-unified-command-model-and-tui/06.0-tui/README.md) | Terminal UI | Interface | FTXUI TUI per ADR 0003 diagrams D1-D13 (D13: Settings screen, added 2026-10-22) |
 | [07.0](/docs/roadmap/0006-unified-command-model-and-tui/07.0-tests-and-conformance/README.md) | Tests and conformance | Testing | Cross-transport conformance corpus, TUI snapshots, security/regression tests |
-| [08.0](/docs/roadmap/0006-unified-command-model-and-tui/08.0-docs-and-registry-sync/README.md) | Docs and registry sync | Cleanup | ADR acceptance, TUI guide, CLI/API docs, 0002/0004 reconciliation |
+| [08.0](/docs/roadmap/0006-unified-command-model-and-tui/08.0-docs-and-registry-sync/README.md) | Docs and registry sync | Cleanup | ADR acceptance, TUI guide, ARCHITECTURE/CLAUDE/README sync, CLI/API docs, 0002/0004 reconciliation |
 
 ## Architecture
 
@@ -204,14 +204,44 @@ kept symmetric (checked mechanically before merge).
 ## File map
 
 ```text
-include/url_shortener/commands/   json_scan, envelope, arg_spec, command_registry, audit, job_runner, transport_adapter, link_commands
-src/commands/                     registry, handlers (link, browse, system, pair, job)
-src/composition/                  command_runtime (the one registry builder), job_runtime, transport_factory
-src/transport/                    stdio_adapter (REST/CLI adapters stay in src/http, src/cli)
-src/app/repository_link_store.cpp new ILinkStore over IMetadataRepository + ICacheStore
-src/tui/                          app, router, in_process_client, async_caller, form_model/form_view, table_model/table_view, palette, screens/ (incl. settings_screen) (Task 06.0 README: 21 subtasks)
-tests/unit/commands/  tests/unit/tui/  tests/conformance/commands/
-docs/adr/0002-*.md  docs/adr/0003-*.md  docs/commands/  docs/tui/
+include/url_shortener/commands/   json_scan, envelope, arg_spec, error_codes, args_builder,
+                                  command_registry/command_descriptor, audit,
+                                  job_runner/job_store/job_submitter/job_types,
+                                  transport_adapter, ndjson_line_reader/ndjson_session,
+                                  link_commands/link_command_codec, pair_commands/pair_file_access/
+                                  pair_formatter/pair_line_parser, browse_commands, system_commands,
+                                  builtin_commands, catalog, jobs_table_source
+src/commands/                     (mirrors headers; link split into create/read/update/lifecycle/list;
+                                  db_commands separate from browse_commands)
+src/composition/                  command_runtime, job_runtime, process_command_runtime,
+                                  link_backend_bootstrap, link_command_service_factory,
+                                  storage_factory, transport_factory
+src/transport/                    stdio_adapter (REST/CLI adapters stay in src/http/, src/cli/)
+src/app/                          repository_link_store (ILinkStore over IMetadataRepository +
+                                  ICacheStore), expiring_link_cache, link_record_codec, link_backend,
+                                  links_table_source (browse)
+src/tui/                          app, app_navigation, router, in_process_client, async_caller,
+                                  capability, form_model/form_view/form_widgets,
+                                  table_model/table_view/tables_model, dashboard_model,
+                                  links_model/link_detail_model/links_query, jobs_model, import_model,
+                                  palette_model, settings_model, json_view, json_view,
+                                  mutation_flow, terminal_restore, theme/theme_ftxui,
+                                  toast/toast_view/confirm/confirm_view, and more
+                                  screens/: dashboard, links, link_detail, form, tables,
+                                           import_export, jobs, palette, settings,
+                                           generic_command, placeholder
+tests/unit/commands/   tests/unit/tui/
+tests/conformance/
+  commands/   JSON corpus (link, browse/system, jobs, pairs, envelope/authz)
+  support/    C++ library (adapter, case_runner, corpus, matcher, mini_json,
+              registry_fixture, direct_adapter, tui_adapter)
+  runners/    00_support_selftest, 01_direct_registry_corpus, 02_tui_client_corpus
+  py/         conformance_common, conformance_match; corpus: lint, matcher vectors,
+              harness selftest; shims: cli_cmd, stdio, rest_generic, rest_resource;
+              coverage gate; process-level: authz, import_limits, no_listener
+docs/adr/0002-unified-command-model.md   docs/adr/0003-tui-framework-and-architecture.md
+docs/commands/README.md   (sections 1-6 prose + 3.7 generated reference block)
+docs/tui/README.md   docs/tui/development.md
 ```
 
 ## Test file prefixes and CMake list ownership

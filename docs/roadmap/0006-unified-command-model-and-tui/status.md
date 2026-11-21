@@ -21,7 +21,9 @@ Tracks progress against [plan.md](/docs/roadmap/0006-unified-command-model-and-t
 (docs) is in progress. [ADR 0002](/docs/adr/0002-unified-command-model.md) and
 [ADR 0003](/docs/adr/0003-tui-framework-and-architecture.md) are
 **Implemented**, and ADR 0001 is **Accepted (amended by 0002)**; see the
-2026-11-21 "08.0 entry" in Notes & decisions.
+2026-11-21 "08.0 entry" in Notes & decisions. Task 07.0 artifacts:
+[test-gap report](/docs/reviews/0006-test-gap-report.md),
+[PR review](/docs/reviews/0006-pr-review.md).
 
 *Historical (2026-10-22), kept for the record:* design complete, decisions
 confirmed, implementation not started. Delivered at that point:
@@ -488,11 +490,6 @@ in Notes & decisions.
 
 ## Open risks
 
-- **Storage unification (02.0)** touches the path every link command and the
-  redirect fast path depend on; it is the highest-risk task and is gated by
-  the existing contract suite plus the protected-fast-path rule (C10: behavior
-  and complexity unchanged; redirect counters are persisted only by a
-  background flusher, per confirmed decision D12).
 - **No JSON library**: one bounded top-level scanner (Task 01.0 subtask 01) is
   the only sanctioned deviation from the manual helpers (per confirmed
   decision D3); escalate to a separate ADR rather than adding a dependency
@@ -500,15 +497,27 @@ in Notes & decisions.
 - **New HTTP surface on an unauthenticated server**: `/api/v1/commands`,
   `GET /api/v1/links`, `/api/v1/jobs*` are off by default and role-limited
   until Milestone 0002 (per confirmed decision D4).
-- **FTXUI claims unverified** (version, MSVC build, Windows console behavior)
-  - see [decision-log.md](/docs/roadmap/0006-unified-command-model-and-tui/decision-log.md);
-  still scoped to Task 06.0 subtask 01, unchanged by the 2026-10-22 review.
 - **Overlap with 0002** pagination/error contracts; reconciliation is a
   documented projection but must be re-checked when 0002 is scheduled.
 - **Tauri** has no spec; its relationship to 0002 is an open question (Q14),
   explicitly left open on 2026-10-22 - nothing in 0006 depends on the answer.
 
 ## Notes & decisions
+
+### 2026-11-21 - 08.0/16: Risks closed by implementation
+
+The following risks from "Open risks" were resolved by the implementation run
+(Tasks 01.0–07.0) and are recorded here:
+
+- **Storage unification (02.0):** closed. Task 02.0 is complete; redirects,
+  REST, CLI, TUI and stdio all run through `LinkBackend::store()` (C10
+  preserved). Full suite 484/484 at `7b6909a`; no regression on the fast path.
+- **FTXUI claims unverified:** closed. FTXUI v7.0.3 pinned at commit
+  `f921fad208912747c17d129a8ef75ec7624b6eec` in `cmake/FetchFTXUI.cmake`; all
+  five claims verified and recorded in ADR 0003 Decision 1 (C++17 floor, MSVC
+  support, vcpkg port `ftxui`, `Table` availability, Windows console behavior).
+  See [decision-log.md](/docs/roadmap/0006-unified-command-model-and-tui/decision-log.md)
+  Q1 (resolved 2026-11-18).
 
 - 2026-11-16 (user, raised at Task 03.0 close):
   - **Stats range:** cap the number of buckets a stats request may produce

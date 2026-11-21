@@ -1,7 +1,7 @@
 # 16 - Roadmap index and milestone status sync
 
 **Parent task:** 08.0 Docs and registry sync
-**State:** ⬜ Not started
+**State:** ✅ Complete
 **Depends on:** 01, 02, 14, 15
 **Blocks:** 17
 **Estimated size:** S

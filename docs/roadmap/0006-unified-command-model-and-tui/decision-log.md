@@ -32,6 +32,7 @@ Nothing here is implemented; only documents changed.
 | Q19 | Branch name | `roadmap/tui-unified-command-model` (cut from `master`, uncommitted work) | other | `git branch -m` |
 | Q20 | Commit the changes? | The headless design run made no commit; the documents were later committed as `fe78bf6` ("docs(roadmap): add milestone 0006 - unified command model and TUI") on this branch. Review fixes after that commit are uncommitted until someone commits them | n/a | `git revert fe78bf6` |
 | Q21 | `docs/adr/template.md` is referenced by `docs/adr/README.md` but does not exist | New ADRs follow ADR 0001's structure; template **not** created | Create template | Out of scope |
+| Q22 | `ARCHITECTURE.md` has dangling or absent ADR cross-links, is missing the commands/TUI/storage-unification sections, and the port table lacks `GetById` | **Fix in Task 08.0 subtask 05**: add commands and TUI sections; fix ADR cross-links; add `GetById` to the port table; align startup order and CI section with shipped code | Leave them broken; remove the cross-links; create a template | Low; docs-only; blocked on 08.0/05 |
 
 ## Things to research tomorrow (I could not verify offline / without asking)
 
