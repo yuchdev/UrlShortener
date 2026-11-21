@@ -50,6 +50,10 @@ reuse-not-fork API decision lives in
 > bridge), keyed by HTTP client, not in the `link.create` command handler: the
 > local CLI/TUI/stdio transports are the operator and are not throttled (open
 > decision in the 0006 decision log).
+> `POST /api/v1/links`, `GET /api/v1/links/{slug}/preview` keep exact
+> request/response bodies and status codes (Milestone 0006 contract C3), so
+> this milestone's API client needs no change. The shorten UI may keep
+> calling the resource routes; the generic endpoint is optional.
 
 ## Decision Record
 
@@ -235,6 +239,14 @@ redirect-path limiter wiring. It must be disabled by default or safely
 no-op when unconfigured, and must fail open (a limiter backend error never
 blocks a legitimate create). Specified in task
 [02.0 subtask 01](/docs/roadmap/0004-web-ui/02.0-fault-modes-validation-rate-limiting/01-backend-public-create-rate-limit.md).
+
+After Milestone 0006 the REST create route is served by
+`CommandRegistry::execute` (`link.create`). The limiter is **transport
+policy, not command logic**: it runs in the REST adapter before `execute`
+for the routes mapped to `link.create`, keyed by client address, using the
+existing `IRateLimiter` port (fail-open). This keeps CLI/TUI/stdio (local
+operator) unlimited and keeps one rule for both REST entry points
+(`POST /api/v1/links` and `POST /api/v1/commands` with `link.create`).
 
 ### SC6. Non-goals (V1)
 

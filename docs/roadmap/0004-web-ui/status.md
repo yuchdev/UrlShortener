@@ -13,7 +13,8 @@ Tracks progress against [plan.md](/docs/roadmap/0004-web-ui/plan.md).
 
 **Legend:** ✅ Complete · 🔶 In progress / partial · ⬜ Not started
 
-**Current gate status:** 0% implemented. This milestone is design-complete
+**Current gate status:** 0% implemented. Soft dependency: Milestone 0006
+(runs first; no code blocker). This milestone is design-complete
 (4 tasks decomposed into 14 subtasks) but has no code yet. Verified against
 the codebase as of 2026-09-24: there is no `web/app/` and no `package.json`
 in the repository; the three `/api/v1/links` endpoints this milestone reuses
