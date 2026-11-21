@@ -58,7 +58,7 @@ and reconcile Milestones 0002 and 0004 with the command model. Ends with
 | 14 | [Reconcile Milestone 0002](14-reconcile-milestone-0002.md) | ✅ Complete | plan.md | 16 |
 | 15 | [Reconcile Milestone 0004](15-reconcile-milestone-0004.md) | ✅ Complete | plan.md | 16 |
 | 16 | [Roadmap index and milestone status sync](16-roadmap-index-and-status-sync.md) | ✅ Complete | 01, 02, 14, 15 | 17 |
-| 17 | [Final link, registry and claims gates](17-final-link-registry-and-claims-gates.md) | ⬜ Not started | 05-13, 16 | none |
+| 17 | [Final link, registry and claims gates](17-final-link-registry-and-claims-gates.md) | ✅ Complete | 05-13, 16 | none |
 
 ## Key constraints
 
