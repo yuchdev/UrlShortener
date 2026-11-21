@@ -1,7 +1,6 @@
 # Adding a Transport
 
-> **Status:** Proposed (design of Milestone 0006; normative once
-> [ADR 0002](/docs/adr/0002-unified-command-model.md) is accepted).
+> **Status:** Implemented (ADR 0002 accepted 2026-11-21; Milestone 0006 shipped).
 
 This guide explains how to add a new stream transport to the URL Shortener
 command model. It covers the `ITransportAdapter` contract, the NDJSON framing
