@@ -1,15 +1,14 @@
 # Command Catalog
 
-> **Status:** Proposed (design of Milestone 0006; normative once ADR 0002 is accepted).
-> Generation split (decision-log "Open decisions"): the generator of Task 01.0
-> (subtasks 11-12, `tools/command_catalog_dump`) owns **only** the block
+> **Status:** Implemented (ADR 0002 accepted; generated block `### 3.7` is normative).
+> Generation split: `tools/command_catalog_dump` owns **only** block
 > `### 3.7 Generated command reference`, the way [`docs/api/README.md`](/docs/api/README.md)
-> is generated from `RouteRegistry`. Sections 1-6 stay hand-written prose and
-> are guarded against drift by Task 07.0 subtask 16 (headings, argument tables
-> and the error table are compared with the registry and the error table of
-> Task 01.0 subtask 02). Regenerate block `### 3.7` with
-> `cmake --build cmake-build --target command_catalog_dump` and run the
-> executable; the unit test `commands__12_catalog_drift` fails on any drift.
+> is generated from `RouteRegistry`. Sections 1–6 stay hand-written prose and are guarded
+> against drift by two unit tests: `commands__12_catalog_drift` (block 3.7) and
+> `docs__03_command_catalog_matches_registry` (prose headings, argument tables and the error
+> table from `all_error_infos()`). Regenerate block `### 3.7` with
+> `cmake --build cmake-build --target command_catalog_dump` and run the executable;
+> `commands__12_catalog_drift` fails on any drift.
 
 Every operation available through REST, CLI, TUI, stdio and any future IPC
 transport is one of the commands below. A command is **one definition and one
@@ -197,7 +196,12 @@ written). Types: `string`, `bool`, `int`, `timestamp` (RFC 3339 UTC),
 
 ### 3.1 Link commands (existing behavior, now envelope-addressable)
 
-`result` is the existing `LinkView` JSON (`serializeLinkViewJson`) unless noted.
+`result` is the existing `LinkView` JSON (`serializeLinkViewJson`) unless noted. The
+standard set of keys is: `id`, `slug`, `url`, `short_url`, `created_at`, `updated_at`,
+`status` (enum `active`|`disabled`|`expired`|`deleted`), `redirect_type`, `tags`,
+`metadata`, `campaign`, `stats{total_redirects, redirects_24h, redirects_7d,
+last_accessed_at}`. There is no top-level `enabled`, `expires_at` or `deleted_at` key;
+lifecycle is encoded in `status`.
 
 #### `link.create` - Perm `write`, sync, Mut, `dry_run` yes
 
@@ -216,6 +220,40 @@ Errors: `invalid_url`, `invalid_slug`, `reserved_slug`, `slug_conflict`, `invali
 The canonical arg is `target_url`; only the REST resource route also accepts
 `url` (read first, wins if both are present). The `result` object names the
 target `url` (`serializeLinkViewJson`), as today.
+
+**`target_url` host and SSRF rules** (enforced by `normalizeTargetUrl`,
+`is_valid_url_host`, `isPrivateHost` and `containsUnsafeUrlControlBytes` in
+`src/core/utils.cpp`; apply identically to `link.import`, which routes every
+row through the same `CreateLink` path):
+
+- **Private targets** are refused unless `SHORTENER_ALLOW_PRIVATE_TARGETS` is
+  set (`--allow-private-targets`). Refused private forms include: decimal IPv4
+  (`2130706433` → 127.0.0.1), hex IPv4 (`0x7f000001`), octal IPv4
+  (`0177.0.0.1`), short-form IPv4 (`127.1`), trailing-dot variants
+  (`127.0.0.1.`), IPv6 with an embedded private IPv4 (`[::ffff:127.0.0.1]`,
+  `[::127.0.0.1]`, NAT64 `64:ff9b::/96`, 6to4 `2002::/16`), and special-use
+  ranges (CGNAT `100.64.0.0/10`, benchmarking `198.18.0.0/15`, multicast
+  `224.0.0.0/4`, reserved `240.0.0.0/4`). Public addresses (e.g. `8.8.8.8`)
+  are unaffected.
+
+- **Malformed hosts are always refused**, even when private targets are
+  allowed:
+  - A registered name or numeric IPv4 host must consist of ASCII letters,
+    digits, `-` and `.` only, with at most one trailing dot (a valid FQDN
+    dot); a bracketed IPv6 literal (`[...]`) is also accepted.
+  - **Underscores are refused** (RFC 1123 conformant, fail-closed;
+    e.g. `foo_bar.example.com` → `invalid_url`).
+  - Raw non-ASCII hosts are refused: IDN names must be punycoded
+    (`xn--...`; e.g. `xn--bcher-kva.example.com` is accepted).
+  - `%` anywhere in the host is always refused (no percent-decoding, to
+    close the encoded-dot bypass: `2130706433%2e` → `invalid_url`).
+  - `\`, whitespace and control bytes in the authority (scheme + host +
+    optional port) are refused. A `\` in the authority is treated by some
+    browsers as `/`, which can re-point to loopback.
+  - Control bytes (C0 ≤ U+001F, DEL U+007F, U+0085, U+2028/U+2029) in
+    the path or query are refused (CWE-113 HTTP response splitting,
+    CWE-93 CRLF injection).
+
 Maps to: `POST /api/v1/links`, `link create`.
 
 #### `link.get` - `read`, sync
@@ -310,8 +348,7 @@ Backed by `app::ILinkLister` over the new `IMetadataRepository::ListLinksPage`
 (Task 03.0 subtasks 01 and 12; lifecycle, tag and campaign filters are applied
 in the app layer because the SQL backends keep them in `attributes`). Maps to:
 new `GET /api/v1/links` (query params = args; gated, see "REST access
-control"), `link list`. _Note:_ default `status` is recorded in the decision
-log (Q9).
+control"), `link list`.
 Errors: `invalid_field`, `not_authorized`.
 
 #### `db.tables` - `read`, sync
@@ -354,8 +391,9 @@ Bulk-insert `full_URL -> short_URL` pairs.
 Each row goes through `LinkCommandService::CreateLink` (same validation, SSRF
 check and slug rules as `link.create`; no second code path). The CSV header
 and columns are exactly `full_url,slug`. Job `result`:
-`{ "total": n, "created": n, "skipped": n, "failed": n, "errors": [ {"line": n, "code": "invalid_url"} ], "errors_omitted": n, "dry_run": false }`
-(`errors` capped at 100; `errors_omitted` counts the errors beyond the cap; `dry_run` echoes `options.dry_run`; Task 05.0 subtask 08).
+`{ "total": n, "created": n, "skipped": n, "overwritten": n, "failed": n, "errors": [ {"line": n, "code": "..."} ], "errors_omitted": n, "dry_run": false }`
+(`errors` capped at 100; `errors_omitted` counts errors beyond the cap; line numbers
+are 1-based including the CSV header line; `dry_run` echoes `options.dry_run`).
 
 #### `link.export` - `read` (`write` with `path`), **job**
 
@@ -420,9 +458,6 @@ markers. To regenerate after a descriptor changes, run:
 cmake --build cmake-build --target command_catalog_dump
 ./cmake-build/command_catalog_dump   # paste the output between the markers
 ```
-
-Until Task 03.0 registers the link/browse commands, this block lists only
-`command.list`.
 
 <!-- BEGIN GENERATED: commands (tools/command_catalog_dump) -->
 | Command | Perm | Kind | Mut | dry_run | Summary |
@@ -706,8 +741,35 @@ design sketch, and security checklist in
 
 ## 7. Conformance
 
-A single corpus of `(request envelope, expected response envelope)` pairs
-under `tests/conformance/commands/` is replayed through every adapter (direct
-registry, REST generic, REST resource routes where mapped, CLI `cmd`,
-`serve-stdio`, TUI in-process client). Identical `result`/`error.code` across
-adapters is the executable definition of "identical commands".
+A single corpus of `(request, expected response)` pairs under
+[`tests/conformance/commands/`](/tests/conformance/commands/) is replayed
+through every transport adapter. Identical `result` / `error.code` across
+adapters is the executable definition of "identical behavior". See the corpus
+authoring guide at
+[`tests/conformance/commands/README.md`](/tests/conformance/commands/README.md).
+
+**Transport adapters (six, one per transport id):**
+
+| Transport id | Shim |
+|---|---|
+| `direct` | C++ [`tests/conformance/support/direct_adapter.cpp`](/tests/conformance/support/direct_adapter.cpp) |
+| `tui` | C++ [`tests/conformance/support/tui_adapter.cpp`](/tests/conformance/support/tui_adapter.cpp) |
+| `cli_cmd` | Python [`tests/conformance/py/10_cli_cmd_corpus.py`](/tests/conformance/py/10_cli_cmd_corpus.py) |
+| `stdio` | Python [`tests/conformance/py/11_stdio_corpus.py`](/tests/conformance/py/11_stdio_corpus.py) |
+| `rest_generic` | Python [`tests/conformance/py/13_rest_generic_corpus.py`](/tests/conformance/py/13_rest_generic_corpus.py) |
+| `rest_resource` | Python [`tests/conformance/py/14_rest_resource_corpus.py`](/tests/conformance/py/14_rest_resource_corpus.py) |
+
+**Drift and coverage gates:**
+
+- `commands__12_catalog_drift` — block 3.7 of this file must match the
+  registry.
+- `docs__03_command_catalog_matches_registry` — prose sections must match the
+  registry and error table.
+- `conformance_20_coverage_gate` — every non-waived error code must appear in
+  the corpus.
+
+Run the full conformance suite:
+
+```bash
+ctest --test-dir cmake-build -L conformance --output-on-failure
+```
