@@ -9,7 +9,10 @@
 
 Implement the per-link analytics endpoints backing `/admin/analytics/links`
 and the link detail page: aggregate columns, timeseries, referrers,
-visitors, and recent events for a single URL pair.
+visitors, and recent events for a single URL pair. Basic per-link
+time-series data (totals and lifetime counters) reuses `link.stats`;
+referrer, visitor, and suspicion aggregates are 0002-owned queries not
+covered by the registry.
 
 ## Files to add
 

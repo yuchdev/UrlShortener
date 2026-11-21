@@ -32,3 +32,8 @@ stubbed calls toward.
 - Every sensitive action (user creation, disable, password reset, role
   change, permission-denied attempts) is audit-logged (
   [plan.md - Shared contract C7](/docs/roadmap/0002-admin_console/plan.md)).
+- Console-user and audit operations are exposed as registry descriptors
+  (`auth.*`, `user.*`, permission `manage_users`) per
+  [Milestone 0006 plan](/docs/roadmap/0006-unified-command-model-and-tui/plan.md);
+  CLAUDE.md rule stands: auth broker local-only, no `0.0.0.0`; no argument
+  values in audit lines.

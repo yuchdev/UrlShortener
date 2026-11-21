@@ -18,9 +18,11 @@ Tracks progress against [plan.md](/docs/roadmap/0002-admin_console/plan.md).
 
 **Legend:** ✅ Complete · 🔶 In progress / partial · ⬜ Not started
 
-**Current gate status:** 0% implemented. Verified: no `web/admin/`, no
-`src/admin/`, no `package.json` anywhere in the repository as of this
-milestone's restructuring (2026-09-21). This milestone is design-complete
+**Current gate status:** 0% implemented. Prerequisite: Milestone 0006
+(command model) must complete before link/pair list and mutation tasks
+(02.0, 04.0) start. Verified: no `web/admin/`, no `src/admin/`, no
+`package.json` anywhere in the repository as of this milestone's
+restructuring (2026-09-21). This milestone is design-complete
 (7 supporting spec docs + 9 tasks decomposed into 37 subtasks) but has no
 code yet. Scope is the MVP milestone first: React admin shell + safe login +
 analytics overview + URL pair list + URL pair detail analytics (tasks

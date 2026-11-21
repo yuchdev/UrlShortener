@@ -33,3 +33,6 @@ This is part of the milestone's MVP scope alongside task 03.0 (see
 - Link detail analytics (referrers, visitor profiles, suspicious events) may
   read as sparse until tasks 05.0/06.0 land, but the query paths must be
   correct against real data, not stubbed.
+- URL-pair listing, detail, and disable are backed by registry commands
+  ([Milestone 0006](/docs/roadmap/0006-unified-command-model-and-tui/plan.md));
+  no `UrlPairsAdminRepository` direct storage access for links.

@@ -28,6 +28,8 @@ src/admin/query/AdminQueryError.hpp
 src/admin/query/AdminQueryError.cpp
 src/admin/dto/PaginationDto.hpp
 src/admin/dto/PaginationDto.cpp
+src/admin/query/AdminCommandBridge.hpp
+src/admin/query/AdminCommandBridge.cpp
 ```
 
 ## Requirements
@@ -66,6 +68,32 @@ All admin API errors use:
 this shape consistently - see
 [plan.md - Shared contract C4](/docs/roadmap/0002-admin_console/plan.md).
 
+### Registry projection
+
+`AdminCommandBridge` is the single point that translates between the admin
+API's pagination vocabulary and the command registry. It provides:
+
+```cpp
+CommandRequest toCommand(const PageRequest&, const AdminFilter&,
+                         std::string_view command);
+AdminQueryError fromCommandError(std::string_view code);
+PageResponse<T> fromListResult(/* ... */);
+```
+
+Pagination mapping: `offset = (page - 1) * page_size`; `limit = page_size`
+(capped at 500, same as `link.list`); `sort_by` -> `sort` (allowed:
+`created_at`, `slug`, `updated_at`; other values -> `validation_error`);
+`sort_direction` -> `order`; `PageResponse.total` = command result `total`.
+
+Filter mapping: `status`, `tag`, `campaign`, `q` (from `short_code`/
+`target_domain`) are forwarded to `link.list` args. Analytics-side filters
+(`visitor_profile_id`, `fingerprint_id`, `ip_id`, `referrer_domain`,
+`risk_level`, `bot_status`) are not passed through the bridge; they remain
+0002-owned query parameters.
+
+Error mapping: command codes translate to admin API codes per
+[plan.md - Shared contract C4](/docs/roadmap/0002-admin_console/plan.md).
+
 ## Constraints
 
 - `PageRequest`/`PageResponse` must be usable by every controller added in
@@ -85,3 +113,5 @@ this shape consistently - see
       with `validation_error`.
 - [ ] `AdminFilterParser` parses the full shared filter vocabulary.
 - [ ] `AdminQueryError` serializes to the exact common error JSON shape.
+- [ ] `AdminCommandBridge` maps every command error code in the catalog to
+      an admin API code per plan.md C4.
