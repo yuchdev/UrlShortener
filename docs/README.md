@@ -12,3 +12,4 @@
 | [`docs/testing/README.md`](testing/README.md) | Project test plan; plus `docs/testing/tui_manual_smoke.md` and `docs/testing/testplans/conformance.md`. |
 | [`tests/conformance/commands/README.md`](../tests/conformance/commands/README.md) | Conformance corpus schema and authoring guide. |
 | [`tests/perf/README.md`](../tests/perf/README.md) | Perf guard usage and baseline procedure. |
+| [`docs/reviews/`](reviews/) | Point-in-time review artifacts: security reviews, subtask verifications, test-gap reports, claims spot checks. |

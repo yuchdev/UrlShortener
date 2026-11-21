@@ -70,16 +70,22 @@ Data flow:
 │   ├── composition/       # command_runtime, link_backend_bootstrap, storage_factory
 │   ├── cli/               # cli_parser, serve_stdio_dispatch
 │   ├── security/          # AccessGuard, ControlSet
-│   └── observability/     # storage_observability (redactSecretValue)
+│   ├── observability/     # storage_observability (redactSecretValue)
+│   └── config/            # storage_config, server_config types
 ├── src/
 │   ├── core/              # utils.cpp
 │   ├── http/              # server, sessions, request_handlers, handlers/
 │   ├── app/               # link_backend, link_command_service, repository_link_store, table sources
 │   ├── storage/           # adapter implementations
+│   ├── analytics/         # analytics_worker, bounded_click_event_queue, analytics_service
 │   ├── commands/          # all command implementations, json_scan, ndjson session
 │   ├── transport/         # stdio_adapter.cpp
 │   ├── tui/               # app, screens/, models, field_parsers, theme
 │   ├── composition/       # command_runtime, link_backend_bootstrap, storage_factory
+│   ├── cli/               # arg_coercion, cmd_dispatch, link_command_dispatch
+│   ├── security/          # access_guard.cpp, control_set.cpp
+│   ├── observability/     # storage_observability.cpp
+│   ├── config/            # storage_config.cpp
 │   └── main.cpp
 ├── tests/
 │   ├── unit/              # commands/, tui/, http/, observability/, cli/, ...

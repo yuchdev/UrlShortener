@@ -410,10 +410,13 @@ curl -i http://localhost:8000/api/v1/links/docs/stats
 
 ### Command endpoint
 
-The generic command API is off by default. Enable it with `--command-api-enabled true`:
+The generic command API is off by default. Enable it with `--command-api-enabled true`.
+The default role is `user` (read-only). Mutating commands (`link.create`, `link.update`,
+etc.) require `--command-api-role admin`, which is only honoured on loopback connections:
 
 ```bash
-# Run any command over HTTP (server started with --command-api-enabled true)
+# Run a mutating command over HTTP
+# (server started with --command-api-enabled true --command-api-role admin)
 curl -X POST http://localhost:8000/api/v1/commands \
   -H 'Content-Type: application/json' \
   -d '{"v":1,"command":"link.create","args":{"target_url":"https://example.com/docs","slug":"docs"}}'
