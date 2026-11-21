@@ -54,7 +54,7 @@ and reconcile Milestones 0002 and 0004 with the command model. Ends with
 | 10 | [TUI user guide](10-tui-user-guide.md) | ✅ Complete | 06.0, 07.0/24, 07.0/25 | 11, 13, 17 |
 | 11 | [TUI development guide](11-tui-development-guide.md) | ✅ Complete | 10, 07.0/22-28 | 13, 17 |
 | 12 | [Testing docs sync](12-testing-docs-sync.md) | ✅ Complete | 07.0 | 13, 17 |
-| 13 | [Docs registry and agent docs](13-docs-registry-and-agent-docs.md) | ⬜ Not started | 04, 10, 11, 12 | 17 |
+| 13 | [Docs registry and agent docs](13-docs-registry-and-agent-docs.md) | ✅ Complete | 04, 10, 11, 12 | 17 |
 | 14 | [Reconcile Milestone 0002](14-reconcile-milestone-0002.md) | ✅ Complete | plan.md | 16 |
 | 15 | [Reconcile Milestone 0004](15-reconcile-milestone-0004.md) | ✅ Complete | plan.md | 16 |
 | 16 | [Roadmap index and milestone status sync](16-roadmap-index-and-status-sync.md) | ✅ Complete | 01, 02, 14, 15 | 17 |
