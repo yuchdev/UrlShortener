@@ -364,7 +364,8 @@ as the storage backend and is not exposed to the network. No HTTP server is star
 
 - Secrets (passwords, tokens, hashes, salts) are never displayed. The Tables browser
   hides columns with secret-like names and redacts secret-named fields from the row-JSON
-  viewer. This is enforced in the `db.*` command handlers, not in the TUI.
+  viewer. The `db.*` command handlers enforce this server-side; the TUI's table model
+  (`src/tui/tables_model.cpp`) redacts again as defense in depth.
 - The `--log-file` file is created with mode 0600 and audit lines for every mutation
   are written there. The log is never written to the terminal.
 - `path` arguments (import/export file paths) are confined by `--path-root` or
