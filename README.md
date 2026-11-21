@@ -256,6 +256,18 @@ cmake .. -G "Visual Studio 17 2022" -DCMAKE_TOOLCHAIN_FILE="C:\Program Files\Mic
 cmake --build . --target url_shortener
 ```
 
+### Optional: terminal UI
+
+The interactive terminal UI is built by default. Pass
+`-DURLSHORTENER_ENABLE_TUI=OFF` to skip it and omit the FTXUI dependency:
+
+```bash
+cmake .. -G Ninja -DURLSHORTENER_ENABLE_TUI=OFF
+```
+
+FTXUI is fetched automatically via `FetchContent`; no manual install is needed
+when the option is `ON`.
+
 ## Run
 
 ### Show all options
@@ -263,6 +275,17 @@ cmake --build . --target url_shortener
 ```bash
 ./cmake-build/url_shortener --help
 ```
+
+### Other modes
+
+| Mode | Command | Description |
+|------|---------|-------------|
+| Link management CLI | `url_shortener link <verb>` | Nine verbs: `create`, `get`, `update`, `delete`, `enable`, `disable`, `restore`, `preview`, `stats`. |
+| Generic command CLI | `url_shortener cmd <name>` | Run any registered command by name; `--raw` prints the result field only. |
+| stdio transport | `url_shortener serve-stdio` | NDJSON line-framed command server: one request per line in, one response per line out. |
+| Terminal UI | `url_shortener tui` | Interactive FTXUI terminal; requires `URLSHORTENER_ENABLE_TUI=ON` at build time. |
+
+Full reference: [`docs/cli/README.md`](docs/cli/README.md).
 
 ### HTTP only
 
@@ -307,6 +330,13 @@ cmake --build . --target url_shortener
 - Liveness/readiness probes and in-process metrics.
 - Request hardening: configurable body size and path length caps, request ID
   propagation.
+- Unified JSON command model: every operation is one command, executed identically
+  through REST, CLI (`cmd`), `serve-stdio`, and the terminal UI
+  ([`docs/commands/README.md`](docs/commands/README.md), ADR 0002).
+- Bulk import/export of short-URL pairs (CSV or NDJSON) as background jobs with
+  progress reporting via `job.*` commands.
+- Optional FTXUI terminal UI: browse links, tables, run commands, manage jobs
+  (build with `-DURLSHORTENER_ENABLE_TUI=ON`).
 - Router-backed dispatch with route metadata in `RouteRegistry`.
 - API reference generated from route metadata: [`docs/api/README.md`](docs/api/README.md).
 
@@ -378,6 +408,30 @@ curl -i http://localhost:8000/api/v1/links/docs/preview
 curl -i http://localhost:8000/api/v1/links/docs/stats
 ```
 
+### Command endpoint
+
+The generic command API is off by default. Enable it with `--command-api-enabled true`:
+
+```bash
+# Run any command over HTTP (server started with --command-api-enabled true)
+curl -X POST http://localhost:8000/api/v1/commands \
+  -H 'Content-Type: application/json' \
+  -d '{"v":1,"command":"link.create","args":{"target_url":"https://example.com/docs","slug":"docs"}}'
+
+# List all registered commands
+curl http://localhost:8000/api/v1/commands
+
+# List links (gated by --command-api-enabled)
+curl http://localhost:8000/api/v1/links
+
+# Job routes (also gated)
+curl http://localhost:8000/api/v1/jobs
+curl http://localhost:8000/api/v1/jobs/j-1
+```
+
+See [`docs/commands/README.md`](docs/commands/README.md) for the full command catalog
+and [`docs/api/README.md`](docs/api/README.md) for the HTTP route inventory.
+
 ### API notes
 
 - Management fields default to `enabled=true`, `deleted_at=null`, `tags=[]`,
@@ -391,9 +445,9 @@ curl -i http://localhost:8000/api/v1/links/docs/stats
 
 ## CLI mode
 
-The binary also runs as a one-shot link-management client when invoked as
-`url_shortener link <verb>`. No server process is started; the command executes,
-writes a JSON object to stdout (or a diagnostic to stderr), and exits.
+The binary runs as a one-shot link-management client when invoked as
+`url_shortener link <verb>` or `url_shortener cmd <name>`. No server process is
+started; the command executes, writes a response to stdout, and exits.
 
 ```bash
 # Create a short link — exit 0, JSON on stdout
@@ -408,13 +462,70 @@ writes a JSON object to stdout (or a diagnostic to stderr), and exits.
 ./cmake-build/url_shortener link restore --slug docs
 ```
 
-**Note.** The CLI uses the in-memory link store, which is per-process and
-non-persistent. Two separate invocations do **not** share state; a link created
-in one process is invisible to `link get` in a separate process.
+The generic `cmd` subcommand runs any registered command by name:
 
-Full reference — all nine verbs (`create`, `get`, `update`, `delete`, `enable`,
-`disable`, `restore`, `preview`, `stats`), flags, and exit codes:
+```bash
+# Same as link create, but using the unified command layer
+./cmake-build/url_shortener cmd link.create \
+  --json '{"target_url":"https://example.com/docs","slug":"docs"}'
+
+# List links (--raw prints the result field only)
+./cmake-build/url_shortener cmd link.list --raw
+
+# Run as read-only user
+./cmake-build/url_shortener cmd link.list --read-only
+```
+
+The stdio transport reads one JSON request envelope per line and writes one
+response envelope per line:
+
+```bash
+echo '{"v":1,"command":"link.list","args":{}}' \
+  | ./cmake-build/url_shortener serve-stdio
+```
+
+**Storage.** By default the CLI uses the in-memory backend, which is
+per-process and non-persistent: two separate invocations do **not** share
+state. Pass `--storage-config <file>` to select a persistent backend (SQLite,
+PostgreSQL) so that separate invocations share the same data store.
+
+Full reference — all nine `link <verb>` verbs (`create`, `get`, `update`,
+`delete`, `enable`, `disable`, `restore`, `preview`, `stats`), plus the
+generic `cmd <command>`, flags, and exit codes:
 [`docs/cli/README.md`](docs/cli/README.md).
+
+## Terminal UI
+
+Launch the interactive terminal UI (requires `URLSHORTENER_ENABLE_TUI=ON` at
+build time, the default):
+
+```bash
+./cmake-build/url_shortener tui
+./cmake-build/url_shortener tui --storage-config /path/to/storage.yaml
+./cmake-build/url_shortener tui --read-only         # write controls disabled
+./cmake-build/url_shortener tui --theme mono        # monochrome, legacy consoles
+```
+
+Features:
+- Browse, create, update, and manage short links in a table view.
+- Run any command from the Command Palette (all commands, same behavior as REST/CLI).
+- Bulk import/export and job progress tracking.
+
+The UI runs the same `CommandRegistry` as the REST API and CLI — no separate
+business logic, no network connection required.
+
+```
+╭url_shortener -- backend: sqlite ───────────────────────────[F1 Help]─╮
+│[1]Dashboard [2]Links [3]Tables [4]Import/Export [5]Jobs ...          │
+├───────────────────────────────────────────────────────────────────────┤
+│                                                                       │
+│                       Dashboard                                       │
+│                                                                       │
+╰───────────────────────────────────────────────────────────────────────╯
+```
+
+See ADR 0003 ([`docs/adr/0003-tui-framework-and-architecture.md`](docs/adr/0003-tui-framework-and-architecture.md))
+for the design rationale.
 
 ## Core API
 
@@ -562,8 +673,11 @@ ctest --test-dir cmake-build -L contract --output-on-failure
 # Integration tests
 ctest --test-dir cmake-build -L integration --output-on-failure
 
+# Cross-transport conformance corpus
+ctest --test-dir cmake-build -L conformance --output-on-failure
+
 # All labeled suites
-ctest --test-dir cmake-build -L "unit|contract|integration|e2e" --output-on-failure
+ctest --test-dir cmake-build -L "unit|contract|integration|e2e|conformance" --output-on-failure
 ```
 
 Run a single test by name:
@@ -575,12 +689,27 @@ ctest --test-dir cmake-build -R "^<test_name>$" --output-on-failure
 On Windows or multi-config generators, add `-C Debug` (or the relevant config) to
 every `ctest` and `cmake --build` invocation.
 
+TUI tests require `URLSHORTENER_ENABLE_TUI=ON` (the default). Lint new conformance
+corpus files before committing:
+
+```bash
+python tools/conformance_lint.py tests/conformance/commands/<new_file>.json
+```
+
 The integration test suite also includes a Python harness under `tests/integration/py/`
 and `tools/sqlite_state_assert.py` for asserting SQLite state directly.
 
 ## Repo guides
 
 - [`ARCHITECTURE.md`](ARCHITECTURE.md) — high-level architecture overview.
+- [`docs/adr/README.md`](docs/adr/README.md) — Architecture Decision Record index
+  (ADR 0001–0003).
+- [`docs/commands/README.md`](docs/commands/README.md) — unified command catalog:
+  envelope, all commands, transports, and job model (ADR 0002).
+- [`docs/commands/adding-a-transport.md`](docs/commands/adding-a-transport.md) —
+  how to add a new stream transport (`ITransportAdapter` contract, NDJSON framing).
+- [`docs/cli/README.md`](docs/cli/README.md) — CLI reference: all nine `link <verb>`
+  subcommands, the `cmd` subcommand, `serve-stdio`, flags, and exit codes.
 - [`docs/api/README.md`](docs/api/README.md) — HTTP API reference generated from
   the C++ `RouteRegistry`.
 - [`docs/configuration.md`](docs/configuration.md) — full configuration reference
