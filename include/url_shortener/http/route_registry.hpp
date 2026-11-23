@@ -3,19 +3,35 @@
 #include <string>
 #include <vector>
 
-namespace url_shortener {
-namespace http {
+namespace url_shortener
+{
+namespace http
+{
 
+/// @brief Documentation metadata for one URI-template or query parameter
+/// of a registered route, used for tooling and future OpenAPI generation.
 struct RouteParameterDoc
 {
+    ///< Parameter name as it appears in the URI template or query string
+    ///< (e.g. `"slug"`, `"from"`).
     std::string name;
+
+    ///< Human-readable description of the parameter's purpose and format.
     std::string description;
+
+    ///< `true` when the parameter must be present for the endpoint to
+    ///< operate; `false` for optional query parameters.
     bool required = true;
 };
 
+/// @brief Documentation metadata for one HTTP response code of a
+/// registered route, used for tooling and future OpenAPI generation.
 struct RouteResponseDoc
 {
+    ///< HTTP status code (e.g. 200, 201, 404).
     unsigned status = 0;
+
+    ///< Human-readable description of when this response is returned.
     std::string description;
 };
 
@@ -30,29 +46,45 @@ struct RouteResponseDoc
  */
 struct RouteDescriptor
 {
-    /// HTTP method the route responds to (e.g. GET, POST, PATCH, DELETE, ANY).
+    ///< HTTP method the route responds to (e.g. GET, POST, PATCH, DELETE, ANY).
     std::string method;
-    /// URI pattern with `{param}` placeholders (e.g. /api/v1/links/{slug}/stats).
+
+    ///< URI pattern with `{param}` placeholders (e.g.
+    ///< `/api/v1/links/{slug}/stats`).
     std::string path_pattern;
-    /// Metric route label matching @ref routeLabelForTarget output for the path.
+
+    ///< Metric route label matching @ref routeLabelForTarget output for the
+    ///< path.
     std::string route_label;
-    /// Human-readable summary for documentation and future OpenAPI generation.
+
+    ///< Human-readable summary for documentation and future OpenAPI generation.
     std::string summary;
-    /// Documentation grouping tags.
+
+    ///< Documentation grouping tags.
     std::vector<std::string> tags;
-    /// Stable operation identifier for generated API references.
+
+    ///< Stable operation identifier for generated API references.
     std::string operation_id;
-    /// Path parameter documentation matching placeholders in @ref path_pattern.
+
+    ///< Path parameter documentation matching placeholders in
+    ///< @ref path_pattern.
     std::vector<RouteParameterDoc> path_parameters;
-    /// Query parameter documentation for documented query strings.
+
+    ///< Query parameter documentation for documented query strings.
     std::vector<RouteParameterDoc> query_parameters;
-    /// Request body documentation for routes that consume a body.
+
+    ///< Request body documentation for routes that consume a body.
     std::string request_body_description;
-    /// Response documentation for generated API references.
+
+    ///< Response documentation for generated API references.
     std::vector<RouteResponseDoc> responses;
-    /// True when this route is a compatibility alias for a canonical endpoint.
+
+    ///< `true` when this route is a compatibility alias for a canonical
+    ///< endpoint.
     bool compatibility_alias = false;
-    /// True when this route intentionally returns a not-yet-implemented response.
+
+    ///< `true` when this route intentionally returns a not-yet-implemented
+    ///< response.
     bool placeholder = false;
 };
 
@@ -62,7 +94,8 @@ struct RouteDescriptor
  * The returned reference is to a function-local static populated once on first
  * use; it is read-only and safe to share across threads.
  *
- * @return Stable list of route descriptors covering the current endpoint matrix.
+ * @return Stable list of route descriptors covering the current endpoint
+ * matrix.
  */
 const std::vector<RouteDescriptor>& registeredRoutes();
 
@@ -79,5 +112,5 @@ const std::vector<RouteDescriptor>& registeredRoutes();
  */
 std::string routeLabelForTarget(const std::string& target);
 
-} // namespace http
-} // namespace url_shortener
+}  // namespace http
+}  // namespace url_shortener

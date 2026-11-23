@@ -78,10 +78,14 @@ by the author who just wrote it.
 - Do not fabricate behavior you can't verify from the header + its `.cpp`
   definition. If you cannot tell what a failure case means, say so in the
   agent's report as a flagged item - do not guess a plausible-sounding reason.
-- Do not touch logic, signatures, formatting of code, or existing *correct*
-  comments "while you're in there". This is a documentation-only pass.
+- Do not touch logic, signatures, or existing *correct* comments "while
+  you're in there". This is a documentation-only pass. The one permitted code
+  edit is re-wrapping a declaration's line breaks/whitespace so it sits under
+  its comment - see [Declaration line layout](#declaration-line-layout).
 - Do not downgrade an existing comment that is already complete just to match
   a template verbatim - the contract above is a floor, not a rewrite mandate.
+  But "complete" includes *placement*: a correctly worded comment on the same
+  line as its declaration is **not** complete and must be moved.
 
 ## Member and enumerator comment placement
 
@@ -100,6 +104,89 @@ reference members - that it is not owned and must outlive the object.
 
 Note: Doxygen itself treats `///<` as documenting the *preceding* entity;
 this project deliberately uses it above the member as a house style.
+
+### Declaration line layout
+
+Every documented entity follows one shape: **lines 1..n-1 are the comment,
+line n is the declaration.** The declaration is always the *last* line(s) of
+the block, never followed by comment text, and never sharing a line with a
+comment.
+
+- **No same-line (trailing) doc comments** - not on fields, enumerators,
+  private members, or anything else. This holds even when the file being
+  edited already uses trailing comments elsewhere: convert them all, do not
+  "match the file's existing convention".
+- **Declaration on a single line whenever it fits in 80 columns.** Trailing
+  comments are what force `clang-format` to wrap declarations into shapes like
+  `std::optional<std::string>` / `        name;  ///< ...`. Once the comment
+  moves above, rejoin the declaration onto one line.
+- **You may re-wrap the declaration** (line breaks and whitespace only) so it
+  sits well under its comment. You may not change any token: no renames, no
+  reordering, no changed types, defaults, or literals. Splitting a long string
+  literal into adjacent literals (`"ab" "cd"`) is allowed only when the
+  declaration genuinely cannot fit in 80 columns.
+- If a declaration still cannot fit on one line, wrap it per `.clang-format`;
+  it still comes after the comment, and nothing follows it.
+
+Before (non-compliant - trailing comments forced the declarations to wrap):
+
+```cpp
+    std::optional<std::string>
+        expires_at;  ///< Optional ISO 8601 expiry timestamp; absent means no
+                     ///< expiry.
+    bool enabled =
+        true;  ///< `false` disables redirects without deleting the record.
+```
+
+After:
+
+```cpp
+    ///< Optional ISO 8601 expiry timestamp; absent means the link
+    ///< never expires.
+    std::optional<std::string> expires_at;
+
+    ///< `false` disables redirects without deleting the record.
+    bool enabled = true;
+```
+
+- **At least one empty line between documented declarations.** Data
+  members, struct fields, constants (`static constexpr`, namespace-scope
+  `constexpr`/`const`, `AuditAction`-style string-constant namespaces), and
+  enumerators each form a block (comment + declaration) separated from the
+  next block by a blank line. Never stack `comment; decl; comment; decl;`
+  with no gap.
+
+Wrong (no separation between documented members):
+
+```cpp
+struct UserCredentials
+{
+    ///< Randomly generated opaque database identifier.
+    std::string id;
+    ///< Human-readable login name; unique in `app_users`.
+    std::string username;
+};
+```
+
+Right:
+
+```cpp
+struct UserCredentials
+{
+    ///< Randomly generated opaque database identifier.
+    std::string id;
+
+    ///< Human-readable login name; unique in `app_users`.
+    std::string username;
+};
+```
+
+The post-edit hook (`.claude/hooks/post_edit_format.py`) runs `clang-format`
+and then inserts this blank line automatically, and reports any remaining
+same-line doc comments back to the editing agent. `clang-format` itself
+cannot enforce either rule, so the hook is a safety net, not a substitute:
+write the layout correctly in the first place, and re-check files that were
+edited outside a hooked session.
 
 ## Reference files
 
@@ -386,12 +473,26 @@ struct ClickEvent {
    the completeness contract, and brings every entity up to the bar via
    comment-only edits - flagging anything it cannot verify from the header
    plus its `.cpp` definition rather than guessing.
-3. **Verify no regressions**: comments are non-executable, but a malformed
-   insertion (unterminated `/**`, a misplaced `///<`) is a compile error.
-   Confirm the affected target(s) still build:
-   ```bash
-   cmake --build cmake-build
-   ```
+3. **Verify no regressions**:
+   - *No logic changed* - since declarations may be re-wrapped, prove the
+     diff is comments/whitespace only:
+     ```bash
+     python3 .claude/skills/doxygen-documentation/scripts/check_comment_only_diff.py [PATH ...]
+     ```
+     Any `CODE CHANGED` line must be reverted or justified before reporting.
+   - *No trailing doc comments remain* in the touched files:
+     ```bash
+     grep -nE '[;,{)]\s*(///<|//!<|/\*\*<)' <files>
+     ```
+   - *Still builds*: a malformed insertion (unterminated `/**`) is a compile
+     error. Confirm the affected target(s) still build:
+     ```bash
+     cmake --build cmake-build
+     ```
+     Never run two builds in the same build directory concurrently (e.g.
+     several documenter agents in parallel) - they corrupt the shared static
+     library. When fanning out, let only the coordinator build, once, at
+     the end.
 4. Report the agent's summary.
 
 ## Output
@@ -402,7 +503,7 @@ Scanned: N files, M entities (classes/structs C, enums E, methods/functions F)
 Documented: X new/upgraded
 Skipped (already complete, left as-is): <list, or none>
 Flagged (behavior unclear from header + .cpp - needs SME input): <entity -> what's unclear>
-Verification: cmake --build cmake-build -> <pass/fail>
+Verification: check_comment_only_diff.py -> <OK/CODE CHANGED>; cmake --build cmake-build -> <pass/fail>
 ```
 
 If the build fails after insertion, stop and hand the failure to `cpp-expert`
@@ -417,7 +518,11 @@ before re-running this skill.
   and enumerates its `false` conditions
 - [ ] Every reference/pointer-capturing constructor states the lifetime
   contract
-- [ ] No logic, signatures, or existing complete comments changed - diff is
-  comments only
+- [ ] No same-line doc comments; every comment sits above its declaration,
+  and the declaration is the last line, on a single line where it fits
+- [ ] At least one empty line between documented members, constants, and
+  enumerators
+- [ ] No logic, signatures, or existing complete comments changed -
+  `check_comment_only_diff.py` reports comments/whitespace only
 - [ ] Affected target(s) still build after insertion
 - [ ] Flagged/ambiguous items reported, not silently guessed

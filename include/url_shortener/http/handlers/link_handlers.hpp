@@ -2,99 +2,212 @@
 
 #include <url_shortener/http/handler_types.hpp>
 
-namespace url_shortener {
-namespace http {
+namespace url_shortener
+{
+namespace http
+{
 
-/// Controls which request field can supply a caller-provided short code.
+/// @brief Selects which JSON field may carry a caller-supplied short code
+/// when creating a link.
 enum class CreateSlugFieldMode
 {
+    ///< Only the `slug` field is accepted as a caller-supplied short code.
     slug_only,
+
+    ///< Either `slug` or the legacy `code` field may supply the short
+    ///< code; `slug` takes precedence when both are present.
     slug_or_code
 };
 
-/// Creates a link from request JSON using the selected short-code field mode.
-BeastResponse createLinkFromRequest(
-    const BeastRequest& req,
-    const ::ServerConfig& config,
-    bool is_tls,
-    CreateSlugFieldMode slug_mode);
+/// @brief Parses the request body JSON and creates a new short link via
+/// `LinkCommandService`, accepting `slug` and optionally `code` as the
+/// short-code field depending on `slug_mode`.
+///
+/// Shared by both the canonical (`handleCreateLink`) and compatibility
+/// (`handleCompatCreateLink`) create endpoints.
+/// @param req       Incoming request; body must be JSON with at least a
+///        `url` (or `target_url`) field.
+/// @param config    Server-wide runtime configuration.
+/// @param is_tls    `true` on HTTPS connections.
+/// @param slug_mode Controls whether the legacy `code` field is accepted
+///        in addition to `slug`.
+/// @return 201 with the JSON link view on success; 400 for missing/invalid
+///         fields (url, slug, redirect_type, expires_at, enabled, tags,
+///         metadata, campaign); 409 if the slug is reserved or already
+///         in use; 500 on repository failure.
+BeastResponse createLinkFromRequest(const BeastRequest& req,
+                                    const ::ServerConfig& config,
+                                    bool is_tls,
+                                    CreateSlugFieldMode slug_mode);
 
-/// Handles `POST /api/v1/links`.
-BeastResponse handleCreateLink(
-    const BeastRequest& req,
-    const ::ServerConfig& config,
-    bool is_tls,
-    const RouteContext& context);
+/// @brief Handles `POST /api/v1/links`; creates a new short link.
+/// @param req     Incoming request with JSON body.
+/// @param config  Server-wide runtime configuration.
+/// @param is_tls  `true` on HTTPS connections.
+/// @param context Route context; not used by this handler.
+/// @return See `createLinkFromRequest` with `CreateSlugFieldMode::slug_only`.
+BeastResponse handleCreateLink(const BeastRequest& req,
+                               const ::ServerConfig& config,
+                               bool is_tls,
+                               const RouteContext& context);
 
-/// Handles `GET /api/v1/links/id/{id}`.
-BeastResponse handleGetLinkById(
-    const BeastRequest& req,
-    const ::ServerConfig& config,
-    bool is_tls,
-    const RouteContext& context);
+/// @brief Handles `GET /api/v1/links/id/{id}`; retrieves a link by its
+/// stable opaque identifier.
+/// @param req     Incoming request.
+/// @param config  Server-wide runtime configuration.
+/// @param is_tls  `true` on HTTPS connections.
+/// @param context Route context; `id` path parameter identifies the link.
+/// @return 200 with the full JSON link view on success; 404 if no link
+///         with that ID exists.
+BeastResponse handleGetLinkById(const BeastRequest& req,
+                                const ::ServerConfig& config,
+                                bool is_tls,
+                                const RouteContext& context);
 
-/// Handles `GET /api/v1/links/{slug}`.
-BeastResponse handleGetLinkBySlug(
-    const BeastRequest& req,
-    const ::ServerConfig& config,
-    bool is_tls,
-    const RouteContext& context);
+/// @brief Handles `GET /api/v1/links/{slug}`; retrieves a link by its
+/// short-code slug.
+/// @param req     Incoming request.
+/// @param config  Server-wide runtime configuration.
+/// @param is_tls  `true` on HTTPS connections.
+/// @param context Route context; `slug` path parameter identifies the
+///        link.
+/// @return 200 with the full JSON link view on success; 404 if the slug
+///         does not exist.
+BeastResponse handleGetLinkBySlug(const BeastRequest& req,
+                                  const ::ServerConfig& config,
+                                  bool is_tls,
+                                  const RouteContext& context);
 
-/// Handles `PATCH /api/v1/links/{slug}`.
-BeastResponse handlePatchLink(
-    const BeastRequest& req,
-    const ::ServerConfig& config,
-    bool is_tls,
-    const RouteContext& context);
+/// @brief Handles `PATCH /api/v1/links/{slug}`; applies a partial update
+/// (PATCH semantics) to an existing link.
+///
+/// Performs a 404-before-validation check: if the slug is not found the
+/// handler returns 404 without evaluating the request body.  Absent JSON
+/// fields are left untouched; explicit JSON `null` clears nullable fields
+/// (`expires_at`, `campaign`).
+/// @param req     Incoming request; body must be JSON with the fields to
+///        update.
+/// @param config  Server-wide runtime configuration.
+/// @param is_tls  `true` on HTTPS connections.
+/// @param context Route context; `slug` path parameter identifies the
+///        link to patch.
+/// @return 200 with the updated JSON link view on success; 400 for
+///         invalid field values; 404 if the slug does not exist; 500 on
+///         repository failure.
+BeastResponse handlePatchLink(const BeastRequest& req,
+                              const ::ServerConfig& config,
+                              bool is_tls,
+                              const RouteContext& context);
 
-/// Handles `DELETE /api/v1/links/{slug}`.
-BeastResponse handleDeleteLink(
-    const BeastRequest& req,
-    const ::ServerConfig& config,
-    bool is_tls,
-    const RouteContext& context);
+/// @brief Handles `DELETE /api/v1/links/{slug}`; soft-deletes a link by
+/// setting its `deleted_at` timestamp.
+/// @param req     Incoming request.
+/// @param config  Server-wide runtime configuration.
+/// @param is_tls  `true` on HTTPS connections.
+/// @param context Route context; `slug` path parameter identifies the
+///        link to soft-delete.
+/// @return 200 with the post-delete JSON link view on success; 404 if
+///         the slug does not exist; 500 on repository failure.
+BeastResponse handleDeleteLink(const BeastRequest& req,
+                               const ::ServerConfig& config,
+                               bool is_tls,
+                               const RouteContext& context);
 
-/// Handles `GET /api/v1/links/{slug}/preview`.
-BeastResponse handlePreviewLink(
-    const BeastRequest& req,
-    const ::ServerConfig& config,
-    bool is_tls,
-    const RouteContext& context);
+/// @brief Handles `GET /api/v1/links/{slug}/preview`; returns the
+/// reduced preview projection of a link.
+///
+/// Emits only `slug`, `url`, `status`, `redirect_type`, `enabled`,
+/// `expires_at`, and `deleted_at`.  For the full link view use
+/// `handleGetLinkBySlug`.
+/// @param req     Incoming request.
+/// @param config  Server-wide runtime configuration.
+/// @param is_tls  `true` on HTTPS connections.
+/// @param context Route context; `slug` path parameter identifies the
+///        link.
+/// @return 200 with the reduced preview JSON on success; 404 if the
+///         slug does not exist.
+BeastResponse handlePreviewLink(const BeastRequest& req,
+                                const ::ServerConfig& config,
+                                bool is_tls,
+                                const RouteContext& context);
 
-/// Handles `GET /api/v1/links/{slug}/qr` and `/routing`.
-BeastResponse handlePlaceholderFeature(
-    const BeastRequest& req,
-    const ::ServerConfig& config,
-    bool is_tls,
-    const RouteContext& context);
+/// @brief Handles `GET /api/v1/links/{slug}/qr` and
+/// `/api/v1/links/{slug}/routing`; stub for unimplemented features.
+///
+/// Verifies the slug exists before returning 501, so callers receive
+/// 404 for unknown slugs and 501 for known slugs with deferred features.
+/// @param req     Incoming request.
+/// @param config  Server-wide runtime configuration.
+/// @param is_tls  `true` on HTTPS connections.
+/// @param context Route context; `slug` path parameter.
+/// @return 404 if the slug does not exist; 501 `feature_not_enabled`
+///         otherwise.
+BeastResponse handlePlaceholderFeature(const BeastRequest& req,
+                                       const ::ServerConfig& config,
+                                       bool is_tls,
+                                       const RouteContext& context);
 
-/// Handles `GET /api/v1/links/{slug}/stats`.
-BeastResponse handleLinkStats(
-    const BeastRequest& req,
-    const ::ServerConfig& config,
-    bool is_tls,
-    const RouteContext& context);
+/// @brief Handles `GET /api/v1/links/{slug}/stats`; returns redirect
+/// analytics for a link.
+///
+/// When `from`, `to`, and `bucket` query parameters are all present,
+/// delegates to `LinkCommandService::GetLinkStats` for aggregate stats.
+/// Otherwise falls back to the inline counters stored in the link record
+/// (`total_redirects`, `redirects_24h`, `redirects_7d`,
+/// `last_accessed_at`).
+/// @param req     Incoming request.
+/// @param config  Server-wide runtime configuration.
+/// @param is_tls  `true` on HTTPS connections.
+/// @param context Route context; `slug` path parameter and optional
+///        query parameters (`from`, `to`, `bucket`) control the shape.
+/// @return 200 with the JSON stats on success; 404 if the slug does not
+///         exist; 400 if query parameters are present but invalid.
+BeastResponse handleLinkStats(const BeastRequest& req,
+                              const ::ServerConfig& config,
+                              bool is_tls,
+                              const RouteContext& context);
 
-/// Handles `POST /api/v1/links/{slug}/enable`.
-BeastResponse handleEnableLink(
-    const BeastRequest& req,
-    const ::ServerConfig& config,
-    bool is_tls,
-    const RouteContext& context);
+/// @brief Handles `POST /api/v1/links/{slug}/enable`; sets the link's
+/// `enabled` flag to `true`.
+/// @param req     Incoming request.
+/// @param config  Server-wide runtime configuration.
+/// @param is_tls  `true` on HTTPS connections.
+/// @param context Route context; `slug` path parameter identifies the
+///        link.
+/// @return 200 with the updated JSON link view on success; 404 if the
+///         slug does not exist; 500 on repository failure.
+BeastResponse handleEnableLink(const BeastRequest& req,
+                               const ::ServerConfig& config,
+                               bool is_tls,
+                               const RouteContext& context);
 
-/// Handles `POST /api/v1/links/{slug}/disable`.
-BeastResponse handleDisableLink(
-    const BeastRequest& req,
-    const ::ServerConfig& config,
-    bool is_tls,
-    const RouteContext& context);
+/// @brief Handles `POST /api/v1/links/{slug}/disable`; sets the link's
+/// `enabled` flag to `false`.
+/// @param req     Incoming request.
+/// @param config  Server-wide runtime configuration.
+/// @param is_tls  `true` on HTTPS connections.
+/// @param context Route context; `slug` path parameter identifies the
+///        link.
+/// @return 200 with the updated JSON link view on success; 404 if the
+///         slug does not exist; 500 on repository failure.
+BeastResponse handleDisableLink(const BeastRequest& req,
+                                const ::ServerConfig& config,
+                                bool is_tls,
+                                const RouteContext& context);
 
-/// Handles `POST /api/v1/links/{slug}/restore`.
-BeastResponse handleRestoreLink(
-    const BeastRequest& req,
-    const ::ServerConfig& config,
-    bool is_tls,
-    const RouteContext& context);
+/// @brief Handles `POST /api/v1/links/{slug}/restore`; clears
+/// `deleted_at` on a soft-deleted link.
+/// @param req     Incoming request.
+/// @param config  Server-wide runtime configuration.
+/// @param is_tls  `true` on HTTPS connections.
+/// @param context Route context; `slug` path parameter identifies the
+///        link to restore.
+/// @return 200 with the updated JSON link view on success; 404 if the
+///         slug does not exist; 500 on repository failure.
+BeastResponse handleRestoreLink(const BeastRequest& req,
+                                const ::ServerConfig& config,
+                                bool is_tls,
+                                const RouteContext& context);
 
-} // namespace http
-} // namespace url_shortener
+}  // namespace http
+}  // namespace url_shortener

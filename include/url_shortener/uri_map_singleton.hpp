@@ -4,17 +4,18 @@
  */
 #pragma once
 
+#include <optional>
 #include <string>
 #include <unordered_map>
-#include <optional>
 
 /**
  * @class UriMapSingleton
  * @brief A singleton class for managing URI data
  *
- * This class provides a singleton instance for managing URI data. It allows saving, deleting,
- * and retrieving data associated with specific URIs. The data is stored in memory and can be
- * serialized to and deserialized from a file. Serialization is expected on server shutdown.
+ * This class provides a singleton instance for managing URI data. It allows
+ * saving, deleting, and retrieving data associated with specific URIs. The data
+ * is stored in memory and can be serialized to and deserialized from a file.
+ * Serialization is expected on server shutdown.
  */
 class UriMapSingleton
 {
@@ -34,7 +35,9 @@ public:
      * We save data in order to be able to retrieve it for GET requests.
      * We also save the payload of POST requests.
      */
-    void saveData(const std::string& uri, const std::string& data, const std::string& content_type);
+    void saveData(const std::string& uri,
+                  const std::string& data,
+                  const std::string& content_type);
 
     /**
      * @brief Delete data associated with a URI
@@ -46,10 +49,12 @@ public:
     /**
      * @brief Get data associated with a URI
      * @param uri The URI to retrieve data for
-     * @return An optional containing the data and content type if the URI is found, or an empty optional
+     * @return An optional containing the data and content type if the URI is
+     * found, or an empty optional
      */
     [[nodiscard]]
-    std::optional<std::pair<std::string, std::string>> getData(const std::string& uri) const;
+    std::optional<std::pair<std::string, std::string>> getData(
+        const std::string& uri) const;
 
     /**
      * @brief Serialize the data to a file
@@ -66,11 +71,11 @@ public:
     void deserialize(const std::string& filename);
 
 private:
-
     /**
      * @brief Private constructor to enforce singleton pattern.
      */
     UriMapSingleton() = default;
 
-    std::unordered_map<std::string, std::pair<std::string, std::string>> data_;  ///< In-memory URI payload map.
+    ///< In-memory URI payload map.
+    std::unordered_map<std::string, std::pair<std::string, std::string>> data_;
 };

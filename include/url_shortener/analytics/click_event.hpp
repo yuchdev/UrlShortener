@@ -38,7 +38,7 @@ struct ClickEvent
 
     ///< Wall-clock time the redirect attempt completed;
     ///< must be set to a non-default value per `Validate`.
-    Timestamp occurred_at {};  
+    Timestamp occurred_at {};
 
     ///< Short-link slug that was resolved (without the `/r/`
     ///< prefix); must be non-empty per `Validate`.
@@ -49,8 +49,10 @@ struct ClickEvent
     std::string link_id;
 
     ///< Host header of the inbound request, already sanitized/truncated by
-    ///< `ClickEventSanitizer::SanitizeDomain`; must be non-empty per `Validate`.
+    ///< `ClickEventSanitizer::SanitizeDomain`; must be non-empty per
+    ///< `Validate`.
     std::string domain;
+
     ///< HTTP status code the redirect responded with; must be a 3xx
     ///< redirect, or exactly 404 or 410, per `Validate`.
     uint16_t status_code = 0;
@@ -65,9 +67,10 @@ struct ClickEvent
     ///< May be empty - not checked by `Validate`.
     std::string user_agent;
 
-    ///< HMAC-SHA256 hash of the client identifier (see `ClientIdHasher`); 
-    ///< the raw identifier is never stored. May be empty when the identifier was missing
-    ///< and `ClientIdHashConfig::allow_missing_identifier` was set - not checked by `Validate`.
+    ///< HMAC-SHA256 hash of the client identifier (see `ClientIdHasher`);
+    ///< the raw identifier is never stored. May be empty when the identifier
+    ///< was missing and `ClientIdHashConfig::allow_missing_identifier` was set
+    ///< - not checked by `Validate`.
     std::string client_id_hash;
 
     /**

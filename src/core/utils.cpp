@@ -6,11 +6,20 @@
 #include <algorithm>
 #include <cctype>
 #include <chrono>
+#include <cstdint>
+#include <cstring>
 #include <iomanip>
 #include <random>
 #include <regex>
 #include <sstream>
 #include <unordered_set>
+
+#if defined(_WIN32)
+#    include <ws2tcpip.h>
+#else
+#    include <arpa/inet.h>
+#endif
+
 #include <openssl/hmac.h>
 #include <openssl/evp.h>
 
@@ -160,11 +169,342 @@ std::optional<std::pair<std::string, std::string>> splitUrl(const std::string& i
     return std::make_pair(match[1].str(), match[2].str() + match[3].str());
 }
 
+namespace
+{
+
+/**
+ * @brief Classifies a 32-bit IPv4 address (host byte order) as private/local.
+ *
+ * Mirrors the ranges @ref url_shortener::isPrivateHost already enforced by
+ * string prefix - 127.0.0.0/8, 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16,
+ * 169.254.0.0/16 - plus the unspecified/this-network 0.0.0.0/8 block (the code
+ * already treated the exact `0.0.0.0` as private; using /8 closes the
+ * equivalent numeric encodings such as the decimal `0`). The check is a pure
+ * bit test, so it is reachable from create/update validation only and adds no
+ * work to the redirect fast path (contract C10).
+ *
+ * @param addr The address in host byte order (a.b.c.d -> (a<<24)|(b<<16)|
+ *        (c<<8)|d).
+ * @return `true` when @p addr falls in a private, loopback, link-local or
+ *         unspecified range; `false` for a public address such as 8.8.8.8.
+ */
+bool is_private_ipv4(std::uint32_t addr)
+{
+    const std::uint32_t a = (addr >> 24) & 0xFFu;
+    const std::uint32_t b = (addr >> 16) & 0xFFu;
+    if (a == 127u || a == 10u || a == 0u) {
+        return true;  // loopback / private / this-network
+    }
+    if (a == 172u && b >= 16u && b <= 31u) {
+        return true;  // 172.16.0.0/12
+    }
+    if (a == 192u && b == 168u) {
+        return true;  // 192.168.0.0/16
+    }
+    if (a == 169u && b == 254u) {
+        return true;  // 169.254.0.0/16 link-local
+    }
+    // Special-use ranges that must not be a redirect target either (07.0/20
+    // review): CGNAT, benchmarking, multicast, reserved and the broadcast
+    // address. Public addresses (8.8.8.8, 1.1.1.1, 93.184.216.34) are in none.
+    if (a == 100u && b >= 64u && b <= 127u) {
+        return true;  // 100.64.0.0/10 carrier-grade NAT
+    }
+    if (a == 198u && (b == 18u || b == 19u)) {
+        return true;  // 198.18.0.0/15 benchmarking
+    }
+    if (a >= 224u && a <= 239u) {
+        return true;  // 224.0.0.0/4 multicast
+    }
+    if (a >= 240u) {
+        return true;  // 240.0.0.0/4 reserved (covers 255.255.255.255)
+    }
+    return false;
+}
+
+/**
+ * @brief Parses one `inet_aton`-style numeric IPv4 part (decimal/hex/octal).
+ *
+ * @param part The textual part (already lower-cased by the caller); non-empty.
+ * @param value Receives the parsed value on success.
+ * @return `true` when @p part is a well-formed `0x`-hex, leading-`0` octal, or
+ *         decimal integer that fits in 64 bits; `false` for any other text
+ *         (an empty part, a stray letter, a `0x` with no digits, an octal with
+ *         an `8`/`9` digit), which makes the caller treat the host as a plain
+ *         hostname rather than a numeric address.
+ */
+bool parse_ipv4_part(const std::string& part, std::uint64_t& value)
+{
+    if (part.empty()) {
+        return false;
+    }
+    int base = 10;
+    std::size_t start = 0;
+    if (part.size() >= 2 && part[0] == '0' && (part[1] == 'x')) {
+        base = 16;
+        start = 2;
+        if (part.size() == 2) {
+            return false;  // "0x" with no digits
+        }
+    }
+    else if (part.size() >= 2 && part[0] == '0') {
+        base = 8;
+        start = 1;
+    }
+    std::uint64_t acc = 0;
+    for (std::size_t i = start; i < part.size(); ++i) {
+        const char c = part[i];
+        int digit = 0;
+        if (c >= '0' && c <= '9') {
+            digit = c - '0';
+        }
+        else if (base == 16 && c >= 'a' && c <= 'f') {
+            digit = 10 + (c - 'a');
+        }
+        else {
+            return false;  // non-digit for this base
+        }
+        if (digit >= base) {
+            return false;  // e.g. '8'/'9' in an octal part
+        }
+        acc = acc * static_cast<std::uint64_t>(base)
+            + static_cast<std::uint64_t>(digit);
+        if (acc > 0xFFFFFFFFull) {
+            return false;  // overflows an IPv4 address
+        }
+    }
+    value = acc;
+    return true;
+}
+
+/**
+ * @brief Canonicalizes an `inet_aton`-style numeric IPv4 host to a 32-bit
+ * address.
+ *
+ * Accepts 1-4 dot-separated parts, each decimal / `0x`-hex / leading-`0` octal,
+ * with the usual short-form fill (1 part = whole 32-bit value, 2 parts =
+ * a.(24-bit), 3 parts = a.b.(16-bit), 4 parts = a.b.c.d). This closes the SSRF
+ * encodings (`2130706433`, `0x7f000001`, `0177.0.0.1`, `127.1`) that a
+ * string-prefix check misses. A part that overflows its field, a `0x`/octal
+ * with a bad digit, or a non-numeric part makes the whole host "not a numeric
+ * IPv4" (returns `std::nullopt`), so a real hostname is never mis-parsed.
+ *
+ * @param host The host text (already lower-cased, brackets stripped).
+ * @return The address in host byte order, or `std::nullopt` when @p host is not
+ *         a well-formed numeric IPv4.
+ */
+std::optional<std::uint32_t> parse_ipv4_numeric(const std::string& host)
+{
+    if (host.empty()) {
+        return std::nullopt;
+    }
+    std::vector<std::string> parts;
+    std::size_t begin = 0;
+    for (;;) {
+        const std::size_t dot = host.find('.', begin);
+        parts.push_back(host.substr(
+            begin, dot == std::string::npos ? std::string::npos : dot - begin));
+        if (dot == std::string::npos) {
+            break;
+        }
+        begin = dot + 1;
+        if (parts.size() > 4) {
+            return std::nullopt;  // never more than 4 parts
+        }
+    }
+    if (parts.empty() || parts.size() > 4) {
+        return std::nullopt;
+    }
+
+    std::vector<std::uint64_t> values(parts.size());
+    for (std::size_t i = 0; i < parts.size(); ++i) {
+        if (!parse_ipv4_part(parts[i], values[i])) {
+            return std::nullopt;
+        }
+    }
+
+    const std::size_t n = values.size();
+    // All but the last part are single octets; the last fills the remainder.
+    for (std::size_t i = 0; i + 1 < n; ++i) {
+        if (values[i] > 0xFFull) {
+            return std::nullopt;
+        }
+    }
+    const unsigned remaining_bytes = static_cast<unsigned>(4 - (n - 1));
+    const std::uint64_t last_max = remaining_bytes >= 4
+        ? 0xFFFFFFFFull
+        : ((1ull << (8u * remaining_bytes)) - 1ull);
+    if (values[n - 1] > last_max) {
+        return std::nullopt;
+    }
+
+    std::uint32_t addr = 0;
+    for (std::size_t i = 0; i + 1 < n; ++i) {
+        addr |= static_cast<std::uint32_t>(values[i])
+            << (8u * (3u - static_cast<unsigned>(i)));
+    }
+    addr |= static_cast<std::uint32_t>(values[n - 1]);
+    return addr;
+}
+
+/**
+ * @brief Classifies a textual IPv6 address, if valid, as private/local.
+ *
+ * Parses @p host with `inet_pton(AF_INET6, ...)` (portable, no new library;
+ * handles `::` compression and Windows), then matches loopback `::1`,
+ * unspecified `::`, unique-local `fc00::/7`, link-local `fe80::/10`, and an
+ * IPv4-mapped `::ffff:a.b.c.d` whose embedded IPv4 is re-checked with
+ * @ref is_private_ipv4.
+ *
+ * @param host The host text with any surrounding brackets already stripped.
+ * @return `std::nullopt` when @p host is not a valid IPv6 literal; otherwise
+ *         `true`/`false` for whether that valid IPv6 address is private/local.
+ */
+std::optional<bool> classify_ipv6(const std::string& host)
+{
+    unsigned char buf[16];
+    std::memset(buf, 0, sizeof(buf));
+    if (::inet_pton(AF_INET6, host.c_str(), buf) != 1) {
+        return std::nullopt;  // not a valid IPv6 literal
+    }
+
+    bool all_zero = true;
+    for (unsigned char byte : buf) {
+        if (byte != 0) {
+            all_zero = false;
+            break;
+        }
+    }
+    if (all_zero) {
+        return true;  // :: unspecified
+    }
+
+    bool loopback = buf[15] == 1;
+    for (int i = 0; i < 15 && loopback; ++i) {
+        loopback = buf[i] == 0;
+    }
+    if (loopback) {
+        return true;  // ::1
+    }
+
+    if ((buf[0] & 0xFEu) == 0xFCu) {
+        return true;  // fc00::/7 unique-local
+    }
+    if (buf[0] == 0xFEu && (buf[1] & 0xC0u) == 0x80u) {
+        return true;  // fe80::/10 link-local
+    }
+
+    // Helper: fold a 4-byte window into a host-order IPv4 address.
+    const auto embedded_v4 = [&buf](int offset) -> std::uint32_t
+    {
+        return (static_cast<std::uint32_t>(buf[offset]) << 24)
+            | (static_cast<std::uint32_t>(buf[offset + 1]) << 16)
+            | (static_cast<std::uint32_t>(buf[offset + 2]) << 8)
+            | static_cast<std::uint32_t>(buf[offset + 3]);
+    };
+
+    // IPv4-mapped ::ffff:a.b.c.d -> re-check the embedded IPv4.
+    bool mapped = buf[10] == 0xFFu && buf[11] == 0xFFu;
+    for (int i = 0; i < 10 && mapped; ++i) {
+        mapped = buf[i] == 0;
+    }
+    if (mapped) {
+        return is_private_ipv4(embedded_v4(12));
+    }
+
+    // IPv4-compatible ::a.b.c.d (bytes 0..11 zero). :: and ::1 were already
+    // handled above; any other address with a zero /96 prefix embeds a v4 in
+    // the low 32 bits, so re-check it (07.0/20 review LOW, e.g. [::127.0.0.1]).
+    bool compatible = true;
+    for (int i = 0; i < 12 && compatible; ++i) {
+        compatible = buf[i] == 0;
+    }
+    if (compatible) {
+        return is_private_ipv4(embedded_v4(12));
+    }
+
+    // NAT64 64:ff9b::/96 -> the low 32 bits are the translated v4.
+    bool nat64 = buf[0] == 0x00u && buf[1] == 0x64u && buf[2] == 0xFFu
+        && buf[3] == 0x9Bu;
+    for (int i = 4; i < 12 && nat64; ++i) {
+        nat64 = buf[i] == 0;
+    }
+    if (nat64) {
+        return is_private_ipv4(embedded_v4(12));
+    }
+
+    // 6to4 2002::/16 -> the embedded v4 is bytes 2..5.
+    if (buf[0] == 0x20u && buf[1] == 0x02u) {
+        return is_private_ipv4(embedded_v4(2));
+    }
+
+    return false;  // a valid but public IPv6 address
+}
+
+/**
+ * @brief Strict allowlist for the URL host, before any private-target check.
+ *
+ * Fails closed (07.0/20 review): the host must be either a bracketed IPv6
+ * literal (`[...]` whose interior is a valid `inet_pton` AF_INET6 address) or a
+ * registered name / numeric IPv4 made only of ASCII letters, digits, `-` and
+ * `.`, with at most ONE trailing `.`. Anything else - a `\`, whitespace, a
+ * control byte, a non-ASCII byte, or a second trailing dot - is rejected, so a
+ * host a browser would re-normalize (e.g. `2130706433\x` -> loopback,
+ * `2130706433..` -> loopback) can never be stored. IDN hosts must arrive
+ * already punycoded (`xn--...`); this function does not perform IDN/percent
+ * decoding (the caller rejects a `%` in the host separately).
+ *
+ * @param host The already-lower-cased host (brackets kept for IPv6). Must be
+ *        non-empty.
+ * @return `true` when @p host is a valid literal under the rules above.
+ */
+bool is_valid_url_host(const std::string& host)
+{
+    if (host.empty()) {
+        return false;
+    }
+    if (host.front() == '[') {
+        if (host.size() < 3 || host.back() != ']') {
+            return false;
+        }
+        const std::string inner = host.substr(1, host.size() - 2);
+        unsigned char buf[16];
+        return ::inet_pton(AF_INET6, inner.c_str(), buf) == 1;
+    }
+    // Registered name / numeric IPv4: ASCII letters, digits, '-' and '.' only.
+    for (const unsigned char c : host) {
+        const bool allowed = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
+            || (c >= '0' && c <= '9') || c == '-' || c == '.';
+        if (!allowed) {
+            return false;
+        }
+    }
+    // At most one trailing '.' (a single FQDN dot); a second one is malformed.
+    std::size_t trailing_dots = 0;
+    for (std::size_t i = host.size(); i-- > 0 && host[i] == '.';) {
+        ++trailing_dots;
+    }
+    return trailing_dots <= 1;
+}
+
+}  // namespace
+
 bool isPrivateHost(const std::string& host)
 {
     const std::string lower_host = [&host]() {
         std::string out = host;
-        std::transform(out.begin(), out.end(), out.begin(), [](const unsigned char c) { return std::tolower(c); });
+        std::transform(out.begin(),
+                       out.end(),
+                       out.begin(),
+                       [](const unsigned char c) { return std::tolower(c); });
+        // Strip ONE trailing '.' (a fully-qualified-name dot, WHATWG "remove
+        // last empty label") before any classification, so "localhost." and
+        // "2130706433." / "0177.0.0.1." cannot slip past the hostname and
+        // numeric checks (07.0/20 review). The IPv4 canonicalizer rejects an
+        // empty last part, so without this a trailing dot would bypass it.
+        if (out.size() > 1 && out.back() == '.') {
+            out.pop_back();
+        }
         return out;
     }();
     if (lower_host == "localhost" || lower_host == "::1" || lower_host == "::" || lower_host == "0.0.0.0"
@@ -183,6 +523,25 @@ bool isPrivateHost(const std::string& host)
             ? lower_host.substr(1, lower_host.size() - 2)
             : lower_host;
 
+    // Canonicalize numeric hosts BEFORE the string-prefix checks so an
+    // alternative IP encoding cannot bypass the private-target block (SSRF): a
+    // decimal/hex/octal/short-form IPv4 (e.g. 2130706433, 0x7f000001,
+    // 0177.0.0.1, 127.1) is reduced to its 32-bit address, and a (bracketed or
+    // bare) IPv6 literal - including an IPv4-mapped ::ffff:a.b.c.d - is parsed
+    // with inet_pton. A non-numeric hostname falls through unchanged (no DNS
+    // resolution happens here).
+    if (const std::optional<std::uint32_t> v4 =
+            parse_ipv4_numeric(effective_host);
+        v4.has_value())
+    {
+        return is_private_ipv4(*v4);
+    }
+    if (const std::optional<bool> v6 = classify_ipv6(effective_host);
+        v6.has_value())
+    {
+        return *v6;
+    }
+
     return effective_host == "localhost" || effective_host == "::1"
         || effective_host.rfind("127.", 0) == 0
         || effective_host.rfind("10.", 0) == 0 || effective_host.rfind("192.168.", 0) == 0
@@ -199,8 +558,45 @@ bool isPrivateHost(const std::string& host)
         || effective_host.rfind("fe80:", 0) == 0;
 }
 
-std::optional<std::string> normalizeTargetUrl(const std::string& input_url, const ServerConfig& config)
+bool containsUnsafeUrlControlBytes(const std::string& value)
 {
+    const std::size_t size = value.size();
+    for (std::size_t i = 0; i < size; ++i) {
+        const auto byte = static_cast<unsigned char>(value[i]);
+        // C0 controls (NUL, TAB, CR, LF, ...) and DEL.
+        if (byte <= 0x1F || byte == 0x7F) {
+            return true;
+        }
+        // U+0085 NEL, UTF-8 encoded as C2 85.
+        if (byte == 0xC2 && i + 1 < size
+            && static_cast<unsigned char>(value[i + 1]) == 0x85)
+        {
+            return true;
+        }
+        // U+2028 / U+2029 line separators, UTF-8 encoded as E2 80 A8
+        // and E2 80 A9.
+        if (byte == 0xE2 && i + 2 < size
+            && static_cast<unsigned char>(value[i + 1]) == 0x80)
+        {
+            const auto third = static_cast<unsigned char>(value[i + 2]);
+            if (third == 0xA8 || third == 0xA9) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+std::optional<std::string> normalizeTargetUrl(const std::string& input_url,
+                                              const ServerConfig& config)
+{
+    // Reject line-terminator and control bytes before any parsing so a
+    // crafted target (e.g. "http://evil\r\nSet-Cookie: x/p") can never be
+    // stored and later written raw into a redirect Location header
+    // (CWE-113 HTTP response splitting / CWE-93 CRLF injection).
+    if (containsUnsafeUrlControlBytes(input_url)) {
+        return std::nullopt;
+    }
     const std::string trimmed = trim(input_url);
     if (trimmed.empty()) {
         return std::nullopt;
@@ -224,14 +620,64 @@ std::optional<std::string> normalizeTargetUrl(const std::string& input_url, cons
         return std::nullopt;
     }
 
-    std::string host = authority;
+    // Refuse a backslash anywhere in the scheme/authority part (before the
+    // path). WHATWG host parsing ends the host at '\' and a browser normalizes
+    // '\' to '/', so "http://2130706433\x" would navigate to loopback; fail
+    // closed instead of re-normalizing (07.0/20 review). A '\' inside the path
+    // (in @ref suffix) is left untouched.
+    if (authority.find('\\') != std::string::npos) {
+        return std::nullopt;
+    }
+
+    // Split host from an optional port. A bracketed IPv6 authority must be
+    // split at the closing ']' first, never at an inner ':', so "[::1]:8080"
+    // yields host "[::1]" (not "[") and the private-target check actually sees
+    // it (SSRF; otherwise [::1]/[fc00::1]/... bypass the block).
+    std::string host;
     std::optional<std::string> port;
-    if (const auto colon = authority.find(':'); colon != std::string::npos) {
+    if (!authority.empty() && authority.front() == '[') {
+        const auto close = authority.find(']');
+        if (close == std::string::npos) {
+            return std::nullopt;  // malformed bracketed authority
+        }
+        host = authority.substr(0, close + 1);  // keep the brackets: "[::1]"
+        const std::string after = authority.substr(close + 1);
+        if (!after.empty()) {
+            if (after.front() != ':') {
+                return std::nullopt;  // junk between ']' and the port
+            }
+            port = after.substr(1);
+        }
+    }
+    else if (const auto colon = authority.find(':'); colon != std::string::npos)
+    {
         host = authority.substr(0, colon);
         port = authority.substr(colon + 1);
     }
-    std::transform(host.begin(), host.end(), host.begin(), [](const unsigned char c) { return std::tolower(c); });
+    else {
+        host = authority;
+    }
+    std::transform(host.begin(),
+                   host.end(),
+                   host.begin(),
+                   [](const unsigned char c) { return std::tolower(c); });
     if (host.empty()) {
+        return std::nullopt;
+    }
+    // Percent-encoding in the host is not decoded here; a '%' is refused
+    // outright (treated as an invalid URL). Decoding would reopen the
+    // encoded-dot / encoded-IP bypass the private-target check exists to close
+    // (e.g. "2130706433%2e" -> "2130706433." -> 127.0.0.1), so the host must be
+    // literal before classification (07.0/20 review, WHATWG host parsing).
+    if (host.find('%') != std::string::npos) {
+        return std::nullopt;
+    }
+    // Strict host allowlist, fail closed (07.0/20 review). A host that is not a
+    // valid bracketed IPv6 literal or an ASCII letter/digit/`-`/`.` registered
+    // name (at most one trailing dot) is rejected in BOTH modes - a malformed
+    // host such as one carrying whitespace or a second trailing dot is an
+    // invalid URL regardless of `allow_private_targets`.
+    if (!is_valid_url_host(host)) {
         return std::nullopt;
     }
     if (!config.shortener_allow_private_targets && isPrivateHost(host)) {
