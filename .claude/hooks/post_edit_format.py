@@ -60,7 +60,7 @@ def _separate_documented_members(path: Path) -> None:
     by at least one empty line - is applied here. Whitespace-only: a blank
     line is inserted when a line that opens a Doxygen comment directly
     follows a code line ending in ``;`` or ``,``. Lines inside ``/* */``
-    blocks are never treated as code.
+    blocks or C++ string/raw-string literals are never treated as code.
     """
     try:
         lines = path.read_text(encoding="utf-8").splitlines(keepends=True)
@@ -68,32 +68,82 @@ def _separate_documented_members(path: Path) -> None:
         return
 
     out: list[str] = []
-    in_block_comment = False
+    lexical_state = "normal"
+    raw_delimiter = ""
     prev_is_decl_end = False
     changed = False
     for line in lines:
         stripped = line.strip()
-        if not in_block_comment and prev_is_decl_end and _DOC_OPENER_RE.match(line):
+        if lexical_state == "normal" and prev_is_decl_end and _DOC_OPENER_RE.match(line):
             out.append("\n")
             changed = True
         out.append(line)
 
-        # Classify this line for the next iteration.
-        if in_block_comment:
-            prev_is_decl_end = False
-            if "*/" in stripped:
-                in_block_comment = False
-            continue
-        if stripped.startswith("/*") and "*/" not in stripped:
-            in_block_comment = True
-            prev_is_decl_end = False
-            continue
-        code = stripped.split("//", 1)[0].rstrip()
-        prev_is_decl_end = (
-            bool(code)
-            and not stripped.startswith(("//", "/*", "*", "#"))
-            and code.endswith((";", ","))
-        )
+        visible_last = ""
+        i = 0
+        while i < len(line):
+            if lexical_state == "block_comment":
+                end = line.find("*/", i)
+                if end < 0:
+                    i = len(line)
+                    continue
+                lexical_state = "normal"
+                i = end + 2
+                continue
+            if lexical_state == "raw_string":
+                end_marker = ")" + raw_delimiter + '"'
+                end = line.find(end_marker, i)
+                if end < 0:
+                    i = len(line)
+                    continue
+                lexical_state = "normal"
+                i = end + len(end_marker)
+                continue
+            if lexical_state in ("string", "char"):
+                quote = '"' if lexical_state == "string" else "'"
+                if line[i] == "\\":
+                    i += 2
+                    continue
+                if line[i] == quote:
+                    lexical_state = "normal"
+                    visible_last = quote
+                i += 1
+                continue
+
+            if line.startswith("//", i):
+                break
+            if line.startswith("/*", i):
+                lexical_state = "block_comment"
+                i += 2
+                continue
+            if line.startswith('R"', i):
+                delimiter_open = line.find("(", i + 2)
+                if delimiter_open >= 0:
+                    raw_delimiter = line[i + 2:delimiter_open]
+                    lexical_state = "raw_string"
+                    i = delimiter_open + 1
+                    visible_last = '"'
+                    continue
+            if line.startswith('u8R"', i) or line.startswith('uR"', i) \
+                    or line.startswith('UR"', i) or line.startswith('LR"', i):
+                prefix_end = line.find('R"', i)
+                delimiter_open = line.find("(", prefix_end + 2)
+                if delimiter_open >= 0:
+                    raw_delimiter = line[prefix_end + 2:delimiter_open]
+                    lexical_state = "raw_string"
+                    i = delimiter_open + 1
+                    visible_last = '"'
+                    continue
+            if line[i] in ('"', "'"):
+                lexical_state = "string" if line[i] == '"' else "char"
+                visible_last = line[i]
+                i += 1
+                continue
+            if not line[i].isspace():
+                visible_last = line[i]
+            i += 1
+
+        prev_is_decl_end = bool(visible_last) and visible_last in (";", ",")
 
     if changed:
         path.write_text("".join(out), encoding="utf-8")
