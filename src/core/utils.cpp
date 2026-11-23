@@ -68,15 +68,145 @@ std::string formatTimestamp(
     return out.str();
 }
 
+namespace
+{
+
+/**
+ * @brief Number of days in a Gregorian calendar month.
+ * @param year Full (proleptic Gregorian) year, e.g. `2026`; used only to
+ * decide whether February has 29 days.
+ * @param month Month in the range `[1, 12]`; the caller must validate the
+ * range before calling (values outside it index out of bounds).
+ * @return Day count for the month, applying the Gregorian leap-year rule
+ * (divisible by 4, except centuries not divisible by 400) for February.
+ */
+int days_in_month(int year, int month)
+{
+    static constexpr int kDays[] = {
+        31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
+    if (month == 2) {
+        const bool leap =
+            (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0);
+        return leap ? 29 : 28;
+    }
+    return kDays[month - 1];
+}
+
+/**
+ * @brief Consumes exactly @p width ASCII decimal digits.
+ *
+ * Reads @p width characters of @p s starting at @p pos. On success @p pos is
+ * advanced past the digits; on failure @p pos is left unchanged.
+ * @param s Full input string being scanned.
+ * @param pos In/out cursor; the index of the first digit to read, advanced by
+ * @p width on success.
+ * @param width Exact number of digits required (e.g. `4` for a year).
+ * @return The parsed non-negative integer, or `std::nullopt` if fewer than
+ * @p width characters remain or any of them is not a `[0-9]` digit.
+ */
+std::optional<int> parse_fixed_digits(std::string_view s,
+                                      std::size_t& pos,
+                                      int width)
+{
+    if (pos + static_cast<std::size_t>(width) > s.size()) {
+        return std::nullopt;
+    }
+    int v = 0;
+    for (int i = 0; i < width; ++i) {
+        const char c = s[pos + static_cast<std::size_t>(i)];
+        if (c < '0' || c > '9') {
+            return std::nullopt;
+        }
+        v = v * 10 + (c - '0');
+    }
+    pos += static_cast<std::size_t>(width);
+    return v;
+}
+
+}  // namespace
+
 std::optional<std::chrono::system_clock::time_point> parseRfc3339Zulu(
     const std::string& value)
 {
-    std::tm tm {};
-    std::istringstream in(value);
-    in >> std::get_time(&tm, "%Y-%m-%dT%H:%M:%SZ");
-    if (in.fail()) {
+    const std::string_view s = value;
+    std::size_t pos = 0;
+
+    // Consumes a single expected literal byte, advancing the cursor.
+    const auto expect = [&](char c) -> bool {
+        if (pos >= s.size() || s[pos] != c) {
+            return false;
+        }
+        ++pos;
+        return true;
+    };
+
+    const auto year = parse_fixed_digits(s, pos, 4);
+    if (!year || !expect('-')) {
         return std::nullopt;
     }
+    const auto month = parse_fixed_digits(s, pos, 2);
+    if (!month || !expect('-')) {
+        return std::nullopt;
+    }
+    const auto day = parse_fixed_digits(s, pos, 2);
+    if (!day || !expect('T')) {
+        return std::nullopt;
+    }
+    const auto hour = parse_fixed_digits(s, pos, 2);
+    if (!hour || !expect(':')) {
+        return std::nullopt;
+    }
+    const auto minute = parse_fixed_digits(s, pos, 2);
+    if (!minute || !expect(':')) {
+        return std::nullopt;
+    }
+    const auto second = parse_fixed_digits(s, pos, 2);
+    if (!second) {
+        return std::nullopt;
+    }
+
+    // Optional fractional seconds: a single '.' then 1..9 decimal digits.
+    // The sub-second component is parsed for validation but discarded, since
+    // the result is floored to whole-second resolution via from_time_t.
+    if (pos < s.size() && s[pos] == '.') {
+        ++pos;
+        const std::size_t frac_start = pos;
+        while (pos < s.size() && s[pos] >= '0' && s[pos] <= '9') {
+            ++pos;
+        }
+        const std::size_t frac_len = pos - frac_start;
+        if (frac_len < 1 || frac_len > 9) {
+            return std::nullopt;
+        }
+    }
+
+    // A single uppercase 'Z' must terminate the timestamp; no numeric offset
+    // (e.g. "+00:00") is accepted, and no trailing bytes may follow.
+    if (!expect('Z') || pos != s.size()) {
+        return std::nullopt;
+    }
+
+    // Calendar-range validation. Digit groups are non-negative by
+    // construction, so only upper bounds (and the day-vs-month length) need
+    // checking. Second 60 (a leap second) is deliberately rejected: the
+    // broken-down-time conversion below cannot represent it unambiguously.
+    if (*month < 1 || *month > 12) {
+        return std::nullopt;
+    }
+    if (*day < 1 || *day > days_in_month(*year, *month)) {
+        return std::nullopt;
+    }
+    if (*hour > 23 || *minute > 59 || *second > 59) {
+        return std::nullopt;
+    }
+
+    std::tm tm {};
+    tm.tm_year = *year - 1900;
+    tm.tm_mon = *month - 1;
+    tm.tm_mday = *day;
+    tm.tm_hour = *hour;
+    tm.tm_min = *minute;
+    tm.tm_sec = *second;
     return std::chrono::system_clock::from_time_t(timegm_utc(&tm));
 }
 

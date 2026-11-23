@@ -58,13 +58,24 @@ std::string formatTimestamp(
     const std::chrono::system_clock::time_point time_point);
 
 /**
- * @brief Parses a strict RFC3339 Zulu timestamp string.
+ * @brief Parses a strict RFC3339 Zulu (UTC) timestamp string.
  *
- * Accepts only the `"%Y-%m-%dT%H:%M:%SZ"` format; sub-second
- * precision and non-Zulu offsets are not supported.
+ * Accepts exactly `YYYY-MM-DDTHH:MM:SS`, optionally followed by a `.`
+ * and 1..9 fractional-second digits, then a mandatory trailing `Z`.
+ * The date/time separator `T` and the zone designator `Z` must both be
+ * uppercase; lowercase variants, numeric offsets (e.g. `+00:00`),
+ * date-only values, and any trailing bytes are all rejected.
+ *
+ * The calendar fields are range-checked: month `1..12`, day against the
+ * month's length using the Gregorian leap-year rule, hour `0..23`,
+ * minute `0..59`, second `0..59`. A leap second (`:60`) is rejected
+ * because the broken-down-time conversion cannot represent it. The
+ * fractional-second component, when present, is validated but then
+ * discarded: the returned time point is floored to whole-second
+ * resolution.
  * @param value String to parse.
- * @return The parsed time point; `std::nullopt` if `value` does not
- * match the expected format.
+ * @return The parsed UTC time point; `std::nullopt` if `value` does not
+ * conform to the format above or carries an out-of-range calendar field.
  */
 std::optional<std::chrono::system_clock::time_point> parseRfc3339Zulu(
     const std::string& value);

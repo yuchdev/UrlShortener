@@ -224,9 +224,9 @@ BOOST_AUTO_TEST_CASE(enum_cases)
 // Scenario: timestamp validation defers entirely to the catalog-mandated
 // url_shortener::parseRfc3339Zulu; a valid Zulu string passes, while a bad
 // month, a garbage string and a non-string all fail as invalid_timestamp.
-// Note: parseRfc3339Zulu is lenient about the trailing 'Z' literal (shared
-// core function used by REST today), so a missing-Z string is accepted here;
-// see the deviation note. We pin that behavior rather than change core/utils.
+// Note: parseRfc3339Zulu is now a strict RFC 3339 Zulu validator (shared core
+// function used by REST and the command layer alike): the trailing uppercase
+// 'Z' is mandatory, so a missing-Z string is rejected as invalid_timestamp.
 BOOST_AUTO_TEST_CASE(timestamp_cases)
 {
     ArgSpec t;
@@ -238,8 +238,9 @@ BOOST_AUTO_TEST_CASE(timestamp_cases)
     BOOST_TEST(
         reason_is(run({t}, R"({"t":"not-a-timestamp"})"), "invalid_timestamp"));
     BOOST_TEST(reason_is(run({t}, R"({"t":5})"), "invalid_timestamp"));
-    // Pinned leniency of the mandated validator (missing trailing Z accepted).
-    BOOST_TEST(accepts({t}, R"({"t":"2026-01-01T00:00:00"})"));
+    // The mandatory trailing 'Z' is now enforced by the strict validator.
+    BOOST_TEST(reason_is(run({t}, R"({"t":"2026-01-01T00:00:00"})"),
+                         "invalid_timestamp"));
 }
 
 // ---------------------------------------------------------------------------
