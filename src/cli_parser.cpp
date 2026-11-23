@@ -29,18 +29,19 @@ constexpr std::size_t k_max_echoed_option_bytes = 64;
 
 /**
  * @brief Sanitize an untrusted argv token for safe inclusion in a diagnostic
- * message that may be echoed to stderr or forwarded to the FATAL structured log.
+ * message that may be echoed to stderr or forwarded to the FATAL structured
+ * log.
  *
  * Every byte outside printable ASCII (`0x20`-`0x7E`) - including CR, LF, ESC,
- * NUL and any other C0/C1 control byte - is replaced with `'?'`, so no argv byte
- * can inject a newline, terminal escape sequence or forged log line into a sink
- * that captures the process's stderr (CWE-117). The result is capped at @ref
- * k_max_echoed_option_bytes bytes; when the input is longer the cap is applied
- * first and `"..."` is appended, so the message stays bounded regardless of
- * argv length. This is deliberately a plain printable-ASCII mapping, not the
- * UTF-8-aware @ref url_shortener::tui::sanitize_for_terminal (a TUI-display
- * concern) nor @ref url_shortener::observability::SanitizeField (which only
- * length-truncates and PII-redacts, and does NOT escape CR/LF).
+ * NUL and any other C0/C1 control byte - is replaced with `'?'`, so no argv
+ * byte can inject a newline, terminal escape sequence or forged log line into a
+ * sink that captures the process's stderr (CWE-117). The result is capped at
+ * @ref k_max_echoed_option_bytes bytes; when the input is longer the cap is
+ * applied first and `"..."` is appended, so the message stays bounded
+ * regardless of argv length. This is deliberately a plain printable-ASCII
+ * mapping, not the UTF-8-aware @ref url_shortener::tui::sanitize_for_terminal
+ * (a TUI-display concern) nor @ref url_shortener::observability::SanitizeField
+ * (which only length-truncates and PII-redacts, and does NOT escape CR/LF).
  *
  * @param token Raw argv token stem (already truncated at the first `=` by the
  * caller, so its value half - which may be a secret - is never passed in).
@@ -56,11 +57,57 @@ std::string sanitizeEchoedOption(const std::string& token)
     out.reserve(n + 3);
     for (std::size_t i = 0; i < n; ++i) {
         const auto byte = static_cast<unsigned char>(token[i]);
-        out.push_back((byte >= 0x20u && byte <= 0x7Eu)
-                          ? static_cast<char>(byte)
-                          : '?');
+        out.push_back((byte >= 0x20u && byte <= 0x7Eu) ? static_cast<char>(byte)
+                                                       : '?');
     }
     if (token.size() > k_max_echoed_option_bytes) {
+        out += "...";
+    }
+    return out;
+}
+
+/// Upper bound on a whole sanitized diagnostic message, before the `"..."`
+/// ellipsis. Generous enough to keep a full multi-word usage error intact
+/// (unlike @ref k_max_echoed_option_bytes, which bounds a single option stem),
+/// while still refusing to echo an unbounded argv-derived string.
+constexpr std::size_t k_max_diagnostic_bytes = 256;
+
+/**
+ * @brief Control-sanitize and length-bound a whole diagnostic message for safe
+ * echo to stderr.
+ *
+ * Unlike @ref sanitizeEchoedOption (which scrubs a single option stem the
+ * sub-parsers interpolate themselves), this scrubs an *entire* error message
+ * whose text may have been produced elsewhere - notably a Boost.ProgramOptions
+ * `po::error::what()` or a per-verb mapper, both of which can embed a raw argv
+ * token (an unknown option name, a bad positional) verbatim. Every byte outside
+ * printable ASCII (`0x20`-`0x7E`) - CR, LF, ESC, NUL and any other C0/C1
+ * control byte - is replaced with `'?'`, so a crafted token cannot inject a
+ * newline or terminal escape sequence into the `error: ...` stderr line the
+ * entry point prints (CWE-117). The result is capped at @ref
+ * k_max_diagnostic_bytes bytes with a trailing `"..."` when the input is
+ * longer, so message length stays bounded regardless of argv length. Printable
+ * content (including flag names the diagnostics legitimately echo) passes
+ * through unchanged.
+ *
+ * @param message The raw diagnostic text, possibly containing argv-derived
+ * bytes. Supplied flag *values* are never passed in by any caller (the
+ * sub-parsers echo only flag names/stems; threat model T-77).
+ * @return A printable-ASCII, length-bounded rendering safe to echo to stderr.
+ */
+std::string sanitizeDiagnostic(const std::string& message)
+{
+    const std::size_t n = message.size() < k_max_diagnostic_bytes
+        ? message.size()
+        : k_max_diagnostic_bytes;
+    std::string out;
+    out.reserve(n + 3);
+    for (std::size_t i = 0; i < n; ++i) {
+        const auto byte = static_cast<unsigned char>(message[i]);
+        out.push_back((byte >= 0x20u && byte <= 0x7Eu) ? static_cast<char>(byte)
+                                                       : '?');
+    }
+    if (message.size() > k_max_diagnostic_bytes) {
         out += "...";
     }
     return out;
@@ -548,9 +595,10 @@ const std::string& cmdFlagValue(const std::vector<std::string>& tokens,
  * an error message (threat model T-77). Nothing is executed and the registry is
  * not consulted; only the simple cross-flag rules are checked here. The command
  * name *shape* is deliberately NOT validated: a malformed name is carried
- * verbatim (not a parse error) so the dispatcher maps it to an `invalid_envelope`
- * response instead of this parser throwing — which the caller would otherwise
- * surface as a FATAL crash (exit 1) rather than the catalog's exit-2 envelope.
+ * verbatim (not a parse error) so the dispatcher maps it to an
+ * `invalid_envelope` response instead of this parser throwing — which the
+ * caller would otherwise surface as a FATAL crash (exit 1) rather than the
+ * catalog's exit-2 envelope.
  *
  * When `--help`/`-h` appears with no command name, the returned command has an
  * empty @ref CmdCliCommand::command and @ref CmdCliCommand::help set, which the
@@ -563,9 +611,9 @@ const std::string& cmdFlagValue(const std::vector<std::string>& tokens,
  *        consumed in place by `--storage-config` stripping.
  * @param config ServerConfig receiving `--base-domain`,
  *        `--allow-private-targets` and `--storage-config`.
- * @return CmdCliCommand The parsed one-shot command. @ref CmdCliCommand::command
- *         is empty in the help-with-no-name case and may also hold an invalid
- *         (e.g. empty or upper-case) name the dispatcher rejects.
+ * @return CmdCliCommand The parsed one-shot command. @ref
+ * CmdCliCommand::command is empty in the help-with-no-name case and may also
+ * hold an invalid (e.g. empty or upper-case) name the dispatcher rejects.
  * @throws std::invalid_argument If the name is missing (without `--help`); an
  *         option is unknown or missing its value; `--json` is repeated, empty,
  *         or combined with `--arg`; `--arg` lacks `NAME=VALUE` or has an empty
@@ -617,10 +665,11 @@ CmdCliCommand parseCmdCommand(std::vector<std::string>& tokens,
                 // an empty name (`=v`) — is NOT a parse error and is never
                 // thrown (which the entry point would surface as a FATAL crash,
                 // exit 1). It is recorded as a value-free marker and carried to
-                // the dispatcher, which maps it to an `invalid_envelope` response
-                // (exit 2). The malformed operand is dropped rather than stored,
-                // so it never reaches arg coercion; `--arg k=` (empty VALUE)
-                // stays well-formed and is handled normally below.
+                // the dispatcher, which maps it to an `invalid_envelope`
+                // response (exit 2). The malformed operand is dropped rather
+                // than stored, so it never reaches arg coercion; `--arg k=`
+                // (empty VALUE) stays well-formed and is handled normally
+                // below.
                 command.malformed_arg = true;
                 continue;
             }
@@ -938,8 +987,8 @@ ServeStdioCliOptions parse_serve_stdio(std::vector<std::string>& tokens,
         }
         else if (token.rfind("--", 0) == 0) {
             // Flags match by exact token; the GNU `--opt=value` form is unknown
-            // here. Echo only the sanitized stem before the first '=', never the
-            // value; sanitizing to printable, length-bounded ASCII keeps a
+            // here. Echo only the sanitized stem before the first '=', never
+            // the value; sanitizing to printable, length-bounded ASCII keeps a
             // crafted name from injecting a newline or escape sequence into the
             // FATAL log this mode's parse errors reach (CWE-117).
             throw std::invalid_argument(
@@ -1084,8 +1133,8 @@ TuiCliOptions parseTuiCommand(std::vector<std::string>& tokens,
         }
         else if (token.rfind("--", 0) == 0) {
             // Flags match by exact token; the GNU `--opt=value` form is unknown
-            // here. Echo only the sanitized stem before the first '=', never the
-            // value; sanitizing to printable, length-bounded ASCII keeps a
+            // here. Echo only the sanitized stem before the first '=', never
+            // the value; sanitizing to printable, length-bounded ASCII keeps a
             // crafted name from injecting a newline or escape sequence into the
             // FATAL log this mode's parse errors reach (CWE-117).
             throw std::invalid_argument(
@@ -1108,18 +1157,22 @@ TuiCliOptions parseTuiCommand(std::vector<std::string>& tokens,
     return options;
 }
 
-}  // namespace
-
 /**
- * @brief Parse process arguments into a normalized ParseResult.
+ * @brief Parse process arguments into a normalized ParseResult (unclassified).
  *
- * Environment variables are loaded first and can be overridden by CLI flags.
+ * Holds the full parsing logic for every top-level mode. Environment variables
+ * are loaded first and can be overridden by CLI flags. On a usage error this
+ * throws a bare `std::invalid_argument` / `std::out_of_range` (from the
+ * sub-parsers, the shared value helpers, or Boost.ProgramOptions); the public
+ * @ref CliParser::parse wrapper re-classifies those into @ref UsageError with a
+ * sanitized message. Environment-variable failures throw `std::runtime_error`,
+ * which the wrapper deliberately lets propagate unchanged.
  *
  * @param argc Argument count.
  * @param argv Argument vector.
  * @return ParseResult Parsed configuration and help metadata.
  */
-ParseResult CliParser::parse(int argc, char* argv[]) const
+ParseResult parse_cli_impl(int argc, char* argv[])
 {
     ParseResult result;
     ServerConfig& cfg = result.config;
@@ -1608,6 +1661,48 @@ ParseResult CliParser::parse(int argc, char* argv[]) const
     }
 
     return result;
+}
+
+}  // namespace
+
+/**
+ * @brief Parse process arguments into a normalized ParseResult, classifying
+ * every usage error as a @ref UsageError.
+ *
+ * Delegates the actual parsing to @ref parse_cli_impl and translates its
+ * failure modes by exception *type* (never by inspecting message text): any
+ * `std::invalid_argument` or `std::out_of_range` raised while parsing argv is a
+ * command-line usage error, re-thrown as a @ref UsageError whose message has
+ * been control-sanitized (@ref sanitizeDiagnostic) so echoing it to stderr
+ * cannot inject a newline or escape sequence from an attacker-controlled token
+ * (CWE-117). A message that is already a @ref UsageError (thrown with a
+ * pre-sanitized stem by the per-mode sub-parsers) is rethrown unchanged. Any
+ * other exception - notably the `std::runtime_error` from a malformed
+ * environment variable - propagates unchanged, so the entry point keeps it on
+ * the FATAL path rather than mistaking it for a flag-parse error.
+ *
+ * @param argc Argument count.
+ * @param argv Argument vector.
+ * @return ParseResult Parsed configuration and help metadata.
+ * @throws UsageError On any command-line usage error (see @ref
+ * parse_cli_impl); the message is sanitized and value-free.
+ * @throws std::runtime_error On a malformed `SHORTENER_DEFAULT_EXPIRY_SECONDS`
+ * or `SHORTENER_GENERATED_SLUG_LENGTH` environment variable (not a usage
+ * error).
+ */
+ParseResult CliParser::parse(int argc, char* argv[]) const
+{
+    try {
+        return parse_cli_impl(argc, argv);
+    } catch (const UsageError&) {
+        // Already classified and sanitized by a per-mode sub-parser.
+        throw;
+    } catch (const std::invalid_argument& e) {
+        throw UsageError(sanitizeDiagnostic(e.what()));
+    } catch (const std::out_of_range& e) {
+        // e.g. an out-of-range --http-port from parsePort.
+        throw UsageError(sanitizeDiagnostic(e.what()));
+    }
 }
 
 url_shortener::observability::LoggingConfig one_shot_logging_config(

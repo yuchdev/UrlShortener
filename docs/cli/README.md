@@ -274,11 +274,29 @@ The exit-code mapping is implemented by `ExitCodeForAppError` in
 HTTP statuses is in
 [`docs/commands/README.md`](../commands/README.md#1-envelope).
 
-**Behavior difference between modes.** `link <verb>` parse errors (unrecognized
-flag, missing required flag) exit `1` (legacy behavior, unchanged per contract
-C4); diagnostics go to stderr. `cmd` argument and name errors exit `2`
-(`invalid_envelope` or `invalid_field`) on stdout as a full response envelope;
-usage errors (`cmd failed: invalid_request: ...`) go to stderr with exit `2`.
+**Usage errors (all modes).** A command-line *usage* error — an unknown
+subcommand (`url_shortener nonsense`), an unknown `link` verb
+(`url_shortener link bogus`), an unknown flag, a flag missing its value, a bad
+flag value, or a mutually-exclusive flag combination — is reported on **stderr**
+and exits `2` (bad input) in **every** mode, never the FATAL `unhandled_exception`
+log line and exit `1` that is reserved for genuinely unexpected failures.
+Diagnostics are value-free and control-sanitized: a supplied flag *value* is
+never echoed (only the flag name/stem), and any argv-derived byte outside
+printable ASCII is scrubbed to `?`, so a crafted token cannot forge a log line or
+inject a terminal escape sequence (CWE-117).
+
+**Per-mode shape.** Server, `link <verb>`, `serve-stdio`, and `tui` print a
+concise `error: <message>` line followed by a `Try 'url_shortener --help' for
+usage.` hint. `cmd` keeps its envelope-style boundary: argument and name errors
+exit `2` (`invalid_envelope` or `invalid_field`) on **stdout** as a full response
+envelope, while a `cmd` usage error (unknown option, missing value, …) prints
+`cmd failed: invalid_request: <reason>` on stderr with exit `2`.
+
+**Not a usage error.** A malformed environment variable
+(`SHORTENER_DEFAULT_EXPIRY_SECONDS`, `SHORTENER_GENERATED_SLUG_LENGTH`) and
+server-mode startup failures (unreadable TLS material, invalid storage config)
+are not flag-parse errors and keep their own handling (storage bootstrap failures
+exit `4`).
 
 ## Commands
 

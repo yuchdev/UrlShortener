@@ -63,8 +63,10 @@ constexpr std::string_view uri_filename = "uri.txt";
  *
  * @param argc Number of CLI arguments.
  * @param argv CLI argument vector.
- * @return int Process exit code (0 on success; 4 on a storage bootstrap
- * failure; 1 on any other unhandled exception).
+ * @return int Process exit code (0 on success; 2 on a CLI usage error - a
+ * malformed invocation in any mode, reported concisely on stderr with no FATAL
+ * log line; 4 on a storage bootstrap failure; 1 on any other unhandled
+ * exception).
  */
 int main(int argc, char* argv[])
 {
@@ -74,24 +76,39 @@ int main(int argc, char* argv[])
         try {
             parsed = cli.parse(argc, argv);
         } catch (const std::exception& e) {
-            // Exception boundary for the one-shot `cmd` mode (user ruling): a
-            // malformed `cmd` invocation must never reach the FATAL
-            // `unhandled_exception` handler below. A usage error from the `cmd`
-            // sub-parser (unknown option, a flag missing its value, a repeated
-            // or mutually-exclusive flag, a missing command name, ...) is
-            // reported here as a value-free diagnostic on stderr and exits 2 (bad
-            // input), not 1. The sub-parser's messages never echo flag values or
-            // `--arg`/`--json` payload content (threat model T-77), and any flag
-            // NAME they do echo (an unknown-option stem) is sanitized to
-            // printable, length-bounded ASCII, so echoing what() can neither leak
-            // a supplied value nor inject a control byte into this stderr line
-            // (CWE-117).
-            // Malformed command NAMES and `--arg` operands never reach here — the
-            // parser carries them through to the dispatcher's `invalid_envelope`
-            // envelope — so this path covers only genuine CLI usage errors. Every
-            // other top-level mode keeps today's behavior (rethrow -> FATAL).
+            // Exception boundary for a malformed CLI invocation (user ruling):
+            // a usage error must never reach the FATAL `unhandled_exception`
+            // handler below. CliParser classifies every command-line usage
+            // error (unknown subcommand, unknown `link` verb, unknown flag, a
+            // flag missing its value, a bad flag value, a mutually-exclusive
+            // flag combination, ...) as a `UsageError`, whose message is
+            // already control-sanitized and value-free (never a supplied flag
+            // value; threat model T-77 / CWE-117), so echoing what() here can
+            // neither leak a secret nor forge a log line.
+            //
+            // `cmd` keeps its established envelope-style boundary: any parse
+            // failure in `cmd` mode (a `UsageError` or, e.g., a `std::runtime_
+            // error` from a bad environment variable) is reported as the
+            // documented `cmd failed: invalid_request: <reason>` line and exits
+            // 2 (docs/commands/README.md). Malformed `cmd` command NAMES and
+            // `--arg` operands never reach here at all — the parser carries
+            // them through to the dispatcher's `invalid_envelope` envelope.
+            //
+            // Every OTHER mode (server, `link <verb>`, `serve-stdio`, `tui`)
+            // reports a `UsageError` as a concise `error: <message>` line plus
+            // a
+            // `--help` hint on stderr and exits 2 (bad input), not 1. Any
+            // non-usage exception (e.g. the env-var `std::runtime_error`, or a
+            // genuinely unexpected failure) is rethrown to the FATAL path below
+            // (exit 1), so server-mode startup failures keep today's behavior.
             if (argc >= 2 && std::string(argv[1]) == "cmd") {
-                std::cerr << "cmd failed: invalid_request: " << e.what() << '\n';
+                std::cerr << "cmd failed: invalid_request: " << e.what()
+                          << '\n';
+                return 2;
+            }
+            if (dynamic_cast<const UsageError*>(&e) != nullptr) {
+                std::cerr << "error: " << e.what() << '\n'
+                          << "Try 'url_shortener --help' for usage.\n";
                 return 2;
             }
             throw;

@@ -5,6 +5,7 @@
 #pragma once
 
 #include <optional>
+#include <stdexcept>
 #include <string>
 #include <utility>
 #include <variant>
@@ -122,10 +123,11 @@ struct CmdCliCommand
     ///< unvalidated. Empty when `--json` was used instead.
     std::vector<std::pair<std::string, std::string>> arg_pairs;
 
-    ///< `true` when at least one `--arg` operand was malformed — a token with no
+    ///< `true` when at least one `--arg` operand was malformed — a token with
+    ///< no
     ///< `=` (`foo`) or an empty name (`=v`). The malformed operand itself is
-    ///< dropped (never added to @ref arg_pairs) and no value is retained, so the
-    ///< marker carries no untrusted text. The dispatcher turns this into an
+    ///< dropped (never added to @ref arg_pairs) and no value is retained, so
+    ///< the marker carries no untrusted text. The dispatcher turns this into an
     ///< `invalid_envelope` response (exit 2) rather than the parser throwing.
     ///< `--arg k=` (empty VALUE) is well-formed and does NOT set this.
     bool malformed_arg = false;
@@ -307,6 +309,40 @@ url_shortener::observability::LoggingConfig one_shot_logging_config(
     const OneShotLogging& logging);
 
 /**
+ * @brief Exception marking a genuine command-line *usage* error, as opposed to
+ * a runtime/startup failure.
+ *
+ * `CliParser::parse` throws this for every malformed-argv condition in every
+ * top-level mode - an unknown subcommand, an unknown `link` verb, an unknown
+ * flag, a flag missing its value, a bad flag value (bad boolean, out-of-range
+ * port, unknown redirect type), a missing required argument, or a
+ * mutually-exclusive flag combination. The entry point (`src/main.cpp`)
+ * catches it to report a concise `error: <message>` diagnostic plus a
+ * `--help` hint on stderr and exit with code `2` (bad input), never the FATAL
+ * `unhandled_exception` log line and exit `1` reserved for genuinely
+ * unexpected exceptions. A dedicated type (rather than inspecting `what()`
+ * text) is what lets the boundary tell a usage error apart from an
+ * environment-variable or storage/TLS startup failure, which keep their own
+ * handling.
+ *
+ * The carried message is guaranteed printable-ASCII and length-bounded: every
+ * byte outside `0x20`-`0x7E` (CR, LF, ESC, NUL, any other control byte) has
+ * been replaced before construction, so echoing `what()` to stderr can neither
+ * forge a log line nor inject a terminal escape sequence from an
+ * attacker-controlled argv token (CWE-117). It also never contains a supplied
+ * flag *value* (which may be a secret); only flag names/stems are echoed
+ * (threat model T-77).
+ *
+ * Derives from `std::invalid_argument` so existing callers and tests that catch
+ * `std::invalid_argument` continue to observe it.
+ */
+class UsageError : public std::invalid_argument
+{
+public:
+    using std::invalid_argument::invalid_argument;
+};
+
+/**
  * @brief Parses command-line arguments using Boost.ProgramOptions into
  * a `ParseResult` containing the server configuration, an optional
  * link-management command, and help metadata.
@@ -359,13 +395,20 @@ public:
      *   - `command` holds the parsed `LinkCliCommand` for a
      *     `link <verb>` invocation (without `--help`); `std::nullopt`
      *     in server mode.
-     * @throws std::invalid_argument On an unrecognized flag, an invalid
-     * flag value (bad boolean, out-of-range port, unknown redirect-type
-     * token), a missing or unrecognized `link` verb, or a missing or
-     * malformed verb flag.
+     * @throws UsageError On any command-line *usage* error in any mode: an
+     * unrecognized flag, an invalid flag value (bad boolean, out-of-range
+     * port, unknown redirect-type token), a missing or unrecognized `link`
+     * verb, a missing or malformed verb flag, an unknown subcommand, or a
+     * flag missing its value. Its message is already control-sanitized and
+     * value-free (see @ref UsageError). `UsageError` derives from
+     * `std::invalid_argument`, so callers catching the base type still
+     * observe it.
      * @throws std::runtime_error If `SHORTENER_DEFAULT_EXPIRY_SECONDS`
      * or `SHORTENER_GENERATED_SLUG_LENGTH` cannot be parsed as a valid
-     * unsigned integer or exceeds the `uint32_t` range.
+     * unsigned integer or exceeds the `uint32_t` range. This environment
+     * configuration failure is deliberately NOT a @ref UsageError: the entry
+     * point keeps it on the FATAL path rather than treating it as a flag-parse
+     * error.
      */
     ParseResult parse(int argc, char* argv[]) const;
 };
