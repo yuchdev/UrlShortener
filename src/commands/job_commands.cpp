@@ -1,5 +1,3 @@
-#include <url_shortener/commands/job_commands.hpp>
-
 #include <chrono>
 #include <cstddef>
 #include <optional>
@@ -13,6 +11,7 @@
 #include <url_shortener/commands/command_registry.hpp>
 #include <url_shortener/commands/envelope.hpp>
 #include <url_shortener/commands/error_codes.hpp>
+#include <url_shortener/commands/job_commands.hpp>
 #include <url_shortener/commands/job_runner.hpp>
 #include <url_shortener/commands/job_types.hpp>
 #include <url_shortener/commands/json_scan.hpp>
@@ -35,7 +34,8 @@ constexpr long long k_job_list_max_limit = 500;
 
 /// Inclusive upper bound on the `job.list` `offset`; identical to `link.list`
 /// (`link_list_max_offset`). Bounds the deep-skip a single request can request;
-/// a larger value is rejected `out_of_range` -> `invalid_field` by the registry.
+/// a larger value is rejected `out_of_range` -> `invalid_field` by the
+/// registry.
 constexpr long long k_job_list_max_offset = 1000000;
 
 /**
@@ -110,8 +110,8 @@ std::vector<ArgSpec> make_job_list_args()
     state.name = "state";
     state.type = ArgType::enumeration;
     state.required = false;
-    state.enum_values = {"queued", "running", "succeeded", "failed",
-                         "cancelled"};
+    state.enum_values = {
+        "queued", "running", "succeeded", "failed", "cancelled"};
     state.doc = "Lifecycle filter; lists all states when omitted.";
 
     ArgSpec limit;
@@ -197,8 +197,8 @@ CommandResult handle_job_list(JobRunner& runner, const ArgsView& args)
         }
     }
 
-    const std::size_t offset = static_cast<std::size_t>(
-        args.get_int("offset").value_or(0));
+    const std::size_t offset =
+        static_cast<std::size_t>(args.get_int("offset").value_or(0));
     const std::size_t limit = static_cast<std::size_t>(
         args.get_int("limit").value_or(k_job_list_default_limit));
 
@@ -269,9 +269,9 @@ CommandDescriptor make_job_get_descriptor(JobRunner& runner)
     descriptor.kind = ExecutionKind::sync;
     descriptor.mutating = false;
     descriptor.supports_dry_run = false;
-    descriptor.maps_to = {"GET /api/v1/jobs/{id}", "job get"};
-    descriptor.handler = [&runner](CommandContext& /*context*/,
-                                   const ArgsView& args)
+    descriptor.maps_to = {"GET /api/v1/jobs/{id}"};
+    descriptor.handler =
+        [&runner](CommandContext& /*context*/, const ArgsView& args)
     { return handle_job_get(runner, args); };
     return descriptor;
 }
@@ -295,9 +295,9 @@ CommandDescriptor make_job_list_descriptor(JobRunner& runner)
     descriptor.kind = ExecutionKind::sync;
     descriptor.mutating = false;
     descriptor.supports_dry_run = false;
-    descriptor.maps_to = {"GET /api/v1/jobs", "job list"};
-    descriptor.handler = [&runner](CommandContext& /*context*/,
-                                   const ArgsView& args)
+    descriptor.maps_to = {"GET /api/v1/jobs"};
+    descriptor.handler =
+        [&runner](CommandContext& /*context*/, const ArgsView& args)
     { return handle_job_list(runner, args); };
     return descriptor;
 }
@@ -325,17 +325,16 @@ CommandDescriptor make_job_cancel_descriptor(JobRunner& runner)
     descriptor.kind = ExecutionKind::sync;
     descriptor.mutating = true;
     descriptor.supports_dry_run = false;
-    descriptor.maps_to = {"POST /api/v1/jobs/{id}/cancel", "job cancel"};
-    descriptor.handler = [&runner](CommandContext& /*context*/,
-                                   const ArgsView& args)
+    descriptor.maps_to = {"POST /api/v1/jobs/{id}/cancel"};
+    descriptor.handler =
+        [&runner](CommandContext& /*context*/, const ArgsView& args)
     { return handle_job_cancel(runner, args); };
     return descriptor;
 }
 
 /// Optional wall-clock instant, as carried by both @ref JobRecord and
 /// @ref JobSummary.
-using opt_time_point =
-    std::optional<std::chrono::system_clock::time_point>;
+using opt_time_point = std::optional<std::chrono::system_clock::time_point>;
 
 /**
  * @brief Writes the leading metadata fields `"id","command","state",
@@ -343,8 +342,8 @@ using opt_time_point =
  * record and the summary projection.
  *
  * Factored out so the @ref JobRecord and @ref JobSummary serializers emit these
- * common fields identically and cannot drift (a list item and a `job.get` of the
- * same job must agree on every non-`result` field).
+ * common fields identically and cannot drift (a list item and a `job.get` of
+ * the same job must agree on every non-`result` field).
  *
  * @param os Stream to append to; receives the four fields with no leading
  * comma (the object's `'{'` is written by the caller immediately before).
@@ -400,19 +399,18 @@ void serialize_job_tail(std::ostringstream& os,
             failure.has_value() ? failure->message : "job failed";
         os << ",\"error\":{\"code\":" << jsonString(code)
            << ",\"message\":" << jsonString(message) << '}';
-    } else if (state == JobState::cancelled) {
+    }
+    else if (state == JobState::cancelled) {
         os << ",\"error\":{\"code\":\"job_cancelled\","
            << "\"message\":\"job cancelled\"}";
     }
 
     os << ",\"created_at\":" << jsonString(formatTimestamp(created_at));
     if (started_at.has_value()) {
-        os << ",\"started_at\":"
-           << jsonString(formatTimestamp(*started_at));
+        os << ",\"started_at\":" << jsonString(formatTimestamp(*started_at));
     }
     if (finished_at.has_value()) {
-        os << ",\"finished_at\":"
-           << jsonString(formatTimestamp(*finished_at));
+        os << ",\"finished_at\":" << jsonString(formatTimestamp(*finished_at));
     }
 }
 
@@ -422,26 +420,31 @@ std::string serialize_job_json(const JobRecord& record, JobDetail detail)
 {
     std::ostringstream os;
     os << '{';
-    serialize_job_head(os, record.id, record.command, record.state,
-                       record.progress);
+    serialize_job_head(
+        os, record.id, record.command, record.state, record.progress);
 
     // `result` is opaque pre-serialized object text (contract C9), embedded
     // verbatim. It is emitted only on the full-detail path and only when both
     // present and well-formed:
     //   - T-109: `job.list` items use the JobSummary overload (and this record
-    //     overload at JobDetail::summary) and MUST omit it so a page of retained
-    //     jobs cannot amplify ~1 MiB export results per row into a multi-hundred-
-    //     MiB response (2026-11-18 user decision).
+    //     overload at JobDetail::summary) and MUST omit it so a page of
+    //     retained jobs cannot amplify ~1 MiB export results per row into a
+    //     multi-hundred- MiB response (2026-11-18 user decision).
     //   - C9 backstop: a malformed value would be embedded unescaped and
     //     corrupt the whole object, so a failing well-formedness check omits
     //     `result` rather than emit broken JSON (never aborts, see helper).
-    if (detail == JobDetail::full && record.result_json.has_value() &&
-        job_result_json_is_wellformed(*record.result_json)) {
+    if (detail == JobDetail::full && record.result_json.has_value()
+        && job_result_json_is_wellformed(*record.result_json))
+    {
         os << ",\"result\":" << *record.result_json;
     }
 
-    serialize_job_tail(os, record.state, record.failure, record.created_at,
-                       record.started_at, record.finished_at);
+    serialize_job_tail(os,
+                       record.state,
+                       record.failure,
+                       record.created_at,
+                       record.started_at,
+                       record.finished_at);
     os << '}';
     return os.str();
 }
@@ -454,10 +457,14 @@ std::string serialize_job_json(const JobSummary& summary)
     // guarantee the non-result fields match the single-record serializer.
     std::ostringstream os;
     os << '{';
-    serialize_job_head(os, summary.id, summary.command, summary.state,
-                       summary.progress);
-    serialize_job_tail(os, summary.state, summary.failure, summary.created_at,
-                       summary.started_at, summary.finished_at);
+    serialize_job_head(
+        os, summary.id, summary.command, summary.state, summary.progress);
+    serialize_job_tail(os,
+                       summary.state,
+                       summary.failure,
+                       summary.created_at,
+                       summary.started_at,
+                       summary.finished_at);
     os << '}';
     return os.str();
 }

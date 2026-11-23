@@ -6,12 +6,11 @@
  * backend names and the non-secret `ServerConfig` subset (milestone contract
  * C6, threat model T-53).
  */
-#include <url_shortener/commands/system_commands.hpp>
-
 #include <utility>
 
 #include <url_shortener/app/system_info.hpp>
 #include <url_shortener/commands/command_descriptor.hpp>
+#include <url_shortener/commands/system_commands.hpp>
 #include <url_shortener/security/control_set.hpp>
 
 namespace url_shortener::commands
@@ -28,7 +27,6 @@ CommandDescriptor make_system_info_descriptor(app::SystemInfo info)
     descriptor.kind = ExecutionKind::sync;
     descriptor.mutating = false;
     descriptor.supports_dry_run = false;
-    descriptor.maps_to = {"system info"};
     descriptor.handler =
         [info = std::move(info)](CommandContext& context, const ArgsView&)
     {

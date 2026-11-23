@@ -348,7 +348,7 @@ Backed by `app::ILinkLister` over the new `IMetadataRepository::ListLinksPage`
 (Task 03.0 subtasks 01 and 12; lifecycle, tag and campaign filters are applied
 in the app layer because the SQL backends keep them in `attributes`). Maps to:
 new `GET /api/v1/links` (query params = args; gated, see "REST access
-control"), `link list`.
+control").
 Errors: `invalid_field`, `not_authorized`.
 
 #### `db.tables` - `read`, sync
@@ -497,12 +497,8 @@ Read a page of rows from a browsable table.
 | `offset` | int | no | Zero-based index of the first row to return. |
 | `limit` | int | no | Maximum number of rows to return (1..500). |
 
-Maps to: `db rows`.
-
 #### `db.tables` - Perm `read`, sync
 List the browsable tables with their row counts.
-
-Maps to: `db tables`.
 
 #### `job.cancel` - Perm `write`, sync, Mut
 Request cancellation of a job by id.
@@ -511,7 +507,7 @@ Request cancellation of a job by id.
 |---|---|---|---|
 | `id` | string | yes | Job id of the form j-<n> to address. |
 
-Maps to: `POST /api/v1/jobs/{id}/cancel`, `job cancel`.
+Maps to: `POST /api/v1/jobs/{id}/cancel`.
 
 #### `job.get` - Perm `read`, sync
 Fetch one job record by id.
@@ -520,7 +516,7 @@ Fetch one job record by id.
 |---|---|---|---|
 | `id` | string | yes | Job id of the form j-<n> to address. |
 
-Maps to: `GET /api/v1/jobs/{id}`, `job get`.
+Maps to: `GET /api/v1/jobs/{id}`.
 
 #### `job.list` - Perm `read`, sync
 List job records with state filter and paging.
@@ -531,7 +527,7 @@ List job records with state filter and paging.
 | `limit` | int | no | Maximum number of jobs to return (1..500). |
 | `offset` | int | no | Zero-based index of the first job to return (0..1000000). |
 
-Maps to: `GET /api/v1/jobs`, `job list`.
+Maps to: `GET /api/v1/jobs`.
 
 #### `link.create` - Perm `write`, sync, Mut, `dry_run` yes
 Create a short link.
@@ -588,7 +584,7 @@ Export filtered links as CSV or NDJSON pairs.
 | `campaign` | string | no | Exact-match campaign name filter. |
 | `path` | string | no | Local file path; local-operator transports only. |
 
-Maps to: `GET /api/v1/links:export`, `link export`.
+Maps to: `GET /api/v1/links:export`.
 
 #### `link.get` - Perm `read`, sync
 Retrieve a short link by slug or id.
@@ -610,7 +606,7 @@ Bulk-import full_url to short_url pairs.
 | `path` | string | no | Local file path; local-operator transports only. |
 | `on_conflict` | enum `skip`\|`fail`\|`overwrite` | no | Behaviour on an existing slug: skip, fail or overwrite. |
 
-Maps to: `POST /api/v1/links:import`, `link import`.
+Maps to: `POST /api/v1/links:import`.
 
 #### `link.list` - Perm `read`, sync
 List short links with filtering, sorting and paging.
@@ -626,7 +622,7 @@ List short links with filtering, sorting and paging.
 | `offset` | int | no | Zero-based index of the first link to return (0..1000000). |
 | `limit` | int | no | Maximum number of links to return (1..500). |
 
-Maps to: `GET /api/v1/links`, `link list`.
+Maps to: `GET /api/v1/links`.
 
 #### `link.preview` - Perm `read`, sync
 Preview a short link's resolved status.
@@ -675,8 +671,6 @@ Maps to: `PATCH /api/v1/links/{slug}`, `link update`.
 
 #### `system.info` - Perm `read`, sync
 Report the server version, selected storage backends and non-secret shortener settings.
-
-Maps to: `system info`.
 
 <!-- END GENERATED: commands -->
 

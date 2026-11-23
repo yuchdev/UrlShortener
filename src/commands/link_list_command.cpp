@@ -1,5 +1,3 @@
-#include <url_shortener/commands/browse_commands.hpp>
-
 #include <cstddef>
 #include <optional>
 #include <string>
@@ -8,6 +6,7 @@
 
 #include <url_shortener/app/link_lister.hpp>
 #include <url_shortener/commands/arg_spec.hpp>
+#include <url_shortener/commands/browse_commands.hpp>
 #include <url_shortener/commands/command_descriptor.hpp>
 #include <url_shortener/commands/error_codes.hpp>
 #include <url_shortener/commands/link_command_codec.hpp>
@@ -36,7 +35,8 @@ constexpr std::size_t k_campaign_max_length = 128;
  * @param name The argument key as it appears in the `args` object.
  * @param max_length Maximum decoded byte length; a longer value fails the
  * registry's validation with reason `too_long` before the handler runs.
- * @return An optional string @ref ArgSpec named @p name capped at @p max_length.
+ * @return An optional string @ref ArgSpec named @p name capped at @p
+ * max_length.
  */
 ArgSpec make_string_arg(std::string name, std::size_t max_length)
 {
@@ -54,9 +54,11 @@ ArgSpec make_string_arg(std::string name, std::size_t max_length)
  *
  * @param name The argument key as it appears in the `args` object.
  * @param values The case-sensitively compared set of accepted string values; a
- * value outside the set fails with reason `not_in_enum` before the handler runs.
+ * value outside the set fails with reason `not_in_enum` before the handler
+ * runs.
  * @param default_token The default enum value applied by the handler when the
- * argument is omitted; recorded (as a JSON string literal) for help/catalog only
+ * argument is omitted; recorded (as a JSON string literal) for help/catalog
+ * only
  * (@ref validate_args never reads it). Must be one of @p values.
  * @return An optional enumeration @ref ArgSpec named @p name.
  */
@@ -68,8 +70,8 @@ ArgSpec make_enum_arg(std::string name,
     spec.name = std::move(name);
     spec.type = ArgType::enumeration;
     spec.enum_values = std::move(values);
-    // The descriptor records each default as a verbatim JSON token (command.list
-    // embeds it), so an enum string default must be quoted.
+    // The descriptor records each default as a verbatim JSON token
+    // (command.list embeds it), so an enum string default must be quoted.
     spec.default_value = "\"" + default_token + "\"";
     return spec;
 }
@@ -126,9 +128,8 @@ std::vector<ArgSpec> make_link_list_args()
     ArgSpec campaign = make_string_arg("campaign", k_campaign_max_length);
     campaign.doc = "Exact-match campaign name filter.";
 
-    ArgSpec sort =
-        make_enum_arg("sort", {"created_at", "slug", "updated_at"},
-                      "created_at");
+    ArgSpec sort = make_enum_arg(
+        "sort", {"created_at", "slug", "updated_at"}, "created_at");
     sort.doc = "Field the results are ordered by.";
 
     ArgSpec order = make_enum_arg("order", {"asc", "desc"}, "desc");
@@ -242,11 +243,11 @@ app::LinkListQuery decode_query(const ArgsView& args)
  *
  * Builds the `app::LinkListQuery` via @ref decode_query, calls
  * `app::ILinkLister::list`, and on success returns the page serialized by
- * `app::serializeLinkListJson` (whose items are the shared `serializeLinkViewJson`
- * body: contract C1/C3). A lister failure is translated by @ref to_command_error
- * (fixed details only, contract C6); an `ok()` result with no page is a lister
- * programming error mapped to `internal`. The audit target stays empty because
- * this is a read command.
+ * `app::serializeLinkListJson` (whose items are the shared
+ * `serializeLinkViewJson` body: contract C1/C3). A lister failure is translated
+ * by @ref to_command_error (fixed details only, contract C6); an `ok()` result
+ * with no page is a lister programming error mapped to `internal`. The audit
+ * target stays empty because this is a read command.
  *
  * @param lister The browse port the query is delegated to.
  * @param args The validated argument view (bounds already enforced by the
@@ -300,12 +301,10 @@ CommandDescriptor make_link_list_descriptor(app::ILinkLister& lister)
     descriptor.kind = ExecutionKind::sync;
     descriptor.mutating = false;
     descriptor.supports_dry_run = false;
-    descriptor.maps_to = {"GET /api/v1/links", "link list"};
+    descriptor.maps_to = {"GET /api/v1/links"};
     descriptor.handler =
         [&lister](CommandContext& /*context*/, const ArgsView& args)
-    {
-        return handle_link_list(lister, args);
-    };
+    { return handle_link_list(lister, args); };
     return descriptor;
 }
 

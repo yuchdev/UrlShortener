@@ -6,8 +6,6 @@
  * @ref url_shortener::app::ITableSource (milestone contract C6, threat model
  * T-51).
  */
-#include <url_shortener/commands/browse_commands.hpp>
-
 #include <cstddef>
 #include <optional>
 #include <string>
@@ -17,6 +15,7 @@
 #include <url_shortener/app/app_error.hpp>
 #include <url_shortener/app/table_source.hpp>
 #include <url_shortener/commands/arg_spec.hpp>
+#include <url_shortener/commands/browse_commands.hpp>
 #include <url_shortener/commands/command_descriptor.hpp>
 #include <url_shortener/commands/error_codes.hpp>
 
@@ -245,7 +244,6 @@ CommandDescriptor make_db_tables_descriptor(app::TableCatalog& catalog)
     descriptor.kind = ExecutionKind::sync;
     descriptor.mutating = false;
     descriptor.supports_dry_run = false;
-    descriptor.maps_to = {"db tables"};
     descriptor.handler =
         [&catalog](CommandContext& /*context*/, const ArgsView& /*args*/)
     { return handle_db_tables(catalog); };
@@ -262,7 +260,6 @@ CommandDescriptor make_db_rows_descriptor(app::TableCatalog& catalog)
     descriptor.kind = ExecutionKind::sync;
     descriptor.mutating = false;
     descriptor.supports_dry_run = false;
-    descriptor.maps_to = {"db rows"};
     descriptor.handler =
         [&catalog](CommandContext& /*context*/, const ArgsView& args)
     { return handle_db_rows(catalog, args); };

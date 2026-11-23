@@ -1036,7 +1036,7 @@ CommandDescriptor make_link_import_descriptor(PairCommandDeps deps)
     descriptor.kind = ExecutionKind::job;
     descriptor.mutating = true;
     descriptor.supports_dry_run = true;
-    descriptor.maps_to = {"POST /api/v1/links:import", "link import"};
+    descriptor.maps_to = {"POST /api/v1/links:import"};
     // Capture `deps` by value so the factory (and the bodies it builds) holds a
     // shared-ownership service copy and plain values, never a reference to this
     // function's argument (threat model T-87).
@@ -1072,7 +1072,7 @@ CommandDescriptor make_link_export_descriptor(PairCommandDeps deps)
     descriptor.kind = ExecutionKind::job;
     descriptor.mutating = false;
     descriptor.supports_dry_run = false;
-    descriptor.maps_to = {"GET /api/v1/links:export", "link export"};
+    descriptor.maps_to = {"GET /api/v1/links:export"};
     // Capture `deps` by value so the factory (and the bodies it builds) holds a
     // copy of the page source and plain values, never a reference to this
     // function's argument (threat model T-87).
