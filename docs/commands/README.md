@@ -191,8 +191,12 @@ All five produce the same `result` object.
 Legend: **Perm** = `AccessGuard` permission (`read`, `write`; `migrate` and
 `manage_users` exist in the model but no command of this milestone uses them).
 **Kind** = `sync` or `job`. **Mut** = mutating (TUI confirms; audit line
-written). Types: `string`, `bool`, `int`, `timestamp` (RFC 3339 UTC),
-`list<string>`, `map<string,string>`, `object`.
+written). Types: `string`, `bool`, `int`, `timestamp`, `list<string>`,
+`map<string,string>`, `object`. A `timestamp` is strict RFC 3339 UTC Zulu:
+`YYYY-MM-DDTHH:MM:SS`, optionally `.` plus 1-9 fractional digits, then a
+mandatory uppercase `Z`. Numeric offsets, lowercase `t`/`z`, date-only values,
+impossible calendar dates (e.g. `2026-02-29`) and leap second `:60` are
+rejected.
 
 ### 3.1 Link commands (existing behavior, now envelope-addressable)
 
