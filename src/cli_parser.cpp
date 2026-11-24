@@ -41,7 +41,8 @@ constexpr std::size_t k_max_echoed_option_bytes = 64;
  * regardless of argv length. This is deliberately a plain printable-ASCII
  * mapping, not the UTF-8-aware @ref url_shortener::tui::sanitize_for_terminal
  * (a TUI-display concern) nor @ref url_shortener::observability::SanitizeField
- * (which only length-truncates and PII-redacts, and does NOT escape CR/LF).
+ * (a log-field concern that PII-redacts and escapes control bytes as readable
+ * `\r`/`\n`/`\xHH` sequences, keeping C1 and non-ASCII bytes intact).
  *
  * @param token Raw argv token stem (already truncated at the first `=` by the
  * caller, so its value half - which may be a secret - is never passed in).

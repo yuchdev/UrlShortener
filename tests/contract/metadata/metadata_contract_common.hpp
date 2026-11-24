@@ -200,8 +200,9 @@ inline const std::string& ContractPostgresDsn()
         }
         return ContractPostgresDsnWithSchema(base);
     }();
-    // Declared after `dsn`, so destroyed before it: drops this process's schema
-    // (and every object in it) at exit. Best-effort; a dead server is ignored.
+    // Drops this process's schema (and every object in it) at static
+    // destruction. It recomputes the DSN and schema name itself and does not
+    // depend on `dsn`. Best-effort; a dead server is ignored.
     static const struct SchemaCleanup
     {
         ~SchemaCleanup()
