@@ -8,18 +8,18 @@
  *  assertion here is a contract-C3 guard: status codes, bodies and error codes
  *  must stay byte-for-byte what they are today, the only deliberate exception
  *  being the T-76 cap, which turns a previously-accepted over-cap stats span
- *  into a 400 range_too_large (2026-11-16 user decision). The redirect fast path
- *  is untouched (contract C10); this file only exercises the management plane.
+ *  into a 400 range_too_large (2026-11-16 user decision). The redirect fast
+ * path is untouched (contract C10); this file only exercises the management
+ * plane.
  */
 #define BOOST_TEST_MODULE RestReadRoutesViaRegistry
-#include <boost/test/unit_test.hpp>
-
 #include <chrono>
 #include <cstdint>
 #include <functional>
 #include <string>
 #include <vector>
 
+#include <boost/test/unit_test.hpp>
 #include <url_shortener/analytics/click_event.hpp>
 #include <url_shortener/app/link_backend.hpp>
 #include <url_shortener/app/link_command_service.hpp>
@@ -219,8 +219,8 @@ BOOST_AUTO_TEST_CASE(get_by_slug_and_by_id_return_view_body)
                == "application/json");
     BOOST_TEST(!by_slug.base()["X-Request-Id"].empty());
 
-    const auto by_id =
-        f.dispatch(make_request(bhttp::verb::get, "/api/v1/links/id/id-r16get"));
+    const auto by_id = f.dispatch(
+        make_request(bhttp::verb::get, "/api/v1/links/id/id-r16get"));
     BOOST_TEST(by_id.result_int() == 200);
     BOOST_TEST(by_id.body() == expected);
 }
@@ -235,7 +235,8 @@ BOOST_AUTO_TEST_CASE(get_unknown_slug_and_id_are_not_found)
 {
     Fixture f;
     for (const std::string& target :
-         {"/api/v1/links/r16ghost", "/api/v1/links/id/id-r16ghost"}) {
+         {"/api/v1/links/r16ghost", "/api/v1/links/id/id-r16ghost"})
+    {
         const auto res = f.dispatch(make_request(bhttp::verb::get, target));
         BOOST_TEST(res.result_int() == 404);
         BOOST_TEST(extract_code(res.body()) == "not_found");
@@ -278,7 +279,8 @@ BOOST_AUTO_TEST_CASE(preview_returns_reduced_body_with_status)
         v.mutate(link);
         seed(link);
 
-        const auto view = f.bundle.service->PreviewLink({GetLinkBy::slug, slug});
+        const auto view =
+            f.bundle.service->PreviewLink({GetLinkBy::slug, slug});
         BOOST_REQUIRE_MESSAGE(view.ok(), v.suffix);
         const std::string expected =
             url_shortener::app::serializeLinkPreviewJson(*view.value);
@@ -309,9 +311,11 @@ BOOST_AUTO_TEST_CASE(preview_unknown_is_not_found)
 // Type: unit (stats range mode, success body).
 // Scenario: GET /stats?from&to&bucket over seeded click events returns 200 with
 //   exactly serializeLinkStatsJson for the same query.
-// Boundaries: a bounded (under-cap) window; both sides read the shared analytics
+// Boundaries: a bounded (under-cap) window; both sides read the shared
+// analytics
 //   store through the same reader.
-// On failure first check: did GetLinkStats or serializeLinkStatsJson diverge, or
+// On failure first check: did GetLinkStats or serializeLinkStatsJson diverge,
+// or
 //   were differing events seeded?
 BOOST_AUTO_TEST_CASE(stats_range_mode_returns_stats_body)
 {
@@ -330,15 +334,17 @@ BOOST_AUTO_TEST_CASE(stats_range_mode_returns_stats_body)
     const std::string expected =
         url_shortener::app::serializeLinkStatsJson(*view.value);
 
-    const auto res = f.dispatch(make_request(
-        bhttp::verb::get,
-        "/api/v1/links/r16statsr/stats?from=1499000000&to=1501000000&bucket=day"));
+    const auto res = f.dispatch(
+        make_request(bhttp::verb::get,
+                     "/api/v1/links/r16statsr/"
+                     "stats?from=1499000000&to=1501000000&bucket=day"));
     BOOST_TEST(res.result_int() == 200);
     BOOST_TEST(res.body() == expected);
 }
 
 // Type: unit (stats range validation).
-// Scenario: from after to, a non-numeric from, and an unknown bucket each return
+// Scenario: from after to, a non-numeric from, and an unknown bucket each
+// return
 //   400 with the legacy promoted codes invalid_timestamp / invalid_timestamp /
 //   invalid_bucket.
 // Boundaries: the reader is the sole validator; these details are promoted to
@@ -388,10 +394,10 @@ BOOST_AUTO_TEST_CASE(stats_out_of_range_epochs_are_invalid_timestamp)
     seed_click("r16epoch", 1000000);  // In range; must never be aggregated.
 
     const std::vector<std::string> queries = {
-        "from=-1&to=1000&bucket=day",                    // negative from
-        "from=0&to=253402300800&bucket=day",             // to one past 9999
+        "from=-1&to=1000&bucket=day",  // negative from
+        "from=0&to=253402300800&bucket=day",  // to one past 9999
         "from=253402300800&to=253402300900&bucket=day",  // from beyond 9999
-        "from=-5000000000&to=5000000000&bucket=hour",    // extreme overflow pair
+        "from=-5000000000&to=5000000000&bucket=hour",  // extreme overflow pair
     };
     for (const std::string& q : queries) {
         const auto res = f.dispatch(make_request(
@@ -407,7 +413,8 @@ BOOST_AUTO_TEST_CASE(stats_out_of_range_epochs_are_invalid_timestamp)
 // Scenario: an over-cap span (from=0&to=9999999999&bucket=hour, > 10,000 hour
 //   buckets) returns 400 invalid_request with message range_too_large, and no
 //   aggregate stats body is produced even with a seeded event in range.
-// Boundaries: the cap short-circuits before GetAggregateStats, so the body is an
+// Boundaries: the cap short-circuits before GetAggregateStats, so the body is
+// an
 //   error envelope with no total_attempts/time_buckets fields. range_too_large
 //   is NOT promoted to a REST code (stays invalid_request), unlike the other
 //   two stats details.
@@ -432,7 +439,8 @@ BOOST_AUTO_TEST_CASE(stats_over_cap_span_is_rejected_before_aggregation)
 }
 
 // Type: unit (stats bucket cap, exact boundary per bucket).
-// Scenario: for hour, day and week, a span of exactly 10,000 buckets is accepted
+// Scenario: for hour, day and week, a span of exactly 10,000 buckets is
+// accepted
 //   (200) and a span of 10,001 buckets is rejected (400 range_too_large).
 // Boundaries: the cap is (to-from)/width > 10,000; from=0 makes the arithmetic
 //   exact. Range mode does not require the slug to exist, so an empty-aggregate
@@ -495,7 +503,8 @@ BOOST_AUTO_TEST_CASE(stats_over_cap_command_parity)
 // Type: unit (stats lifetime mode, no window).
 // Scenario: GET /stats with no query returns 200 with the six-key lifetime body
 //   (serializeLinkLifetimeStatsJson).
-// Boundaries: the no-window branch sends only slug and the command falls back to
+// Boundaries: the no-window branch sends only slug and the command falls back
+// to
 //   the lifetime counters.
 // On failure first check: did the lifetime serializer drift, or did the handler
 //   stop detecting the no-window case?
@@ -551,12 +560,15 @@ BOOST_AUTO_TEST_CASE(stats_lifetime_unknown_slug_is_not_found)
     BOOST_TEST(extract_code(res.body()) == "not_found");
 }
 
-// Type: unit (method dispatch unchanged on read paths).
-// Scenario: POST and HEAD on the three GET-only read paths keep the router's
-//   current 400 invalid_method response; the migrated handlers never run.
-// Boundaries: method checking is a router concern this migration does not touch
-//   (the spec's "405/404" shorthand; the real contract is 400 invalid_method).
-// On failure first check: did a read route start accepting a non-GET method?
+// Type: unit (method dispatch on read paths).
+// Scenario: POST and HEAD on the read paths are 405 invalid_method with an
+//   Allow header that lists GET (RFC 9110 15.5.6); the migrated handlers never
+//   run.
+// Boundaries: method checking is a router concern; every read path serves GET,
+//   so the Allow header always includes GET (the {slug} path also lists PATCH
+//   and DELETE). HEAD is never advertised.
+// On failure first check: did a read route start accepting a non-GET method, or
+//   did the Allow header stop listing GET?
 BOOST_AUTO_TEST_CASE(non_get_methods_on_read_paths_are_invalid_method)
 {
     Fixture f;
@@ -566,10 +578,14 @@ BOOST_AUTO_TEST_CASE(non_get_methods_on_read_paths_are_invalid_method)
                                             "/api/v1/links/r16method/preview",
                                             "/api/v1/links/r16method/stats"};
     for (const std::string& path : paths) {
-        for (const bhttp::verb method : {bhttp::verb::post, bhttp::verb::head}) {
+        for (const bhttp::verb method : {bhttp::verb::post, bhttp::verb::head})
+        {
             const auto res = f.dispatch(make_request(method, path));
-            BOOST_TEST(res.result_int() == 400, path);
+            BOOST_TEST(res.result_int() == 405, path);
             BOOST_TEST(extract_code(res.body()) == "invalid_method", path);
+            const std::string allow =
+                std::string(res.base()[bhttp::field::allow]);
+            BOOST_TEST(allow.find("GET") != std::string::npos, path);
         }
     }
 }
@@ -577,8 +593,8 @@ BOOST_AUTO_TEST_CASE(non_get_methods_on_read_paths_are_invalid_method)
 // Type: unit (configured base domain flows into short_url).
 // Scenario: with a process runtime built from a config whose
 //   shortener_base_domain is customized, a REST GET renders short_url with that
-//   base, proving the configured base reaches the response through the installed
-//   runtime (the process-wide model from 04.0/02).
+//   base, proving the configured base reaches the response through the
+//   installed runtime (the process-wide model from 04.0/02).
 // Boundaries: since 04.0/02 the runtime is process-wide and config-bound at
 //   install time, not per-request; this case installs and then resets it so no
 //   other case is affected.
@@ -603,13 +619,14 @@ BOOST_AUTO_TEST_CASE(configured_base_domain_flows_into_short_url)
     seed(make_seed("r16base"));
 
     const auto router = RouterBuilder::buildApplicationRouter();
-    const auto res = router.dispatch(
-        make_request(bhttp::verb::get, "/api/v1/links/r16base"),
-        configured,
-        false);
+    const auto res =
+        router.dispatch(make_request(bhttp::verb::get, "/api/v1/links/r16base"),
+                        configured,
+                        false);
     BOOST_TEST(res.result_int() == 200);
-    BOOST_TEST(res.body().find("\"short_url\":\"https://short.example/r16base\"")
-               != std::string::npos);
+    BOOST_TEST(
+        res.body().find("\"short_url\":\"https://short.example/r16base\"")
+        != std::string::npos);
 
     // Teardown: restore the process-wide defaults for any following case.
     composition::reset_process_command_runtime();

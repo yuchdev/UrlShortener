@@ -220,9 +220,14 @@ BOOST_AUTO_TEST_CASE(prefixed_redirect_records_terminal_status_analytics)
 
 BOOST_AUTO_TEST_CASE(prefixed_redirect_wrong_method_uses_router_error_shape)
 {
-    expect_error(dispatch(make_request(bhttp::verb::post, "/r/prmissing001")),
-                 400,
-                 "invalid_method");
+    // POST /r/{slug} matches the GET-only prefixed-redirect path, so the router
+    // answers 405 invalid_method with Allow: GET (RFC 9110 15.5.6). The
+    // redirect fast path for GET/HEAD on slugs is untouched by this
+    // method-mismatch reply.
+    const auto res =
+        dispatch(make_request(bhttp::verb::post, "/r/prmissing001"));
+    expect_error(res, 405, "invalid_method");
+    BOOST_TEST(std::string(res.base()[bhttp::field::allow]) == "GET");
 }
 
 // Type: unit (regression / CWE-113 defense in depth).

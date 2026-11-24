@@ -35,9 +35,10 @@ struct RouteEntryView
 /// request target.  When two registered routes share the same specificity
 /// for the same path, the first-registered route whose HTTP method matches
 /// wins.  If the path matches but no registered method matches, the router
-/// calls the error handler with status 400 (`"invalid_method"`).  If no
-/// pattern matches at all, it calls the error handler with 404
-/// (`"not_found"`).
+/// calls the error handler with status 405 (`"invalid_method"`) and sets an
+/// `Allow` header listing the methods that path supports (RFC 9110 15.5.6);
+/// HEAD is never listed because no HEAD route is served.  If no pattern
+/// matches at all, it calls the error handler with 404 (`"not_found"`).
 ///
 /// Thread-safety: `add()` is not thread-safe after `dispatch()` has been
 /// called.  Build the router completely in a single thread before sharing
@@ -83,9 +84,11 @@ public:
     ///        locality, no throttle key). Never logged (client PII,
     ///        threat model T-70). Ignored by the redirect handlers
     ///        (contract C10).
-    /// @return The response produced by the matched handler; a 400
-    ///         error response if the path matched but the HTTP method did
-    ///         not; a 404 error response if no path pattern matched.
+    /// @return The response produced by the matched handler; a 405
+    ///         Method Not Allowed error response (with an `Allow` header
+    ///         listing the path's supported methods) if the path matched
+    ///         but the HTTP method did not; a 404 error response if no
+    ///         path pattern matched.
     BeastResponse dispatch(
         const BeastRequest& req,
         const ::ServerConfig& config,

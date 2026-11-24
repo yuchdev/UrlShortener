@@ -547,33 +547,39 @@ class ResourceRouteSanity(unittest.TestCase):
             self._table["legacy_code_to_envelope"].get(legacy), "invalid_field",
             f"field-level code {legacy!r} must map to invalid_field")
 
-    def test_wrong_method_returns_invalid_method_not_405(self) -> None:
-        """Wrong methods keep today's 400 invalid_method shape (no 405 / no Allow).
+    def test_wrong_method_returns_method_not_allowed_with_allow(self) -> None:
+        """Wrong methods return 405 Method Not Allowed with an ``Allow`` header.
 
         Type: integration (route-table sanity).
         Scenario: a PUT on a multi-method path and a GET on a POST-only path both
-          return 400 ``invalid_method``; the single-method case names the allowed
-          method in the message ("Only POST is supported"), the multi-method case
-          says "Unsupported operation". No ``Allow`` header and no 405 are emitted.
+          return 405 ``invalid_method`` (RFC 9110 15.5.6). The multi-method path
+          (``/api/v1/links/{slug}`` serves GET/PATCH/DELETE) says "Unsupported
+          operation" and advertises ``Allow: GET, PATCH, DELETE``; the
+          single-method path (``/api/v1/links/{slug}/enable`` serves POST) says
+          "Only POST is supported" and advertises ``Allow: POST``. HEAD is never
+          listed because no HEAD route is served.
         Boundaries: the router (``src/http/router.cpp``) answers a method mismatch
-          with 400 ``invalid_method`` and conveys the allowed method in the
-          message, not via a 405 + ``Allow`` header. This deliberately diverges
-          from spec 09 step 4's "405 + Allow" wording, which assumed standard REST
-          405 semantics this server does not implement.
-        On failure first check: did router.cpp start emitting 405/Allow, or change
-          the invalid_method message?
+          with 405 ``invalid_method`` and names the supported methods both in the
+          message and via the ``Allow`` header; the JSON error body shape and the
+          ``invalid_method`` code are unchanged.
+        On failure first check: did router.cpp stop emitting 405/Allow, or change
+          the invalid_method message or the Allow method set?
         """
-        status, body, raw = self._call("PUT", "/api/v1/links/docs")
-        self.assertEqual(status, 400, _snippet(raw))
+        status, body, raw, allow = self._client.call_with_allow(
+            "admin", "PUT", "/api/v1/links/docs")
+        self.assertEqual(status, 405, _snippet(raw))
         self.assertEqual(self._error_code(body), "invalid_method", _snippet(raw))
         self.assertEqual(body["error"].get("message"), "Unsupported operation",
                          _snippet(raw))
+        self.assertEqual(allow, "GET, PATCH, DELETE", _snippet(raw))
 
-        status, body, raw = self._call("GET", "/api/v1/links/docs/enable")
-        self.assertEqual(status, 400, _snippet(raw))
+        status, body, raw, allow = self._client.call_with_allow(
+            "admin", "GET", "/api/v1/links/docs/enable")
+        self.assertEqual(status, 405, _snippet(raw))
         self.assertEqual(self._error_code(body), "invalid_method", _snippet(raw))
         self.assertEqual(body["error"].get("message"), "Only POST is supported",
                          _snippet(raw))
+        self.assertEqual(allow, "POST", _snippet(raw))
 
     def test_trailing_slash_is_not_found(self) -> None:
         """A trailing slash on a resource path keeps today's 404 (route not found).

@@ -12,14 +12,12 @@
  *  parser is 21 and this route test is 22.
  */
 #define BOOST_TEST_MODULE RestListLinksRoute
-#include <boost/test/unit_test.hpp>
-
 #include <optional>
 #include <string>
 #include <vector>
 
 #include <boost/asio/ip/address.hpp>
-
+#include <boost/test/unit_test.hpp>
 #include <url_shortener/core/config.hpp>
 #include <url_shortener/core/types.hpp>
 #include <url_shortener/http/request_handlers.hpp>
@@ -52,10 +50,10 @@ ServerConfig make_config(const bool enabled, const std::string& role)
     return config;
 }
 
-BeastResponse dispatch(const BeastRequest& req,
-                       const ServerConfig& config,
-                       std::optional<boost::asio::ip::address> peer =
-                           std::nullopt)
+BeastResponse dispatch(
+    const BeastRequest& req,
+    const ServerConfig& config,
+    std::optional<boost::asio::ip::address> peer = std::nullopt)
 {
     const auto router = RouterBuilder::buildApplicationRouter();
     return router.dispatch(req, config, false, std::move(peer));
@@ -135,16 +133,19 @@ bool contains(const std::string& haystack, const std::string& needle)
 
 }  // namespace
 
-// Type: unit (gate off, byte-equal to today, store not read).
+// Type: unit (gate off, body byte-equal to the method-mismatch reply, store
+//   not read).
 // Scenario: with the default config (command_api_enabled == false), GET
-//   /api/v1/links returns exactly today's response (400 invalid_method, since
-//   POST shares the path) and never reads the store.
+//   /api/v1/links returns the router's method-mismatch reply for the POST-only
+//   path - 405 invalid_method "Only POST is supported" with Allow: POST (RFC
+//   9110 15.5.6) - and never reads the store.
 // Boundaries: the gate is the whole perimeter; off means "route does not exist"
-//   so no enumeration oracle (threat model T-71). Byte-equal via the same
-//   makeApiErrorResponse the router's error handler uses.
-// On failure first check: did the gate branch change its status/message, or did
-//   it start reading the store?
-BOOST_AUTO_TEST_CASE(gate_off_is_byte_equal_and_store_not_read)
+//   so no enumeration oracle (threat model T-71). The JSON body is byte-equal
+//   via the same makeApiErrorResponse the router's error handler uses; the
+//   Allow header is added on top.
+// On failure first check: did the gate branch change its status/message/Allow,
+//   or did it start reading the store?
+BOOST_AUTO_TEST_CASE(gate_off_is_method_not_allowed_and_store_not_read)
 {
     seed(make_link("l22gate", State::active, "2021-01-01T00:00:01Z"));
     const ServerConfig config = make_config(false, "user");
@@ -156,11 +157,12 @@ BOOST_AUTO_TEST_CASE(gate_off_is_byte_equal_and_store_not_read)
     req.set("X-Internal-Request-Id", "req-gate-off");
     const auto res = dispatch(req, config, k_remote);
     const auto expected = url_shortener::makeApiErrorResponse(
-        req, config, false, 400, "invalid_method", "Only POST is supported");
+        req, config, false, 405, "invalid_method", "Only POST is supported");
 
-    BOOST_TEST(res.result_int() == 400);
+    BOOST_TEST(res.result_int() == 405);
     BOOST_TEST(extract_code(res.body()) == "invalid_method");
     BOOST_TEST(res.body() == expected.body());
+    BOOST_TEST(std::string(res.base()[bhttp::field::allow]) == "POST");
     // The store was never enumerated: the seeded slug is absent.
     BOOST_TEST(!contains(res.body(), "l22gate"));
 }
@@ -179,9 +181,8 @@ BOOST_AUTO_TEST_CASE(user_default_lists_only_active)
     seed(make_link(p + "del", State::deleted, "2021-01-01T00:00:03Z"));
 
     const ServerConfig config = make_config(true, "user");
-    const auto res =
-        dispatch(make_request(bhttp::verb::get, "/api/v1/links"), config,
-                 k_remote);
+    const auto res = dispatch(
+        make_request(bhttp::verb::get, "/api/v1/links"), config, k_remote);
 
     BOOST_TEST(res.result_int() == 200);
     BOOST_TEST(contains(res.body(), p + "act"));
@@ -204,10 +205,13 @@ BOOST_AUTO_TEST_CASE(user_denied_status_all_and_deleted)
     seed(make_link(p + "del", State::deleted, "2021-01-01T00:00:03Z"));
 
     const ServerConfig config = make_config(true, "user");
-    for (const std::string& status : {std::string("all"), std::string("deleted")}) {
+    for (const std::string& status :
+         {std::string("all"), std::string("deleted")})
+    {
         const auto res = dispatch(
             make_request(bhttp::verb::get, "/api/v1/links?status=" + status),
-            config, k_remote);
+            config,
+            k_remote);
         BOOST_TEST(res.result_int() == 403, status);
         BOOST_TEST(extract_code(res.body()) == "not_authorized", status);
         BOOST_TEST(!contains(res.body(), p + "del"), status);
@@ -216,9 +220,10 @@ BOOST_AUTO_TEST_CASE(user_denied_status_all_and_deleted)
 }
 
 // Type: unit (gate on, User allowed status=disabled|expired).
-// Scenario: a User caller may list disabled and expired links (both non-deleted).
-// Boundaries: only all/deleted are write-gated; disabled/expired stay read.
-// On failure first check: did the hook over-raise to a non-deleted status?
+// Scenario: a User caller may list disabled and expired links (both
+// non-deleted). Boundaries: only all/deleted are write-gated; disabled/expired
+// stay read. On failure first check: did the hook over-raise to a non-deleted
+// status?
 BOOST_AUTO_TEST_CASE(user_allowed_status_disabled_and_expired)
 {
     const std::string p = "l22ud";
@@ -228,15 +233,16 @@ BOOST_AUTO_TEST_CASE(user_allowed_status_disabled_and_expired)
     const ServerConfig config = make_config(true, "user");
 
     const auto disabled = dispatch(
-        make_request(bhttp::verb::get,
-                     "/api/v1/links?status=disabled&q=" + p),
-        config, k_remote);
+        make_request(bhttp::verb::get, "/api/v1/links?status=disabled&q=" + p),
+        config,
+        k_remote);
     BOOST_TEST(disabled.result_int() == 200);
     BOOST_TEST(contains(disabled.body(), p + "dis"));
 
     const auto expired = dispatch(
         make_request(bhttp::verb::get, "/api/v1/links?status=expired&q=" + p),
-        config, k_remote);
+        config,
+        k_remote);
     BOOST_TEST(expired.result_int() == 200);
     BOOST_TEST(contains(expired.body(), p + "exp"));
 }
@@ -260,7 +266,8 @@ BOOST_AUTO_TEST_CASE(loopback_admin_lists_all_and_deleted)
 
     const auto all = dispatch(
         make_request(bhttp::verb::get, "/api/v1/links?status=all&q=" + p),
-        config, k_loopback);
+        config,
+        k_loopback);
     BOOST_TEST(all.result_int() == 200);
     BOOST_TEST(contains(all.body(), p + "act"));
     BOOST_TEST(contains(all.body(), p + "dis"));
@@ -269,7 +276,8 @@ BOOST_AUTO_TEST_CASE(loopback_admin_lists_all_and_deleted)
 
     const auto deleted = dispatch(
         make_request(bhttp::verb::get, "/api/v1/links?status=deleted&q=" + p),
-        config, k_loopback);
+        config,
+        k_loopback);
     BOOST_TEST(deleted.result_int() == 200);
     BOOST_TEST(contains(deleted.body(), p + "del"));
     BOOST_TEST(!contains(deleted.body(), p + "act"));
@@ -289,7 +297,8 @@ BOOST_AUTO_TEST_CASE(admin_role_from_remote_peer_is_user)
     const ServerConfig config = make_config(true, "admin");
     const auto res = dispatch(
         make_request(bhttp::verb::get, "/api/v1/links?status=all&q=" + p),
-        config, k_remote);
+        config,
+        k_remote);
     BOOST_TEST(res.result_int() == 403);
     BOOST_TEST(extract_code(res.body()) == "not_authorized");
 }
@@ -311,9 +320,10 @@ BOOST_AUTO_TEST_CASE(admin_paging_newest_first_and_window)
 
     const ServerConfig config = make_config(true, "admin");
 
-    const auto all = dispatch(
-        make_request(bhttp::verb::get, "/api/v1/links?q=" + p), config,
-        k_loopback);
+    const auto all =
+        dispatch(make_request(bhttp::verb::get, "/api/v1/links?q=" + p),
+                 config,
+                 k_loopback);
     BOOST_TEST(all.result_int() == 200);
     BOOST_TEST(contains(all.body(), "\"offset\":0"));
     BOOST_TEST(contains(all.body(), "\"limit\":50"));
@@ -321,10 +331,11 @@ BOOST_AUTO_TEST_CASE(admin_paging_newest_first_and_window)
     // Newest first: l22win4's item precedes l22win1's.
     BOOST_TEST(all.body().find(p + "4") < all.body().find(p + "1"));
 
-    const auto window = dispatch(
-        make_request(bhttp::verb::get,
-                     "/api/v1/links?q=" + p + "&limit=2&offset=2"),
-        config, k_loopback);
+    const auto window =
+        dispatch(make_request(bhttp::verb::get,
+                              "/api/v1/links?q=" + p + "&limit=2&offset=2"),
+                 config,
+                 k_loopback);
     BOOST_TEST(window.result_int() == 200);
     BOOST_TEST(contains(window.body(), "\"offset\":2"));
     BOOST_TEST(contains(window.body(), "\"limit\":2"));
@@ -350,32 +361,36 @@ BOOST_AUTO_TEST_CASE(admin_sort_order_and_query_decoding)
 
     const ServerConfig config = make_config(true, "admin");
 
-    const auto asc = dispatch(
-        make_request(bhttp::verb::get,
-                     "/api/v1/links?q=" + p + "&sort=slug&order=asc"),
-        config, k_loopback);
+    const auto asc =
+        dispatch(make_request(bhttp::verb::get,
+                              "/api/v1/links?q=" + p + "&sort=slug&order=asc"),
+                 config,
+                 k_loopback);
     BOOST_TEST(asc.result_int() == 200);
     BOOST_TEST(asc.body().find(p + "1") < asc.body().find(p + "2"));
 
     // %20 decodes to a space; the (unmatched) filter is still a valid 200.
-    const auto decoded = dispatch(
-        make_request(bhttp::verb::get, "/api/v1/links?q=ex%20ample"), config,
-        k_loopback);
+    const auto decoded =
+        dispatch(make_request(bhttp::verb::get, "/api/v1/links?q=ex%20ample"),
+                 config,
+                 k_loopback);
     BOOST_TEST(decoded.result_int() == 200);
 
     // A positive substring filter returns the matching link.
-    const auto positive = dispatch(
-        make_request(bhttp::verb::get, "/api/v1/links?q=" + p + "1"), config,
-        k_loopback);
+    const auto positive =
+        dispatch(make_request(bhttp::verb::get, "/api/v1/links?q=" + p + "1"),
+                 config,
+                 k_loopback);
     BOOST_TEST(positive.result_int() == 200);
     BOOST_TEST(contains(positive.body(), p + "1"));
 
     // Empty tag/campaign values are accepted (no 400).
-    for (const std::string& q :
-         {std::string("tag="), std::string("campaign=")}) {
+    for (const std::string& q : {std::string("tag="), std::string("campaign=")})
+    {
         const auto res = dispatch(
             make_request(bhttp::verb::get, "/api/v1/links?q=" + p + "&" + q),
-            config, k_loopback);
+            config,
+            k_loopback);
         BOOST_TEST(res.result_int() == 200, q);
     }
 }
@@ -407,9 +422,10 @@ BOOST_AUTO_TEST_CASE(hostile_parameters_are_400_invalid_request)
         {"Limit=1", "invalid parameter name"},
     };
     for (const auto& [query, needle] : cases) {
-        const auto res = dispatch(
-            make_request(bhttp::verb::get, "/api/v1/links?" + query), config,
-            k_loopback);
+        const auto res =
+            dispatch(make_request(bhttp::verb::get, "/api/v1/links?" + query),
+                     config,
+                     k_loopback);
         BOOST_TEST(res.result_int() == 400, query);
         BOOST_TEST(extract_code(res.body()) == "invalid_request", query);
         BOOST_TEST(contains(res.body(), needle), query);
@@ -422,7 +438,8 @@ BOOST_AUTO_TEST_CASE(hostile_parameters_are_400_invalid_request)
 //   invalid JSON.
 // Boundaries: an all-digits value is emitted as a canonical JSON number with
 //   leading zeros stripped; this is the explicitly-defined behaviour.
-// On failure first check: did leading-zero handling start producing invalid JSON
+// On failure first check: did leading-zero handling start producing invalid
+// JSON
 //   or an octal value?
 BOOST_AUTO_TEST_CASE(leading_zero_integers_are_decimal)
 {
@@ -432,21 +449,24 @@ BOOST_AUTO_TEST_CASE(leading_zero_integers_are_decimal)
 
     const auto limit7 = dispatch(
         make_request(bhttp::verb::get, "/api/v1/links?q=" + p + "&limit=007"),
-        config, k_loopback);
+        config,
+        k_loopback);
     BOOST_TEST(limit7.result_int() == 200);
     BOOST_TEST(contains(limit7.body(), "\"limit\":7"));
     BOOST_TEST(contains(limit7.body(), p));
 
     const auto offset0 = dispatch(
         make_request(bhttp::verb::get, "/api/v1/links?q=" + p + "&offset=000"),
-        config, k_loopback);
+        config,
+        k_loopback);
     BOOST_TEST(offset0.result_int() == 200);
     BOOST_TEST(contains(offset0.body(), "\"offset\":0"));
 
     // "00" canonicalizes to 0, which is below the inclusive min of 1.
-    const auto limit00 = dispatch(
-        make_request(bhttp::verb::get, "/api/v1/links?limit=00"), config,
-        k_loopback);
+    const auto limit00 =
+        dispatch(make_request(bhttp::verb::get, "/api/v1/links?limit=00"),
+                 config,
+                 k_loopback);
     BOOST_TEST(limit00.result_int() == 400);
     BOOST_TEST(contains(limit00.body(), "limit: out_of_range"));
 }
@@ -465,13 +485,14 @@ BOOST_AUTO_TEST_CASE(route_coexistence_create_and_single_gets)
 
     const auto created = dispatch(
         make_request(
-            bhttp::verb::post, "/api/v1/links",
+            bhttp::verb::post,
+            "/api/v1/links",
             R"({"target_url":"https://example.com/l22co","slug":"l22co"})"),
         config);
     BOOST_TEST(created.result_int() == 201);
 
-    const auto by_slug = dispatch(
-        make_request(bhttp::verb::get, "/api/v1/links/l22co"), config);
+    const auto by_slug =
+        dispatch(make_request(bhttp::verb::get, "/api/v1/links/l22co"), config);
     BOOST_TEST(by_slug.result_int() == 200);
     BOOST_TEST(contains(by_slug.body(), "l22co"));
 
@@ -482,13 +503,13 @@ BOOST_AUTO_TEST_CASE(route_coexistence_create_and_single_gets)
 }
 
 // Type: unit (method handling and metrics label unchanged).
-// Scenario: HEAD and DELETE on /api/v1/links stay 400 invalid_method, the
-//   target's metric label is api_links, and a successful list carries an
-//   X-Request-Id.
-// Boundaries: method rejection is a router concern; adding GET legitimately
-//   changes the allowed-method set but keeps the 400 invalid_method status.
+// Scenario: HEAD and DELETE on /api/v1/links are 405 invalid_method with
+//   Allow: GET, POST (RFC 9110 15.5.6), the target's metric label is api_links,
+//   and a successful list carries an X-Request-Id.
+// Boundaries: method rejection is a router concern; the path serves GET and
+//   POST, so the Allow header lists exactly those (HEAD is never advertised).
 // On failure first check: did a non-GET/POST method start matching, or did the
-//   label/header drift?
+//   label/header/Allow drift?
 BOOST_AUTO_TEST_CASE(method_handling_label_and_request_id)
 {
     const ServerConfig config = make_config(true, "admin");
@@ -496,16 +517,16 @@ BOOST_AUTO_TEST_CASE(method_handling_label_and_request_id)
     for (const bhttp::verb method : {bhttp::verb::head, bhttp::verb::delete_}) {
         const auto res =
             dispatch(make_request(method, "/api/v1/links"), config, k_loopback);
-        BOOST_TEST(res.result_int() == 400);
+        BOOST_TEST(res.result_int() == 405);
         BOOST_TEST(extract_code(res.body()) == "invalid_method");
+        BOOST_TEST(std::string(res.base()[bhttp::field::allow]) == "GET, POST");
     }
 
     BOOST_TEST(url_shortener::http::routeLabelForTarget("/api/v1/links")
                == "api_links");
 
-    const auto listed =
-        dispatch(make_request(bhttp::verb::get, "/api/v1/links"), config,
-                 k_loopback);
+    const auto listed = dispatch(
+        make_request(bhttp::verb::get, "/api/v1/links"), config, k_loopback);
     BOOST_TEST(listed.result_int() == 200);
     BOOST_TEST(!std::string(listed.base()["X-Request-Id"]).empty());
 }
@@ -513,7 +534,8 @@ BOOST_AUTO_TEST_CASE(method_handling_label_and_request_id)
 // Type: unit (list items equal the single-link GET body).
 // Scenario: a listed item is byte-for-byte the same JSON as GET
 //   /api/v1/links/{slug} returns, proving both share serializeLinkViewJson.
-// Boundaries: both resolve through the same fallback runtime, so the base domain
+// Boundaries: both resolve through the same fallback runtime, so the base
+// domain
 //   and item shape match exactly.
 // On failure first check: did the list item projection diverge from the single
 //   link view serializer?
@@ -522,14 +544,16 @@ BOOST_AUTO_TEST_CASE(list_item_equals_single_get_body)
     seed(make_link("l22item", State::active, "2021-01-01T00:00:01Z"));
     const ServerConfig config = make_config(true, "admin");
 
-    const auto single = dispatch(
-        make_request(bhttp::verb::get, "/api/v1/links/l22item"), config,
-        k_loopback);
+    const auto single =
+        dispatch(make_request(bhttp::verb::get, "/api/v1/links/l22item"),
+                 config,
+                 k_loopback);
     BOOST_REQUIRE(single.result_int() == 200);
 
-    const auto listed = dispatch(
-        make_request(bhttp::verb::get, "/api/v1/links?q=l22item"), config,
-        k_loopback);
+    const auto listed =
+        dispatch(make_request(bhttp::verb::get, "/api/v1/links?q=l22item"),
+                 config,
+                 k_loopback);
     BOOST_TEST(listed.result_int() == 200);
     BOOST_TEST(contains(listed.body(), single.body()));
 }

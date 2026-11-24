@@ -1,10 +1,11 @@
 /** @file 40_jobs_routes.cpp
  *  @brief Characterizes the REST job routes (milestone 0006, Task 05.0 subtask
- *  11): GET /api/v1/jobs, GET /api/v1/jobs/{id} and POST /api/v1/jobs/{id}/cancel
- *  as thin projections onto job.list / job.get / job.cancel. Covers the config
- *  gate, route registration, path/query arg mapping, status mapping, the role
- *  model (read for any caller, cancel only for loopback admin), process-wide job
- *  visibility across requests, and the method matrix.
+ *  11): GET /api/v1/jobs, GET /api/v1/jobs/{id} and POST
+ * /api/v1/jobs/{id}/cancel as thin projections onto job.list / job.get /
+ * job.cancel. Covers the config gate, route registration, path/query arg
+ * mapping, status mapping, the role model (read for any caller, cancel only for
+ * loopback admin), process-wide job visibility across requests, and the method
+ * matrix.
  *
  *  Security: these routes are new HTTP surface on an unauthenticated server and
  *  a job result can inline a full link-table export, so they are gated exactly
@@ -14,8 +15,6 @@
  *  correlation handles only (T-93). The redirect fast path is untouched (C10).
  */
 #define BOOST_TEST_MODULE JobsRestRoutes
-#include <boost/test/unit_test.hpp>
-
 #include <atomic>
 #include <chrono>
 #include <memory>
@@ -24,7 +23,7 @@
 #include <thread>
 
 #include <boost/asio/ip/address.hpp>
-
+#include <boost/test/unit_test.hpp>
 #include <url_shortener/app/link_backend.hpp>
 #include <url_shortener/commands/command_descriptor.hpp>
 #include <url_shortener/commands/command_registry.hpp>
@@ -62,10 +61,10 @@ ServerConfig make_config(const bool enabled, const std::string& role)
     return config;
 }
 
-BeastResponse dispatch(const BeastRequest& req,
-                       const ServerConfig& config,
-                       std::optional<boost::asio::ip::address> peer =
-                           std::nullopt)
+BeastResponse dispatch(
+    const BeastRequest& req,
+    const ServerConfig& config,
+    std::optional<boost::asio::ip::address> peer = std::nullopt)
 {
     const auto router = RouterBuilder::buildApplicationRouter();
     return router.dispatch(req, config, false, std::move(peer));
@@ -159,12 +158,13 @@ struct ScopedRuntime
 
 /// Submits a long-lived cooperative job on the runtime's process-wide runner
 /// and returns its id. The body spins until cancellation is requested (so the
-/// runner's shutdown on teardown always joins) or @p gate is released, letting a
-/// test observe a non-terminal job while it probes the cancel route.
+/// runner's shutdown on teardown always joins) or @p gate is released, letting
+/// a test observe a non-terminal job while it probes the cancel route.
 std::string submit_running_job(ScopedRuntime& fixture,
                                std::shared_ptr<std::atomic<bool>> gate)
 {
-    commands::JobBody body = [gate](commands::IJobContext& ctx) {
+    commands::JobBody body = [gate](commands::IJobContext& ctx)
+    {
         while (!gate->load() && !ctx.cancel_requested()) {
             std::this_thread::sleep_for(std::chrono::milliseconds(2));
         }
@@ -173,8 +173,9 @@ std::string submit_running_job(ScopedRuntime& fixture,
         outcome.ok = !outcome.cancelled;
         return outcome;
     };
-    const commands::JobSubmitResult result = fixture.runtime->job_runner->submit(
-        "link.export", "0123456789abcdef", std::move(body));
+    const commands::JobSubmitResult result =
+        fixture.runtime->job_runner->submit(
+            "link.export", "0123456789abcdef", std::move(body));
     BOOST_REQUIRE(result.job.has_value());
     return result.job->id;
 }
@@ -220,7 +221,8 @@ BOOST_AUTO_TEST_CASE(gate_off_three_routes_byte_equal_and_no_job_touched)
     for (const Probe& probe :
          {Probe {bhttp::verb::get, "/api/v1/jobs?state=running"},
           Probe {bhttp::verb::get, "/api/v1/jobs/" + id},
-          Probe {bhttp::verb::post, "/api/v1/jobs/" + id + "/cancel"}}) {
+          Probe {bhttp::verb::post, "/api/v1/jobs/" + id + "/cancel"}})
+    {
         BeastRequest req {probe.method, probe.target, 11};
         req.set(bhttp::field::host, "short.test");
         req.set("X-Internal-Request-Id", "req-gate-off");
@@ -255,8 +257,7 @@ BOOST_AUTO_TEST_CASE(routes_present_in_registry_and_router)
     for (const Row& row : rows) {
         bool in_registry = false;
         for (const auto& route : url_shortener::http::registeredRoutes()) {
-            if (route.method == row.method
-                && route.path_pattern == row.path) {
+            if (route.method == row.method && route.path_pattern == row.path) {
                 in_registry = true;
                 BOOST_TEST(route.route_label == "api_commands", row.path);
             }
@@ -266,8 +267,7 @@ BOOST_AUTO_TEST_CASE(routes_present_in_registry_and_router)
         bool in_router = false;
         const auto router = RouterBuilder::buildApplicationRouter();
         for (const auto& route : router.routes()) {
-            if (route.method == row.method
-                && route.path_pattern == row.path) {
+            if (route.method == row.method && route.path_pattern == row.path) {
                 in_router = true;
                 BOOST_TEST(route.route_label == "api_commands", row.path);
             }
@@ -292,14 +292,14 @@ BOOST_AUTO_TEST_CASE(list_jobs_maps_query_to_job_list)
 
     const auto filtered = dispatch(
         make_request(bhttp::verb::get, "/api/v1/jobs?state=running&limit=10"),
-        config, k_remote);
+        config,
+        k_remote);
     BOOST_TEST(filtered.result_int() == 200);
     BOOST_TEST(filtered.body().rfind("{\"items\":[", 0) == 0U);
     BOOST_TEST(contains(filtered.body(), "\"total\":"));
 
-    const auto all =
-        dispatch(make_request(bhttp::verb::get, "/api/v1/jobs"), config,
-                 k_remote);
+    const auto all = dispatch(
+        make_request(bhttp::verb::get, "/api/v1/jobs"), config, k_remote);
     BOOST_TEST(all.result_int() == 200);
     BOOST_TEST(contains(all.body(), "\"items\":["));
 }
@@ -319,16 +319,16 @@ BOOST_AUTO_TEST_CASE(get_job_by_path_id_and_unknown_is_404)
     auto gate = std::make_shared<std::atomic<bool>>(false);
     const std::string id = submit_running_job(fixture, gate);
 
-    const auto hit =
-        dispatch(make_request(bhttp::verb::get, "/api/v1/jobs/" + id), config,
-                 k_remote);
+    const auto hit = dispatch(
+        make_request(bhttp::verb::get, "/api/v1/jobs/" + id), config, k_remote);
     BOOST_TEST(hit.result_int() == 200);
     BOOST_TEST(contains(hit.body(), "\"id\":\"" + id + "\""));
     BOOST_TEST(contains(hit.body(), "\"command\":\"link.export\""));
 
-    const auto miss =
-        dispatch(make_request(bhttp::verb::get, "/api/v1/jobs/j-does-not-exist"),
-                 config, k_remote);
+    const auto miss = dispatch(
+        make_request(bhttp::verb::get, "/api/v1/jobs/j-does-not-exist"),
+        config,
+        k_remote);
     BOOST_TEST(miss.result_int() == 404);
     BOOST_TEST(string_field(miss.body(), "code") == "not_found");
 
@@ -349,14 +349,16 @@ BOOST_AUTO_TEST_CASE(bad_limit_and_bad_state_are_400)
     ScopedRuntime fixture {config};
 
     const auto bad_limit =
-        dispatch(make_request(bhttp::verb::get, "/api/v1/jobs?limit=0"), config,
+        dispatch(make_request(bhttp::verb::get, "/api/v1/jobs?limit=0"),
+                 config,
                  k_remote);
     BOOST_TEST(bad_limit.result_int() == 400);
     BOOST_TEST(string_field(bad_limit.body(), "code") == "invalid_request");
 
     const auto bad_state =
         dispatch(make_request(bhttp::verb::get, "/api/v1/jobs?state=bogus"),
-                 config, k_remote);
+                 config,
+                 k_remote);
     BOOST_TEST(bad_state.result_int() == 400);
     BOOST_TEST(string_field(bad_state.body(), "code") == "invalid_request");
 }
@@ -381,11 +383,14 @@ BOOST_AUTO_TEST_CASE(cancel_role_model_user_denied_admin_loopback_allowed)
 
         const auto read =
             dispatch(make_request(bhttp::verb::get, "/api/v1/jobs/" + id),
-                     config, k_loopback);
+                     config,
+                     k_loopback);
         BOOST_TEST(read.result_int() == 200);
 
-        const auto denied = dispatch(
-            make_post("/api/v1/jobs/" + id + "/cancel", ""), config, k_loopback);
+        const auto denied =
+            dispatch(make_post("/api/v1/jobs/" + id + "/cancel", ""),
+                     config,
+                     k_loopback);
         BOOST_TEST(denied.result_int() == 403);
         BOOST_TEST(string_field(denied.body(), "code") == "not_authorized");
         BOOST_TEST(!job_is_terminal(fixture, id));
@@ -414,9 +419,10 @@ BOOST_AUTO_TEST_CASE(cancel_role_model_user_denied_admin_loopback_allowed)
         auto gate = std::make_shared<std::atomic<bool>>(false);
         const std::string id = submit_running_job(fixture, gate);
 
-        const auto ok = dispatch(
-            make_post("/api/v1/jobs/" + id + "/cancel", ""), config,
-            k_loopback);
+        const auto ok =
+            dispatch(make_post("/api/v1/jobs/" + id + "/cancel", ""),
+                     config,
+                     k_loopback);
         BOOST_TEST(ok.result_int() == 200);
         BOOST_TEST(contains(ok.body(), "\"id\":\"" + id + "\""));
         gate->store(true);
@@ -444,9 +450,11 @@ BOOST_AUTO_TEST_CASE(cancel_requires_application_json_content_type)
     const std::string target = "/api/v1/jobs/" + id + "/cancel";
 
     for (const std::string& ct :
-         {std::string(""), std::string("text/plain"),
+         {std::string(""),
+          std::string("text/plain"),
           std::string("application/x-www-form-urlencoded"),
-          std::string("multipart/form-data; boundary=----abc123")}) {
+          std::string("multipart/form-data; boundary=----abc123")})
+    {
         const auto res =
             dispatch(make_post(target, "", ct), config, k_loopback);
         BOOST_TEST(res.result_int() == 415, "ct=[" + ct + "]");
@@ -466,7 +474,8 @@ BOOST_AUTO_TEST_CASE(cancel_requires_application_json_content_type)
 
 // Type: unit (process-wide runner: job submitted in one request, read in a
 //   later one).
-// Scenario: POST /api/v1/commands runs link.export (a job command) and returns a
+// Scenario: POST /api/v1/commands runs link.export (a job command) and returns
+// a
 //   job envelope; a later GET /api/v1/jobs/{id} on a freshly built router
 //   returns that job record (the runner is process-wide, not per-request).
 // Boundaries: every per-request runtime shares one JobRunner (subtask 20); the
@@ -481,24 +490,26 @@ BOOST_AUTO_TEST_CASE(job_submitted_via_post_commands_visible_via_get_later)
     const auto submitted = dispatch(
         make_post("/api/v1/commands",
                   R"({"v":1,"command":"link.export","args":{"format":"csv"}})"),
-        config, k_loopback);
+        config,
+        k_loopback);
     BOOST_TEST(submitted.result_int() == 200);
     const std::string id = job_id_field(submitted.body());
     BOOST_TEST(!id.empty());
 
     // A later request through a newly built router still sees the job.
     const auto fetched =
-        dispatch(make_request(bhttp::verb::get, "/api/v1/jobs/" + id), config,
+        dispatch(make_request(bhttp::verb::get, "/api/v1/jobs/" + id),
+                 config,
                  k_loopback);
     BOOST_TEST(fetched.result_int() == 200);
     BOOST_TEST(contains(fetched.body(), "\"id\":\"" + id + "\""));
     BOOST_TEST(contains(fetched.body(), "\"command\":\"link.export\""));
 }
 
-// Type: unit (method matrix: an unsupported method on a job path is 400).
+// Type: unit (method matrix: an unsupported method on a job path is 405).
 // Scenario: DELETE /api/v1/jobs/{id} matches the GET-only path, so the router
-//   answers 400 invalid_method "Only GET is supported" (the existing matrix
-//   behavior), regardless of the gate.
+//   answers 405 invalid_method "Only GET is supported" with Allow: GET (RFC
+//   9110 15.5.6), regardless of the gate.
 // Boundaries: the router decides method mismatch before any handler runs, so
 //   the gate is never consulted for an unsupported method.
 // On failure first check: did adding the GET route change the method-mismatch
@@ -509,9 +520,11 @@ BOOST_AUTO_TEST_CASE(delete_job_is_invalid_method)
     ScopedRuntime fixture {config};
 
     const auto res =
-        dispatch(make_request(bhttp::verb::delete_, "/api/v1/jobs/j-1"), config,
+        dispatch(make_request(bhttp::verb::delete_, "/api/v1/jobs/j-1"),
+                 config,
                  k_loopback);
-    BOOST_TEST(res.result_int() == 400);
+    BOOST_TEST(res.result_int() == 405);
     BOOST_TEST(string_field(res.body(), "code") == "invalid_method");
     BOOST_TEST(contains(res.body(), "Only GET is supported"));
+    BOOST_TEST(std::string(res.base()[bhttp::field::allow]) == "GET");
 }

@@ -248,19 +248,23 @@ BeastResponse handleListCommands(const BeastRequest& req,
                                  const RouteContext& context)
 {
     // 1. Gate (threat model T-64): when the command API is disabled (the secure
-    // default), answer byte-for-byte like GET /api/v1/commands did before this
-    // route existed. POST /api/v1/commands (subtask 09) already makes the path
-    // exist, so today's router returns 400 invalid_method "Only POST is
-    // supported" (the same subtlety handleListLinks handles for the POST-only
-    // /api/v1/links path), not a 404. The catalog is never disclosed here and
-    // the query is never read.
+    // default), answer like the router would for a path that only serves POST,
+    // so the catalog is never disclosed. POST /api/v1/commands (subtask 09)
+    // owns the path, so the router's method-mismatch reply is now 405 Method
+    // Not Allowed with `Allow: POST` (RFC 9110 15.5.6), carrying the unchanged
+    // invalid_method "Only POST is supported" JSON body (the same subtlety
+    // handleListLinks handles for the POST-only /api/v1/links path), not a 404.
+    // The query is never read.
     if (!command_api_enabled(config)) {
-        return url_shortener::makeApiErrorResponse(req,
-                                                   config,
-                                                   is_tls,
-                                                   400,
-                                                   "invalid_method",
-                                                   "Only POST is supported");
+        BeastResponse response =
+            url_shortener::makeApiErrorResponse(req,
+                                                config,
+                                                is_tls,
+                                                405,
+                                                "invalid_method",
+                                                "Only POST is supported");
+        response.set(bhttp::field::allow, "POST");
+        return response;
     }
 
     // 2. Parse the query string (percent-decoded, repeated keys preserved). A
@@ -452,8 +456,8 @@ BeastResponse handleCancelJob(const BeastRequest& req,
     }
 
     // 2. Content-Type must be application/json (CSRF defence, threat model
-    // T-67/CWE-352). job.cancel is a state-changing write a loopback admin runs,
-    // so without this a cross-origin HTML form POST (which can only send
+    // T-67/CWE-352). job.cancel is a state-changing write a loopback admin
+    // runs, so without this a cross-origin HTML form POST (which can only send
     // text/plain, application/x-www-form-urlencoded or multipart/form-data)
     // could cancel every job by sequential id from the admin's browser.
     // Requiring application/json forces a CORS preflight the server never

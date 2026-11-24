@@ -16,14 +16,12 @@
  *  (T-67). The redirect fast path is untouched (contract C10).
  */
 #define BOOST_TEST_MODULE RestGetCommandsEndpoint
-#include <boost/test/unit_test.hpp>
-
 #include <memory>
 #include <optional>
 #include <string>
 
 #include <boost/asio/ip/address.hpp>
-
+#include <boost/test/unit_test.hpp>
 #include <url_shortener/app/link_backend.hpp>
 #include <url_shortener/commands/command_descriptor.hpp>
 #include <url_shortener/commands/command_registry.hpp>
@@ -59,10 +57,10 @@ ServerConfig make_config(const bool enabled, const std::string& role)
     return config;
 }
 
-BeastResponse dispatch(const BeastRequest& req,
-                       const ServerConfig& config,
-                       std::optional<boost::asio::ip::address> peer =
-                           std::nullopt)
+BeastResponse dispatch(
+    const BeastRequest& req,
+    const ServerConfig& config,
+    std::optional<boost::asio::ip::address> peer = std::nullopt)
 {
     const auto router = RouterBuilder::buildApplicationRouter();
     return router.dispatch(req, config, false, std::move(peer));
@@ -141,17 +139,17 @@ struct ScopedRuntime
 
 }  // namespace
 
-// Type: unit (gate off, byte-equal to today's response, no catalog disclosure).
+// Type: unit (gate off, method-mismatch reply, no catalog disclosure).
 // Scenario: with the default config (command_api_enabled == false), GET
-//   /api/v1/commands returns 400 invalid_method "Only POST is supported" - the
-//   reply the router already gives for the POST-only path - and discloses no
-//   catalog. It is byte-identical to the gate-off GET /api/v1/links reply built
-//   the same way.
+//   /api/v1/commands returns 405 invalid_method "Only POST is supported" with
+//   Allow: POST (RFC 9110 15.5.6) - the reply the router already gives for the
+//   POST-only path - and discloses no catalog. The JSON body matches the
+//   gate-off GET /api/v1/links reply built the same way.
 // Boundaries: POST /api/v1/commands (subtask 09) makes the path exist, so the
-//   gate-off answer is a 400 method mismatch, NOT a 404 (the subtlety
+//   gate-off answer is a 405 method mismatch, NOT a 404 (the subtlety
 //   handleListLinks handles for GET /api/v1/links). No command catalog leaks.
-// On failure first check: did the gate branch change its status/message, start
-//   leaking the catalog, or regress to a 404?
+// On failure first check: did the gate branch change its status/message/Allow,
+//   start leaking the catalog, or regress to a 404?
 BOOST_AUTO_TEST_CASE(gate_off_is_invalid_method_and_discloses_no_catalog)
 {
     const ServerConfig config = make_config(false, "user");
@@ -162,9 +160,10 @@ BOOST_AUTO_TEST_CASE(gate_off_is_invalid_method_and_discloses_no_catalog)
     auto commands_req = make_request(bhttp::verb::get, "/api/v1/commands");
     commands_req.set("X-Internal-Request-Id", "req-gate-off");
     const auto res = dispatch(commands_req, config, k_remote);
-    BOOST_TEST(res.result_int() == 400);
+    BOOST_TEST(res.result_int() == 405);
     BOOST_TEST(string_field(res.body(), "code") == "invalid_method");
     BOOST_TEST(contains(res.body(), "Only POST is supported"));
+    BOOST_TEST(std::string(res.base()[bhttp::field::allow]) == "POST");
     // No catalog disclosure on the gate-off branch.
     BOOST_TEST(!contains(res.body(), "\"commands\""));
     BOOST_TEST(!contains(res.body(), "command.list"));
@@ -191,9 +190,8 @@ BOOST_AUTO_TEST_CASE(enabled_user_lists_full_catalog_equal_to_command_list)
     const ServerConfig config = make_config(true, "user");
     ScopedRuntime fixture {config};
 
-    const auto res =
-        dispatch(make_request(bhttp::verb::get, "/api/v1/commands"), config,
-                 k_remote);
+    const auto res = dispatch(
+        make_request(bhttp::verb::get, "/api/v1/commands"), config, k_remote);
     BOOST_TEST(res.result_int() == 200);
     BOOST_TEST(res.body().rfind("{\"commands\":[", 0) == 0U);
     BOOST_TEST(contains(res.body(), "\"args\":["));
@@ -228,26 +226,31 @@ BOOST_AUTO_TEST_CASE(catalog_contains_every_command_with_metadata)
     const ServerConfig config = make_config(true, "user");
     ScopedRuntime fixture {config};
 
-    const auto res =
-        dispatch(make_request(bhttp::verb::get, "/api/v1/commands"), config,
-                 k_loopback);
+    const auto res = dispatch(
+        make_request(bhttp::verb::get, "/api/v1/commands"), config, k_loopback);
     BOOST_TEST(res.result_int() == 200);
     const std::string& body = res.body();
 
-    for (const char* name :
-         {"\"name\":\"link.create\"", "\"name\":\"link.get\"",
-          "\"name\":\"link.update\"", "\"name\":\"link.delete\"",
-          "\"name\":\"link.enable\"", "\"name\":\"link.disable\"",
-          "\"name\":\"link.restore\"", "\"name\":\"link.preview\"",
-          "\"name\":\"link.stats\"", "\"name\":\"link.list\"",
-          "\"name\":\"db.tables\"", "\"name\":\"db.rows\"",
-          "\"name\":\"system.info\"", "\"name\":\"command.list\""}) {
+    for (const char* name : {"\"name\":\"link.create\"",
+                             "\"name\":\"link.get\"",
+                             "\"name\":\"link.update\"",
+                             "\"name\":\"link.delete\"",
+                             "\"name\":\"link.enable\"",
+                             "\"name\":\"link.disable\"",
+                             "\"name\":\"link.restore\"",
+                             "\"name\":\"link.preview\"",
+                             "\"name\":\"link.stats\"",
+                             "\"name\":\"link.list\"",
+                             "\"name\":\"db.tables\"",
+                             "\"name\":\"db.rows\"",
+                             "\"name\":\"system.info\"",
+                             "\"name\":\"command.list\""})
+    {
         BOOST_TEST(contains(body, name), name);
     }
 
     // command.list is a non-mutating read; link.create a mutating write.
-    BOOST_TEST(contains(
-        body, "\"name\":\"command.list\",\"summary\":"));
+    BOOST_TEST(contains(body, "\"name\":\"command.list\",\"summary\":"));
     BOOST_TEST(contains(body, "\"name\":\"command.list\""));
     BOOST_TEST(contains(body, "\"perm\":\"read\",\"kind\":"));
     BOOST_TEST(contains(body, "\"perm\":\"write\""));
@@ -282,9 +285,8 @@ BOOST_AUTO_TEST_CASE(catalog_contains_no_secret_or_internal_path)
     const ServerConfig config = make_config(true, "user");
     ScopedRuntime fixture {config};
 
-    const auto res =
-        dispatch(make_request(bhttp::verb::get, "/api/v1/commands"), config,
-                 k_loopback);
+    const auto res = dispatch(
+        make_request(bhttp::verb::get, "/api/v1/commands"), config, k_loopback);
     BOOST_TEST(res.result_int() == 200);
     BOOST_TEST(!contains(res.body(), "uri.txt"));
     BOOST_TEST(!contains(res.body(), "password"));
@@ -305,7 +307,8 @@ BOOST_AUTO_TEST_CASE(any_query_parameter_is_unknown)
     ScopedRuntime fixture {config};
 
     const auto unknown =
-        dispatch(make_request(bhttp::verb::get, "/api/v1/commands?x=1"), config,
+        dispatch(make_request(bhttp::verb::get, "/api/v1/commands?x=1"),
+                 config,
                  k_remote);
     BOOST_TEST(unknown.result_int() == 400);
     BOOST_TEST(string_field(unknown.body(), "code") == "invalid_request");
@@ -313,35 +316,38 @@ BOOST_AUTO_TEST_CASE(any_query_parameter_is_unknown)
 
     const auto malformed =
         dispatch(make_request(bhttp::verb::get, "/api/v1/commands?a=%zz"),
-                 config, k_remote);
+                 config,
+                 k_remote);
     BOOST_TEST(malformed.result_int() == 400);
     BOOST_TEST(string_field(malformed.body(), "code") == "invalid_request");
     BOOST_TEST(!contains(malformed.body(), "\"commands\""));
 }
 
 // Type: unit (method handling and route coexistence on /api/v1/commands).
-// Scenario: PUT /api/v1/commands is 400 invalid_method; POST /api/v1/commands
-//   (with the required JSON content type) still returns a response envelope, so
-//   the new GET route coexists with the POST route on the same path.
+// Scenario: PUT /api/v1/commands is 405 invalid_method with Allow: GET, POST
+//   (RFC 9110 15.5.6); POST /api/v1/commands (with the required JSON content
+//   type) still returns a response envelope, so the new GET route coexists
+//   with the POST route on the same path.
 // Boundaries: the router matches GET and POST independently on one path; an
-//   unsupported method is a 400 method mismatch.
+//   unsupported method is a 405 method mismatch naming both supported verbs.
 // On failure first check: did adding the GET route break POST dispatch, or did
-//   the method-mismatch stop being a 400?
+//   the method-mismatch stop being a 405 / drop the Allow header?
 BOOST_AUTO_TEST_CASE(put_is_invalid_method_post_still_returns_envelope)
 {
     const ServerConfig config = make_config(true, "user");
     ScopedRuntime fixture {config};
 
-    const auto put =
-        dispatch(make_request(bhttp::verb::put, "/api/v1/commands"), config,
-                 k_loopback);
-    BOOST_TEST(put.result_int() == 400);
+    const auto put = dispatch(
+        make_request(bhttp::verb::put, "/api/v1/commands"), config, k_loopback);
+    BOOST_TEST(put.result_int() == 405);
     BOOST_TEST(string_field(put.body(), "code") == "invalid_method");
+    BOOST_TEST(std::string(put.base()[bhttp::field::allow]) == "GET, POST");
 
-    const auto posted = dispatch(
-        make_post("/api/v1/commands",
-                  R"({"v":1,"command":"link.list","args":{}})"),
-        config, k_remote);
+    const auto posted =
+        dispatch(make_post("/api/v1/commands",
+                           R"({"v":1,"command":"link.list","args":{}})"),
+                 config,
+                 k_remote);
     BOOST_TEST(posted.result_int() == 200);
     BOOST_TEST(contains(posted.body(), "\"ok\":true"));
 }
@@ -396,10 +402,10 @@ BOOST_AUTO_TEST_CASE(post_content_type_matrix)
     for (const std::string& ct :
          {std::string("text/plain"),
           std::string("application/x-www-form-urlencoded"),
-          std::string("multipart/form-data; boundary=----abc123")}) {
-        const auto res =
-            dispatch(make_post("/api/v1/commands", body, ct), config,
-                     k_loopback);
+          std::string("multipart/form-data; boundary=----abc123")})
+    {
+        const auto res = dispatch(
+            make_post("/api/v1/commands", body, ct), config, k_loopback);
         BOOST_TEST(res.result_int() == 415, "ct=[" + ct + "]");
         BOOST_TEST(string_field(res.body(), "code") == "unsupported_media_type",
                    "ct=[" + ct + "]");
@@ -411,7 +417,8 @@ BOOST_AUTO_TEST_CASE(post_content_type_matrix)
     // application/json with a charset parameter is accepted (params ignored).
     const auto accepted = dispatch(
         make_post("/api/v1/commands", body, "application/json; charset=utf-8"),
-        config, k_loopback);
+        config,
+        k_loopback);
     BOOST_TEST(accepted.result_int() != 415);
     BOOST_TEST(contains(accepted.body(), "\"ok\":true"));
 }

@@ -89,7 +89,9 @@ BeastResponse handleCreateLink(const BeastRequest& req,
 /// @param is_tls  `true` on HTTPS connections.
 /// @param context Route context; `query_string` carries the filters and `peer`
 ///        is the gate's locality input (loopback -> admin honoured).
-/// @return 400 `invalid_method` (gate off, byte-equal to today's response);
+/// @return 405 `invalid_method` with `Allow: POST` (gate off, mirroring the
+///         router's method-mismatch reply for the POST-only path, RFC 9110
+///         15.5.6);
 ///         200 with the `{"items":[...],"offset":N,"limit":N,"total":N}` page
 ///         on success; 400 `invalid_request` for a malformed query or a bad
 ///         parameter; 403 `not_authorized` when a non-admin caller requests

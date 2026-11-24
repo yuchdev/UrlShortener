@@ -81,20 +81,19 @@ std::string extract_code(const std::string& body)
 /// store (the one the lifecycle mutations read/write) is the one it is in.
 void create_link(const std::string& slug)
 {
-    const auto res = dispatch(make_request(
-        bhttp::verb::post,
-        "/api/v1/links",
-        R"({"url":"https://example.com/)" + slug + R"(","slug":")" + slug
-            + R"("})"));
+    const auto res =
+        dispatch(make_request(bhttp::verb::post,
+                              "/api/v1/links",
+                              R"({"url":"https://example.com/)" + slug
+                                  + R"(","slug":")" + slug + R"("})"));
     BOOST_REQUIRE_EQUAL(res.result_int(), 201);
 }
 
 /// Runs DELETE /api/v1/links/{slug} and returns the whole response.
 BeastResponse del(const std::string& slug, const std::string& body = "")
 {
-    return dispatch(make_request(bhttp::verb::delete_,
-                                 "/api/v1/links/" + slug,
-                                 body));
+    return dispatch(
+        make_request(bhttp::verb::delete_, "/api/v1/links/" + slug, body));
 }
 
 /// Runs POST /api/v1/links/{slug}/{action} (enable|disable|restore).
@@ -102,9 +101,8 @@ BeastResponse lifecycle(const std::string& slug,
                         const std::string& action,
                         const std::string& body = "")
 {
-    return dispatch(make_request(bhttp::verb::post,
-                                 "/api/v1/links/" + slug + "/" + action,
-                                 body));
+    return dispatch(make_request(
+        bhttp::verb::post, "/api/v1/links/" + slug + "/" + action, body));
 }
 
 }  // namespace
@@ -242,21 +240,23 @@ BOOST_AUTO_TEST_CASE(unknown_slug_is_404_not_found_on_every_route)
     }
 }
 
-// Type: unit (wrong method on a lifecycle route is unchanged).
-// Scenario: GET /api/v1/links/{slug}/enable keeps its pre-existing 400
-//   invalid_method behavior (decided by the router matcher, before any
-//   handler), exactly as 03_method_and_error_characterization pins it.
-// Boundaries: the method mismatch is a router concern this subtask does not
-//   touch; the handler is never entered.
-// On failure first check: did the route registration for enable change method?
+// Type: unit (wrong method on a lifecycle route).
+// Scenario: GET /api/v1/links/{slug}/enable is 405 invalid_method with
+//   Allow: POST (RFC 9110 15.5.6), decided by the router matcher before any
+//   handler, exactly as 03_method_and_error_characterization pins it.
+// Boundaries: the method mismatch is a router concern; the enable path serves
+//   only POST, so the Allow header names exactly POST. The handler is never
+//   entered.
+// On failure first check: did the route registration for enable change method,
+//   or did the Allow header drift?
 BOOST_AUTO_TEST_CASE(wrong_method_on_enable_is_unchanged_invalid_method)
 {
     create_link("lc20wrongmethod");
-    const auto res =
-        dispatch(make_request(bhttp::verb::get,
-                              "/api/v1/links/lc20wrongmethod/enable"));
-    BOOST_TEST(res.result_int() == 400);
+    const auto res = dispatch(
+        make_request(bhttp::verb::get, "/api/v1/links/lc20wrongmethod/enable"));
+    BOOST_TEST(res.result_int() == 405);
     BOOST_TEST(extract_code(res.body()) == "invalid_method");
+    BOOST_TEST(std::string(res.base()[bhttp::field::allow]) == "POST");
 }
 
 // Type: unit (request body is ignored on delete and lifecycle).
@@ -268,9 +268,9 @@ BOOST_AUTO_TEST_CASE(wrong_method_on_enable_is_unchanged_invalid_method)
 BOOST_AUTO_TEST_CASE(request_body_is_ignored)
 {
     create_link("lc20garbage");
-    BOOST_TEST(lifecycle("lc20garbage", "disable", "this is not json {{{")
-                   .result_int()
-               == 200);
+    BOOST_TEST(
+        lifecycle("lc20garbage", "disable", "this is not json {{{").result_int()
+        == 200);
     BOOST_TEST(
         lifecycle("lc20garbage", "enable", "<xml>nope</xml>").result_int()
         == 200);

@@ -61,8 +61,8 @@ bool is_valid_arg_name(const std::string& name)
         return false;
     }
     for (const char c : name) {
-        const bool ok = (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9')
-            || c == '_';
+        const bool ok =
+            (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_';
         if (!ok) {
             return false;
         }
@@ -74,15 +74,16 @@ bool is_valid_arg_name(const std::string& name)
  * @brief Canonicalizes an all-digits query value into a JSON integer token, or
  * reports that it is not a plain integer.
  *
- * `link.list`'s integer arguments (`offset`, `limit`) are emitted as JSON number
- * tokens via `args_builder::add_raw`, which inserts the token verbatim and never
- * validates it. To keep that token always valid JSON (JSON forbids leading zeros
- * and there is no octal/ambiguous parse), this accepts only a `^[0-9]+$` value
- * of at most 18 digits (so it always fits `long long`) and strips its leading
- * zeros, keeping a single `0` for an all-zero input. So `007` -> `7`, `00` ->
- * `0` (interpreted as decimal, never octal). Anything else — a sign, non-digit,
- * empty, or 19+ digits — returns `std::nullopt`, and the caller forwards the raw
- * value as a JSON **string** instead, so the registry rejects it as
+ * `link.list`'s integer arguments (`offset`, `limit`) are emitted as JSON
+ * number tokens via `args_builder::add_raw`, which inserts the token verbatim
+ * and never validates it. To keep that token always valid JSON (JSON forbids
+ * leading zeros and there is no octal/ambiguous parse), this accepts only a
+ * `^[0-9]+$` value of at most 18 digits (so it always fits `long long`) and
+ * strips its leading zeros, keeping a single `0` for an all-zero input. So
+ * `007` -> `7`, `00` -> `0` (interpreted as decimal, never octal). Anything
+ * else — a sign, non-digit, empty, or 19+ digits — returns `std::nullopt`, and
+ * the caller forwards the raw value as a JSON **string** instead, so the
+ * registry rejects it as
  * `<arg>: wrong_type`.
  *
  * @param value Decoded parameter value.
@@ -506,16 +507,25 @@ BeastResponse handleListLinks(const BeastRequest& req,
                               const RouteContext& context)
 {
     // Gate (user decision 2026-11-16, threat model T-71): when the command API
-    // is disabled (the secure default), answer exactly like today's
-    // GET /api/v1/links so no caller reaches link.list and no enumeration
-    // oracle exists. POST /api/v1/links shares this path, so today's router
-    // returns 400 invalid_method "Only POST is supported"; reproduce it
-    // byte-for-byte via the same makeApiErrorResponse the router's error
-    // handler uses. The store is never read on this branch.
+    // is disabled (the secure default), answer exactly like the router would
+    // for a path that only serves POST, so no caller reaches link.list and no
+    // enumeration oracle exists. POST /api/v1/links owns this path when the GET
+    // route is gated off, so the router's method-mismatch reply is now 405
+    // Method Not Allowed with `Allow: POST` (RFC 9110 15.5.6), carrying the
+    // unchanged invalid_method "Only POST is supported" JSON body. Reproduce
+    // that reply here via the same makeApiErrorResponse the router's error
+    // handler uses, plus the matching Allow header. The store is never read on
+    // this branch.
     if (!command_api_enabled(config)) {
-        return url_shortener::makeApiErrorResponse(
-            req, config, is_tls, 400, "invalid_method",
-            "Only POST is supported");
+        BeastResponse response =
+            url_shortener::makeApiErrorResponse(req,
+                                                config,
+                                                is_tls,
+                                                405,
+                                                "invalid_method",
+                                                "Only POST is supported");
+        response.set(boost::beast::http::field::allow, "POST");
+        return response;
     }
 
     // Parse the query string (percent-decoded, repeated keys preserved). A
@@ -523,9 +533,12 @@ BeastResponse handleListLinks(const BeastRequest& req,
     std::vector<query_param> params;
     std::string parse_error;
     if (!parse_query_string(context.query_string, &params, &parse_error)) {
-        return url_shortener::makeApiErrorResponse(
-            req, config, is_tls, 400, "invalid_request",
-            "malformed query string");
+        return url_shortener::makeApiErrorResponse(req,
+                                                   config,
+                                                   is_tls,
+                                                   400,
+                                                   "invalid_request",
+                                                   "malformed query string");
     }
 
     // Build the link.list args from the query (contract C1: the handler builds
@@ -540,12 +553,20 @@ BeastResponse handleListLinks(const BeastRequest& req,
     for (const query_param& param : params) {
         if (!is_valid_arg_name(param.name)) {
             return url_shortener::makeApiErrorResponse(
-                req, config, is_tls, 400, "invalid_request",
+                req,
+                config,
+                is_tls,
+                400,
+                "invalid_request",
                 "invalid parameter name");
         }
         if (args.has(param.name)) {
             return url_shortener::makeApiErrorResponse(
-                req, config, is_tls, 400, "invalid_request",
+                req,
+                config,
+                is_tls,
+                400,
+                "invalid_request",
                 param.name + ": duplicate");
         }
         if (param.name == "offset" || param.name == "limit") {
@@ -624,16 +645,19 @@ BeastResponse handlePatchLink(const BeastRequest& req,
     {
         commands::args_builder existence_args;
         existence_args.add_string("slug", slug);
-        const auto existing = execute_resource_command(
-            config, "link.get", existence_args.str(), requestIdFromRequest(req));
+        const auto existing =
+            execute_resource_command(config,
+                                     "link.get",
+                                     existence_args.str(),
+                                     requestIdFromRequest(req));
         if (!existing.ok) {
             return resource_response(req, config, is_tls, existing);
         }
     }
 
     // The three-state locals below replace the old std::optional<std::optional>
-    // DTO fields: absent / explicit null / value stay three distinct states that
-    // the args object now carries (add_null vs add_string vs omitted).
+    // DTO fields: absent / explicit null / value stay three distinct states
+    // that the args object now carries (add_null vs add_string vs omitted).
 
     // 2. enabled: present but not a bool -> invalid_enabled.
     std::optional<bool> enabled;
@@ -734,10 +758,10 @@ BeastResponse handlePatchLink(const BeastRequest& req,
         metadata = std::move(parsed);
     }
 
-    // 6. campaign tri-state: explicit null -> clear; not an object -> 400; fails
-    // validateCampaign -> 400. The object forwarded to the registry is rebuilt
-    // from only the six known members, so unknown inner keys are ignored (parity)
-    // and never reach the registry's object validator.
+    // 6. campaign tri-state: explicit null -> clear; not an object -> 400;
+    // fails validateCampaign -> 400. The object forwarded to the registry is
+    // rebuilt from only the six known members, so unknown inner keys are
+    // ignored (parity) and never reach the registry's object validator.
     bool campaign_present = false;
     bool campaign_is_null = false;
     std::string campaign_object_text;

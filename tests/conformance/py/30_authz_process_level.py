@@ -555,11 +555,12 @@ class RestGateTests(unittest.TestCase):
         """A default server answers the gated routes like an unmatched route.
 
         ``POST /api/v1/commands`` and ``GET /api/v1/jobs`` are 404 ``Route not
-        found``. ``GET /api/v1/links`` is 400 ``invalid_method`` because
-        ``POST /api/v1/links`` (a resource route) still owns that path when the
-        command API is off - that is the real as-built "indistinguishable from
-        before the route existed" behavior and discloses no listing (see the
-        report's deviation note: spec 19 says 404 for this one line).
+        found``. ``GET /api/v1/links`` is 405 ``invalid_method`` (Method Not
+        Allowed, RFC 9110 15.5.6) because ``POST /api/v1/links`` (a resource
+        route) still owns that path when the command API is off - that is the
+        real as-built "indistinguishable from before the route existed"
+        behavior and discloses no listing (see the report's deviation note:
+        spec 19 says 404 for this one line).
         """
         server = self._default_server()
 
@@ -574,7 +575,7 @@ class RestGateTests(unittest.TestCase):
         self.assertIn("Route not found", body)
 
         status, body = _http("GET", "127.0.0.1", server.port, "/api/v1/links")
-        self.assertEqual(status, 400, body)
+        self.assertEqual(status, 405, body)
 
     def test_rest_user_role_denied_write(self) -> None:
         """A user-role server denies writes and allows reads over the gate."""

@@ -1,23 +1,31 @@
-#include <url_shortener/http/router.hpp>
-
 #include <algorithm>
 #include <sstream>
 
-namespace url_shortener {
-namespace http {
+#include <url_shortener/http/router.hpp>
 
-namespace {
+namespace url_shortener
+{
+namespace http
+{
+
+namespace
+{
 
 namespace bhttp = boost::beast::http;
 
 std::string methodToString(const bhttp::verb method)
 {
     switch (method) {
-    case bhttp::verb::get: return "GET";
-    case bhttp::verb::post: return "POST";
-    case bhttp::verb::patch: return "PATCH";
-    case bhttp::verb::delete_: return "DELETE";
-    default: return std::string(bhttp::to_string(method));
+        case bhttp::verb::get:
+            return "GET";
+        case bhttp::verb::post:
+            return "POST";
+        case bhttp::verb::patch:
+            return "PATCH";
+        case bhttp::verb::delete_:
+            return "DELETE";
+        default:
+            return std::string(bhttp::to_string(method));
     }
 }
 
@@ -30,7 +38,8 @@ std::vector<std::string> splitPath(const std::string& path)
     }
     while (start <= path.size()) {
         const auto end = path.find('/', start);
-        const auto count = end == std::string::npos ? std::string::npos : end - start;
+        const auto count =
+            end == std::string::npos ? std::string::npos : end - start;
         segments.push_back(path.substr(start, count));
         if (end == std::string::npos) {
             break;
@@ -49,15 +58,19 @@ bool isCaptureSegment(const std::string& segment)
         return false;
     }
     const auto first = segment[1];
-    if (!((first >= 'A' && first <= 'Z') || (first >= 'a' && first <= 'z') || first == '_')) {
+    if (!((first >= 'A' && first <= 'Z') || (first >= 'a' && first <= 'z')
+          || first == '_'))
+    {
         return false;
     }
-    return std::all_of(segment.begin() + 2, segment.end() - 1, [](const char c) {
-        return (c >= 'A' && c <= 'Z')
-               || (c >= 'a' && c <= 'z')
-               || (c >= '0' && c <= '9')
-               || c == '_';
-    });
+    return std::all_of(segment.begin() + 2,
+                       segment.end() - 1,
+                       [](const char c)
+                       {
+                           return (c >= 'A' && c <= 'Z')
+                               || (c >= 'a' && c <= 'z')
+                               || (c >= '0' && c <= '9') || c == '_';
+                       });
 }
 
 std::string captureName(const std::string& segment)
@@ -71,31 +84,27 @@ std::size_t pathSpecificity(const std::string& path_pattern)
     return static_cast<std::size_t>(std::count_if(
         segments.begin(),
         segments.end(),
-        [](const std::string& segment) {
-            return !isCaptureSegment(segment);
-        }));
+        [](const std::string& segment) { return !isCaptureSegment(segment); }));
 }
 
-BeastResponse defaultErrorHandler(
-    const BeastRequest& req,
-    const ::ServerConfig&,
-    const bool,
-    const unsigned status,
-    const std::string& code,
-    const std::string& message)
+BeastResponse defaultErrorHandler(const BeastRequest& req,
+                                  const ::ServerConfig&,
+                                  const bool,
+                                  const unsigned status,
+                                  const std::string& code,
+                                  const std::string& message)
 {
-    BeastResponse res{static_cast<bhttp::status>(status), req.version()};
+    BeastResponse res {static_cast<bhttp::status>(status), req.version()};
     res.set(bhttp::field::content_type, "application/json");
     std::ostringstream body;
-    body << "{\"error\":{\"code\":\"" << code
-         << "\",\"message\":\"" << message
+    body << "{\"error\":{\"code\":\"" << code << "\",\"message\":\"" << message
          << "\",\"request_id\":\"\"}}";
     res.body() = body.str();
     res.prepare_payload();
     return res;
 }
 
-} // namespace
+}  // namespace
 
 Router::Router()
     : error_handler_(defaultErrorHandler)
@@ -107,13 +116,13 @@ Router::Router(ErrorHandlerFn error_handler)
 {
 }
 
-void Router::add(
-    const bhttp::verb method,
-    const std::string& path_pattern,
-    const std::string& route_label,
-    HandlerFn handler)
+void Router::add(const bhttp::verb method,
+                 const std::string& path_pattern,
+                 const std::string& route_label,
+                 HandlerFn handler)
 {
-    routes_.push_back(RouteEntry{method, path_pattern, route_label, std::move(handler)});
+    routes_.push_back(
+        RouteEntry {method, path_pattern, route_label, std::move(handler)});
 }
 
 BeastResponse Router::dispatch(
@@ -126,7 +135,8 @@ BeastResponse Router::dispatch(
     std::size_t best_specificity = 0;
     for (const auto& route : routes_) {
         RouteContext context;
-        if (!matchPath(route.path_pattern, std::string(req.target()), &context)) {
+        if (!matchPath(route.path_pattern, std::string(req.target()), &context))
+        {
             continue;
         }
         const auto specificity = pathSpecificity(route.path_pattern);
@@ -138,13 +148,27 @@ BeastResponse Router::dispatch(
 
     bhttp::verb only_allowed_method = bhttp::verb::unknown;
     bool multiple_allowed_methods = false;
+    // Methods the matched path supports, in registration order and
+    // de-duplicated, used to build the RFC 9110 15.5.6 Allow header on a
+    // method mismatch. Only the verbs actually registered are listed: HEAD is
+    // never advertised because no HEAD route is served and HEAD is not
+    // synthesized from GET anywhere in this server.
+    std::vector<std::string> allowed_methods;
     for (const auto& route : routes_) {
         RouteContext context;
-        if (!matchPath(route.path_pattern, std::string(req.target()), &context)) {
+        if (!matchPath(route.path_pattern, std::string(req.target()), &context))
+        {
             continue;
         }
         if (pathSpecificity(route.path_pattern) != best_specificity) {
             continue;
+        }
+        const std::string method_name = methodToString(route.method);
+        if (std::find(
+                allowed_methods.begin(), allowed_methods.end(), method_name)
+            == allowed_methods.end())
+        {
+            allowed_methods.push_back(method_name);
         }
         if (only_allowed_method == bhttp::verb::unknown) {
             only_allowed_method = route.method;
@@ -168,22 +192,28 @@ BeastResponse Router::dispatch(
         const std::string message = multiple_allowed_methods
             ? "Unsupported operation"
             : "Only " + methodToString(only_allowed_method) + " is supported";
-        return error_handler_(
-            req,
-            config,
-            is_tls,
-            400,
-            "invalid_method",
-            message);
+        // RFC 9110 15.5.6: a request whose path is known but whose method is
+        // not supported is 405 Method Not Allowed and MUST carry an Allow
+        // header listing the supported methods. The JSON body shape and the
+        // invalid_method error code are preserved for existing clients. The
+        // Allow header is set on the response the (format-agnostic) error
+        // handler produces, so the router stays decoupled from the body
+        // format while still meeting the HTTP contract.
+        BeastResponse response =
+            error_handler_(req, config, is_tls, 405, "invalid_method", message);
+        std::string allow;
+        for (const auto& method_name : allowed_methods) {
+            if (!allow.empty()) {
+                allow += ", ";
+            }
+            allow += method_name;
+        }
+        response.set(bhttp::field::allow, allow);
+        return response;
     }
 
     return error_handler_(
-        req,
-        config,
-        is_tls,
-        404,
-        "not_found",
-        "Route not found");
+        req, config, is_tls, 404, "not_found", "Route not found");
 }
 
 std::vector<RouteEntryView> Router::routes() const
@@ -191,18 +221,16 @@ std::vector<RouteEntryView> Router::routes() const
     std::vector<RouteEntryView> result;
     result.reserve(routes_.size());
     for (const auto& route : routes_) {
-        result.push_back(RouteEntryView{
-            methodToString(route.method),
-            route.path_pattern,
-            route.route_label});
+        result.push_back(RouteEntryView {methodToString(route.method),
+                                         route.path_pattern,
+                                         route.route_label});
     }
     return result;
 }
 
-bool Router::matchPath(
-    const std::string& path_pattern,
-    const std::string& target,
-    RouteContext* context)
+bool Router::matchPath(const std::string& path_pattern,
+                       const std::string& target,
+                       RouteContext* context)
 {
     if (context == nullptr) {
         return false;
@@ -212,7 +240,8 @@ bool Router::matchPath(
     context->route_label.clear();
 
     const auto query_pos = target.find('?');
-    const auto path = query_pos == std::string::npos ? target : target.substr(0, query_pos);
+    const auto path =
+        query_pos == std::string::npos ? target : target.substr(0, query_pos);
     if (query_pos != std::string::npos) {
         context->query_string = target.substr(query_pos + 1);
     }
@@ -222,12 +251,11 @@ bool Router::matchPath(
     if (pattern_segments.size() != path_segments.size()) {
         if (pattern_segments.size() == 1
             && isCaptureSegment(pattern_segments.front())
-            && captureName(pattern_segments.front()) == "path"
-            && !path.empty()
-            && path != "/") {
-            context->path_params["path"] = path.front() == '/'
-                ? path.substr(1)
-                : path;
+            && captureName(pattern_segments.front()) == "path" && !path.empty()
+            && path != "/")
+        {
+            context->path_params["path"] =
+                path.front() == '/' ? path.substr(1) : path;
             return true;
         }
         return false;
@@ -255,5 +283,5 @@ bool Router::matchPath(
     return true;
 }
 
-} // namespace http
-} // namespace url_shortener
+}  // namespace http
+}  // namespace url_shortener

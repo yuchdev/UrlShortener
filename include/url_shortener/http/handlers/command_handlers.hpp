@@ -82,10 +82,10 @@ BeastResponse handleExecuteCommand(const BeastRequest& req,
  * Pipeline (every step either answers and stops, or falls through):
  * 1. **Gate (threat model T-64):** when the command API is disabled
  *    (`command_api_enabled(config) == false`, the secure default) it answers
- *    byte-for-byte like `GET /api/v1/commands` does *before* this route exists
- * — i.e. the router's method-mismatch reply for the POST-only path, `400
- * invalid_method "Only POST is supported"` — not a `404`, because `POST
- * /api/v1/commands` (subtask 09) already makes the path exist (the same
+ *    like the router's method-mismatch reply for the POST-only path — `405
+ * Method Not Allowed` with `Allow: POST` (RFC 9110 15.5.6) and the unchanged
+ * `invalid_method "Only POST is supported"` JSON body — not a `404`, because
+ * `POST /api/v1/commands` (subtask 09) already makes the path exist (the same
  *    subtlety `handleListLinks` handles for `GET /api/v1/links`). The catalog
  * is never disclosed on this branch and the query is never read.
  * 2. **Query parse (threat model T-73):** `context.query_string` is parsed by
@@ -115,8 +115,9 @@ BeastResponse handleExecuteCommand(const BeastRequest& req,
  * @param context Route context; `context.query_string` is parsed for `args`
  * and `context.peer` is the gated caller's locality input (never a header,
  * never logged, threat model T-70/T-84).
- * @return `400 invalid_method` (gate off, byte-equal to the pre-existing
- * method-mismatch reply); `400 invalid_request` (malformed query or an unknown/
+ * @return `405 invalid_method` with `Allow: POST` (gate off, mirroring the
+ * router's method-mismatch reply for the POST-only path); `400 invalid_request`
+ * (malformed query or an unknown/
  * duplicate/invalid parameter); otherwise a `200` whose body is the
  * `command.list` result, or a legacy error envelope at the shared error-table
  * status.
@@ -245,8 +246,8 @@ BeastResponse handleGetJob(const BeastRequest& req,
  *    caller is never used here, decision D4).
  * 4. **Render:** @ref resource_response renders the outcome.
  *
- * @param req Incoming request; supplies the HTTP version, the request id and the
- * `Content-Type` header. Its body is never read.
+ * @param req Incoming request; supplies the HTTP version, the request id and
+ * the `Content-Type` header. Its body is never read.
  * @param config Server configuration; selects the gate and caller role.
  * @param is_tls `true` on HTTPS connections; gates HSTS/`nosniff`.
  * @param context Route context; `path_params["id"]` is the addressed job id and
