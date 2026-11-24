@@ -2,10 +2,10 @@
 """Verify that a documentation pass changed only comments and whitespace.
 
 Compares each changed C++ file against a git revision (default ``HEAD``) after
-stripping comments and all whitespace and joining adjacent string literals
-(``"ab" "cd"`` == ``"abcd"``). A file passes when the remaining token stream is
-identical, i.e. the edit only added/moved/reworded comments or re-wrapped
-declaration lines. Any other difference is reported as ``CODE CHANGED``.
+stripping comments and whitespace while preserving C++ string and character
+literal tokens. A file passes when the remaining token stream is identical,
+i.e. the edit only added/moved/reworded comments or re-wrapped declaration
+lines. Any other difference is reported as ``CODE CHANGED``.
 
 Usage:
     python3 check_comment_only_diff.py [--rev REV] [PATH ...]
@@ -21,30 +21,16 @@ import sys
 
 _SOURCE_SUFFIXES = (".hpp", ".h", ".cpp", ".cc", ".hh")
 
-# Order matters: string/char literals are matched first so that comment
-# markers inside them (e.g. "http://") are not treated as comments.
-_TOKEN_RE = re.compile(
-    r'"(?:\\.|[^"\\\n])*"'      # string literal
-    r"|'(?:\\.|[^'\\\n])*'"     # char literal
-    r"|/\*.*?\*/"               # block comment
-    r"|//[^\n]*",               # line comment
-    re.S,
-)
-
 
 def normalize(text):
-    """Return ``text`` with comments and whitespace removed and adjacent
-    string literals joined."""
+    """Return C++ tokens with comments and whitespace removed.
 
-    def keep_literals(match):
-        token = match.group(0)
-        return "" if token.startswith("/") else token
-
-    without_comments = _TOKEN_RE.sub(keep_literals, text)
-    compact = re.sub(r"\s+", "", without_comments)
-    # Adjacent literals "ab""cd" -> "abcd" (only reachable after whitespace
-    # removal, and a real empty literal is reduced identically on both sides).
-    return compact.replace('""', "")
+    String and character literals are kept as complete tokens.  Adjacent
+    literals remain adjacent-token sequences instead of being joined, which
+    preserves escape boundaries and whitespace inside literals.
+    """
+    tokens = _cpp_tokens(text)
+    return tuple(tokens)
 
 
 _SORTABLE_RE = re.compile(
@@ -76,6 +62,94 @@ def include_order_only(old, new):
     old_inc, old_rest = _split_includes(old)
     new_inc, new_rest = _split_includes(new)
     return old_inc == new_inc and normalize(old_rest) == normalize(new_rest)
+def _cpp_tokens(text):
+    """Lex enough C++ to keep literals and comments out of normalization."""
+    tokens = []
+    i = 0
+
+    identifier_re = re.compile(r"[A-Za-z_][A-Za-z_0-9]*")
+    number_re = re.compile(r"(?:0[xX][0-9A-Fa-f]+|[0-9]+(?:\.[0-9]*)?)")
+
+    while i < len(text):
+        if text.startswith("//", i):
+            newline = text.find("\n", i)
+            i = len(text) if newline < 0 else newline + 1
+            continue
+        if text.startswith("/*", i):
+            end = text.find("*/", i + 2)
+            i = len(text) if end < 0 else end + 2
+            continue
+        if text[i].isspace():
+            i += 1
+            continue
+
+        raw_start = None
+        for prefix in ("u8R\"", "uR\"", "UR\"", "LR\"", 'R"'):
+            if text.startswith(prefix, i):
+                raw_start = i
+                quote_pos = i + len(prefix) - 1
+                break
+        if raw_start is not None:
+            paren = text.find("(", quote_pos + 1)
+            if paren >= 0:
+                raw_delimiter = text[quote_pos + 1:paren]
+                end_marker = ")" + raw_delimiter + '"'
+                end = text.find(end_marker, paren + 1)
+                if end >= 0:
+                    tokens.append(text[i:end + len(end_marker)])
+                    i = end + len(end_marker)
+                    continue
+
+        literal_start = None
+        for prefix in ("u8\"", 'u"', 'U"', 'L"', '"'):
+            if text.startswith(prefix, i):
+                literal_start = i
+                quote_pos = i + len(prefix) - 1
+                break
+        if literal_start is not None:
+            j = quote_pos + 1
+            while j < len(text):
+                if text[j] == "\\":
+                    j += 2
+                    continue
+                if text[j] == '"':
+                    j += 1
+                    tokens.append(text[i:j])
+                    i = j
+                    break
+                j += 1
+            if i == j:
+                continue
+
+        if text[i] == "'":
+            j = i + 1
+            while j < len(text):
+                if text[j] == "\\":
+                    j += 2
+                    continue
+                if text[j] == "'":
+                    j += 1
+                    tokens.append(text[i:j])
+                    i = j
+                    break
+                j += 1
+            if i == j:
+                continue
+
+        identifier = identifier_re.match(text, i)
+        if identifier:
+            tokens.append(identifier.group(0))
+            i = identifier.end()
+            continue
+        number = number_re.match(text, i)
+        if number:
+            tokens.append(number.group(0))
+            i = number.end()
+            continue
+
+        tokens.append(text[i])
+        i += 1
+    return tokens
 
 
 def changed_files(rev):

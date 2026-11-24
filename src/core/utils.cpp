@@ -18,8 +18,8 @@
 #    include <arpa/inet.h>
 #endif
 
-#include <openssl/evp.h>
 #include <openssl/hmac.h>
+#include <openssl/evp.h>
 #include <url_shortener/core/config.hpp>
 #include <url_shortener/core/utils.hpp>
 
