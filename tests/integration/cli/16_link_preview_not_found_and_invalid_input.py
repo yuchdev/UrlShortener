@@ -31,7 +31,7 @@ class LinkPreviewNotFoundAndInvalidInputTest(CliIntegrationBase):
         When:  url_shortener link preview (--slug <SLUG> | --id <ID>)
         Then:  a valid selector for a link that does not exist exits 1
                (not-found) with empty stdout and a stderr diagnostic; supplying
-               both/neither selector exits non-zero.
+               both or neither selector is a CLI usage error and exits 2.
 
     Why this matters:
         preview reports where a slug would redirect without following it - an
@@ -102,8 +102,8 @@ class LinkPreviewNotFoundAndInvalidInputTest(CliIntegrationBase):
                 cwd=tmpdir,
             )
             self.assertEqual(
-                proc.returncode, 1,
-                "Expected exit 1 when both --slug and --id are given",
+                proc.returncode, 2,
+                "Expected usage-error exit 2 when both --slug and --id are given",
             )
 
     def test_preview_no_selector_is_rejected(self):
@@ -111,8 +111,8 @@ class LinkPreviewNotFoundAndInvalidInputTest(CliIntegrationBase):
         with self.make_tmpdir() as tmpdir:
             proc = run_cli(self._binary, "link", "preview", cwd=tmpdir)
             self.assertEqual(
-                proc.returncode, 1,
-                "Expected exit 1 when no selector is given",
+                proc.returncode, 2,
+                "Expected usage-error exit 2 when no selector is given",
             )
 
 

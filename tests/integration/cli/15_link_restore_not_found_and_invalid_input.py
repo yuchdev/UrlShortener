@@ -31,7 +31,8 @@ class LinkRestoreNotFoundAndInvalidInputTest(CliIntegrationBase):
         Given an empty working directory (fresh, unseeded CLI store).
         When:  url_shortener link restore --slug <various>
         Then:  a valid slug that does not exist exits 1 (not-found) with empty
-               stdout and a stderr diagnostic; omitting --slug exits non-zero.
+               stdout and a stderr diagnostic; omitting --slug or passing an
+               unknown flag is a CLI usage error and exits 2.
 
     Why this matters:
         restore un-deletes a soft-deleted link so it serves again. A not-found
@@ -87,8 +88,8 @@ class LinkRestoreNotFoundAndInvalidInputTest(CliIntegrationBase):
         with self.make_tmpdir() as tmpdir:
             proc = run_cli(self._binary, "link", "restore", cwd=tmpdir)
             self.assertEqual(
-                proc.returncode, 1,
-                "Expected exit 1 when --slug is missing",
+                proc.returncode, 2,
+                "Expected usage-error exit 2 when --slug is missing",
             )
 
     def test_restore_unknown_flag_is_rejected(self):
@@ -101,8 +102,8 @@ class LinkRestoreNotFoundAndInvalidInputTest(CliIntegrationBase):
                 cwd=tmpdir,
             )
             self.assertEqual(
-                proc.returncode, 1,
-                "Expected exit 1 for an unknown flag",
+                proc.returncode, 2,
+                "Expected usage-error exit 2 for an unknown flag",
             )
 
 

@@ -30,7 +30,8 @@ class LinkDisableNotFoundAndInvalidInputTest(CliIntegrationBase):
         Given an empty working directory (fresh, unseeded CLI store).
         When:  url_shortener link disable --slug <various>
         Then:  a valid slug that does not exist exits 1 (not-found) with empty
-               stdout and a stderr diagnostic; omitting --slug exits non-zero.
+               stdout and a stderr diagnostic; omitting or emptying --slug is a
+               CLI usage error and exits 2.
 
     Why this matters:
         disable stops a link from resolving. A not-found disable that silently
@@ -86,8 +87,8 @@ class LinkDisableNotFoundAndInvalidInputTest(CliIntegrationBase):
         with self.make_tmpdir() as tmpdir:
             proc = run_cli(self._binary, "link", "disable", cwd=tmpdir)
             self.assertEqual(
-                proc.returncode, 1,
-                "Expected exit 1 when --slug is missing",
+                proc.returncode, 2,
+                "Expected usage-error exit 2 when --slug is missing",
             )
 
     def test_disable_empty_slug_is_rejected(self):
@@ -99,8 +100,8 @@ class LinkDisableNotFoundAndInvalidInputTest(CliIntegrationBase):
                 cwd=tmpdir,
             )
             self.assertEqual(
-                proc.returncode, 1,
-                "Expected exit 1 for an empty --slug value",
+                proc.returncode, 2,
+                "Expected usage-error exit 2 for an empty --slug value",
             )
 
 

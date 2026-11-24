@@ -19,8 +19,11 @@ PREREQUISITES (implementation must satisfy before these tests pass):
        link get --slug <SLUG> | --id <ID>
        link stats --slug <SLUG> --from <EPOCH_S> --to <EPOCH_S> --bucket <BUCKET>
   5. On success: exit 0, print single-line JSON to stdout.
-  6. On validation error: exit 1 (or non-zero), print error JSON or message to
-     stderr; do NOT print a valid-link JSON on stdout.
+  6. On error: exit non-zero, print an error JSON or message to stderr, and do
+     NOT print a valid-link JSON on stdout. Exit codes follow the shared table:
+     a not-found link exits 1; a CLI usage error (unknown/ missing/ malformed
+     flag or selector) and a bad-input validation error (invalid URL/slug) exit
+     2.
 """
 from __future__ import annotations
 
