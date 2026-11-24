@@ -49,8 +49,10 @@ if str(_THIS.parent) not in sys.path:
 import conformance_common as cc  # noqa: E402
 
 #: Hard per-process wall clock; a hung ``cmd`` fails its step by timeout rather
-#: than blocking CTest (the subtask budgets 30 s per process).
-_SEND_TIMEOUT_S = 30.0
+#: than blocking CTest (the subtask budgets 30 s per process). Scaled by
+#: ``URLSHORTENER_TEST_TIMEOUT_SCALE`` so a slow sanitizer build of the ``cmd``
+#: binary does not time out before completing a legitimate step.
+_SEND_TIMEOUT_S = cc.scale_timeout(30.0)
 
 #: Default HTTP port a server would bind; ``cmd`` must never start a listener, so
 #: the no-listener probe checks this after every case (success criterion 3).

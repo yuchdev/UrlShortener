@@ -123,7 +123,7 @@ class StdioAdapter(cc.Adapter):
         role = step.get("caller") or self._case_caller
         proc = self._session_for(role)
         proc.write_line(request_text)
-        return proc.read_json(timeout=10.0)
+        return proc.read_json(timeout=cc.scale_timeout(10.0))
 
     def end_case(self) -> None:
         """Reap every process started for this case (always, even on failure)."""

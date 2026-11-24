@@ -61,11 +61,14 @@ if str(_THIS.parent) not in sys.path:
 import conformance_common as cc  # noqa: E402
 
 #: Maximum seconds to wait for a freshly spawned server to answer ``/healthz``.
-_SERVER_READY_TIMEOUT_S = 15.0
+#: Scaled by ``URLSHORTENER_TEST_TIMEOUT_SCALE`` so a slow sanitizer build of the
+#: server is still given time to become ready.
+_SERVER_READY_TIMEOUT_S = cc.scale_timeout(15.0)
 
 #: Hard per-request wall clock; a hung server fails the step by timeout instead
-#: of blocking CTest.
-_POST_TIMEOUT_S = 10.0
+#: of blocking CTest. Scaled by ``URLSHORTENER_TEST_TIMEOUT_SCALE`` for slow
+#: sanitizer builds.
+_POST_TIMEOUT_S = cc.scale_timeout(10.0)
 
 #: Start attempts: :func:`conformance_common.free_port` races with re-binding, so
 #: a server that exits early (port grabbed in between) is retried on a new port.
@@ -330,3 +333,66 @@ class RestClient:
         except json.JSONDecodeError:
             parsed = None
         return status, parsed, raw
+
+    def call_with_allow(
+        self,
+        role: str,
+        method: str,
+        path: str,
+        query: Optional[Any] = None,
+        body: Optional[Any] = None,
+    ) -> Tuple[int, Optional[dict], str, str]:
+        """Like :meth:`call`, but also return the response ``Allow`` header.
+
+        Used by method-mismatch rows that assert the RFC 9110 15.5.6 contract:
+        a 405 Method Not Allowed names the supported methods in ``Allow``. It
+        issues the same loopback, timeout- and size-bounded request as
+        :meth:`call` and sends no ``Authorization`` or other secret header.
+
+        :param role: The role whose server receives the request; must be present
+            in the live port map.
+        :param method: The HTTP method, used verbatim.
+        :param path: The request path, sent exactly as given.
+        :param query: Optional query parameters (``dict`` or raw string); see
+            :meth:`call`.
+        :param body: Optional JSON request body; see :meth:`call`.
+        :return: ``(http_status, parsed_json_or_None, raw_text, allow_header)``;
+            *allow_header* is ``""`` when the response carries no ``Allow``.
+        :raises KeyError: If no server for *role* has been started.
+        :raises AssertionError: If the response body exceeds
+            :data:`_MAX_RESPONSE_BYTES`.
+        """
+        port = self._ports[role]
+        target = path
+        query_text = ""
+        if isinstance(query, dict):
+            query_text = urlencode(query)
+        elif isinstance(query, str):
+            query_text = query[1:] if query.startswith("?") else query
+        if query_text:
+            target = f"{path}?{query_text}"
+        headers: Dict[str, str] = {}
+        encoded_body: Optional[bytes] = None
+        if body is not None:
+            encoded_body = json.dumps(body, ensure_ascii=False).encode("utf-8")
+            headers["Content-Type"] = "application/json"
+        conn = http.client.HTTPConnection("127.0.0.1", port,
+                                          timeout=_POST_TIMEOUT_S)
+        try:
+            conn.request(method, target, body=encoded_body, headers=headers)
+            response = conn.getresponse()
+            body_bytes = response.read(_MAX_RESPONSE_BYTES + 1)
+            status = response.status
+            allow = response.getheader("Allow", "") or ""
+        finally:
+            conn.close()
+        if len(body_bytes) > _MAX_RESPONSE_BYTES:
+            raise AssertionError(
+                f"rest_resource response body exceeded {_MAX_RESPONSE_BYTES} "
+                f"bytes (status {status}); refusing to buffer it")
+        raw = body_bytes.decode("utf-8", "replace")
+        try:
+            parsed = json.loads(raw)
+        except json.JSONDecodeError:
+            parsed = None
+        return status, parsed, raw, allow

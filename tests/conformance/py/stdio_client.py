@@ -59,12 +59,14 @@ _MAX_STDERR_BYTES = 1 * 1024 * 1024
 
 #: Deadline (seconds) for the send path: enqueuing onto the writer thread blocks
 #: at most this long, so a child that stops draining stdin fails the caller by
-#: timeout instead of blocking a pipelined burst forever.
-_WRITE_TIMEOUT = 30.0
+#: timeout instead of blocking a pipelined burst forever. Scaled by
+#: ``URLSHORTENER_TEST_TIMEOUT_SCALE`` for slow sanitizer builds.
+_WRITE_TIMEOUT = cc.scale_timeout(30.0)
 
 #: Deadline (seconds) the reader uses to hand a line to a stalled consumer before
-#: declaring the bounded stdout queue overflowed.
-_QUEUE_PUT_TIMEOUT = 30.0
+#: declaring the bounded stdout queue overflowed. Scaled by
+#: ``URLSHORTENER_TEST_TIMEOUT_SCALE`` for slow sanitizer builds.
+_QUEUE_PUT_TIMEOUT = cc.scale_timeout(30.0)
 
 #: Sentinel queued when a stdout line exceeds :data:`_MAX_LINE_BYTES`; surfaced by
 #: :meth:`StdioProc.read_line` as a clear failure rather than a buffered blob.

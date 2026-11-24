@@ -178,6 +178,33 @@ include(CTest)
 
   if(BUILD_TESTING)
 
+  # ---- Sanitizer-aware test TIMEOUT scaling (milestone 0006 follow-up) ------
+  # A ThreadSanitizer/AddressSanitizer build runs every binary several times
+  # slower, so the conformance Python harnesses (conformance_10/11/13/14) and
+  # other spawned-process tests time out before completing legitimate work. We
+  # detect the sanitizer flags, derive a default multiplier, and both (a)
+  # multiply each CTest TIMEOUT property by it and (b) export it as
+  # URLSHORTENER_TEST_TIMEOUT_SCALE so Python harnesses widen their own
+  # hard-coded subprocess/socket deadlines in lockstep. A normal build has
+  # scale 1 and is byte-for-byte unchanged. The cache entry lets a maintainer
+  # override the factor (e.g. a very slow CI runner) without editing this file.
+  if(CMAKE_CXX_FLAGS MATCHES "-fsanitize=[^ ]*(thread|address|memory)")
+    set(_us_default_timeout_scale 5)
+  else()
+    set(_us_default_timeout_scale 1)
+  endif()
+  set(URLSHORTENER_TEST_TIMEOUT_SCALE "${_us_default_timeout_scale}"
+      CACHE STRING
+      "Integer multiplier applied to every CTest TIMEOUT and exported to Python \
+test harnesses as URLSHORTENER_TEST_TIMEOUT_SCALE; defaults to 5 under a \
+sanitizer build and 1 otherwise.")
+
+  # Set OUT_VAR to BASE_SECONDS multiplied by URLSHORTENER_TEST_TIMEOUT_SCALE.
+  function(us_scaled_timeout out_var base_seconds)
+    math(EXPR _scaled "${base_seconds} * ${URLSHORTENER_TEST_TIMEOUT_SCALE}")
+    set(${out_var} "${_scaled}" PARENT_SCOPE)
+  endfunction()
+
   foreach(unit_src IN LISTS ALL_UNIT_SOURCES)
     get_filename_component(unit_name ${unit_src} NAME_WE)
     add_executable(${unit_name}
@@ -334,9 +361,10 @@ include(CTest)
     get_filename_component(perf_stem   ${perf_src} NAME_WE)
     get_filename_component(perf_dir    ${perf_src} DIRECTORY)
     get_filename_component(perf_parent ${perf_dir} NAME)
+    us_scaled_timeout(_perf_timeout 300)
     set_tests_properties(${perf_parent}__${perf_stem} PROPERTIES
         RUN_SERIAL TRUE
-        TIMEOUT 300
+        TIMEOUT ${_perf_timeout}
     )
   endforeach()
 
@@ -396,6 +424,7 @@ include(CTest)
 
   # ---- CLI integration tests (spawn binary in one-shot CLI mode) ----
 
+  us_scaled_timeout(_integration_timeout 600)
   foreach(integration_src IN LISTS ALL_INTEGRATION_SOURCES)
     get_filename_component(integration_name ${integration_src} NAME_WE)
     add_test(
@@ -404,13 +433,14 @@ include(CTest)
     )
     set_tests_properties(${integration_name} PROPERTIES
       ENVIRONMENT
-        "SIMPLE_HTTP_BIN=$<TARGET_FILE:url_shortener>;URLSHORTENER_CMAKE_TOOLCHAIN_FILE=${CMAKE_TOOLCHAIN_FILE};URLSHORTENER_CTEST_CONFIG=$<CONFIG>;URLSHORTENER_VCPKG_INSTALLED_DIR=${VCPKG_INSTALLED_DIR};URLSHORTENER_VCPKG_TARGET_TRIPLET=${VCPKG_TARGET_TRIPLET}"
-      TIMEOUT 600
+        "SIMPLE_HTTP_BIN=$<TARGET_FILE:url_shortener>;URLSHORTENER_CMAKE_TOOLCHAIN_FILE=${CMAKE_TOOLCHAIN_FILE};URLSHORTENER_CTEST_CONFIG=$<CONFIG>;URLSHORTENER_VCPKG_INSTALLED_DIR=${VCPKG_INSTALLED_DIR};URLSHORTENER_VCPKG_TARGET_TRIPLET=${VCPKG_TARGET_TRIPLET};URLSHORTENER_TEST_TIMEOUT_SCALE=${URLSHORTENER_TEST_TIMEOUT_SCALE}"
+      TIMEOUT ${_integration_timeout}
       LABELS "integration"
     )
   endforeach()
 
   # ---- CLI integration tests (one-shot CLI mode; no server port needed) ----
+  us_scaled_timeout(_cli_timeout 60)
   foreach(cli_src IN LISTS CLI_INTEGRATION_SOURCES)
     get_filename_component(cli_test_name ${cli_src} NAME_WE)
     add_test(
@@ -419,8 +449,8 @@ include(CTest)
     )
     set_tests_properties(cli_${cli_test_name} PROPERTIES
       ENVIRONMENT
-        "SIMPLE_HTTP_BIN=$<TARGET_FILE:url_shortener>"
-      TIMEOUT 60
+        "SIMPLE_HTTP_BIN=$<TARGET_FILE:url_shortener>;URLSHORTENER_TEST_TIMEOUT_SCALE=${URLSHORTENER_TEST_TIMEOUT_SCALE}"
+      TIMEOUT ${_cli_timeout}
       LABELS "integration"
     )
   endforeach()
@@ -438,19 +468,22 @@ include(CTest)
   # name is conformance_<stem>; the second label lets `ctest -L conformance`
   # select the suite while the documented union -L "unit|contract|integration"
   # still includes it. SIMPLE_HTTP_BIN mirrors the CLI integration tests.
+  us_scaled_timeout(_conformance_timeout 300)
   foreach(conformance_py_src IN LISTS CONFORMANCE_PY_SOURCES)
     get_filename_component(conformance_py_name ${conformance_py_src} NAME_WE)
-    # -I runs Python in isolated mode (ignores env vars and does not add the
-    # script's own directory to sys.path); 00_corpus_lint.py inserts the repo
-    # root onto sys.path explicitly from __file__, so imports still resolve.
+    # -I runs Python in isolated mode: it ignores only PYTHON* environment
+    # variables (not others) and does not add the script's own directory to
+    # sys.path; 00_corpus_lint.py inserts the repo root onto sys.path explicitly
+    # from __file__, so imports still resolve. The non-PYTHON*-prefixed
+    # URLSHORTENER_TEST_TIMEOUT_SCALE is still visible to the harness.
     add_test(
       NAME conformance_${conformance_py_name}
       COMMAND ${Python3_EXECUTABLE} -I ${CMAKE_CURRENT_SOURCE_DIR}/${conformance_py_src}
     )
     set_tests_properties(conformance_${conformance_py_name} PROPERTIES
       ENVIRONMENT
-        "SIMPLE_HTTP_BIN=$<TARGET_FILE:url_shortener>;URLSHORTENER_CONFORMANCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/tests/conformance;URLSHORTENER_CONFORMANCE_OUT=${CONFORMANCE_OUT_DIR}"
-      TIMEOUT 300
+        "SIMPLE_HTTP_BIN=$<TARGET_FILE:url_shortener>;URLSHORTENER_CONFORMANCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/tests/conformance;URLSHORTENER_CONFORMANCE_OUT=${CONFORMANCE_OUT_DIR};URLSHORTENER_TEST_TIMEOUT_SCALE=${URLSHORTENER_TEST_TIMEOUT_SCALE}"
+      TIMEOUT ${_conformance_timeout}
       LABELS "integration;conformance"
     )
   endforeach()
@@ -466,9 +499,10 @@ include(CTest)
     COMMAND ${Python3_EXECUTABLE} -I
       ${CMAKE_CURRENT_SOURCE_DIR}/tools/conformance_gen_authz.py --check
   )
+  us_scaled_timeout(_authz_timeout 120)
   set_tests_properties(conformance_authz_matrix_check PROPERTIES
-    ENVIRONMENT "SIMPLE_HTTP_BIN=$<TARGET_FILE:url_shortener>"
-    TIMEOUT 120
+    ENVIRONMENT "SIMPLE_HTTP_BIN=$<TARGET_FILE:url_shortener>;URLSHORTENER_TEST_TIMEOUT_SCALE=${URLSHORTENER_TEST_TIMEOUT_SCALE}"
+    TIMEOUT ${_authz_timeout}
     LABELS "integration;conformance"
   )
 
@@ -585,9 +619,10 @@ include(CTest)
       NAME http_client_test
       COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/http_client_test/http_client_test.py
     )
+    us_scaled_timeout(_http_client_timeout 180)
     set_tests_properties(http_client_test PROPERTIES
-      ENVIRONMENT "SIMPLE_HTTP_BIN=$<TARGET_FILE:url_shortener>"
-      TIMEOUT 180
+      ENVIRONMENT "SIMPLE_HTTP_BIN=$<TARGET_FILE:url_shortener>;URLSHORTENER_TEST_TIMEOUT_SCALE=${URLSHORTENER_TEST_TIMEOUT_SCALE}"
+      TIMEOUT ${_http_client_timeout}
       LABELS "integration"
     )
   endif()
@@ -613,10 +648,11 @@ include(CTest)
                   ${e2e_section}
           WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
         )
+        us_scaled_timeout(_e2e_timeout 120)
         set_tests_properties(e2e_${e2e_section} PROPERTIES
           LABELS "e2e"
           RUN_SERIAL TRUE
-          TIMEOUT 120
+          TIMEOUT ${_e2e_timeout}
         )
       endforeach()
 
@@ -631,11 +667,12 @@ include(CTest)
                   ${CMAKE_CURRENT_SOURCE_DIR}/tests/e2e/scripts/sections/${cli_section}.sh
           WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
         )
+        us_scaled_timeout(_e2e_cli_timeout 30)
         set_tests_properties(e2e_${cli_section} PROPERTIES
-          ENVIRONMENT "URLSHORTENER_BIN=$<TARGET_FILE:url_shortener>"
+          ENVIRONMENT "URLSHORTENER_BIN=$<TARGET_FILE:url_shortener>;URLSHORTENER_TEST_TIMEOUT_SCALE=${URLSHORTENER_TEST_TIMEOUT_SCALE}"
           LABELS "e2e"
           RUN_SERIAL TRUE
-          TIMEOUT 30
+          TIMEOUT ${_e2e_cli_timeout}
         )
       endforeach()
     else()

@@ -80,6 +80,46 @@ _REPO_ROOT = _THIS.parents[3]
 
 
 # ---------------------------------------------------------------------------
+# Sanitizer-aware timeout scaling
+# ---------------------------------------------------------------------------
+
+
+def timeout_scale() -> float:
+    """Return the multiplier applied to this harness's hard-coded timeouts.
+
+    A ThreadSanitizer/AddressSanitizer build of ``url_shortener`` runs the
+    spawned child process several times slower, so its own fixed
+    ``subprocess``/socket/readiness timeouts (e.g. ``_SEND_TIMEOUT_S``) fire
+    before CTest's per-test ``TIMEOUT`` and surface as spurious failures. CMake
+    detects the sanitizer flags, multiplies the CTest ``TIMEOUT`` property by a
+    factor, and exports the same factor as ``URLSHORTENER_TEST_TIMEOUT_SCALE``
+    so each harness widens its internal deadlines in lockstep. ``python3 -I``
+    ignores only ``PYTHON*`` environment variables, so this non-prefixed one is
+    still visible.
+
+    @return The scale as a float. A missing, empty, non-numeric or
+            non-positive ``URLSHORTENER_TEST_TIMEOUT_SCALE`` yields ``1.0`` so
+            that normal (non-sanitizer) builds are left completely unchanged.
+    """
+    raw = os.environ.get("URLSHORTENER_TEST_TIMEOUT_SCALE", "")
+    try:
+        value = float(raw)
+    except (TypeError, ValueError):
+        return 1.0
+    return value if value > 0.0 else 1.0
+
+
+def scale_timeout(base_seconds: float) -> float:
+    """Scale a base timeout (in seconds) by :func:`timeout_scale`.
+
+    @param base_seconds The harness's nominal timeout for a normal build.
+    @return ``base_seconds * timeout_scale()``; equals ``base_seconds`` exactly
+            when no scaling is configured.
+    """
+    return base_seconds * timeout_scale()
+
+
+# ---------------------------------------------------------------------------
 # Transport capabilities and the catalog status/exit tables
 # ---------------------------------------------------------------------------
 
