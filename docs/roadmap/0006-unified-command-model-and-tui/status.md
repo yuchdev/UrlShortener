@@ -1066,3 +1066,50 @@ Follow-ups, not blocking:
 - The 0006 test-gap P2/P3 items.
 - Action SHA pinning.
 - The carried 06.0 items.
+
+### 2026-11-24 - Post-close decisions resolved
+
+The user ruled on the open decisions above (AskUserQuestion, 2026-11-23).
+Every change is on the milestone branch; none is merged to `master` (user
+ruling: no merge).
+
+| # | Decision | Ruling | Commit(s) |
+|---|---|---|---|
+| 1 | `maps_to` CLI sugar | Remove the CLI entries that do not exist | `1dbce13` |
+| 2 | FATAL usage errors | Fixed: `UsageError`, exit 2, sanitized `error:` line | `2810b1b`, `b9fb70b` |
+| 3 | Wrong HTTP method | 405 + `Allow`, body code stays `invalid_method` | `c42cd1e` |
+| 4 | Lenient timestamps | Harden to strict RFC 3339 Zulu | `99884fa`, `ebebf62` |
+| 6 | `SanitizeField` CR/LF | Fixed: control bytes escaped | `166deea` |
+| 7 | PR #74 `Location` byte scan | Backported to `fix/ssrf-private-target-bypass` | `1617f7c` (local, not pushed) |
+
+**Follow-ups closed:**
+
+- TSan-aware timeouts (`3ec0466`). Conformance 10/11/13/14 now pass under TSan.
+- Postgres per-process schema isolation (`4a09293`). No server is available
+  locally; it needs a CI run with `URL_SHORTENER_TEST_POSTGRES_DSN` set.
+- Action SHA pinning (`d82599b`).
+
+**Gate:**
+
+- Full suite at `b9fb70b`: 482/482 (`unit|contract|integration|e2e|conformance`).
+- Review: `/pr-review` APPROVE. Feature LGTM; security PASS. See
+  [0006-post-close-pr-review.md](/docs/reviews/0006-post-close-pr-review.md).
+
+**Still open:**
+
+- Item 5: record the redirect perf baseline on the Release CI runner.
+- The TUI smoke on Windows, Linux, conhost and tmux.
+- `currentTimestamp()` clock injection.
+- The test-gap P2/P3 items.
+- The 0002 residual mentions.
+- The carried 06.0 items.
+
+**Review follow-ups (LOW):**
+
+- The sanitizer detection reads only `CMAKE_CXX_FLAGS`.
+- C1 bytes are unescaped in log values.
+- A conformance case for the gated-off 405 path.
+- A negative case for a timestamp year that is not 4 digits.
+
+**PR #74:** its commit `1617f7c` carries a wrong co-author trailer. Reword
+it before pushing.
