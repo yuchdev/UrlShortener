@@ -1,0 +1,19 @@
+{
+  "corpus_version": 1,
+  "suite": "neg",
+  "description": "RULE-3 negative: a step carries both request and raw_request.",
+  "cases": [
+    {
+      "name": "neg_request_and_raw",
+      "doc": "both envelope and raw text present",
+      "command": "link.get",
+      "steps": [
+        {
+          "request": { "v": 1, "command": "link.get", "args": { "slug": "a" } },
+          "raw_request": "{\"v\":1,\"command\":\"link.get\"}",
+          "expect": { "ok": true, "result": { "slug": "a" }, "match": "subset" }
+        }
+      ]
+    }
+  ]
+}

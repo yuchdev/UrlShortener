@@ -35,8 +35,9 @@ class LinkUpdateNotFoundAndInvalidInputTest(CliIntegrationBase):
         Given an empty working directory (fresh, unseeded CLI store).
         When:  url_shortener link update --slug <various>
         Then:  a valid slug that does not exist exits 1 (not-found) with an
-               empty stdout and a diagnostic on stderr; malformed invocations
-               exit non-zero without emitting a link JSON.
+               empty stdout and a diagnostic on stderr; a malformed invocation
+               (missing --slug, a non-boolean --enabled) is a CLI usage error
+               and exits 2 without emitting a link JSON.
 
     Why this matters:
         update mutates a stored link's lifecycle (enabled/expiry/tags). If a
@@ -104,8 +105,8 @@ class LinkUpdateNotFoundAndInvalidInputTest(CliIntegrationBase):
                 cwd=tmpdir,
             )
             self.assertEqual(
-                proc.returncode, 1,
-                "Expected exit 1 when --slug is missing",
+                proc.returncode, 2,
+                "Expected usage-error exit 2 when --slug is missing",
             )
 
     def test_update_invalid_enabled_bool_is_rejected(self):
@@ -119,8 +120,8 @@ class LinkUpdateNotFoundAndInvalidInputTest(CliIntegrationBase):
                 cwd=tmpdir,
             )
             self.assertEqual(
-                proc.returncode, 1,
-                "Expected exit 1 for a non-boolean --enabled value",
+                proc.returncode, 2,
+                "Expected usage-error exit 2 for a non-boolean --enabled value",
             )
             self.assertEqual(
                 proc.stdout.strip(), "",

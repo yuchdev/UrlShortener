@@ -79,6 +79,9 @@ BOOST_AUTO_TEST_CASE(route_label_preserves_existing_labels)
     BOOST_TEST(routeLabelForTarget("/api/v1/links") == "api_links");
     BOOST_TEST(routeLabelForTarget("/api/v1/links/abc/stats") == "api_links");
     BOOST_TEST(routeLabelForTarget("/api/v1/short-urls/abc") == "api_links");
+    // The generic command/jobs surface classifies as api_commands (subtask 09).
+    BOOST_TEST(routeLabelForTarget("/api/v1/commands") == "api_commands");
+    BOOST_TEST(routeLabelForTarget("/api/v1/jobs/j-1") == "api_commands");
     BOOST_TEST(routeLabelForTarget("/abc123") == "redirect_root");
     BOOST_TEST(routeLabelForTarget("/") == "app");
 }
@@ -132,6 +135,7 @@ BOOST_AUTO_TEST_CASE(route_registry_labels_are_known_values)
                            || route.route_label == "readyz"
                            || route.route_label == "redirect_prefixed"
                            || route.route_label == "api_links"
+                           || route.route_label == "api_commands"
                            || route.route_label == "redirect_root"
                            || route.route_label == "app";
         BOOST_TEST(known, "unexpected route_label: " << route.route_label);

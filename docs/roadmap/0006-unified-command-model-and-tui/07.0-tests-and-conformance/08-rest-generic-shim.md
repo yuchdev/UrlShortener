@@ -96,3 +96,21 @@ ctest --test-dir cmake-build -R "^conformance_13_rest_generic_corpus$" --output-
 
 - CSRF/cookie behavior (Milestone 0002) is not tested here.
 - Risk: per-case server start makes the run slow (about 150 cases x 0.4 s); permitted fallback is grouping cases by `(backend, caller-set)` and restarting only when it changes, never sharing a store between cases.
+
+## Resolved decisions (as built, 2026-11-20)
+
+- **Role strategy:** one server process per role, per case. The Admin server
+  is started with the real operator flag `--command-api-role admin` and is
+  reached only over loopback (`127.0.0.1`), because `command_api_caller` grants
+  Admin only to a loopback peer. The User server keeps the default role. No
+  blanket admin. Implemented in `tests/conformance/py/conformance_rest.py`
+  (`a5d2405`, `2452669`).
+- **File paths:** REST stays default-deny (`allow_paths=false`, `path` ->
+  `unsupported`). The shim passes no path flags.
+- **Bind address:** `HttpServer` always binds `0.0.0.0`, and there is no
+  bind-host flag. During the test window any local loopback process gets Admin
+  on the per-case throwaway DB. A product bind-address option is raised as a
+  07.0 close decision.
+- **Environment:** every spawned child uses `conformance_env()`, which strips
+  `SHORTENER_*` / `URL_SHORTENER_*` overrides, including the private-target
+  switch and the analytics salt.

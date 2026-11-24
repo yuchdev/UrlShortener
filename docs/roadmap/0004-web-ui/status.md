@@ -13,7 +13,8 @@ Tracks progress against [plan.md](/docs/roadmap/0004-web-ui/plan.md).
 
 **Legend:** ✅ Complete · 🔶 In progress / partial · ⬜ Not started
 
-**Current gate status:** 0% implemented. This milestone is design-complete
+**Current gate status:** 0% implemented. Soft dependency: Milestone 0006
+(runs first; no code blocker). This milestone is design-complete
 (4 tasks decomposed into 14 subtasks) but has no code yet. Verified against
 the codebase as of 2026-09-24: there is no `web/app/` and no `package.json`
 in the repository; the three `/api/v1/links` endpoints this milestone reuses
@@ -47,7 +48,7 @@ exactly: React + TypeScript + Vite + TanStack Router/Query + React Hook Form
   public and no-auth; the UI consumes them directly and pins their response
   shapes with Zod. No new *read* endpoint is created. See
   [plan.md SC1](/docs/roadmap/0004-web-ui/plan.md) and
-  [00-decision-record.md §3](/docs/roadmap/0004-web-ui/00-decision-record.md).
+  00-decision-record.md §3 (`docs/roadmap/0004-web-ui/00-decision-record.md`, planned, not yet written).
 - **Relationship to 0002.** This milestone borrows 0002's *documented*
   static-SPA-under-a-path-prefix pattern for serving `/app`, but 0002 is
   itself unimplemented (no `web/admin/`, no `src/admin/`). 0004 references

@@ -1,0 +1,19 @@
+{
+  "items": [
+    {
+      "slug": "docs",
+      "target_url": "https://example.com/docs",
+      "status": "active",
+      "clicks": 12044,
+      "expires_at": null
+    },
+    {
+      "slug": "promo",
+      "target_url": "https://shop.example.com/promo",
+      "status": "disabled",
+      "clicks": 4112
+    }
+  ],
+  "total": 2,
+  "page": 1
+}

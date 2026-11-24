@@ -1,0 +1,22 @@
+{
+  "corpus_version": 1,
+  "suite": "neg",
+  "description": "RULE-13 negative: a non-NFC string (decomposed e + combining acute) under expect.result.",
+  "cases": [
+    {
+      "name": "neg_non_nfc_string",
+      "doc": "a matched string must already be Unicode NFC",
+      "command": "link.get",
+      "steps": [
+        {
+          "request": { "v": 1, "command": "link.get", "args": { "slug": "a" } },
+          "expect": {
+            "ok": true,
+            "result": { "slug": "café" },
+            "match": "subset"
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -4,7 +4,7 @@
 **State:** ⬜ Not started
 **Depends on:** none (integrates against subtask 03's endpoint contract,
 which is fixed by
-[04-admin-api-contract.md §9](/docs/roadmap/0002-admin_console/04-admin-api-contract.md))
+04-admin-api-contract.md §9 (`docs/roadmap/0002-admin_console/04-admin-api-contract.md`, planned, not yet written))
 **Blocks:** 05
 
 ## Objective
@@ -37,7 +37,7 @@ web/public-tracker/src/redirect/sendBeacon.ts
 
 1. `FingerprintEnvelope.ts` mirrors the backend `ClientFingerprintEnvelope`/
    `FingerprintSignals` TypeScript shapes exactly (
-   [03-fingerprint-and-suspicion-model.md §6](/docs/roadmap/0002-admin_console/03-fingerprint-and-suspicion-model.md)).
+   03-fingerprint-and-suspicion-model.md §6 (`docs/roadmap/0002-admin_console/03-fingerprint-and-suspicion-model.md`, planned, not yet written)).
 2. `FingerprintProvider.ts` defines a client-side provider interface with
    implementations `FingerprintProClient`, `ThumbmarkClient`,
    `FingerprintJsOssClient`, `NoopFingerprintClient` - mirroring the backend
@@ -47,7 +47,7 @@ web/public-tracker/src/redirect/sendBeacon.ts
    normalize into the envelope shape, POST to
    `/api/v1/tracking/fingerprint-event`.
 4. `enhancedRedirect.ts` implements the enhanced-analytics collection mode (
-   [03-fingerprint-and-suspicion-model.md §5.2](/docs/roadmap/0002-admin_console/03-fingerprint-and-suspicion-model.md)):
+   03-fingerprint-and-suspicion-model.md §5.2 (`docs/roadmap/0002-admin_console/03-fingerprint-and-suspicion-model.md`, planned, not yet written)):
    starts fingerprint collection, sends the envelope, then redirects to the
    target URL after collection completes or a strict timeout elapses
    (default 150-300ms, configurable, matching
@@ -57,7 +57,7 @@ web/public-tracker/src/redirect/sendBeacon.ts
    `navigator.sendBeacon()` with a `fetch(..., {keepalive:true})` fallback,
    for `POST /api/v1/tracking/redirect-beacon`; beacon success/failure must
    never block or affect redirect correctness (
-   [03-fingerprint-and-suspicion-model.md §5.3](/docs/roadmap/0002-admin_console/03-fingerprint-and-suspicion-model.md)).
+   03-fingerprint-and-suspicion-model.md §5.3 (`docs/roadmap/0002-admin_console/03-fingerprint-and-suspicion-model.md`, planned, not yet written)).
 
 ## Constraints
 

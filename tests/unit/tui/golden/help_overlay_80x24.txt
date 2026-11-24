@@ -1,0 +1,23 @@
+
+
+
+
+
+
+
+
+                             ╭Help────────────────╮
+                             │F1 / ?          help│
+                             │q / Esc         back│
+                             │Ctrl-C          quit│
+                             │j/k             move│
+                             │Enter           open│
+                             │n               new │
+                             ╰────────────────────╯
+
+
+
+
+
+
+

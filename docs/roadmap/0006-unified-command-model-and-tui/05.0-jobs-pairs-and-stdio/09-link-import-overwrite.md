@@ -55,6 +55,8 @@ Behavior:
 
 Import wiring: for a row whose `CreateLink` result is `slug_conflict` and policy is `overwrite`: the row must have an explicit slug (a generated slug cannot conflict), call `ReplaceLinkTarget`; success -> count it under a NEW additive result field `"overwritten":n` (not folded into `created`); failure -> `failed++` with the code. REST callers still get `unsupported` at factory time.
 
+Dry-run with `overwrite` stays consistent with 08 (T-91): a dry-run runs **synchronously on the request thread** with a `NoopJobContext` and returns a `result` (not a `job`); an overwrite candidate is counted under `overwritten` via the non-persisting validation path (`ValidateCreateLink`-style checks of the new target plus the in-file duplicate-slug set) and **calls neither `CreateLink` nor `ReplaceLinkTarget`** - nothing is mutated.
+
 ## Implementation steps
 
 1. Add the command struct and method declaration with a Doxygen comment matching its siblings.
@@ -79,7 +81,7 @@ Windows/multi-config: `--config Debug` / `-C Debug`.
 | Test file | Target | Label | Cases |
 |---|---|---|---|
 | `tests/unit/app/60_link_command_service_replace_target.cpp` | `app__60_link_command_service_replace_target` | unit | replaces target and bumps `updated_at`; other fields untouched; invalid URL -> `invalid_url`; private host -> `invalid_url` (and allowed when `shortener_allow_private_targets=true`); unknown slug -> `not_found`; soft-deleted slug -> `slug_conflict`, record unchanged; store `update` failure -> `storage_failure`; cache invalidated (fake records `invalidateCache`) |
-| `tests/unit/commands/58_link_import_overwrite.cpp` | `commands__58_link_import_overwrite` | unit | import with `overwrite`: existing slug gets the new target and is counted `overwritten`; new slug still `created`; deleted slug -> `failed`/`slug_conflict`; row without slug never overwrites; dry-run reports `overwritten` count and changes nothing; REST caller -> `unsupported`; `skip` and `fail` behavior from 08 unchanged |
+| `tests/unit/commands/58_link_import_overwrite.cpp` | `commands__58_link_import_overwrite` | unit | import with `overwrite`: existing slug gets the new target and is counted `overwritten`; new slug still `created`; deleted slug -> `failed`/`slug_conflict`; row without slug never overwrites; dry-run with `overwrite` returns a synchronous `result` (not a `job`), reports the `overwritten` count, calls neither `CreateLink` nor `ReplaceLinkTarget`, and leaves the store unchanged (T-91); REST caller -> `unsupported`; `skip` and `fail` behavior from 08 unchanged |
 
 Manual check: import a CSV twice with `skip` then `overwrite` through the CLI and confirm `link get` shows the new target.
 

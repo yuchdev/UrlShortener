@@ -1,0 +1,163 @@
+#pragma once
+
+#include <cstdint>
+#include <optional>
+#include <string>
+#include <vector>
+
+namespace url_shortener::tui
+{
+
+/**
+ * @brief One top-level object member, as a decoded key and the value's exact
+ * raw source token.
+ *
+ * Produced by @ref object_fields. The value is kept verbatim (quotes/braces
+ * included) so a caller can re-emit or classify it without re-tokenizing JSON
+ * itself (contract C9).
+ */
+struct JsonField
+{
+    ///< The member key, decoded from its JSON string token to UTF-8.
+    std::string key;
+
+    ///< The member value's exact source text (a string keeps its quotes; a
+    ///< container keeps its full brace/bracket text).
+    std::string raw_value;
+};
+
+/**
+ * @brief JSON *view* helpers for reading and re-indenting command `result`
+ * payloads (ADR 0003, contract C9).
+ *
+ * Every function here is a thin wrapper over the one sanctioned scanner
+ * (`commands/json_scan.hpp`, Task 01.0 subtask 01): none tokenizes JSON
+ * itself. They are read-only accessors - they never validate a schema, mutate
+ * input, or sanitize for a terminal (T-110 sanitization is the render sinks'
+ * job). All of them accept arbitrary, possibly-malformed input and report a
+ * miss as `std::nullopt` / empty / verbatim rather than throwing. Inputs are
+ * scanned under an 8 MiB byte cap so a large `link.list` page is accepted while
+ * hostile input stays bounded (threat model T-121).
+ */
+
+/**
+ * @brief Returns the raw JSON source text of one top-level field.
+ *
+ * @param json A JSON object text to read.
+ * @param field The field name to look up.
+ * @return The field value's exact source token (quotes for a string,
+ * brace/bracket to brace/bracket for a container); `std::nullopt` when @p json
+ * is not a scannable object within limits or has no such field.
+ */
+std::optional<std::string> raw_field(const std::string& json,
+                                     const std::string& field);
+
+/**
+ * @brief Splits a JSON array into the raw source text of its elements.
+ *
+ * Delegates to `commands::scan_array`, so quotes, braces and brackets inside
+ * string elements never mis-split the array.
+ *
+ * @param raw_array A JSON array text (e.g. a `result.items` value).
+ * @return The elements' raw source tokens in order; an empty vector when
+ * @p raw_array is not a scannable array within limits (including `[]`).
+ */
+std::vector<std::string> split_array(const std::string& raw_array);
+
+/**
+ * @brief Reads a top-level field as a decoded string.
+ *
+ * @param json A JSON object text to read.
+ * @param field The field name to look up.
+ * @return The decoded UTF-8 string when the field is present with a string
+ * value; `std::nullopt` when @p json is not a scannable object, the field is
+ * absent, its value is not a string, or the token fails to decode.
+ */
+std::optional<std::string> get_string(const std::string& json,
+                                      const std::string& field);
+
+/**
+ * @brief Reads a top-level field as a signed 64-bit integer.
+ *
+ * @param json A JSON object text to read.
+ * @param field The field name to look up.
+ * @return The parsed value when the field is present as a JSON integer token
+ * fitting `std::int64_t`; `std::nullopt` when @p json is not a scannable
+ * object, the field is absent, its value is not a number, is fractional or has
+ * an exponent, or is out of range.
+ */
+std::optional<std::int64_t> get_int(const std::string& json,
+                                    const std::string& field);
+
+/**
+ * @brief Reads a top-level field as a boolean.
+ *
+ * @param json A JSON object text to read.
+ * @param field The field name to look up.
+ * @return `true`/`false` when the field is present as a JSON boolean;
+ * `std::nullopt` when @p json is not a scannable object, the field is absent,
+ * or its value is not a boolean.
+ */
+std::optional<bool> get_bool(const std::string& json, const std::string& field);
+
+/**
+ * @brief Re-indents a JSON value for display without reordering or altering it.
+ *
+ * Walks the value with `commands::scan_object`/`scan_array` recursively and
+ * re-emits it with @p indent spaces per level. Member order is preserved and
+ * string/number tokens are emitted verbatim, so the only change is whitespace
+ * (the output is golden-testable). Recursion is bounded by the scanner depth
+ * cap and the function never throws: a value that is not well-formed within
+ * limits (including trailing data) is returned verbatim.
+ *
+ * @param json The JSON value text to pretty-print.
+ * @param indent Spaces of indentation per nesting level; negatives are treated
+ * as `0` and the width is bounded for defense in depth. Defaults to `2`.
+ * @return The re-indented text, or @p json unchanged when it is not a single
+ * well-formed JSON value within limits.
+ */
+std::string pretty_print(const std::string& json, int indent = 2);
+
+/**
+ * @brief Re-serializes a raw object text into a compact, canonical object,
+ * accepting it only when it is exactly one well-formed JSON object.
+ *
+ * The one sanctioned way for TUI code to turn an operator-typed raw-JSON `args`
+ * buffer (the Command Palette's `Ctrl-J` escape hatch, subtask 06.0/11) into the
+ * `args` the registry receives, without tokenizing JSON itself (contract C9) and
+ * without a verbatim splice. It wraps @ref object_fields (which wraps
+ * `commands::scan_object`), re-escaping each verified key with
+ * `url_shortener::jsonString` and copying each value's validated raw token, so a
+ * sibling-key injection such as `{}, "status":"active"` or malformed text such
+ * as `{"a":}` is rejected rather than emitted. Mirrors the private
+ * `reserialize_object` of `form_model.cpp` (subtask 07) so both the generated
+ * object field and the palette raw-JSON path share one validator.
+ *
+ * @param text The candidate raw object text (possibly with surrounding
+ * whitespace); treated as untrusted.
+ * @return The compact re-serialized object (e.g. `{"a":1}`, or `{}` for a
+ * verified empty object); `std::nullopt` when @p text is not exactly one
+ * well-formed object within the view limits (malformed, a top-level duplicate
+ * key, trailing data after the closing brace, over-deep nesting, or not an
+ * object at all).
+ */
+std::optional<std::string> reserialize_object(const std::string& text);
+
+/**
+ * @brief Lists the top-level members of a JSON object in source order.
+ *
+ * The one sanctioned way for TUI code to iterate an object's members without
+ * tokenizing JSON itself (contract C9): it wraps `commands::scan_object` so a
+ * caller (e.g. the `Equivalent:` renderer) can walk `args` to redact or re-emit
+ * fields. Keys inside nested objects or string values are never surfaced as
+ * top-level members, and duplicate top-level keys yield an empty result (the
+ * scanner rejects them).
+ *
+ * @param json A JSON object text to read.
+ * @return One @ref JsonField per top-level member in source order; an empty
+ * vector when @p json is not a scannable object within limits (including `{}`
+ * and any malformed input).
+ */
+std::vector<JsonField> object_fields(const std::string& json);
+
+}  // namespace url_shortener::tui

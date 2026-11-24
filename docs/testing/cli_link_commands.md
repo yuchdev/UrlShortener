@@ -22,24 +22,27 @@ update / delete / enable / disable / restore / preview / stats)
 
 CLI mode **never** touches `uri.txt`. `uri.txt` is `UriMapSingleton`'s legacy
 key-value store for the generic Fallback routes (`GET`/`POST`/`DELETE /{path}`,
-`/`); link records live in `linkRepository()`, a separate process-local
-in-memory singleton. `main.cpp` dispatches to CLI mode before the `uri.txt`
-load, and `DispatchLinkCommand` never calls `UriMapSingleton::getInstance()`.
+`/`); link records go through `LinkBackend`, a separate component initialized
+at startup from `--storage-config`. `DispatchLinkCommand` and the `cmd`/
+`serve-stdio` entry points never call `UriMapSingleton::getInstance()`.
 
-`linkRepository()` (`src/storage/link_repository.cpp`) is a function-local
-`static InMemoryMetadataRepository`. Its lifetime is the process. **Two
-separate CLI process invocations do NOT share state**: a `link create` in one
-invocation is invisible to a `link get` in a second, separately-launched
-process. Each CLI invocation begins with an empty link store.
+The backend selected at startup determines whether state is shared across
+invocations:
 
-In practice this means the CLI is **not suitable** for create-then-read
-scripting across separate process invocations with the current in-memory
-backend. Within a single process invocation the store is consistent (e.g. a
-unit test that calls create and then get within the same process observes both
-records), but that is not observable from separate shell invocations. This is
-a documented limitation, not a bug: reconciling the two storage paths is out
-of scope for this milestone (see
-[`plan.md`](/docs/roadmap/0003-cli_rest_interfaces/plan.md)).
+- **In-memory (default, no `--storage-config`):** `LinkBackend` constructs an
+  `InMemoryMetadataRepository`. Its lifetime is the process. **Two separate CLI
+  process invocations do NOT share state**: a `link create` in one invocation is
+  invisible to a `link get` in a second, separately-launched process. Single
+  invocations (or unit tests running in-process) observe a consistent store.
+- **SQLite backend (`--storage-config <file>`):** link records are persisted in
+  the configured `.sqlite` file. Two invocations using the same database file
+  **do share state**: a `link create` in one shell invocation is visible to
+  a `link get` in a later invocation (see integration test
+  `cli_18_server_and_cli_share_sqlite`). Use an isolated temp directory per test
+  to avoid state leakage between cases.
+
+The manual test cases below are written for the **in-memory default** unless
+otherwise noted. Cross-invocation happy-path tests require a SQLite backend.
 
 ---
 
@@ -108,21 +111,22 @@ exit `1` via `main.cpp`'s top-level `catch` block, before dispatch is reached.
 
 ---
 
-### 3. `link create` then `link get` – single-process state
+### 3. `link create` then `link get` – cross-invocation state
 
-Because two separate CLI processes do not share state (see Storage above), the
-create-then-get round trip is observable only within the same process. The
-integration test `dispatch_create_then_get_roundtrip_same_process` (unit,
-`cli__02_cli_dispatch_reachable`) confirms this in-process. The cross-process
-shell sequence below is expected to return `not_found` (exit 1) on the `get`:
+With the **in-memory backend** (default), two separate CLI processes do not
+share state. The integration test `dispatch_create_then_get_roundtrip_same_process`
+(unit, `cli__02_cli_dispatch_reachable`) confirms the in-process round trip.
+The cross-process shell sequence below is expected to return `not_found`
+(exit 1) on the `get` when no `--storage-config` is supplied:
 
 ```bash
 ./url_shortener link create --url https://persist.example.com --slug persist-test
-./url_shortener link get --slug persist-test  # exits 1 – empty store, not a bug
+./url_shortener link get --slug persist-test  # exits 1 with in-memory backend
 ```
 
-Cross-process create-then-read is intentionally untestable with the current
-in-memory backend.
+With a **SQLite backend**, state is durable. Supply the same `--storage-config`
+to both invocations and the `get` succeeds. The integration test
+`cli_03_link_create_then_get_persists_state` covers this path.
 
 ---
 
@@ -210,11 +214,12 @@ in-memory backend.
 
 ### 9. `link create` – duplicate slug conflict
 
-Because the in-memory store is per-process, a conflict is observable only when
-both creates happen in the same process (e.g., via the REST server or in-process
-test). From separate CLI invocations the second `create` sees an empty store and
-exits `0`. The REST path and the `slug_conflict` (exit 3) contract are covered
-by the characterization tests in `tests/unit/http/10_link_handlers.cpp`.
+With the in-memory backend, a conflict is observable only when both creates
+happen in the same process (e.g., via the REST server or in-process test). From
+separate CLI invocations with the in-memory backend the second `create` sees an
+empty store and exits `0`. With a SQLite backend, the conflict is reproducible
+across invocations. The REST path and the `slug_conflict` (exit 3) contract are
+covered by the characterization tests in `tests/unit/http/10_link_handlers.cpp`.
 
 ---
 

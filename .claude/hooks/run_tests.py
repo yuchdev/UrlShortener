@@ -35,6 +35,9 @@ from _common import REPO_ROOT, allow, append_log, block, read_event
 TIMEOUT_SECONDS = 900
 CXX_SUFFIXES = {".c", ".cc", ".cpp", ".cxx", ".h", ".hh", ".hpp", ".hxx", ".ipp", ".inl"}
 BUILD_DIR_CANDIDATES = ("cmake-build", "build")
+# Directory used as an atomic mutex by parallel agents and this hook; see
+# the "Parallel agent build lock" project memory.
+BUILD_LOCK_NAME = ".build.lock"
 
 
 def _run(cmd: list[str]) -> Optional[subprocess.CompletedProcess[str]]:
@@ -80,12 +83,43 @@ def _changed_cxx() -> list[str]:
     return out
 
 
+def _busy_build_process() -> Optional[str]:
+    """Return a description of a running build/test process, or None.
+
+    A second ``cmake --build`` in the same build directory races the first one
+    (corrupting static archives and ninja's ``.ninja_log``/``.ninja_deps``), and
+    ``clang-format -i`` would rewrite files a background agent is still editing.
+    So while any ninja / ``cmake --build`` / ``ctest`` process is alive, the gate
+    skips instead of piling on. Detection is best-effort via ``ps``; if ``ps`` is
+    unavailable the gate runs as before.
+    """
+    proc = _run(["ps", "-axo", "command"])
+    if proc is None or proc.returncode != 0:
+        return None
+    for line in proc.stdout.splitlines()[1:]:
+        tokens = line.split()
+        if not tokens:
+            continue
+        exe = Path(tokens[0]).name
+        if exe == "ninja":
+            return line.strip()
+        if exe == "cmake" and "--build" in tokens:
+            return line.strip()
+        if exe == "ctest" and "--test-dir" in tokens:
+            return line.strip()
+    return None
+
+
 def main() -> None:
     event = read_event()
     if event.get("stop_hook_active"):
         allow()
     if os.environ.get("URLSHORTENER_SKIP_TESTS") == "1":
         append_log("tests.log", "SKIPPED (URLSHORTENER_SKIP_TESTS=1)")
+        allow()
+    busy = _busy_build_process()
+    if busy is not None:
+        append_log("tests.log", f"SKIPPED (build/test already running: {busy[:120]})")
         allow()
 
     # Step 1: format changed C/C++ files (fix-in-place; never blocks on its own).
@@ -98,6 +132,30 @@ def main() -> None:
         append_log("tests.log", "SKIPPED (no build directory; set URLSHORTENER_BUILD_DIR)")
         allow()
 
+    # Shared build lock: parallel agents serialize every build/test on this
+    # directory (an atomic mkdir). Between an agent's steps no build process is
+    # alive, so _busy_build_process() alone cannot see them; take the same lock
+    # here and skip if someone else holds it, so the gate never races them.
+    lock = build_dir / BUILD_LOCK_NAME
+    try:
+        lock.mkdir()
+    except FileExistsError:
+        append_log("tests.log", f"SKIPPED (build lock held: {lock})")
+        allow()
+    except OSError:
+        lock = None
+    try:
+        _run_gate(build_dir)
+    finally:
+        if lock is not None:
+            try:
+                lock.rmdir()
+            except OSError:
+                pass
+
+
+def _run_gate(build_dir: Path) -> None:
+    """Run the build + unit-test steps; block on failure, allow on success."""
     steps = [
         ("build", ["cmake", "--build", str(build_dir), "--config", "Debug"]),
         ("ctest unit", ["ctest", "--test-dir", str(build_dir), "-C", "Debug",

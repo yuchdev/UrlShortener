@@ -1,7 +1,7 @@
 # Task 05.0 - Jobs, pair import/export and stdio transport
 
 **Parent milestone:** [Milestone 0006 - Unified Command Model and TUI](/docs/roadmap/0006-unified-command-model-and-tui/plan.md)
-**Status:** ⬜ Not started
+**Status:** ✅ Complete
 **Depends on:** 01.0 (envelope 03-04, registry 06-08), 03.0 (codec/link commands 05-07, list ports 01/12, `link.list` 14, table port 15, runtime builder 18); 02.0/12 (shutdown order in `main.cpp`); 04.0/02, 04.0/08, 04.0/09 only for subtask 11
 
 ## Scope
@@ -40,27 +40,27 @@ Decisions made in this task: `JobRunner` does not reuse `AnalyticsWorker`/`Bound
 
 | # | Document | Status | Depends on | Blocks |
 |---|----------|--------|------------|--------|
-| 01 | [Job types and JobStore](01-job-types-and-store.md) | ⬜ Not started | none | 02, 05 |
-| 02 | [JobRunner worker pool, queue, cancel](02-job-runner-worker-pool.md) | ⬜ Not started | 01, 01.0/08 | 03, 04, 05, 21 |
-| 03 | [JobRunner wait, drain, shutdown](03-job-runner-wait-and-shutdown.md) | ⬜ Not started | 02 | 15, 20 |
-| 04 | [Registry job dispatch](04-registry-job-dispatch.md) | ⬜ Not started | 02, 01.0/06, 01.0/07, 01.0/08 | 05, 08, 10, 20 |
-| 05 | [job.get, job.list, job.cancel](05-job-commands.md) | ⬜ Not started | 01, 02, 04 | 11, 20, 06.0/15, 06.0/16, 06.0/17 |
-| 06 | [Pair line parsers and error list](06-pair-line-parsers.md) | ⬜ Not started | none | 07, 08 |
-| 07 | [Pair file access and path rules](07-pair-file-access.md) | ⬜ Not started | 06 | 08, 10, 13 |
-| 08 | [link.import (skip/fail, dry-run)](08-link-import-command.md) | ⬜ Not started | 04, 06, 07, 03.0/05, 03.0/06, 03.0/07 | 09, 10, 20, 06.0/15, 06.0/20 |
-| 09 | [link.import overwrite](09-link-import-overwrite.md) | ⬜ Not started | 08 | 20 |
-| 10 | [link.export](10-link-export-command.md) | ⬜ Not started | 04, 07, 08, 03.0/01, 03.0/12, 03.0/14 | 20, 06.0/15, 06.0/20 |
-| 11 | [REST job routes](11-jobs-rest-routes.md) | ⬜ Not started | 05, 20, 04.0/02, 04.0/08, 04.0/09 | none |
-| 12 | [ITransportAdapter and factory](12-transport-adapter-interface.md) | ⬜ Not started | 01.0/06, 01.0/07 | 15, 17, 19 |
-| 13 | [NDJSON line reader](13-ndjson-line-reader.md) | ⬜ Not started | 07 | 14 |
-| 14 | [NdjsonSession](14-ndjson-session.md) | ⬜ Not started | 13, 01.0/01, 01.0/03, 01.0/04, 01.0/07 | 15, 19 |
-| 15 | [StdioAdapter, drain, shutdown](15-stdio-adapter-and-shutdown.md) | ⬜ Not started | 03, 12, 14 | 17, 19 |
-| 16 | [CLI parser: serve-stdio](16-cli-parser-serve-stdio.md) | ⬜ Not started | none | 17 |
-| 17 | [serve-stdio runtime wiring](17-serve-stdio-runtime-wiring.md) | ⬜ Not started | 12, 15, 16, 20 | 18 |
-| 18 | [serve-stdio process tests](18-serve-stdio-process-tests.md) | ⬜ Not started | 17 | 19, 07.0/07 |
-| 19 | [adding-a-transport guide](19-adding-a-transport-guide.md) | ⬜ Not started | 12, 14, 15, 18 | 08.0/04 |
-| 20 | [Process-wide job runtime in `build_command_runtime`](20-process-job-runtime-composition.md) | ⬜ Not started | 03, 04, 05, 08, 09, 10, 21, 02.0/12, 03.0/18 | 11, 17, 06.0/19 |
-| 21 | [`jobs` table source](21-jobs-table-source.md) | ⬜ Not started | 02, 03.0/15 | 20 |
+| 01 | [Job types and JobStore](01-job-types-and-store.md) | ✅ Complete | none | 02, 05 |
+| 02 | [JobRunner worker pool, queue, cancel](02-job-runner-worker-pool.md) | ✅ Complete | 01, 01.0/08 | 03, 04, 05, 21 |
+| 03 | [JobRunner wait, drain, shutdown](03-job-runner-wait-and-shutdown.md) | ✅ Complete | 02 | 15, 20 |
+| 04 | [Registry job dispatch](04-registry-job-dispatch.md) | ✅ Complete | 02, 01.0/06, 01.0/07, 01.0/08 | 05, 08, 10, 20 |
+| 05 | [job.get, job.list, job.cancel](05-job-commands.md) | ✅ Complete | 01, 02, 04 | 11, 20, 06.0/15, 06.0/16, 06.0/17 |
+| 06 | [Pair line parsers and error list](06-pair-line-parsers.md) | ✅ Complete | none | 07, 08 |
+| 07 | [Pair file access and path rules](07-pair-file-access.md) | ✅ Complete | 06 | 08, 10, 13 |
+| 08 | [link.import (skip/fail, dry-run)](08-link-import-command.md) | ✅ Complete | 04, 06, 07, 03.0/05, 03.0/06, 03.0/07 | 09, 10, 20, 06.0/15, 06.0/20 |
+| 09 | [link.import overwrite](09-link-import-overwrite.md) | ✅ Complete | 08 | 20 |
+| 10 | [link.export](10-link-export-command.md) | ✅ Complete | 04, 07, 08, 03.0/01, 03.0/12, 03.0/14 | 20, 06.0/15, 06.0/20 |
+| 11 | [REST job routes](11-jobs-rest-routes.md) | ✅ Complete | 05, 20, 04.0/02, 04.0/08, 04.0/09 | none |
+| 12 | [ITransportAdapter and factory](12-transport-adapter-interface.md) | ✅ Complete | 01.0/06, 01.0/07 | 15, 17, 19 |
+| 13 | [NDJSON line reader](13-ndjson-line-reader.md) | ✅ Complete | 07 | 14 |
+| 14 | [NdjsonSession](14-ndjson-session.md) | ✅ Complete | 13, 01.0/01, 01.0/03, 01.0/04, 01.0/07 | 15, 19 |
+| 15 | [StdioAdapter, drain, shutdown](15-stdio-adapter-and-shutdown.md) | ✅ Complete | 03, 12, 14 | 17, 19 |
+| 16 | [CLI parser: serve-stdio](16-cli-parser-serve-stdio.md) | ✅ Complete | none | 17 |
+| 17 | [serve-stdio runtime wiring](17-serve-stdio-runtime-wiring.md) | ✅ Complete | 12, 15, 16, 20 | 18 |
+| 18 | [serve-stdio process tests](18-serve-stdio-process-tests.md) | ✅ Complete | 17 | 19, 07.0/07 |
+| 19 | [adding-a-transport guide](19-adding-a-transport-guide.md) | ✅ Complete | 12, 14, 15, 18 | 08.0/04 |
+| 20 | [Process-wide job runtime in `build_command_runtime`](20-process-job-runtime-composition.md) | ✅ Complete | 03, 04, 05, 08, 09, 10, 21, 02.0/12, 03.0/18 | 11, 17, 06.0/19 |
+| 21 | [`jobs` table source](21-jobs-table-source.md) | ✅ Complete | 02, 03.0/15 | 20 |
 
 Parallel lanes once 01.0 and 03.0 are ready: A = 01-05, 21 (jobs), B = 06-10 (pairs, 08/10 need A's 04), C = 12-16 (transport; 15 needs 03); 20 joins A and B into the shared runtime, then 11 and 17. 06.0 (TUI) needs 05, 08, 10 (command contracts) and 20 (runtime, for 06.0/19).
 

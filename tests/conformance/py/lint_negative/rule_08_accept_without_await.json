@@ -1,0 +1,19 @@
+{
+  "corpus_version": 1,
+  "suite": "neg",
+  "description": "RULE-8 negative: expect_accept is present without await_job.",
+  "cases": [
+    {
+      "name": "neg_accept_without_await",
+      "doc": "accept expectation with no job to await",
+      "command": "link.get",
+      "steps": [
+        {
+          "request": { "v": 1, "command": "link.get", "args": { "slug": "a" } },
+          "expect": { "ok": true, "result": { "slug": "a" }, "match": "subset" },
+          "expect_accept": { "ok": true, "job": { "id": "<id>", "state": "queued" } }
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,24 @@
+╭ link.create  (command: link.create) ─────────────────────────────────────────╮
+│target_url*[                                        ]                         │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│[ Create ]  [ Cancel ]                                            validation: │
+│read-only session: link.create needs write access (not_authorized)            │
+├──────────────────────────────────────────────────────────────────────────────┤
+│Equivalent: url_shortener cmd link.create --json '{}'                         │
+╰──────────────────────────────────────────────────────────────────────────────╯

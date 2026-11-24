@@ -10,7 +10,11 @@
  */
 #pragma once
 
-#include <url_shortener/app/app_error.hpp>
+// Re-exported so callers that include only this header (`src/main.cpp`,
+// `tests/unit/cli/04_cli_exit_codes.cpp`) still reach `ExitCodeForAppError`.
+// The bridge lives in its own TU so `link_command_dispatch.cpp` need never name
+// `app::AppErrorCode` (Task 04.0 exit criterion 2).
+#include <url_shortener/cli/app_exit_code.hpp>
 
 /// Top-level server configuration (defined in url_shortener/core/config.hpp).
 struct ServerConfig;
@@ -22,42 +26,32 @@ struct LinkCliCommand;
 namespace url_shortener::cli
 {
 /**
- * @brief Map an application error code to the CLI process exit code.
- *
- * This is the CLI-side counterpart to link_handlers.cpp's
- * `statusForAppError`/`codeForAppError` (which map @ref app::AppErrorCode to an
- * HTTP status and error-code string). It is defined exactly once and every
- * `link <verb>` command routes its failure path through it, so exit codes stay
- * consistent across verbs and a script can branch on `$?` alone.
- *
- * Mapping (see the definition for the rationale of each group):
- * - @c none            -> 0 (not an error path; callers should not reach here)
- * - @c not_found       -> 1
- * - @c invalid_url, @c invalid_slug, @c invalid_field, @c reserved_slug -> 2
- * - @c slug_conflict   -> 3
- * - @c storage_failure, @c internal -> 4
- *
- * @param code Application error code carried by a failed service @c Result.
- * @return Non-negative process exit code (0 only for @c none).
- */
-int ExitCodeForAppError(app::AppErrorCode code);
-
-/**
  * @brief Execute a parsed `link <verb>` command in one-shot CLI mode.
  *
- * Invoked from `main()` when a leading `link <verb>` positional was
- * recognized, before any server-mode setup. It runs entirely in the calling
+ * Invoked from `main()` when a leading `link <verb>` positional was recognized.
+ * It converts the parsed DTO to an `args` object (subtask 14) and executes it
+ * through the one shared @ref url_shortener::commands::CommandRegistry as the
+ * local operator (`ControlSet::Admin`), so CLI sugar runs the same
+ * descriptor/handler as `cmd`, REST and the TUI. Before executing it initializes
+ * one-shot logging as disabled (decision log D14) so the runtime's audit sink
+ * never leaks a `command_audit` line to stderr. It runs entirely in the calling
  * thread and never constructs an @c HttpServer, a Boost.Asio @c io_context, or
- * touches @c UriMapSingleton / `uri.txt`: CLI mode must not start the network
- * server or load persisted state (plan.md C4 and C5).
+ * touches @c UriMapSingleton / `uri.txt` (milestone contracts C4/C5).
+ *
+ * On success it writes exactly one line to stdout - the handler's `result_json`
+ * (the shared REST serializer's output) plus a newline - and returns 0. On
+ * failure stdout stays empty, a `"<verb> failed: <message>\n"` diagnostic is
+ * written to stderr, and the exit code is @ref ExitCodeForAppError's shared-table
+ * value for the error.
  *
  * @param command Parsed link command selecting the verb and its argument DTO.
- * @param config  Server configuration providing storage/service wiring inputs.
- * @return 0 on success; on failure, the exit code produced by
- * `ExitCodeForAppError` from the failed service result's error code:
- * 1 for `not_found`; 2 for `invalid_url`, `invalid_slug`,
- * `invalid_field`, or `reserved_slug`; 3 for `slug_conflict`; 4 for
- * `storage_failure` or `internal`.
+ * @param config  Server configuration borrowed by reference; supplies the
+ * link-service wiring inputs (base domain, slug length, private-target policy)
+ * when no process-wide runtime is installed. Must outlive the call.
+ * @return 0 on success; on failure the shared-table exit code for the error:
+ * 1 for `not_found`; 2 for `invalid_url`, `invalid_slug`, `invalid_field`, or
+ * `reserved_slug`; 3 for `slug_conflict`; 4 for `storage_failure`, `internal`,
+ * or a runtime-acquisition failure.
  */
 int DispatchLinkCommand(const LinkCliCommand& command,
                         const ServerConfig& config);

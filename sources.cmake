@@ -2,7 +2,13 @@ set(URL_SHORTENER_CPP
         ${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/cli_parser.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/cli/link_command_args.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cli/app_exit_code.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/cli/link_command_dispatch.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cli/link_args_json.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cli/arg_coercion.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cli/cmd_dispatch.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cli/command_runtime_acquire.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cli/serve_stdio_dispatch.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/uri_map_singleton.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/core/utils.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/analytics/click_event_queue.cpp
@@ -37,6 +43,7 @@ set(URL_SHORTENER_CPP
         ${CMAKE_CURRENT_SOURCE_DIR}/src/observability/log_fields.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/observability/logger.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/observability/logger_factory.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/observability/file_sink.cpp
 )
 
 set(URL_SHORTENER_H
@@ -54,19 +61,27 @@ set(URL_SHORTENER_H
         ${CMAKE_CURRENT_SOURCE_DIR}/include/url_shortener/http/handler_types.hpp
         ${CMAKE_CURRENT_SOURCE_DIR}/include/url_shortener/http/router.hpp
         ${CMAKE_CURRENT_SOURCE_DIR}/include/url_shortener/http/router_builder.hpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/include/url_shortener/http/query_params.hpp
         ${CMAKE_CURRENT_SOURCE_DIR}/include/url_shortener/http/handlers/observability_handlers.hpp
         ${CMAKE_CURRENT_SOURCE_DIR}/include/url_shortener/http/handlers/link_handlers.hpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/include/url_shortener/http/handlers/command_handlers.hpp
         ${CMAKE_CURRENT_SOURCE_DIR}/include/url_shortener/http/handlers/compatibility_handlers.hpp
         ${CMAKE_CURRENT_SOURCE_DIR}/include/url_shortener/http/handlers/redirect_handlers.hpp
         ${CMAKE_CURRENT_SOURCE_DIR}/include/url_shortener/http/handlers/fallback_handlers.hpp
         ${CMAKE_CURRENT_SOURCE_DIR}/include/url_shortener/cli/cli_parser.hpp
         ${CMAKE_CURRENT_SOURCE_DIR}/include/url_shortener/cli/link_command_args.hpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/include/url_shortener/cli/app_exit_code.hpp
         ${CMAKE_CURRENT_SOURCE_DIR}/include/url_shortener/cli/link_command_dispatch.hpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/include/url_shortener/cli/cmd_dispatch.hpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/include/url_shortener/cli/command_runtime_acquire.hpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/include/url_shortener/cli/serve_stdio_dispatch.hpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/include/url_shortener/cli/arg_coercion.hpp
         ${CMAKE_CURRENT_SOURCE_DIR}/include/url_shortener/observability/log_level.hpp
         ${CMAKE_CURRENT_SOURCE_DIR}/include/url_shortener/observability/logging_config.hpp
         ${CMAKE_CURRENT_SOURCE_DIR}/include/url_shortener/observability/log_fields.hpp
         ${CMAKE_CURRENT_SOURCE_DIR}/include/url_shortener/observability/logger.hpp
         ${CMAKE_CURRENT_SOURCE_DIR}/include/url_shortener/observability/logger_factory.hpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/include/url_shortener/observability/file_sink.hpp
 )
 
 set(URL_SHORTENER_SOURCES
@@ -83,6 +98,7 @@ set(URL_SHORTENER_SOURCES
       tests/unit/core/06_slug_collision_retry_test.cpp
       tests/unit/core/07_expiry_logic_test.cpp
       tests/unit/core/08_redirect_status_test.cpp
+      tests/unit/core/09_json_escape_hardening_test.cpp
   )
 
   set(LINK_MANAGEMENT_UNIT_SOURCES
@@ -110,10 +126,28 @@ set(URL_SHORTENER_SOURCES
       tests/unit/http/12_prefixed_redirect_handler.cpp
       tests/unit/http/13_root_redirect_handler.cpp
       tests/unit/http/14_fallback_handler.cpp
+      tests/unit/http/15_command_bridge.cpp
+      tests/unit/http/16_rest_read_routes_via_registry.cpp
+      tests/unit/http/17_rest_create_via_registry.cpp
+      tests/unit/http/18_target_requires_peer.cpp
+      tests/unit/http/19_rest_patch_via_registry.cpp
+      tests/unit/http/20_rest_lifecycle_via_registry.cpp
+      tests/unit/http/21_query_params.cpp
+      tests/unit/http/22_rest_list_links_route.cpp
+      tests/unit/http/23_rest_commands_endpoint.cpp
+      tests/unit/http/24_command_api_caller.cpp
+      tests/unit/http/25_rest_get_commands_endpoint.cpp
+      tests/unit/http/40_jobs_routes.cpp
+      tests/unit/http/30_redirect_through_backend.cpp
+      tests/unit/http/31_link_handlers_through_backend.cpp
+      tests/unit/http/32_redirect_fallback_no_command.cpp
   )
 
   set(DOCS_UNIT_SOURCES
       tests/unit/docs/02_route_registry_docs.cpp
+      tests/unit/docs/03_command_catalog_matches_registry.cpp
+      tests/unit/docs/04_command_route_table_consistency.cpp
+      tests/unit/docs/05_api_reference_matches_registry.cpp
   )
 
   set(CORE_UNIT_SOURCES
@@ -122,6 +156,11 @@ set(URL_SHORTENER_SOURCES
       tests/unit/core/03_cache_value_model.cpp
       tests/unit/core/04_link_access_event_model.cpp
       tests/unit/core/05_interface_smoke_compile.cpp
+  )
+
+  set(LISTING_UNIT_SOURCES
+      tests/unit/storage/listing/01_list_query_eval.cpp
+      tests/unit/storage/listing/02_list_links_page_default_impl.cpp
   )
 
   set(INMEMORY_UNIT_SOURCES
@@ -140,6 +179,7 @@ set(URL_SHORTENER_SOURCES
       tests/unit/storage/inmemory/13_cache_fail_open_behavior.cpp
       tests/unit/storage/inmemory/14_analytics_emit_and_flush.cpp
       tests/unit/storage/inmemory/15_rate_limit_allow_window.cpp
+      tests/unit/storage/inmemory/16_repository_link_store_contract.cpp
   )
 
   set(CONTRACT_METADATA_SOURCES
@@ -151,6 +191,10 @@ set(URL_SHORTENER_SOURCES
       tests/contract/metadata/06_list_filtering_pagination.cpp
       tests/contract/metadata/07_expiry_semantics.cpp
       tests/contract/metadata/08_concurrent_create_one_wins.cpp
+      tests/contract/metadata/09_get_by_id.cpp
+      tests/contract/metadata/10_list_page_text_and_sort.cpp
+      tests/contract/metadata/11_list_page_window_and_total.cpp
+      tests/contract/metadata/12_list_page_flags_and_predicate.cpp
   )
 
   set(STORAGE_INTEGRATION_SOURCES
@@ -161,6 +205,8 @@ set(URL_SHORTENER_SOURCES
       tests/integration/storage/05_inmemory_redirect_visible_states.cpp
       tests/integration/storage/06_inmemory_analytics_best_effort.cpp
       tests/integration/storage/07_sqlite_service_full_flow.cpp
+      tests/integration/storage/15_repository_link_store_sqlite.cpp
+      tests/integration/storage/15_link_backend_bootstrap.cpp
   )
 
   set(SQL_FOUNDATION_UNIT_SOURCES
@@ -190,6 +236,7 @@ set(URL_SHORTENER_SOURCES
       tests/unit/storage/sqlite/12_error_mapping_generic_failure.cpp
       tests/unit/storage/sqlite/13_session_factory_builds_sqlite_session.cpp
       tests/unit/storage/sqlite/14_sql_repository_with_sqlite_backend.cpp
+      tests/unit/storage/sqlite/15_large_timestamp_roundtrip.cpp
   )
 
   set(SQLITE_INTEGRATION_SOURCES
@@ -226,6 +273,7 @@ set(URL_SHORTENER_SOURCES
       tests/unit/storage/ratelimiter/05_key_format.cpp
       tests/unit/storage/ratelimiter/06_error_mapping.cpp
       tests/unit/storage/ratelimiter/07_invalid_configuration.cpp
+      tests/unit/storage/ratelimiter/08_bucket_eviction.cpp
   )
 
   set(REDIS_UNIT_SOURCES
@@ -243,6 +291,7 @@ set(URL_SHORTENER_SOURCES
       tests/unit/observability/01_repository_metrics_labels.cpp
       tests/unit/observability/02_cache_metrics_labels.cpp
       tests/unit/observability/03_startup_logging_redaction.cpp
+      tests/unit/observability/04_file_sink.cpp
       tests/unit/docs/01_configuration_examples_match_parser.cpp
   )
 
@@ -281,6 +330,8 @@ set(URL_SHORTENER_SOURCES
       tests/unit/http/analytics/01_stats_handler_validation.cpp
       tests/unit/http/analytics/02_stats_handler_response_mapping.cpp
       tests/unit/storage/memory/16_in_memory_click_event_repository.cpp
+      tests/unit/storage/memory/17_in_memory_click_event_list_events.cpp
+      tests/unit/analytics/16_click_event_list_events_default.cpp
   )
 
   set(APP_UNIT_SOURCES
@@ -302,6 +353,22 @@ set(URL_SHORTENER_SOURCES
       tests/unit/app/16_link_command_service_restore_clears_deleted_at.cpp
       tests/unit/app/17_link_command_service_preview_link.cpp
       tests/unit/app/18_link_command_service_update_storage_failure.cpp
+      tests/unit/app/19_expiring_link_cache.cpp
+      tests/unit/app/20_link_record_codec.cpp
+      tests/unit/app/21_repository_link_store_reads.cpp
+      tests/unit/app/22_repository_link_store_writes.cpp
+      tests/unit/app/23_record_redirect_write_behind.cpp
+      tests/unit/app/24_link_backend_holder.cpp
+      tests/unit/app/40_link_command_service_validate_create.cpp
+      tests/unit/app/41_link_command_service_validate_update.cpp
+      tests/unit/app/42_serialize_link_lifetime_stats_json.cpp
+      tests/unit/app/43_repository_link_lister.cpp
+      tests/unit/app/44_legacy_link_lister.cpp
+      tests/unit/app/45_table_catalog.cpp
+      tests/unit/app/46_links_table_source.cpp
+      tests/unit/app/47_click_events_table_source.cpp
+      tests/unit/app/48_system_info.cpp
+      tests/unit/app/60_link_command_service_replace_target.cpp
   )
 
   set(CLI_UNIT_SOURCES
@@ -309,6 +376,20 @@ set(URL_SHORTENER_SOURCES
       tests/unit/cli/02_cli_dispatch_reachable.cpp
       tests/unit/cli/03_cli_success_output.cpp
       tests/unit/cli/04_cli_exit_codes.cpp
+      tests/unit/cli/05_cli_storage_config_flag.cpp
+      tests/unit/cli/06_cli_arg_coercion.cpp
+      tests/unit/cli/07_cli_parser_cmd.cpp
+      tests/unit/cli/08_cmd_dispatch.cpp
+      tests/unit/cli/09_link_args_json.cpp
+      tests/unit/cli/10_link_dispatch_via_registry.cpp
+      tests/unit/cli/11_cli_parser_command_api_flags.cpp
+      tests/unit/cli/12_dispatch_null_runtime.cpp
+      tests/unit/cli/20_cli_parser_serve_stdio.cpp
+      tests/unit/cli/21_serve_stdio_dispatch.cpp
+      tests/unit/cli/30_cli_parser_tui_mode.cpp
+      tests/unit/cli/31_cli_parser_tui_path_flags.cpp
+      tests/unit/cli/32_cmd_invalid_command_name.cpp
+      tests/unit/cli/33_cmd_parse_no_fatal_boundary.cpp
   )
 
   set(ANALYTICS_INTEGRATION_SOURCES
@@ -324,6 +405,8 @@ set(URL_SHORTENER_SOURCES
       tests/integration/cpp/analytics/06_retention_cleanup_deletes_old_events.cpp
       tests/integration/cpp/storage/analytics_sqlite_repository_roundtrip.cpp
       tests/integration/cpp/storage/analytics_postgresql_repository_roundtrip.cpp
+      tests/integration/cpp/storage/analytics_sqlite_list_events.cpp
+      tests/integration/cpp/storage/analytics_postgresql_list_events.cpp
   )
 
   set(CONFIG_INTEGRATION_SOURCES
@@ -368,11 +451,102 @@ set(URL_SHORTENER_SOURCES
       tests/unit/security/07_auth_broker_service_test.cpp
   )
 
+  set(COMMANDS_UNIT_SOURCES
+      tests/unit/commands/01_json_scan.cpp
+      tests/unit/commands/02_error_table.cpp
+      tests/unit/commands/03_request_parse.cpp
+      tests/unit/commands/04_response_serialize.cpp
+      tests/unit/commands/05_arg_spec_validation.cpp
+      tests/unit/commands/06_registry_lookup.cpp
+      tests/unit/commands/07_execute_pipeline.cpp
+      tests/unit/commands/08_options_dry_run_async.cpp
+      tests/unit/commands/09_audit.cpp
+      tests/unit/commands/10_command_list.cpp
+      tests/unit/commands/11_catalog_render.cpp
+      tests/unit/commands/12_catalog_drift.cpp
+      tests/unit/commands/13_error_code_coverage.cpp
+      tests/unit/commands/14_include_hygiene.cpp
+      tests/unit/commands/79_no_http_server_in_local_modes_test.cpp
+      tests/unit/commands/80_redirect_isolation_test.cpp
+      tests/unit/commands/20_link_command_codec.cpp
+      tests/unit/commands/21_link_create_command.cpp
+      tests/unit/commands/22_link_read_commands.cpp
+      tests/unit/commands/23_link_update_command.cpp
+      tests/unit/commands/24_link_lifecycle_commands.cpp
+      tests/unit/commands/25_link_commands_rest_parity.cpp
+      tests/unit/commands/26_link_list_command.cpp
+      tests/unit/commands/27_db_commands.cpp
+      tests/unit/commands/28_system_info_command.cpp
+      tests/unit/commands/29_command_runtime_wiring.cpp
+      tests/unit/commands/30_browse_security_regression.cpp
+      tests/unit/commands/40_args_builder.cpp
+      tests/unit/commands/50_job_store.cpp
+      tests/unit/commands/51_job_runner_pool.cpp
+      tests/unit/commands/52_job_runner_shutdown.cpp
+      tests/unit/commands/53_registry_job_dispatch.cpp
+      tests/unit/commands/54_job_commands.cpp
+      tests/unit/commands/55_pair_line_parser.cpp
+      tests/unit/commands/56_pair_file_access.cpp
+      tests/unit/commands/57_link_import_command.cpp
+      tests/unit/commands/58_link_import_overwrite.cpp
+      tests/unit/commands/59_link_export_command.cpp
+      tests/unit/commands/60_transport_factory.cpp
+      tests/unit/commands/61_ndjson_line_reader.cpp
+      tests/unit/commands/62_ndjson_session.cpp
+      tests/unit/commands/63_stdio_adapter.cpp
+      tests/unit/commands/64_command_runtime_jobs.cpp
+      tests/unit/commands/65_jobs_table_source.cpp
+      tests/unit/commands/70_db_table_allowlist_test.cpp
+      tests/unit/commands/71_jobs_rows_no_secrets_test.cpp
+      tests/unit/commands/72_system_info_key_set_test.cpp
+      tests/unit/commands/74_authz_descriptor_matrix_test.cpp
+      tests/unit/commands/75_authz_before_side_effects_test.cpp
+      tests/unit/commands/76_import_row_validation_parity_test.cpp
+      tests/unit/commands/77_import_limits_test.cpp
+      tests/unit/commands/78_path_argument_policy_test.cpp
+  )
+
   set(COMMON_CPP_SOURCES
       ${SECURITY_SOURCES}
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/commands/json_scan.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/commands/args_builder.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/commands/error_codes.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/commands/envelope.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/commands/arg_spec.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/commands/command_registry.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/commands/audit.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/commands/builtin_commands.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/commands/catalog.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/commands/link_command_codec.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/commands/link_create_command.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/commands/link_update_command.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/commands/link_read_commands.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/commands/link_lifecycle_commands.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/commands/link_list_command.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/commands/db_commands.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/commands/system_commands.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/commands/link_commands.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/commands/browse_commands.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/commands/job_store.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/commands/job_runner.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/commands/job_commands.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/commands/pair_line_parser.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/commands/pair_file_access.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/commands/pair_formatter.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/commands/pair_commands.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/commands/ndjson_line_reader.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/commands/ndjson_session.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/commands/jobs_table_source.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/transport/stdio_adapter.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/cli_parser.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/cli/link_command_args.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/cli/app_exit_code.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/cli/link_command_dispatch.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/cli/link_args_json.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/cli/arg_coercion.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/cli/cmd_dispatch.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/cli/command_runtime_acquire.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/cli/serve_stdio_dispatch.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/uri_map_singleton.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/core/utils.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/analytics/click_event_queue.cpp
@@ -383,12 +557,16 @@ set(URL_SHORTENER_SOURCES
       ${CMAKE_CURRENT_SOURCE_DIR}/src/http/route_registry.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/http/router.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/http/router_builder.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/http/query_params.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/http/handlers/observability_handlers.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/http/handlers/link_handlers.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/http/handlers/command_handlers.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/http/handlers/compatibility_handlers.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/http/handlers/redirect_handlers.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/http/handlers/fallback_handlers.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/http/command_bridge.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/core/link_service.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/storage/list_links_eval.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/storage/inmemory/in_memory_metadata_repository.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/storage/inmemory/in_memory_cache_store.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/storage/inmemory/in_memory_analytics_sink.cpp
@@ -424,15 +602,32 @@ set(URL_SHORTENER_SOURCES
       ${CMAKE_CURRENT_SOURCE_DIR}/src/storage/sql/sql_click_event_repository.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/app/link_command_service.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/app/legacy_adapters.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/app/expiring_link_cache.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/app/link_record_codec.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/app/repository_link_store.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/app/link_lister.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/app/table_catalog.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/app/links_table_source.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/app/click_events_table_source.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/app/system_info.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/app/repository_link_lister.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/app/legacy_link_lister.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/app/link_backend.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/composition/link_command_service_factory.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/composition/command_runtime.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/composition/job_runtime.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/composition/process_command_runtime.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/config/storage_config.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/composition/storage_factory.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/composition/transport_factory.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/composition/link_backend_bootstrap.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/observability/storage_observability.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/observability/log_level.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/observability/logging_config.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/observability/log_fields.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/observability/logger.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/src/observability/logger_factory.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/src/observability/file_sink.cpp
   )
 
   set(ALL_UNIT_SOURCES
@@ -515,6 +710,82 @@ set(URL_SHORTENER_SOURCES
       tests/integration/cli/14_link_disable_not_found_and_invalid_input.py
       tests/integration/cli/15_link_restore_not_found_and_invalid_input.py
       tests/integration/cli/16_link_preview_not_found_and_invalid_input.py
+      tests/integration/cli/17_storage_config_errors.py
+      tests/integration/cli/18_server_and_cli_share_sqlite.py
+      tests/integration/cli/20_cmd_link_envelope.py
+      tests/integration/cli/21_cmd_inputs_and_read_only.py
+      tests/integration/cli/40_serve_stdio_session.py
+      tests/integration/cli/41_serve_stdio_jobs_and_eof.py
+  )
+
+  # ---- Conformance Python harness (Task 07.0; label "integration;conformance")
+  # Out-of-process Python runners and tools for the command conformance corpus
+  # (tests/conformance/commands/*.json). Owned by Task 07.0 subtask 05; subtask
+  # 01 seeds the corpus linter wrapper. Later subtasks append their NN_*.py
+  # runners here. Registered like CLI_INTEGRATION_SOURCES (Python3 + binary).
+  set(CONFORMANCE_PY_SOURCES
+      tests/conformance/py/00_corpus_lint.py
+      tests/conformance/py/01_matcher_vectors.py
+      tests/conformance/py/02_harness_selftest.py
+      tests/conformance/py/10_cli_cmd_corpus.py
+      tests/conformance/py/11_stdio_corpus.py
+      tests/conformance/py/12_stdio_framing.py
+      tests/conformance/py/13_rest_generic_corpus.py
+      tests/conformance/py/14_rest_resource_corpus.py
+      tests/conformance/py/20_coverage_gate.py
+      tests/conformance/py/30_authz_process_level.py
+      tests/conformance/py/31_import_limits_process_level.py
+      tests/conformance/py/32_no_listener_process_level.py
+  )
+
+  # ---- Conformance C++ support library (Task 07.0 subtask 03) ----
+  # Test-only building blocks (mini JSON DOM, corpus loader, matcher/normalizer,
+  # adapter interface, case runner) compiled into the conformance_support static
+  # library. NEVER part of url_shortener_common and never linked into a product
+  # target (decision log D3). Listed here only to satisfy the CLAUDE.md rule that
+  # every .cpp has a home in sources.cmake.
+  set(CONFORMANCE_SUPPORT_CPP
+      tests/conformance/support/mini_json.cpp
+      tests/conformance/support/matcher.cpp
+      tests/conformance/support/corpus.cpp
+      tests/conformance/support/case_runner.cpp
+      tests/conformance/support/registry_fixture.cpp
+      tests/conformance/support/direct_adapter.cpp
+  )
+
+  # ---- Conformance C++ runners (Task 07.0 subtask 03; label "conformance") ----
+  # In-process Boost.Test runners under tests/conformance/runners. Registered by
+  # a dedicated loop in CMakeLists.txt as conformance__<stem>. Later subtasks
+  # (04, 10) append their shim runners here.
+  set(CONFORMANCE_CPP_SOURCES
+      tests/conformance/runners/00_support_selftest.cpp
+      tests/conformance/runners/01_direct_registry_corpus.cpp
+  )
+
+  # ---- Conformance TUI runner + adapter (Task 07.0 subtask 10) ----
+  # The TUI InProcessClient shim and its runner. Compiled only when
+  # URLSHORTENER_ENABLE_TUI is ON (CMakeLists.txt guards the registration) and
+  # into their OWN executable, never into conformance_support: the support
+  # library stays TUI-agnostic (it must build with TUI=OFF), so the FTXUI-free
+  # TUI model library is linked by this runner alone (decision log D3, C8).
+  set(CONFORMANCE_TUI_CPP_SOURCES
+      tests/conformance/support/tui_adapter.cpp
+      tests/conformance/runners/02_tui_client_corpus.cpp
+  )
+
+  # ---- Perf benchmarks (Task 07.0 subtask 30; label "perf") ----
+  # Advisory latency/throughput benchmarks (docs/testing/README.md 3.5). Owned by
+  # Task 07.0 subtask 30; subtask 32 appends the redirect fast-path guard under
+  # tests/perf/redirect/. Each file defines its own main() (no BOOST_TEST_MODULE).
+  # Registered by register_labeled_cpp_tests with RUN_SERIAL TRUE and TIMEOUT 300
+  # so parallel ctest -j load does not skew measurements. The "perf" label is kept
+  # out of the default -L "unit|contract|integration|e2e" union, so routine
+  # developer runs and the unit gate never execute these.
+  set(PERF_SOURCES
+      tests/perf/analytics/queue_overflow_redirect_tail_latency.cpp
+      tests/perf/analytics/redirect_analytics_enabled_vs_disabled.cpp
+      tests/perf/analytics/worker_batch_insert_throughput.cpp
+      tests/perf/redirect/redirect_fast_path_guard.cpp
   )
 
   set(ALL_INTEGRATION_SOURCES
@@ -545,4 +816,153 @@ set(URL_SHORTENER_SOURCES
           16_cli_link_enable_disable
           17_cli_link_restore
           18_cli_link_preview
+          19_cmd_serve_stdio_no_listener
+          30_serve_stdio
       )
+
+  # ---- Terminal UI sources (Task 06.0, optional behind URLSHORTENER_ENABLE_TUI)
+  # Two libraries: url_shortener_tui_model (pure view-models, FTXUI-free, ADR
+  # 0003 rule 6) and url_shortener_tui (FTXUI renderers). These lists are never
+  # added to COMMON_CPP_SOURCES; they are compiled only when the TUI is enabled.
+  # Later 06.0 (and 07.0) subtasks append to these lists; subtask 01 seeds the
+  # render pipeline (ftxui_smoke) and the render-harness self-test.
+  if(URLSHORTENER_ENABLE_TUI)
+    # Pure view-model sources (FTXUI-free). Subtask 02 replaces the subtask-01
+    # placeholder with the real client seam and JSON view helpers, keeping the
+    # library non-empty.
+    set(TUI_MODEL_CPP_SOURCES
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/in_process_client.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/json_view.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/async_caller.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/text_fit.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/table_model.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/row_mapper.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/router.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/keymap.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/frame_model.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/capability.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/terminal_restore.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/system_info_view.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/theme.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/ascii.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/help_model.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/toast.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/confirm.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/equivalent_cmd.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/settings_model.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/field_parsers.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/form_model.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/palette_model.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/result_viewer_model.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/poll_ticker.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/jobs_model.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/links_query.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/links_model.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/link_detail_model.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/tables_model.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/import_model.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/dashboard_model.cpp
+    )
+
+    set(TUI_UI_CPP_SOURCES
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/ftxui_smoke.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/ftxui_poster.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/frame_view.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/app.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/app_navigation.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/tui_entry.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/screens/placeholder_screen.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/theme_ftxui.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/help_overlay.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/table_view.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/column_chooser.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/toast_view.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/confirm_view.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/mutation_flow.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/form_widgets.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/form_view.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/screens/settings_screen.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/screens/form_screen.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/screens/generic_command_screen.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/screens/palette_screen.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/screens/jobs_screen.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/screens/links_screen.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/screens/link_detail_screen.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/screens/tables_screen.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/screens/import_export_screen.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/tui/screens/dashboard_screen.cpp
+    )
+
+    # Model unit tests link url_shortener_tui_model (no FTXUI).
+    set(TUI_MODEL_UNIT_SOURCES
+        tests/unit/tui/02_in_process_client_test.cpp
+        tests/unit/tui/02_json_view_test.cpp
+        tests/unit/tui/02_include_boundary_test.cpp
+        tests/unit/tui/03_async_caller_test.cpp
+        tests/unit/tui/09_table_model_test.cpp
+        tests/unit/tui/09_text_fit_test.cpp
+        tests/unit/tui/09_row_mapper_test.cpp
+        tests/unit/tui/04_router_test.cpp
+        tests/unit/tui/04_frame_model_test.cpp
+        tests/unit/tui/04_terminal_restore_test.cpp
+        tests/unit/tui/04_app_teardown_test.cpp
+        tests/unit/tui/04_system_info_view_test.cpp
+        tests/unit/tui/05_theme_test.cpp
+        tests/unit/tui/05_ascii_test.cpp
+        tests/unit/tui/05_help_model_test.cpp
+        tests/unit/tui/06_toast_test.cpp
+        tests/unit/tui/06_confirm_test.cpp
+        tests/unit/tui/06_equivalent_cmd_test.cpp
+        tests/unit/tui/07_field_parsers_test.cpp
+        tests/unit/tui/07_form_model_test.cpp
+        tests/unit/tui/07_form_model_request_test.cpp
+        tests/unit/tui/30_form_model_property_test.cpp
+        tests/unit/tui/11_palette_model_test.cpp
+        tests/unit/tui/11_result_viewer_model_test.cpp
+        tests/unit/tui/16_jobs_model_test.cpp
+        tests/unit/tui/16_poll_ticker_test.cpp
+        tests/unit/tui/12_links_query_test.cpp
+        tests/unit/tui/12_links_model_test.cpp
+        tests/unit/tui/13_link_detail_model_test.cpp
+        tests/unit/tui/14_tables_model_test.cpp
+        tests/unit/tui/15_import_model_test.cpp
+        tests/unit/tui/15_export_model_test.cpp
+        tests/unit/tui/17_dashboard_model_test.cpp
+        tests/unit/tui/18_capability_test.cpp
+        tests/unit/tui/21_settings_model_test.cpp
+        tests/unit/tui/22_mock_support_helpers_test.cpp
+        tests/unit/tui/37_required_permission_forward_test.cpp
+    )
+
+    # Render/snapshot unit tests link url_shortener_tui (FTXUI).
+    set(TUI_RENDER_UNIT_SOURCES
+        tests/unit/tui/01_render_harness_selftest.cpp
+        tests/unit/tui/04_frame_render_test.cpp
+        tests/unit/tui/05_theme_render_test.cpp
+        tests/unit/tui/10_table_view_render_test.cpp
+        tests/unit/tui/10_table_view_keys_test.cpp
+        tests/unit/tui/06_dialog_render_test.cpp
+        tests/unit/tui/08_form_widgets_render_test.cpp
+        tests/unit/tui/08_form_screen_test.cpp
+        tests/unit/tui/08_mutation_flow_test.cpp
+        tests/unit/tui/11_palette_render_test.cpp
+        tests/unit/tui/11_generic_command_flow_test.cpp
+        tests/unit/tui/16_jobs_screen_test.cpp
+        tests/unit/tui/12_links_screen_test.cpp
+        tests/unit/tui/13_link_detail_screen_test.cpp
+        tests/unit/tui/14_tables_screen_test.cpp
+        tests/unit/tui/15_import_export_screen_test.cpp
+        tests/unit/tui/17_dashboard_screen_test.cpp
+        tests/unit/tui/18_readonly_matrix_test.cpp
+        tests/unit/tui/18_readonly_render_test.cpp
+        tests/unit/tui/19_tui_options_test.cpp
+        tests/unit/tui/19_tui_entry_boundary_test.cpp
+        tests/unit/tui/20_app_navigation_test.cpp
+        tests/unit/tui/21_settings_screen_test.cpp
+        tests/unit/tui/23_tui_file_path_policy_test.cpp
+        tests/unit/tui/31_screen_transition_requests_test.cpp
+        tests/unit/tui/32_hotkeys_and_focus_test.cpp
+        tests/unit/tui/33_nonblocking_ui_test.cpp
+        tests/unit/tui/34_no_secrets_real_registry_test.cpp
+    )
+  endif()

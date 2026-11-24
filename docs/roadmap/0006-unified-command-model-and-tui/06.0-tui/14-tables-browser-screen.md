@@ -60,7 +60,7 @@ Insert mapping lives in one place: writable table -> command `link.create`
 
 1. `on_enter`: `db.tables` -> populate left pane; selecting a table (arrows/Enter in left pane, Tab to switch pane) triggers `db.rows` page 1 and resets sort/filter.
 2. Right pane title `links  (1,204 rows)  sort: created_at v` (sort arrow `v` desc / `^` asc); counts formatted with thousands separators.
-3. `/` search sets `q`; `s` cycles sort across visible columns; `c` column chooser (10); `Enter` pushes `row_json` with `pretty_print(raw_rows[i])` - "exact `result` item the command returned" (D6 caption).
+3. `/` search sets `q`; `s` cycles sort across visible columns; `c` column chooser (10); `Enter` pushes `row_json` with `pretty_print(raw_rows[i])` - "exact `result` item the command returned" (D6 caption) - rendered through `ResultViewerModel` (11), which sanitizes each line (T-110); `db.rows` cells render through the TableView sanitizer (10). The row-JSON view and table body are both untrusted sinks (`db.rows` exposes `referrer`/`user_agent`-derived fields), so no raw `ESC`/CSI/OSC/C1/bidi byte reaches the terminal.
 4. `n`: only when `can_insert()`; opens `link.create` form; on success refresh the table and `db.tables` counts.
 5. Secret safety is server-side (C6), but the screen additionally refuses to render a column whose name matches `hash|token|salt|secret|password|dsn` (case-insensitive) except `client_id_hash`, with a one-line note - defence in depth; test with a hostile mock.
 6. Unknown table error `not_found` from `db.rows` -> toast; left pane reloads.
@@ -77,14 +77,15 @@ ctest --test-dir cmake-build -R "^tui__14_" --output-on-failure
 | Test file | Target | Label | Cases |
 |---|---|---|---|
 | `14_tables_model_test.cpp` | `tui__14_tables_model_test` | unit | parse real-shaped `db.tables` (3 tables); `rows_request` bytes for default, with `q`, with sort desc; empty tables list; `can_insert` true only for writable; thousands formatting; columns derived with sensible widths; hostile column names filtered (`password_hash`, `api_token`, `salt`) while `client_id_hash` allowed |
-| `14_tables_screen_test.cpp` | `tui__14_tables_screen_test` | unit | D6 golden (3 tables, links selected, 3 rows); switching to `click_events` hides the `n insert` hint (golden) and `n` sends nothing; `Enter` shows the exact raw row JSON; `/` search sends `q`; sort toggles; page keys call `db.rows` with the right `offset`; server `not_found` handled; read-only session still browses (reads are allowed) but insert is disabled with reason; mono golden |
+| `14_tables_screen_test.cpp` | `tui__14_tables_screen_test` | unit | D6 golden (3 tables, links selected, 3 rows); switching to `click_events` hides the `n insert` hint (golden) and `n` sends nothing; `Enter` shows the exact raw row JSON; `/` search sends `q`; sort toggles; page keys call `db.rows` with the right `offset`; server `not_found` handled; read-only session still browses (reads are allowed) but insert is disabled with reason; mono golden; **T-110** a `click_events` row whose `referrer`/`user_agent` holds `ESC[2J`/`U+202E` (from `support/hostile_strings.hpp`) renders sanitized in both the table body and the `Enter` row-JSON view |
 
 ## Constraints
 
 - C6: `db.*` allowlist is enforced by the server; the TUI never constructs table names itself except from `db.tables` output.
 - D6: `click_events` and `jobs` are strictly read-only in the UI (no insert/edit/delete affordance).
 - C8: JSON via `json_view` (over the 01.0/01 scanner); no repository types.
-- Pagination bounds mirror the catalog (`limit` 1..500).
+- Pagination bounds mirror the catalog (`limit` 1..500) and are kept as tested invariants (T-121).
+- Table cells and the row-JSON view pass stored strings through `text_fit::sanitize_for_terminal` (T-110), via TableView (10) and ResultViewerModel (11) respectively.
 
 ## Success criteria
 

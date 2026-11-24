@@ -17,6 +17,11 @@ CREATE TABLE IF NOT EXISTS links (
 )SQL";
 }
 
+std::string SqliteSqlDialect::CreateIdIndexSql() const
+{
+    return "CREATE INDEX IF NOT EXISTS idx_links_id ON links(id);";
+}
+
 std::string SqliteSqlDialect::InsertSql() const
 {
     return "INSERT INTO links(id, short_code, target_url, created_at, updated_at, expires_at, is_active, owner_id, attributes_json) "
@@ -27,6 +32,12 @@ std::string SqliteSqlDialect::SelectByShortCodeSql() const
 {
     return "SELECT id, short_code, target_url, created_at, updated_at, expires_at, is_active, owner_id, attributes_json "
            "FROM links WHERE short_code = :short_code;";
+}
+
+std::string SqliteSqlDialect::SelectByIdSql() const
+{
+    return "SELECT id, short_code, target_url, created_at, updated_at, expires_at, is_active, owner_id, attributes_json "
+           "FROM links WHERE id = :id LIMIT 1;";
 }
 
 std::string SqliteSqlDialect::UpdateSql() const

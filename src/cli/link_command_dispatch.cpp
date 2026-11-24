@@ -1,30 +1,50 @@
 /**
  * @file link_command_dispatch.cpp
- * @brief One-shot CLI dispatch for `link <verb>` commands.
+ * @brief One-shot CLI dispatch for `link <verb>` commands, routed through the
+ * shared command registry (Task 04.0 subtask 15).
  *
- * IMPORTANT (plan.md C4/C5): this translation unit must never start the HTTP
- * server, construct a Boost.Asio @c io_context, or touch @c UriMapSingleton /
- * `uri.txt`. It therefore includes nothing under `url_shortener/http/` and no
- * `boost/asio` headers. Keep it that way; the constraint is an architecture
- * invariant verified by grep during review.
+ * Each `link <verb>` keeps its hand-written flag grammar and its shared `app::`
+ * DTO, but no longer calls the link command service directly: the DTO is
+ * converted to an `args` object (subtask 14) and executed through the one
+ * @ref url_shortener::commands::CommandRegistry (milestone contract C11), so CLI
+ * sugar, `cmd`, REST and the TUI all run the same descriptor/handler. stdout,
+ * stderr text and exit codes stay byte-identical to what the CLI documents today
+ * (milestone contract C4).
+ *
+ * IMPORTANT (milestone contracts C4/C5): this translation unit must never start
+ * the HTTP server, construct a Boost.Asio @c io_context, or touch
+ * @c UriMapSingleton / `uri.txt`. It therefore includes nothing under
+ * `url_shortener/http/` and no `boost/asio` headers. Keep it that way; the
+ * constraint is an architecture invariant verified by grep during review.
  */
 #include <url_shortener/cli/link_command_dispatch.hpp>
 
 #include <iostream>
+#include <memory>
+#include <string>
 #include <string_view>
 #include <variant>
 
-#include <url_shortener/app/app_error.hpp>
-#include <url_shortener/app/link_command_service.hpp>
 #include <url_shortener/cli/cli_parser.hpp>
-#include <url_shortener/composition/link_command_service_factory.hpp>
+#include <url_shortener/cli/command_runtime_acquire.hpp>
+#include <url_shortener/cli/link_args_json.hpp>
+#include <url_shortener/commands/command_descriptor.hpp>
+#include <url_shortener/commands/command_registry.hpp>
+#include <url_shortener/commands/envelope.hpp>
+#include <url_shortener/commands/error_codes.hpp>
+#include <url_shortener/composition/command_runtime.hpp>
 #include <url_shortener/core/config.hpp>
+#include <url_shortener/observability/logger_factory.hpp>
+#include <url_shortener/security/control_set.hpp>
 
 namespace url_shortener::cli
 {
 namespace
 {
-/// Human-readable token for a link verb, used only for error diagnostics.
+/// Human-readable token for a link verb, used only for error diagnostics. Kept
+/// (not derived from `command_name_for`) because the stderr line the CLI has
+/// always emitted is `"<verb> failed: ..."` with the bare verb, not the dotted
+/// registry name (milestone contract C4).
 std::string_view verb_token(LinkCliVerb verb)
 {
     switch (verb) {
@@ -51,201 +71,114 @@ std::string_view verb_token(LinkCliVerb verb)
 }
 
 /**
- * @brief Serialize a successful command payload to its canonical JSON form.
+ * @brief Builds the `args` object JSON for a parsed `link <verb>` command.
  *
- * These thin overloads bind each view type to the exact serializer the REST
- * handlers use (see src/http/handlers/link_handlers.cpp), so the CLI and REST
- * success payloads stay byte-for-byte identical and no second serializer is
- * ever introduced for the CLI path (Task 04.0 subtask 01 constraint).
+ * Selects the subtask-14 converter matching @p command.verb and applies it to
+ * the DTO alternative the parser stored in @p command.payload. The converters
+ * carry no validation beyond choosing JSON types (contract C1); every domain and
+ * shape rule stays in the registry's `validate_args` and in the link command
+ * service. `enable`/`disable`/`delete`/`restore` share
+ * @ref slug_args_json, so the enable/disable boolean rides on the command name
+ * (`link.enable` vs `link.disable`), not on `args`.
  *
- * @param view Fully populated view returned by a @c LinkCommandService method.
- * @return The canonical JSON object for @p view.
- * @{
+ * @param command The parsed command; its `payload` alternative is selected by
+ * `command.verb` and read with `std::get` (the parser guarantees the matching
+ * alternative is engaged).
+ * @return The single well-formed `args` object text for the verb's descriptor.
  */
-std::string serialize_success(const app::LinkView& view)
+std::string args_json_for(const LinkCliCommand& command)
 {
-    return app::serializeLinkViewJson(view);
-}
-
-std::string serialize_success(const app::LinkStatsView& view)
-{
-    return app::serializeLinkStatsJson(view);
-}
-/// @}
-
-/**
- * @brief Write a failure diagnostic to stderr and map the error to an exit code.
- *
- * Shared failure tail for every report_* helper: writes a human-readable
- * diagnostic (verb + the error detail) to stderr only, leaves stdout empty, and
- * returns the exit code from @ref ExitCodeForAppError so callers can branch on
- * `$?` alone.
- *
- * @param verb  Human-readable verb token for the diagnostic line.
- * @param error The error carried by the failed service @c Result.
- * @return The mapped non-zero exit code for @p error.
- */
-int report_failure(std::string_view verb, const app::AppError& error)
-{
-    std::cerr << verb << " failed: " << error.detail << '\n';
-    return ExitCodeForAppError(error.code);
-}
-
-/**
- * @brief Emit the outcome of a service @c Result following the CLI contract.
- *
- * On success, writes exactly one line to stdout: the shared REST serializer's
- * JSON for the carried view plus a trailing newline, and nothing else, so that
- * stdout carries only the success payload and scripting against it is reliable
- * (Task 04.0). On failure, delegates to @ref report_failure.
- *
- * @tparam View The value type carried by the service @c Result.
- * @param verb   Human-readable verb token for the failure diagnostic.
- * @param result Result returned by the invoked @c LinkCommandService method.
- * @return 0 when the command succeeded, otherwise the mapped non-zero exit code.
- */
-template <typename View>
-int report_result(std::string_view verb, const app::Result<View>& result)
-{
-    if (result.ok()) {
-        if (result.value.has_value()) {
-            std::cout << serialize_success(*result.value) << '\n';
-        }
-        // An ok result without a value carries no payload to print here; the
-        // command still succeeded, so do not emit a spurious failure line.
-        return 0;
+    switch (command.verb) {
+    case LinkCliVerb::create:
+        return create_args_json(
+            std::get<app::CreateLinkCommand>(command.payload));
+    case LinkCliVerb::get:
+    case LinkCliVerb::preview:
+        return get_args_json(std::get<app::GetLinkQuery>(command.payload));
+    case LinkCliVerb::update:
+        return update_args_json(
+            std::get<app::UpdateLinkCommand>(command.payload));
+    case LinkCliVerb::del:
+        return slug_args_json(
+            std::get<app::DeleteLinkCommand>(command.payload).slug);
+    case LinkCliVerb::enable:
+    case LinkCliVerb::disable:
+        return slug_args_json(
+            std::get<app::SetLinkEnabledCommand>(command.payload).slug);
+    case LinkCliVerb::restore:
+        return slug_args_json(
+            std::get<app::RestoreLinkCommand>(command.payload).slug);
+    case LinkCliVerb::stats:
+        return stats_args_json(
+            std::get<app::GetLinkStatsQuery>(command.payload));
     }
-    return report_failure(verb, result.error);
-}
-
-/**
- * @brief Emit a `link preview` outcome using the reduced preview projection.
- *
- * `preview` returns the same @ref app::LinkView type as `get`, but its purpose
- * is an operator safety check (is the link enabled, expired, or soft-deleted?),
- * so it serializes with @ref app::serializeLinkPreviewJson - the exact reduced
- * shape the REST `GET /api/v1/links/{slug}/preview` endpoint returns - instead
- * of the full @ref app::serializeLinkViewJson used by the other verbs. Success
- * and failure output otherwise follow the same contract as @ref report_result.
- *
- * @param verb   Human-readable verb token for the failure diagnostic.
- * @param result Result returned by @ref app::LinkCommandService::PreviewLink.
- * @return 0 when the command succeeded, otherwise the mapped non-zero exit code.
- */
-int report_preview_result(std::string_view verb,
-                          const app::Result<app::LinkView>& result)
-{
-    if (result.ok()) {
-        if (result.value.has_value()) {
-            std::cout << app::serializeLinkPreviewJson(*result.value) << '\n';
-        }
-        return 0;
-    }
-    return report_failure(verb, result.error);
+    // UNREACHABLE: LinkCliVerb is a closed enum exhaustively handled above.
+    return "{}";
 }
 }  // namespace
-
-int ExitCodeForAppError(app::AppErrorCode code)
-{
-    // Mirrors the switch shape of statusForAppError/codeForAppError in
-    // src/http/handlers/link_handlers.cpp, but yields a small, stable set of
-    // process exit codes instead of an HTTP status. Grouping rationale:
-    //   1  not_found        - the addressed link does not exist.
-    //   2  bad input        - the request itself is malformed or disallowed:
-    //                         invalid_url/invalid_slug/invalid_field, and
-    //                         reserved_slug (the caller chose a disallowed slug,
-    //                         a client-side input problem, distinct from a
-    //                         collision with an existing link).
-    //   3  conflict         - slug_conflict: the slug is already taken.
-    //   4  server/internal  - storage_failure/internal: not the caller's fault.
-    // The switch is exhaustive over AppErrorCode with no default so that adding
-    // an enumerator is a compile-time prompt to classify it here.
-    switch (code) {
-    case app::AppErrorCode::none:
-        return 0;
-    case app::AppErrorCode::not_found:
-        return 1;
-    case app::AppErrorCode::invalid_url:
-    case app::AppErrorCode::invalid_slug:
-    case app::AppErrorCode::invalid_field:
-    case app::AppErrorCode::reserved_slug:
-        return 2;
-    case app::AppErrorCode::slug_conflict:
-        return 3;
-    case app::AppErrorCode::storage_failure:
-    case app::AppErrorCode::internal:
-        return 4;
-    }
-    // UNREACHABLE: AppErrorCode is a closed enum exhaustively handled above.
-    // Any unmapped value is treated as an internal failure.
-    return 4;
-}
 
 int DispatchLinkCommand(const LinkCliCommand& command,
                         const ServerConfig& config)
 {
-    // Build the exact LinkCommandService the REST handlers use
-    // (app::BuildLegacyLinkCommandService, see src/http/handlers/
-    // link_handlers.cpp::makeCommandService). The bundle owns the legacy
-    // in-memory store and stats reader; it must outlive the single service
-    // call below, so it is kept as a local for the whole invocation. Per
-    // plan.md and this subtask's constraint, the CLI reuses this factory
-    // verbatim and does NOT introduce a second storage path.
-    const app::LinkCommandServiceBundle bundle =
-        app::BuildLegacyLinkCommandService(config);
-    app::LinkCommandService& service = *bundle.service;
+    // D14 / threat model T-80: initialize one-shot logging as *disabled* before
+    // the runtime executes anything, so the registry's LoggerAuditSink (resolved
+    // lazily at emit time) never prints a `command_audit` line to stderr for a
+    // successful mutating verb. `link` verbs take no `--log-file`/`--verbose`
+    // flags (C4); an operator who needs the audit trail uses `cmd ... --log-file`.
+    observability::LoggerFactory::Initialize(
+        one_shot_logging_config(OneShotLogging {}));
 
     const std::string_view verb = verb_token(command.verb);
 
-    // Dispatch to the verb-appropriate LinkCommandService method, extracting the
-    // matching DTO alternative from the discriminated payload. `enable` and
-    // `disable` share SetLinkEnabled; `get` and `preview` share GetLinkQuery.
-    switch (command.verb) {
-    case LinkCliVerb::create:
-        return report_result(
-            verb,
-            service.CreateLink(
-                std::get<app::CreateLinkCommand>(command.payload)));
-    case LinkCliVerb::get:
-        return report_result(
-            verb,
-            service.GetLink(std::get<app::GetLinkQuery>(command.payload)));
-    case LinkCliVerb::update:
-        return report_result(
-            verb,
-            service.UpdateLink(
-                std::get<app::UpdateLinkCommand>(command.payload)));
-    case LinkCliVerb::del:
-        return report_result(
-            verb,
-            service.DeleteLink(
-                std::get<app::DeleteLinkCommand>(command.payload)));
-    case LinkCliVerb::enable:
-    case LinkCliVerb::disable:
-        return report_result(
-            verb,
-            service.SetLinkEnabled(
-                std::get<app::SetLinkEnabledCommand>(command.payload)));
-    case LinkCliVerb::restore:
-        return report_result(
-            verb,
-            service.RestoreLink(
-                std::get<app::RestoreLinkCommand>(command.payload)));
-    case LinkCliVerb::preview:
-        // preview reuses the reduced REST preview shape, not the full LinkView.
-        return report_preview_result(
-            verb,
-            service.PreviewLink(std::get<app::GetLinkQuery>(command.payload)));
-    case LinkCliVerb::stats:
-        return report_result(
-            verb,
-            service.GetLinkStats(
-                std::get<app::GetLinkStatsQuery>(command.payload)));
+    // The single shared registry (milestone contract C11), obtained through the
+    // helper shared with the `cmd` dispatcher: the process-wide runtime `main`
+    // installed from the active backend, or a fallback built from the legacy
+    // in-memory default. The fallback and the installed runtime both bind the
+    // link service to the process-wide store, so a `create` then `get` in one
+    // process observe the same link (the unit tests rely on this).
+    const std::shared_ptr<composition::CommandRuntime> runtime =
+        acquire_command_runtime(config);
+    if (!runtime) {
+        std::cerr << verb << " failed: internal\n";
+        // Same exit code the shared table assigns `internal` (01.0/02), read
+        // straight from the commands table so this unit stays free of the
+        // application error enum (Task 04.0 exit criterion 2).
+        return commands::error_info_for(commands::CommandErrorCode::internal)
+            .exit_code;
     }
 
-    // UNREACHABLE: LinkCliVerb is a closed enum exhaustively handled above; this
-    // return exists only to satisfy the compiler's non-void return check.
-    return 1;
+    // Convert the parsed DTO to the descriptor's `args` object and execute it as
+    // the local operator. Admin because `link` verbs have no `--read-only`
+    // (C4/T-81); the string fields are non-identifying audit labels only (T-84).
+    commands::CommandRequest request;
+    request.v = 1;
+    request.id = "cli-link";
+    request.command = std::string(command_name_for(command.verb));
+    request.args_json = args_json_for(command);
+
+    commands::CallerContext caller;
+    caller.principal = "local-operator";
+    caller.control_set = ControlSet::Admin;
+    caller.transport = "cli";
+
+    const commands::CommandResponse response =
+        runtime->registry->execute(caller, request);
+
+    if (response.ok) {
+        // Exactly one line on stdout: the handler's `result_json` (the shared
+        // REST serializer's output, contract C1/C3) plus a trailing newline. A
+        // successful command never has an empty `result_json` (the registry maps
+        // that to `internal`), so stdout always carries a single JSON object.
+        std::cout << response.result_json << '\n';
+        return 0;
+    }
+
+    // Failure: stdout stays empty; the value-free diagnostic goes to stderr and
+    // the exit code comes from the shared table. `response.error.message` is the
+    // service's `detail` carried through `to_command_error` unchanged, so the
+    // stderr text matches the legacy dispatch byte-for-byte (contract C4).
+    std::cerr << verb << " failed: " << response.error.message << '\n';
+    return commands::error_info_for(response.error.code).exit_code;
 }
 
 }  // namespace url_shortener::cli

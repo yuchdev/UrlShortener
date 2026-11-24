@@ -1,0 +1,18 @@
+{
+  "corpus_version": 1,
+  "suite": "neg",
+  "description": "RULE-5 negative: request.command is not a dotted <group>.<verb>.",
+  "cases": [
+    {
+      "name": "neg_bad_command",
+      "doc": "command is missing its dot",
+      "command": "linkget",
+      "steps": [
+        {
+          "request": { "v": 1, "command": "linkget", "args": { "slug": "a" } },
+          "expect": { "ok": true, "result": { "slug": "a" }, "match": "subset" }
+        }
+      ]
+    }
+  ]
+}

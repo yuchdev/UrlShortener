@@ -2,10 +2,30 @@
 
 **Parent task:** 07.0 Tests and conformance
 **State:** ⬜ Not started
-**Depends on:** Task 05.0 (`link.import`, `link.export`)
+**Depends on:** Task 05.0 (`link.import`, `link.export`), Task 06.0 (`tui` entry point / `run_tui`)
 **Blocks:** 34
-**Estimated size:** M
-**Suggested agent:** testing-expert (review: security-auditor)
+**Estimated size:** M (grew: carries a user-authorized product change)
+**Suggested agent:** cpp-expert (the `tui` flag product change) + testing-expert (all tests; review: security-auditor)
+
+> **Amended 2026-11-20 (as-built reconciliation).** Two changes:
+> 1. **Product change (user-authorized 2026-11-19, item 1).** The `tui`
+>    subcommand gains `--path-root` and `--no-file-paths`, reaching parity with
+>    `serve-stdio`. Implemented in `src/cli_parser.cpp` (`parseTuiCommand`) and
+>    `src/tui/tui_entry.cpp` (`run_tui`) by **cpp-expert**; regression tests by
+>    testing-expert. This is an explicit, recorded exception to Task 07.0's "no
+>    `src/` behavior change" constraint; the authority is the user ruling, not
+>    the original spec text.
+> 2. The SSRF/size/path unit cases (76-78), the shared SSRF vector list and the
+>    `31_*` process test are the remaining gaps (`link.import`/`link.export` are
+>    already built); the shipped `serve-stdio` path tests are *consumed*.
+
+## Coverage already delivered (05.0/06.0)
+
+| Original 07.0 row | Delivered by (consumed) |
+|---|---|
+| import row validation / limits / dry-run (behavior under test) | `commands__55/56/57/59` (import, limits, path, export) |
+| `serve-stdio --path-root` confines / `--no-file-paths` -> `unsupported` | `cli/40` integration (`path_root`/`no_file_paths`) |
+| `normalize_path_root` trailing-slash + `.`/`..`/`~` rejection | shipped for `serve-stdio` at `src/cli_parser.cpp` `normalize_path_root` (~:765-817) |
 
 ## Objective
 
@@ -21,15 +41,47 @@ write local files.
 - 05.0 decisions this subtask asserts (Task 05.0 subtasks 06, 07, 10, 16; decision log Q6): without `--path-root` any path is allowed for the local operator (no `..` restriction); with `serve-stdio --path-root <dir>` the canonicalized path (symlinks resolved, component-wise prefix) must lie inside the root, else `invalid_field`; `--no-file-paths` -> `unsupported`; UNC/device paths and special files rejected; import file cap `kMaxImportFileBytes` (64 MiB), line cap `kMaxImportLineBytes`, inline `data` cap `max_request_body_bytes`; export is create-new only (never overwrites); `path` on REST -> `unsupported`; export to `path` by a read-only caller -> `not_authorized`; CSV cells are not formula-escaped because targets are `http(s)://` and slugs match `^[A-Za-z0-9][A-Za-z0-9_-]{2,63}$`.
 - Existing oracle: `tests/unit/core/*` URL validation tests for the SSRF vocabulary (private ranges, localhost, link-local, IPv6 forms, userinfo tricks).
 
+## Product change: `tui --path-root` / `--no-file-paths` (cpp-expert)
+
+As built, `serve-stdio` has both flags but `tui` has neither, and `run_tui`
+hardcodes the full-filesystem capability. The change, with the parity
+obligations from the threat brief:
+
+- `TuiCliOptions` gains `no_file_paths` (bool) and `path_root` (string) fields.
+- `parseTuiCommand` (`src/cli_parser.cpp` ~:956-1002) parses `--no-file-paths`
+  and `--path-root <DIR>`, routing `--path-root` through the **shared**
+  `normalize_path_root` (~:765-817) - never a second copy - so `--path-root
+  /foo/` normalizes identically to `/foo` (trailing-slash / separator-run
+  collapse) and `.`/`..`/`~`/non-absolute are rejected. The two flags are
+  mutually exclusive, enforced exactly as `parse_serve_stdio` does. Document both
+  in `buildTuiHelpText` (~:910-932).
+- `run_tui` (`src/tui/tui_entry.cpp` ~:180-181) stops hardcoding
+  `runtime_options.file_paths.allow_paths = true`: `--no-file-paths` ->
+  `allow_paths=false`; `--path-root D` -> `allow_paths=true, root=D`; neither
+  flag -> today's `allow_paths=true, root=unset` (local-operator default
+  preserved). Update the T-118 limitation comment at ~:173-179 to point at the
+  new flags.
+
+Behavior obligations (same as `serve-stdio`): both path forms require `write`,
+so a `--read-only tui` session cannot use `path` (server denies
+`not_authorized`); `--no-file-paths` makes `path` return `unsupported` even for a
+write-capable operator; `--path-root <DIR>` confines to the canonical root
+(escape -> `invalid_field`, file not opened).
+
 ## Files affected
 
 | Path | create/modify | What changes |
 |---|---|---|
-| `tests/unit/commands/76_import_row_validation_parity_test.cpp` | create | parity with `link.create` |
+| `src/cli_parser.cpp` | modify (cpp-expert) | `parseTuiCommand` + `buildTuiHelpText`: `--path-root`/`--no-file-paths` via shared `normalize_path_root`, mutual exclusion |
+| `include/url_shortener/cli/cli_parser.hpp` (`TuiCliOptions`) | modify (cpp-expert) | add `no_file_paths` / `path_root` fields |
+| `src/tui/tui_entry.cpp` | modify (cpp-expert) | `run_tui` maps the flags to `runtime_options.file_paths` |
+| `tests/unit/commands/ssrf_vectors.hpp` | create | one shared SSRF/URL vector list used by import-row **and** `link.create` tests (proves "no second validation path", T-40) |
+| `tests/unit/commands/76_import_row_validation_parity_test.cpp` | create | parity with `link.create` (uses `ssrf_vectors.hpp`) |
 | `tests/unit/commands/77_import_limits_test.cpp` | create | size, rows, line length, error cap |
 | `tests/unit/commands/78_path_argument_policy_test.cpp` | create | traversal, special files, symlinks, root policy |
-| `tests/conformance/py/31_import_limits_process_level.py` | create | REST body limit and path-on-REST, stdio line limit |
-| `sources.cmake` | modify | Append to `COMMANDS_UNIT_SOURCES`, `CONFORMANCE_PY_SOURCES` |
+| `tests/unit/cli/31_cli_parser_tui_path_flags.cpp` | create | `parseTuiCommand` regression (stem `31` is free; pairs with `30_cli_parser_tui_mode`): `--path-root /foo/` == `/foo`; `/foobar/x` refused; `.`/`..`/`~` rejected; mutual exclusion; flags map to `runtime_options.file_paths` (via `to_tui_options`) |
+| `tests/conformance/py/31_import_limits_process_level.py` | create | REST body limit and path-on-REST, stdio line limit, **and** `tui --path-root` confinement / `--no-file-paths` via a non-interactive `tui` invocation (EOF-on-stdin exit, options-mapping assertion) |
+| `sources.cmake` | modify | Append to `COMMANDS_UNIT_SOURCES`, the CLI unit list (owner adds `31_cli_parser_tui_path_flags`), and `CONFORMANCE_PY_SOURCES` |
 
 ## Classes and functions
 
@@ -80,7 +132,8 @@ ctest --test-dir cmake-build -R "^(commands__7[6-8]_|conformance_31_)" --output-
 | `tests/unit/commands/76_import_row_validation_parity_test.cpp` | `commands__76_import_row_validation_parity_test` | `unit` | 6 |
 | `tests/unit/commands/77_import_limits_test.cpp` | `commands__77_import_limits_test` | `unit` | 6 |
 | `tests/unit/commands/78_path_argument_policy_test.cpp` | `commands__78_path_argument_policy_test` | `unit` | 8 |
-| `tests/conformance/py/31_import_limits_process_level.py` | `conformance_31_import_limits_process_level` | `integration;conformance` | 7 |
+| `tests/unit/cli/31_cli_parser_tui_path_flags.cpp` | `31_cli_parser_tui_path_flags` | `unit` | 5 |
+| `tests/conformance/py/31_import_limits_process_level.py` | `conformance_31_import_limits_process_level` | `integration;conformance` | 8 |
 
 ## Constraints
 
@@ -90,9 +143,10 @@ ctest --test-dir cmake-build -R "^(commands__7[6-8]_|conformance_31_)" --output-
 
 ## Success criteria
 
-1. Import and create produce identical codes for the whole SSRF vector list (single shared list).
+1. Import and create produce identical codes for the whole SSRF vector list (single shared `ssrf_vectors.hpp`).
 2. No test can read outside its temp dir; sentinel content never appears in any response.
 3. REST rejects `path` on both pair commands.
+4. `tui --path-root /foo/` and `--path-root /foo` yield the same confinement; `/foobar/x` is refused `invalid_field`; `--no-file-paths` -> `unsupported`; the two flags are mutually exclusive.
 
 ## Out of scope / risks
 

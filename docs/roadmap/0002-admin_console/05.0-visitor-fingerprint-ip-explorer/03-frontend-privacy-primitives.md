@@ -27,7 +27,7 @@ web/admin/src/components/analytics/IdentityTimeline.tsx
 
 1. `MaskedIp`, `SensitiveValue` render exactly what the backend returns -
    they must not attempt to mask/unmask client-side (
-   [02-react-frontend-architecture.md §8](/docs/roadmap/0002-admin_console/02-react-frontend-architecture.md),
+   02-react-frontend-architecture.md §8 (`docs/roadmap/0002-admin_console/02-react-frontend-architecture.md`, planned, not yet written),
    [plan.md - Shared contract C5](/docs/roadmap/0002-admin_console/plan.md)).
 2. `FingerprintId` renders a fingerprint's internal ID (never raw
    components) with a copy-to-clipboard affordance, reusing the
@@ -36,7 +36,7 @@ web/admin/src/components/analytics/IdentityTimeline.tsx
    fields (bot, incognito, vpn, proxy, tor, relay, datacenter, tampering,
    tampering_confidence, anomaly_score, anti_detect_browser,
    virtual_machine, developer_tools, ...) from
-   [03-fingerprint-and-suspicion-model.md §6](/docs/roadmap/0002-admin_console/03-fingerprint-and-suspicion-model.md) -
+   03-fingerprint-and-suspicion-model.md §6 (`docs/roadmap/0002-admin_console/03-fingerprint-and-suspicion-model.md`, planned, not yet written) -
    it must degrade gracefully (e.g. "no signals recorded") when fields are
    absent, since task 06.0 is what actually populates them.
 4. `RiskReasonsList` renders a `risk_reasons[]` array with badges/labels;

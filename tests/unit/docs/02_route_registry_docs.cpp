@@ -62,3 +62,15 @@ BOOST_AUTO_TEST_CASE(generated_reference_includes_parameters_and_markers)
     BOOST_TEST(markdown.find("compatibility alias") != std::string::npos);
     BOOST_TEST(markdown.find("placeholder") != std::string::npos);
 }
+
+// The three REST job routes (milestone 0006, Task 05.0 subtask 11) are present
+// in the generated reference with their methods and paths.
+BOOST_AUTO_TEST_CASE(generated_reference_includes_job_routes)
+{
+    const auto markdown = renderMarkdown();
+    BOOST_TEST(markdown.find("| GET | `/api/v1/jobs` |") != std::string::npos);
+    BOOST_TEST(markdown.find("| GET | `/api/v1/jobs/{id}` |")
+               != std::string::npos);
+    BOOST_TEST(markdown.find("| POST | `/api/v1/jobs/{id}/cancel` |")
+               != std::string::npos);
+}

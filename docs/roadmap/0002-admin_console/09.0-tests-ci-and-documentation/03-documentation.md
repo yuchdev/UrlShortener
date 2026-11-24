@@ -36,7 +36,7 @@ assets, how to create the first admin user, how to log in.
 ### react-architecture.md
 
 Summarizes the frontend architecture from
-[02-react-frontend-architecture.md](/docs/roadmap/0002-admin_console/02-react-frontend-architecture.md)
+02-react-frontend-architecture.md (`docs/roadmap/0002-admin_console/02-react-frontend-architecture.md`, planned, not yet written)
 as implemented - directory layout, routing, API client, React Query
 conventions, tables, charts - linking back to the source spec rather than
 duplicating it wholesale.
@@ -45,21 +45,21 @@ duplicating it wholesale.
 
 Generated or hand-written reference for every `/admin/api/v1/*` and
 `/api/v1/tracking/*` endpoint actually implemented, cross-referenced against
-[04-admin-api-contract.md](/docs/roadmap/0002-admin_console/04-admin-api-contract.md).
+04-admin-api-contract.md (`docs/roadmap/0002-admin_console/04-admin-api-contract.md`, planned, not yet written).
 
 ### fingerprinting.md
 
 Must explain: production provider (Fingerprint Pro), fallback provider
 (ThumbmarkJS/FingerprintJS OSS), tracking modes (fast redirect / enhanced
 analytics / beacon), privacy risks, retention settings, risk scoring - see
-[03-fingerprint-and-suspicion-model.md](/docs/roadmap/0002-admin_console/03-fingerprint-and-suspicion-model.md).
+03-fingerprint-and-suspicion-model.md (`docs/roadmap/0002-admin_console/03-fingerprint-and-suspicion-model.md`, planned, not yet written).
 
 ### security-and-privacy.md
 
 Must explain: safe login flow, session cookie model, CSRF model, roles and
 permissions, IP masking, raw fingerprint restrictions, audit log, export
 policy - see
-[06-security-privacy-permissions.md](/docs/roadmap/0002-admin_console/06-security-privacy-permissions.md).
+06-security-privacy-permissions.md (`docs/roadmap/0002-admin_console/06-security-privacy-permissions.md`, planned, not yet written).
 
 ### local-development.md
 
@@ -78,7 +78,7 @@ where fixtures live, how to run each suite locally and in CI.
 A short annotated tour of each admin page (dashboard, analytics pages, URL
 pairs, visitor/fingerprint/IP explorer, console users, audit log, settings),
 referencing the routes from
-[02-react-frontend-architecture.md §2](/docs/roadmap/0002-admin_console/02-react-frontend-architecture.md).
+02-react-frontend-architecture.md §2 (`docs/roadmap/0002-admin_console/02-react-frontend-architecture.md`, planned, not yet written).
 
 ## Constraints
 

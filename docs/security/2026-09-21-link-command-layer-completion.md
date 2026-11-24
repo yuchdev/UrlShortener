@@ -6,7 +6,7 @@ enable / disable / restore / preview REST handlers in
 `src/http/handlers/link_handlers.cpp` onto `app::LinkCommandService`
 (`src/app/link_command_service.cpp`, `src/app/legacy_adapters.cpp`). No product
 code modified by this review. Uncommitted working-tree changes (.claude/, docs/,
-[README.md](/docs/security/README.md), CMakeLists.txt) are out of scope.
+README.md, CMakeLists.txt) are out of scope.
 
 ## Assets & trust boundaries
 

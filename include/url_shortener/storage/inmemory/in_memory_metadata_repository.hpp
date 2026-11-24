@@ -44,6 +44,17 @@ public:
         RepoError* error = nullptr) const override;
 
     /**
+     * @brief Looks up a `LinkRecord` by its stable id via the `by_id_`
+     * secondary index, then reads the record from `by_code_`.
+     * @see IMetadataRepository::GetById
+     * @note Always writes `RepoError::none` to `*error` (matching the
+     * `Exists`/`GetByShortCode` convenience in this adapter), including
+     * when the id is absent or empty.
+     */
+    std::optional<LinkRecord> GetById(
+        const std::string& id, RepoError* error = nullptr) const override;
+
+    /**
      * @brief Replaces the entry in `by_code_` keyed on
      * `record.short_code`; returns `false` with `not_found` if the
      * key is absent.
@@ -86,4 +97,9 @@ private:
     ///< Primary index: `short_code → LinkRecord`. Guarded by
     ///< `mutex_`.
     std::unordered_map<std::string, LinkRecord> by_code_;
+
+    ///< Secondary index: `id → short_code`, maintained alongside
+    ///< `by_code_` so `GetById` is O(1) instead of a table scan
+    ///< (threat model T-36). Guarded by `mutex_`.
+    std::unordered_map<std::string, std::string> by_id_;
 };

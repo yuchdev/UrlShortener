@@ -67,6 +67,19 @@ public:
         RepoError* error = nullptr) const override;
 
     /**
+     * @brief Looks up a link by its stable id using the indexed
+     * `SelectByIdSql` query. @see `IMetadataRepository::GetById`.
+     * @param[out] error If non-null, set to `RepoError::not_found` when no
+     * row matches, `RepoError::permanent_failure` on a row-mapping error,
+     * or a session / bootstrap error; set to `RepoError::none` on success.
+     * On an empty id, left untouched and no query is issued.
+     * @return The `LinkRecord` on success; `std::nullopt` if the id is
+     * empty, not found, or on any error.
+     */
+    std::optional<LinkRecord> GetById(
+        const std::string& id, RepoError* error = nullptr) const override;
+
+    /**
      * @brief Replaces a link's mutable fields.
      * @see `IMetadataRepository::UpdateLink`.
      * @param[out] error If non-null and the call fails, receives
@@ -115,13 +128,16 @@ public:
 
 private:
     /**
-     * @brief Ensures the `links` table exists, bootstrapping it on the
-     * first call. Idempotent; protected by `bootstrap_mutex_` so concurrent
-     * calls from `const` methods are safe.
+     * @brief Ensures the `links` table and the `idx_links_id` secondary
+     * index exist, bootstrapping them on the first call. The table DDL and
+     * the index DDL are run as two separate `ISqlSession::Bootstrap`
+     * statements (one statement per call, a SOCI/SQLite constraint). Both
+     * are `IF NOT EXISTS` and idempotent; protected by `bootstrap_mutex_`
+     * so concurrent calls from `const` methods are safe.
      * @param session Open session against which to run the DDL if needed.
      * @param[out] error Forwarded from `ISqlSession::Bootstrap` on failure;
      * set to `RepoError::none` if already bootstrapped.
-     * @return `true` if the schema is ready; `false` if the DDL failed.
+     * @return `true` if the schema is ready; `false` if either DDL failed.
      */
     bool EnsureBootstrapped(ISqlSession& session, RepoError* error) const;
 

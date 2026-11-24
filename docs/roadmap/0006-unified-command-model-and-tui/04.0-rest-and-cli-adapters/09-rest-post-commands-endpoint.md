@@ -16,6 +16,8 @@ dedicated resource route. It is disabled unless `--command-api-enabled true`, an
 ## Dependencies
 
 - Subtask 08 (`ServerConfig::command_api_enabled`, `command_api_role`).
+- Subtask 04 (create throttle, T-75, on by default): the selected create limiter reached from `LinkBackendHandle::createRateLimiter()` (dedicated in-memory by default, or Redis when `StorageConfig.rate_limit` selects it), and the `ServerConfig` fields `link_create_rate_limit` (30) / `link_create_rate_window_seconds` (60). This endpoint reuses them for `link.create` (incl. `dry_run`); no new config is added here.
+- `envelope_limits` (01.0/03, verified `envelope.hpp`) - fields `max_bytes`, `max_id_len`, `max_command_len` (64), `max_depth` (8); this handler overrides only `max_bytes`/`max_id_len` and leaves `max_command_len`/`max_depth` at their defaults (T-68). The member (256) and key-length (128) caps are enforced by the `scan_limits` inside `parse_request` (the scanner defaults, `json_scan.hpp`), not by `envelope_limits`.
 - 01.0 (specified): `execute_json(const CallerContext&, std::string_view request_text, const envelope_limits&)`, `serialize_response`, `http_status_for(const CommandResponse&)`
   (200 for `ok` including an accepted job, else `error_info_for(code).http_status`), `envelope_limits {max_bytes, max_id_len, ...}`.
 - Verified facts:
@@ -27,10 +29,11 @@ dedicated resource route. It is disabled unless `--command-api-enabled true`, an
     `application/json` forces a preflight the server never grants, which blocks drive-by requests from web pages. (DNS-rebinding defenses, e.g. `Host` allow-listing, are out of scope.)
 - The per-request runtime uses the **process-wide** `JobRunner` held by Task 05.0 subtask 20 (a per-request runner would lose every job); until 05.0/20
   lands, job-kind commands answer `unsupported` here.
-- Peer address: needed by `command_api_caller(config, peer)` (subtask 08). **Verified: nothing carries it today.** The sessions never
-  read `remote_endpoint()` and no log line records the peer (the logger only knows how to sanitize a field named `remote_addr`; no caller
-  sets it). `RouteContext` (`route_context.hpp`) has only `path_params`, `query_string`, `route_label`. This subtask owns the plumbing
-  (step 0 below); 04.0/07 and 05.0/11 read the same field.
+- Peer address: needed by `command_api_caller(config, peer)` (subtask 08). The `RouteContext::peer` plumbing (sessions reading
+  `remote_endpoint()`, `Router::dispatch`/`handleShortenerRequest` threading) is **delivered by subtask 04** (its create throttle needs the
+  peer first); this subtask only **verifies** and **consumes** it. The exact per-file edits are still documented in step 0 below as the
+  normative description of that plumbing, but they land in 04; if 04's edits are already present, step 0 is a no-op verification here.
+  `04.0/07` and `05.0/11` read the same field.
 
 ## Files affected
 
@@ -48,6 +51,11 @@ dedicated resource route. It is disabled unless `--command-api-enabled true`, an
 | `tests/unit/http/22_rest_commands_endpoint.cpp` | create | Endpoint tests. |
 | `sources.cmake` | modify | `COMMON_CPP_SOURCES` += `command_handlers.cpp`; `HTTP_UNIT_SOURCES` += the test. |
 
+**Peer plumbing rows (`route_context.hpp`, `request_handlers.*`, `router.*`, `http_session.cpp`) are delivered by subtask 04** (its create
+throttle needs `context.peer`). They are listed here as the normative description of the plumbing; in the implementation order 04 lands them
+and this subtask only verifies they are present. If 04 has not landed them yet, this subtask performs them (behavior-neutral, defaulted
+`peer = std::nullopt`).
+
 ## Classes and functions
 
 ```cpp
@@ -58,8 +66,8 @@ BeastResponse handleExecuteCommand(const BeastRequest& req, const ::ServerConfig
 // uses from subtask 02: rest_policy_refusal(registry, command, id)
 ```
 
-Peer plumbing (step 0, lands first, behavior-neutral): the defaulted parameter `peer = std::nullopt` means **non-loopback**, so every
-existing caller compiles and behaves unchanged. Existing call sites (verified; none edited): `handleShortenerRequest` in
+Peer plumbing (normative description; **delivered by subtask 04**, verified here): the defaulted parameter `peer = std::nullopt` means
+**non-loopback**, so every existing caller compiles and behaves unchanged. Existing call sites (verified; none edited): `handleShortenerRequest` in
 `tests/unit/http/02_endpoint_matrix_characterization.cpp`, `03_method_and_error_characterization.cpp`,
 `04_redirect_fallback_characterization.cpp`, `13_root_redirect_handler.cpp`, `tests/unit/link_management/07_stats_increment_test.cpp`;
 `Router::dispatch` in `tests/unit/http/07_router_dispatch.cpp`, `10_link_handlers.cpp`, `11_compatibility_handlers.cpp`,
@@ -71,16 +79,27 @@ Algorithm:
 
 1. `!command_api_enabled(config)` -> `makeApiErrorResponse(404, "not_found", "Route not found")` (byte-identical to the unmatched-route reply).
 2. Content type: the request's `Content-Type` media type (ignore parameters, case-insensitive) must be `application/json`, else `415 unsupported_media_type` "Content-Type must be application/json".
-3. `runtime = make_request_runtime(config)`; `limits.max_bytes = config.max_request_body_bytes`, `limits.max_id_len = config.request_id_max_length`.
+3. `runtime = make_request_runtime(config)`; build a **full** `envelope_limits` so its hardening defaults survive - `max_depth = 8` and
+   `max_command_len = 64` (the fields the struct actually carries, verified `envelope.hpp`) - and **override only**
+   `max_bytes = config.max_request_body_bytes` and `max_id_len = config.request_id_max_length` (T-68). **Never** zero-initialize a partial
+   `envelope_limits` and set only two fields, or a deep-nested body would reach the scanner with `max_depth = 0`. The member cap (256) and
+   key-length cap (128) are **not** `envelope_limits` fields: they live in the `scan_limits` that `parse_request` derives internally (the
+   scanner defaults, `json_scan.hpp`) and must not be loosened. The body is parsed by nothing but `parse_request`.
 4. `request = parse_request(req.body(), limits)`; on error answer that envelope. Then `rest_policy_refusal(*runtime.registry, request.command, request.id)`
-   (refuses `manage_users` commands); otherwise `response = runtime.registry->execute(command_api_caller(config, context.peer), request)`.
+   (refuses `manage_users` commands). **Create throttle (T-75):** if `request.command == "link.create"` - **including** when the envelope
+   carries a `dry_run` option (a `dry_run` runs the full SSRF/validator and is **not** cheaper, so it counts like a real create) - apply the
+   same create rate limit as subtask 04 (the same `createRateLimiter()` - in-memory default or Redis - same `link_create_rate_limit`/
+   `link_create_rate_window_seconds` config, keyed on `context.peer`, same fail-open semantics, skipped only when `link_create_rate_limit == 0`
+   or the peer is absent), **before `execute`**. Over limit -> `429` `rate_limited` via `makeApiErrorResponse(429, "rate_limited", "Too many requests")` (transport-
+   level, the same legacy shape this handler already uses for the 404 gate and the 415 content-type refusal; not an envelope and not a
+   `CommandErrorCode`). No other command is throttled here. Otherwise `response = runtime.registry->execute(command_api_caller(config, context.peer), request)`.
 5. `makeResponse(req, config, is_tls, http_status_for(response), serialize_response(response), "application/json")`.
 
 The body is the envelope, not the legacy `{"error":{...}}` shape; `X-Request-Id` (HTTP header) and the envelope `id` are independent.
 
 ## Implementation steps
 
-0. Peer plumbing (above); build and run the whole `-L unit` set to prove it is behavior-neutral before adding the route.
+0. Verify the peer plumbing delivered by subtask 04 is present (`RouteContext::peer` populated by `Router::dispatch`); if 04 has not landed it, perform the behavior-neutral edits from the table and run the whole `-L unit` set to prove it is behavior-neutral before adding the route.
 1. Add the label and classifier branch and update test 01 (smallest possible edit: one string in the known list plus classifier cases).
 2. Implement the handler and `command_api_caller`; register route and descriptor.
 3. Write the endpoint test; run it with the route-consistency tests.
@@ -96,7 +115,7 @@ ctest --test-dir cmake-build -R "^(22_rest_commands_endpoint|01_route_registry|0
 
 | Test file | Target | Label | Cases |
 |---|---|---|---|
-| `tests/unit/http/22_rest_commands_endpoint.cpp` | `22_rest_commands_endpoint` | unit | disabled (default) -> 404 body byte-equal to the unmatched-route response; enabled + role `user`: `link.list` -> 200 envelope `ok:true,result`; `link.create` -> 403 `not_authorized` envelope (`ok:false`), store unchanged; enabled + role `admin` from a loopback peer: `link.create` -> 200 with `result` equal to `serializeLinkViewJson`, then `link.get`, `link.update`, `link.disable`, `link.delete`; enabled + role `admin` from a non-loopback peer: `link.create` -> 403 `not_authorized` (runs as `user`); enabled + role `admin` with **no** peer (`handleShortenerRequest` called without the new argument) -> 403 (absent = non-loopback); a `RouteContext` built by `dispatch` carries the passed peer; a stub `manage_users` descriptor registered in a test registry -> 403 `not_authorized` for every role and peer, handler never called; envelope errors: not JSON -> 400 `invalid_envelope`, missing `command` -> 400, `v:2` -> 400, unknown command -> 404 `unknown_command`, bad args -> 400 `invalid_field` (`<arg>: <reason>`), `slug_conflict` -> 409, `reserved_slug` -> 409, `not_found` -> 404, `dry_run` on a non-dry-run command -> 501 `unsupported`; id echoed; absent id -> `srv-<n>`; id longer than `request_id_max_length` -> 400; `Content-Type` missing / `text/plain` / `application/x-www-form-urlencoded` -> 415; `application/json; charset=utf-8` and `Application/JSON` accepted; body larger than `max_request_body_bytes` -> 400 `invalid_envelope` (the 413 happens earlier in the session layer, covered by existing session tests); unknown top-level envelope key -> 400; `db.rows {"table":"users"}` -> 404 `not_found`; metric label of the path is `api_commands`; no response ever contains the raw request body. |
+| `tests/unit/http/22_rest_commands_endpoint.cpp` | `22_rest_commands_endpoint` | unit | disabled (default) -> 404 body byte-equal to the unmatched-route response; enabled + role `user`: `link.list` -> 200 envelope `ok:true,result`; `link.create` -> 403 `not_authorized` envelope (`ok:false`), store unchanged; enabled + role `admin` from a loopback peer: `link.create` -> 200 with `result` equal to `serializeLinkViewJson`, then `link.get`, `link.update`, `link.disable`, `link.delete`; enabled + role `admin` from a non-loopback peer: `link.create` -> 403 `not_authorized` (runs as `user`); enabled + role `admin` with **no** peer (`handleShortenerRequest` called without the new argument) -> 403 (absent = non-loopback); a `RouteContext` built by `dispatch` carries the passed peer; a stub `manage_users` descriptor registered in a test registry -> 403 `not_authorized` for every role and peer, handler never called; envelope errors: not JSON -> 400 `invalid_envelope`, missing `command` -> 400, `v:2` -> 400, unknown command -> 404 `unknown_command`, bad args -> 400 `invalid_field` (`<arg>: <reason>`), `slug_conflict` -> 409, `reserved_slug` -> 409, `not_found` -> 404, `dry_run` on a non-dry-run command -> 501 `unsupported`; id echoed; absent id -> `srv-<n>`; id longer than `request_id_max_length` -> 400; `Content-Type` missing / `text/plain` / `application/x-www-form-urlencoded` -> 415; `application/json; charset=utf-8` and `Application/JSON` accepted; body larger than `max_request_body_bytes` -> 400 `invalid_envelope` (the 413 happens earlier in the session layer, covered by existing session tests); **a depth-9 JSON body -> 400 `invalid_envelope` (`too_deep`) proving `max_depth = 8` survived, and a 257-member object -> 400 `invalid_envelope` (`too_many_members`, from the scanner's `scan_limits` default) (T-68: a partial/zero `envelope_limits` must not disable these caps)**; unknown top-level envelope key -> 400; `db.rows {"table":"users"}` -> 404 `not_found`; **create throttle (T-75, on by default): with `link_create_rate_limit = N`, the `(N+1)`th `link.create` from one loopback-admin peer -> `429 rate_limited` (fixed body); a `link.create` with `"options":{"dry_run":true}` counts toward the limit (a dry_run over the cap -> 429); a limiter failure -> the command proceeds (fail-open); the key is the peer address, not an `X-Forwarded-For` header; `--link-create-rate-limit 0` -> no throttle; `link.list` and other commands are not throttled**; metric label of the path is `api_commands`; no response ever contains the raw request body. |
 
 Manual check: start with `--command-api-enabled true --command-api-role admin`; `curl -s -X POST localhost:8000/api/v1/commands -H 'Content-Type: application/json' -d '{"v":1,"command":"link.create","args":{"target_url":"https://example.com/docs","slug":"docs"}}'`; then the same without the header (expect 415) and without the flag (expect 404).
 
@@ -117,7 +136,7 @@ Manual check: start with `--command-api-enabled true --command-api-role admin`; 
 
 ## Out of scope / risks
 
-- Host-header allow-listing / DNS-rebinding protection; TLS-only enforcement; rate limiting of the endpoint.
+- Host-header allow-listing / DNS-rebinding protection; TLS-only enforcement. **Endpoint-wide** rate limiting of *all* commands is out of scope; only `link.create` is throttled (T-75, shared with subtask 04), keyed on the peer, `dry_run` counting like a real create.
 - **Reverse proxy (D4):** the peer is the TCP peer. Behind a proxy on the same host every request is loopback, so `--command-api-role admin`
   would grant admin to every client. `X-Forwarded-For`/`Forwarded` are deliberately not honoured (spoofable); such deployments keep role `user`.
 - Accepted-job HTTP status is 200 (01.0 `http_status_for`); a client wanting 202 would need a catalog change. Task 07.0 shim 08 was waiting on this decision: it is 200.

@@ -15,9 +15,11 @@ class AnalyticsTimeBuckets(LinkManagementIntegrationBase):
         create_link(self.port,"anx03","https://example.com")
         request(self.port,"GET","/anx03")
         now = int(time.time())
+        # Bounded +-1h window: keeps the span under the T-76 10,000-bucket
+        # cap (04.0/03) while still bracketing the just-recorded event.
         status,payload,_=request(
             self.port,"GET",
-            f"/api/v1/links/anx03/stats?from=0&to={now + 3600}&bucket=hour"
+            f"/api/v1/links/anx03/stats?from={now - 3600}&to={now + 3600}&bucket=hour"
         )
         self.assertEqual(200,status)
         self.assertIn('"time_buckets"',payload)

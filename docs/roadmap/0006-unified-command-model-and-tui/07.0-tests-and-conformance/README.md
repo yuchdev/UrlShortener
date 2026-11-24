@@ -1,7 +1,16 @@
 # Task 07.0 - Tests and conformance
 
+> **Amended 2026-11-20 (as-built reconciliation).** Specs 18-29, 20, 21 and 33
+> were rewritten against the names Tasks 01.0-06.0 actually built; coverage 06.0
+> already shipped is marked *consumed* and only real gaps remain as work items.
+> See the 2026-11-20 "07.0 entry: as-built reconciliation (user rulings)" in
+> [status.md](/docs/roadmap/0006-unified-command-model-and-tui/status.md) and the
+> [standing threat brief](/docs/security/0006-07.0-tests-and-conformance-threat-brief.md).
+> Exit criterion 4 now includes D13; Settings goldens (`d13_*`) are owned by
+> 06.0/21, not 07.0/24-25.
+
 **Parent milestone:** [Milestone 0006 - Unified Command Model and TUI](/docs/roadmap/0006-unified-command-model-and-tui/plan.md)
-**Status:** ⬜ Not started
+**Status:** ✅ Complete
 **Depends on:** [01.0](/docs/roadmap/0006-unified-command-model-and-tui/01.0-command-model-core/README.md) (registry, envelope), [03.0](/docs/roadmap/0006-unified-command-model-and-tui/03.0-link-and-browse-commands/README.md) (commands), [04.0](/docs/roadmap/0006-unified-command-model-and-tui/04.0-rest-and-cli-adapters/README.md) (REST, `cmd`), [05.0](/docs/roadmap/0006-unified-command-model-and-tui/05.0-jobs-pairs-and-stdio/README.md) (jobs, stdio), [06.0](/docs/roadmap/0006-unified-command-model-and-tui/06.0-tui/README.md) (TUI). Work is incremental: groups A-D can start as soon as 01.0 lands and grow with each task; the final gate (group G) runs after 06.0.
 
 ## Scope
@@ -37,40 +46,40 @@ G gates             04, 06-10, 30, 32 -> 33 (CI wiring) -> 34 (coverage gap + re
 
 | # | Document | Status | Depends on | Blocks |
 |---|----------|--------|------------|--------|
-| 01 | [Corpus schema and lint](01-corpus-schema-and-lint.md) | ⬜ Not started | Task 01.0 | 02, 03, 05, 11, 12, 13, 14 |
-| 02 | [Matcher and normalizer vectors](02-matcher-and-normalizer-vectors.md) | ⬜ Not started | 01 | 03, 05 |
-| 03 | [C++ conformance support library](03-cpp-conformance-support-library.md) | ⬜ Not started | 01, 02 | 04, 10 |
-| 04 | [Direct registry shim and runner](04-direct-registry-shim-and-runner.md) | ⬜ Not started | 03, Task 01.0, Task 02.0, Task 03.0 | 10, 11, 12, 13, 14, 33 |
-| 05 | [Python harness common module](05-python-harness-common-module.md) | ⬜ Not started | 01, 02 | 06, 07, 08 |
-| 06 | [CLI `cmd` shim](06-cli-cmd-shim.md) | ⬜ Not started | 05, Task 02.0, Task 04.0 | 15, 33 |
-| 07 | [serve-stdio shim](07-serve-stdio-shim.md) | ⬜ Not started | 05, Task 05.0 | 15, 33 |
-| 08 | [REST generic shim](08-rest-generic-shim.md) | ⬜ Not started | 05, Task 04.0 | 09, 15, 33 |
-| 09 | [REST resource-route shim](09-rest-resource-route-shim.md) | ⬜ Not started | 08, Task 04.0 | 15, 33 |
-| 10 | [TUI InProcessClient shim](10-tui-inprocess-client-shim.md) | ⬜ Not started | 03, 04, Task 06.0 | 15, 33 |
-| 11 | [Corpus: link commands](11-corpus-link-commands.md) | ⬜ Not started | 01, 04, Task 03.0 | 15 |
-| 12 | [Corpus: browse and system commands](12-corpus-browse-and-system-commands.md) | ⬜ Not started | 01, 04, Task 03.0 | 15 |
-| 13 | [Corpus: jobs, import and export](13-corpus-jobs-import-export.md) | ⬜ Not started | 01, 04, Task 05.0 | 15 |
-| 14 | [Corpus: envelope errors and authorization](14-corpus-envelope-errors-and-authorization.md) | ⬜ Not started | 01, 04, Task 01.0, Task 03.0 | 15 |
-| 15 | [Corpus coverage gate](15-corpus-coverage-gate.md) | ⬜ Not started | 06, 07, 08, 09, 10, 11, 12, 13, 14 | 34 |
-| 16 | [Catalog drift: command sections](16-catalog-drift-command-sections.md) | ⬜ Not started | Task 01.0, Task 03.0 | 34, 08.0/03 |
-| 17 | [Catalog drift: route table](17-catalog-drift-route-table.md) | ⬜ Not started | Task 04.0 | 34, 08.0/09 |
-| 18 | [Security: allowlist and redaction](18-security-allowlist-and-redaction.md) | ⬜ Not started | Task 01.0, Task 03.0, Task 05.0 | 34 |
-| 19 | [Security: authorization matrix](19-security-authorization-matrix.md) | ⬜ Not started | Task 01.0, Task 04.0, Task 05.0 | 34 |
-| 20 | [Security: import SSRF, size and path limits](20-security-import-ssrf-size-and-path-limits.md) | ⬜ Not started | Task 05.0 | 34 |
-| 21 | [Security: no listener, no URI store](21-security-no-listener-and-no-uri-store.md) | ⬜ Not started | Task 04.0, Task 05.0, Task 06.0 | 34 |
-| 22 | [TUI mock command client (extends the 06.0 mock)](22-tui-mock-command-client.md) | ⬜ Not started | Task 06.0 | 23, 26, 27, 28, 29, 08.0/11 |
-| 23 | [TUI snapshot renderer and golden compare (extends the 06.0 harness)](23-tui-snapshot-renderer-and-golden-compare.md) | ⬜ Not started | 22 | 24, 25, 27, 28, 29, 08.0/11 |
-| 24 | [TUI snapshots: navigation screens](24-tui-snapshots-navigation-screens.md) | ⬜ Not started | 23, Task 06.0 | 29, 34, 08.0/10, 08.0/11 |
-| 25 | [TUI snapshots: forms, jobs, palette, dialogs](25-tui-snapshots-forms-jobs-palette-dialogs.md) | ⬜ Not started | 23, Task 06.0 | 29, 34, 08.0/10, 08.0/11 |
-| 26 | [FormBuilder property tests](26-form-builder-property-tests.md) | ⬜ Not started | 22, Task 01.0, Task 06.0 | 29, 34, 08.0/11 |
-| 27 | [TUI state machine and non-blocking tests](27-tui-state-machine-and-nonblocking-tests.md) | ⬜ Not started | 22, 23, Task 06.0 | 29, 34, 08.0/11 |
-| 28 | [TUI confirm and read-only tests](28-tui-confirm-and-read-only-tests.md) | ⬜ Not started | 22, 23, Task 06.0 | 29, 34, 08.0/11 |
-| 29 | [TUI test plan and checklist traceability](29-tui-test-plan-and-checklist-traceability.md) | ⬜ Not started | 22, 23, 24, 25, 26, 27, 28, 06.0/20 | 34 |
-| 30 | [Perf label registration](30-perf-label-registration.md) | ⬜ Not started | none | 32, 33 |
-| 31 | [Redirect isolation structural guard](31-redirect-isolation-structural-guard.md) | ⬜ Not started | Task 01.0, 02.0/08 | 34 |
-| 32 | [Redirect fast-path timing guard](32-redirect-fast-path-timing-guard.md) | ⬜ Not started | 30, Task 02.0, Task 04.0 | 33, 34 |
-| 33 | [CI wiring](33-ci-wiring.md) | ⬜ Not started | 04, 06, 07, 08, 09, 10, 30, 32 | 34 |
-| 34 | [Coverage-gap run and review gates](34-coverage-gap-run-and-review-gates.md) | ⬜ Not started | 15, 16, 17, 18, 19, 20, 21, 24, 25, 26, 27, 28, 29, 31, 32, 33 | 08.0/01 |
+| 01 | [Corpus schema and lint](01-corpus-schema-and-lint.md) | ✅ Complete | Task 01.0 | 02, 03, 05, 11, 12, 13, 14 |
+| 02 | [Matcher and normalizer vectors](02-matcher-and-normalizer-vectors.md) | ✅ Complete | 01 | 03, 05 |
+| 03 | [C++ conformance support library](03-cpp-conformance-support-library.md) | ✅ Complete | 01, 02 | 04, 10 |
+| 04 | [Direct registry shim and runner](04-direct-registry-shim-and-runner.md) | ✅ Complete | 03, Task 01.0, Task 02.0, Task 03.0 | 10, 11, 12, 13, 14, 33 |
+| 05 | [Python harness common module](05-python-harness-common-module.md) | ✅ Complete | 01, 02 | 06, 07, 08 |
+| 06 | [CLI `cmd` shim](06-cli-cmd-shim.md) | ✅ Complete | 05, Task 02.0, Task 04.0 | 15, 33 |
+| 07 | [serve-stdio shim](07-serve-stdio-shim.md) | ✅ Complete | 05, Task 05.0 | 15, 33 |
+| 08 | [REST generic shim](08-rest-generic-shim.md) | ✅ Complete | 05, Task 04.0 | 09, 15, 33 |
+| 09 | [REST resource-route shim](09-rest-resource-route-shim.md) | ✅ Complete | 08, Task 04.0 | 15, 33 |
+| 10 | [TUI InProcessClient shim](10-tui-inprocess-client-shim.md) | ✅ Complete | 03, 04, Task 06.0 | 15, 33 |
+| 11 | [Corpus: link commands](11-corpus-link-commands.md) | ✅ Complete | 01, 04, Task 03.0 | 15 |
+| 12 | [Corpus: browse and system commands](12-corpus-browse-and-system-commands.md) | ✅ Complete | 01, 04, Task 03.0 | 15 |
+| 13 | [Corpus: jobs, import and export](13-corpus-jobs-import-export.md) | ✅ Complete | 01, 04, Task 05.0 | 15 |
+| 14 | [Corpus: envelope errors and authorization](14-corpus-envelope-errors-and-authorization.md) | ✅ Complete | 01, 04, Task 01.0, Task 03.0 | 15 |
+| 15 | [Corpus coverage gate](15-corpus-coverage-gate.md) | ✅ Complete | 06, 07, 08, 09, 10, 11, 12, 13, 14 | 34 |
+| 16 | [Catalog drift: command sections](16-catalog-drift-command-sections.md) | ✅ Complete | Task 01.0, Task 03.0 | 34, 08.0/03 |
+| 17 | [Catalog drift: route table](17-catalog-drift-route-table.md) | ✅ Complete | Task 04.0 | 34, 08.0/09 |
+| 18 | [Security: allowlist and redaction](18-security-allowlist-and-redaction.md) | ✅ Complete | Task 01.0, Task 03.0, Task 05.0 | 34 |
+| 19 | [Security: authorization matrix](19-security-authorization-matrix.md) | ✅ Complete | Task 01.0, Task 04.0, Task 05.0, Task 06.0 | 34 |
+| 20 | [Security: import SSRF, size and path limits](20-security-import-ssrf-size-and-path-limits.md) | ✅ Complete | Task 05.0, Task 06.0 | 34 |
+| 21 | [Security: no listener, no URI store](21-security-no-listener-and-no-uri-store.md) | ✅ Complete | Task 04.0, Task 05.0, Task 06.0 | 34 |
+| 22 | [TUI mock command client (extends the 06.0 mock)](22-tui-mock-command-client.md) | ✅ Complete | Task 06.0 | 23, 26, 27, 28, 29, 08.0/11 |
+| 23 | [TUI snapshot renderer and golden compare (extends the 06.0 harness)](23-tui-snapshot-renderer-and-golden-compare.md) | ✅ Complete (consumed; .gitattributes added) | 22 | 24, 25, 27, 28, 29, 08.0/11 |
+| 24 | [TUI snapshots: navigation screens](24-tui-snapshots-navigation-screens.md) | ✅ Complete (consumed by 06.0) | 23, Task 06.0 | 29, 34, 08.0/10, 08.0/11 |
+| 25 | [TUI snapshots: forms, jobs, palette, dialogs](25-tui-snapshots-forms-jobs-palette-dialogs.md) | ✅ Complete (consumed by 06.0) | 23, Task 06.0 | 29, 34, 08.0/10, 08.0/11 |
+| 26 | [FormModel property tests](26-form-builder-property-tests.md) | ✅ Complete | 22, Task 01.0, Task 06.0 | 29, 34, 08.0/11 |
+| 27 | [TUI state machine and non-blocking tests](27-tui-state-machine-and-nonblocking-tests.md) | ✅ Complete | 22, 23, Task 06.0 | 29, 34, 08.0/11 |
+| 28 | [TUI confirm and read-only tests](28-tui-confirm-and-read-only-tests.md) | ✅ Complete | 22, 23, Task 06.0 | 29, 34, 08.0/11 |
+| 29 | [TUI test plan and checklist traceability](29-tui-test-plan-and-checklist-traceability.md) | ✅ Complete | 22, 23, 24, 25, 26, 27, 28, 06.0/20 | 34 |
+| 30 | [Perf label registration](30-perf-label-registration.md) | ✅ Complete | none | 32, 33 |
+| 31 | [Redirect isolation structural guard](31-redirect-isolation-structural-guard.md) | ✅ Complete | Task 01.0, 02.0/08 | 34 |
+| 32 | [Redirect fast-path timing guard](32-redirect-fast-path-timing-guard.md) | ✅ Complete | 30, Task 02.0, Task 04.0 | 33, 34 |
+| 33 | [CI wiring](33-ci-wiring.md) | ✅ Complete | 04, 06, 07, 08, 09, 10, 30, 32 | 34 |
+| 34 | [Coverage-gap run and review gates](34-coverage-gap-run-and-review-gates.md) | ✅ Complete | 15, 16, 17, 18, 19, 20, 21, 24, 25, 26, 27, 28, 29, 31, 32, 33 | 08.0/01 |
 
 ## Conventions shared by all subtasks (read once)
 
@@ -159,7 +168,8 @@ subtask 08) and `admin` with `--command-api-role admin` from a loopback peer.
    error codes present in the corpus.
 3. Catalog-drift tests (16, 17) are green: `docs/commands/README.md` equals the
    generator output.
-4. Security tests 18-21 green; TUI goldens D1-D10 committed and green.
+4. Security tests 18-21 green; TUI goldens D1-D10 **and D13** (Settings, shipped
+   by 06.0/21 as `d13_*`) committed and green.
 5. `-L perf` runs at least the registered redirect guard; structural guard green.
 6. `/test-gap tests/conformance` and `/test-gap src/commands` produce no
    unaddressed P0 item; `/verify-subtask` reports PASS for 07.0 subtasks and

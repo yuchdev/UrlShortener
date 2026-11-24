@@ -107,6 +107,29 @@ public:
         return out;
     }
 
+    std::optional<SqlRow> SelectById(const std::string& sql,
+                                     const std::string& id,
+                                     RepoError* error) override
+    {
+        std::optional<SqlRow> out;
+        bool ok = RunWithRetry([&]() {
+            soci::rowset<soci::row> rs = (session_.prepare << sql, soci::use(id, "id"));
+            auto it = rs.begin();
+            if (it == rs.end()) {
+                out = std::nullopt;
+                return;
+            }
+            out = RowFromSoci(*it);
+        }, true, error);
+        if (!ok) {
+            return std::nullopt;
+        }
+        if (!out && error) {
+            *error = RepoError::not_found;
+        }
+        return out;
+    }
+
     bool UpdateLink(const std::string& sql, const SqlRow& row, RepoError* error) override
     {
         std::string target_url = row.target_url.value_or("");
@@ -166,6 +189,7 @@ public:
         std::string owner_val;
         soci::indicator owner_ind = soci::i_null;
         ToSociIndicator(owner, owner_val, owner_ind);
+        int has_owner_int = owner.has_value() ? 1 : 0;
         int include_inactive_int = include_inactive ? 1 : 0;
         int limit_int = static_cast<int>(limit);
         int offset_int = static_cast<int>(offset);
@@ -173,6 +197,7 @@ public:
         std::vector<SqlRow> rows;
         bool ok = RunWithRetry([&]() {
             soci::rowset<soci::row> rs = (session_.prepare << sql,
+                                          soci::use(has_owner_int, "has_owner"),
                                           soci::use(owner_val, owner_ind, "owner_id"),
                                           soci::use(include_inactive_int, "include_inactive"),
                                           soci::use(limit_int, "limit"),

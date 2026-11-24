@@ -98,8 +98,16 @@ Analytics tests must cover:
 
 ### 3.7 Performance and smoke benchmarks
 
-A lightweight, automatable performance smoke layer should exist for regression detection.
-It does not replace deeper benchmarking but should detect obvious regressions.
+The **`perf`** CTest label (registered as of Milestone 0006, tests under
+`tests/perf/`) covers advisory latency and throughput checks for the redirect
+fast path and analytics pipeline. The label is **excluded** from the default
+developer union (`-L "unit|contract|integration|e2e"`); select it explicitly
+with `-L perf`. See `tests/perf/README.md` for the baseline procedure and
+advisory-vs-gate semantics.
+
+A lightweight, automatable performance smoke layer should exist for regression
+detection. It does not replace deeper benchmarking but should detect obvious
+regressions.
 
 ### 3.8 Hardening/fuzz/negative tests
 
@@ -111,6 +119,39 @@ Especially by Stage 05, tests must include malformed inputs and boundary cases s
 - malformed URLs
 - backend unavailability
 - analytics queue saturation
+
+### 3.9 Command registry tests
+
+Command registry tests must cover:
+
+- descriptor and handler unit tests for every registered command
+- every command has at least one corpus case (coverage gate via
+  `conformance_20_coverage_gate`; run with `-L conformance`)
+- command catalog drift detection: `commands__12_catalog_drift` (`unit` label)
+
+### 3.10 TUI tests
+
+TUI tests must cover:
+
+- snapshot (golden) tests: every screen state has a golden under
+  `tests/unit/tui/golden/`; regenerate with `UPDATE_GOLDEN=1`
+- property-based `FormModel` round-trips for every registered `ArgSpec` type
+  (`tui__30_form_model_property_test`)
+- state-machine edge coverage: navigation, back, cancel, quit
+  (`tui__31_screen_transition_requests_test`)
+
+### 3.11 Security and allowlist tests
+
+Security tests must cover:
+
+- command allowlist and log-redaction rules (`commands__70`..`72`)
+- authorization matrix: every command's required role, asserted against the
+  descriptor matrix (`commands__74`) and replayed through the conformance corpus
+  (`41_authorization.json`, `42_authorization_matrix.json`)
+- import row validation parity, import size limits, and path argument policy
+  (`commands__76`..`78`)
+- no-listener and no-URI-store guarantees for `cmd`, `serve-stdio`, and `tui`
+  modes (`commands__79`, integration `conformance_32_no_listener_process_level`)
 
 ---
 

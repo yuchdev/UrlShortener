@@ -1,0 +1,74 @@
+{
+  "corpus_version": 1,
+  "suite": "schema_selftest",
+  "description": "Minimal valid corpus exercising the v1 schema; used by the lint self-test.",
+  "allow_unknown_codes": true,
+  "cases": [
+    {
+      "name": "selftest_create_roundtrip",
+      "doc": "admin creates a link and reads it back",
+      "command": "link.create",
+      "steps": [
+        {
+          "label": "create",
+          "request": {
+            "v": 1,
+            "command": "link.create",
+            "args": { "target_url": "https://example.com/docs", "slug": "docs" }
+          },
+          "expect": {
+            "ok": true,
+            "result": { "slug": "docs", "created_at": "<ts>", "id": "<id>" },
+            "match": "subset"
+          },
+          "save": { "slug": "$.result.slug" }
+        },
+        {
+          "label": "get",
+          "request": {
+            "v": 1,
+            "command": "link.get",
+            "args": { "slug": "${slug}" }
+          },
+          "expect": {
+            "ok": true,
+            "result": { "slug": "docs" },
+            "match": "subset"
+          }
+        }
+      ]
+    },
+    {
+      "name": "selftest_create_conflict",
+      "doc": "creating a duplicate slug returns slug_conflict",
+      "command": "link.create",
+      "steps": [
+        {
+          "label": "first",
+          "request": {
+            "v": 1,
+            "command": "link.create",
+            "args": { "target_url": "https://example.com/a", "slug": "dup" }
+          },
+          "expect": {
+            "ok": true,
+            "result": { "slug": "dup" },
+            "match": "subset"
+          }
+        },
+        {
+          "label": "conflict",
+          "request": {
+            "v": 1,
+            "command": "link.create",
+            "args": { "target_url": "https://example.com/b", "slug": "dup" }
+          },
+          "expect": {
+            "ok": false,
+            "error": { "code": "slug_conflict" }
+          }
+        }
+      ]
+    }
+  ]
+}

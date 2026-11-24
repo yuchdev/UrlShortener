@@ -4,6 +4,8 @@
 namespace url_shortener::observability
 {
 
+class FileSink;
+
 /**
  * @brief Process-wide singleton factory that owns the active logging
  * configuration and dispenses pre-configured `Logger` instances.
@@ -33,7 +35,13 @@ public:
      * on success.
      * @return `true` if `cfg` is valid and was stored; `false` if
      * `ValidateLoggingConfig` rejected `cfg` (e.g. `LogSink::File`
-     * with an empty `file_path`, or `max_field_length == 0`).
+     * with an empty `file_path`, or `max_field_length == 0`), or if
+     * `cfg.sink == LogSink::File` and the file could not be opened
+     * (missing directory, permission denied, or a symlink at the final
+     * path component). On a `File`-open failure `error` receives a
+     * fixed, value-free diagnostic that never contains the path, and the
+     * previously active configuration and file sink are left untouched
+     * (fail-closed: output is never silently redirected to `stderr`).
      */
     static bool Initialize(const LoggingConfig& cfg,
                            std::string* error = nullptr);
@@ -57,6 +65,20 @@ public:
      * `Initialize` is called again.
      */
     static const LoggingConfig& Config();
+
+    /**
+     * @brief Returns the open file sink when `Config().sink == LogSink::File`.
+     *
+     * Non-owning observer of the sink opened by the most recent successful
+     * @ref Initialize call. Used by `Logger::log` to route a line to the file
+     * destination. Because @ref Initialize fails closed, a successful
+     * `LogSink::File` initialization always yields a non-null sink here.
+     *
+     * @return The active @ref FileSink, or `nullptr` when the current sink is
+     * not `LogSink::File` (or `Initialize` has not been called). The pointer is
+     * owned by the factory and is valid until the next @ref Initialize call.
+     */
+    static FileSink* ActiveFileSink();
 };
 
 }  // namespace url_shortener::observability

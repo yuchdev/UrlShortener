@@ -1,0 +1,24 @@
+╭ Run demo.every  (command: demo.every) ───────────────────────────────────────╮
+│s        [                                        ]                           │
+│n        [                                        ]                           │
+│ts       [                                        ]    ISO-8601, blank = never│
+│b        [ ]                                                                  │
+│choice   ( ) a  ( ) b  ( ) c                                                  │
+│sort     [created_at        v]                                                │
+│list     [                                        ]            comma separated│
+│map      [                                          key=value, comma separated│
+│campaign [name      ] [source    ]                                            │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│[ Run ]  [ Cancel ]                                        validation: sort ok│
+├──────────────────────────────────────────────────────────────────────────────┤
+│Equivalent: url_shortener cmd demo.every --json '{"sort":"created_at"}'       │
+╰──────────────────────────────────────────────────────────────────────────────╯

@@ -1,5 +1,6 @@
 #include <url_shortener/http/router_builder.hpp>
 
+#include <url_shortener/http/handlers/command_handlers.hpp>
 #include <url_shortener/http/handlers/compatibility_handlers.hpp>
 #include <url_shortener/http/handlers/fallback_handlers.hpp>
 #include <url_shortener/http/handlers/link_handlers.hpp>
@@ -43,6 +44,7 @@ Router RouterBuilder::buildApplicationRouter()
     router.add(bhttp::verb::get, "/readyz", "readyz", handleReadyz);
     router.add(bhttp::verb::get, "/metrics", "metrics", handleMetrics);
 
+    router.add(bhttp::verb::get, "/api/v1/links", "api_links", handleListLinks);
     router.add(bhttp::verb::get, "/api/v1/links/id/{id}", "api_links", handleGetLinkById);
     router.add(bhttp::verb::get, "/api/v1/links/{slug}/preview", "api_links", handlePreviewLink);
     router.add(bhttp::verb::get, "/api/v1/links/{slug}/qr", "api_links", handlePlaceholderFeature);
@@ -55,6 +57,13 @@ Router RouterBuilder::buildApplicationRouter()
     router.add(bhttp::verb::patch, "/api/v1/links/{slug}", "api_links", handlePatchLink);
     router.add(bhttp::verb::delete_, "/api/v1/links/{slug}", "api_links", handleDeleteLink);
     router.add(bhttp::verb::post, "/api/v1/links", "api_links", handleCreateLink);
+
+    router.add(bhttp::verb::get, "/api/v1/commands", "api_commands", handleListCommands);
+    router.add(bhttp::verb::post, "/api/v1/commands", "api_commands", handleExecuteCommand);
+
+    router.add(bhttp::verb::get, "/api/v1/jobs", "api_commands", handleListJobs);
+    router.add(bhttp::verb::get, "/api/v1/jobs/{id}", "api_commands", handleGetJob);
+    router.add(bhttp::verb::post, "/api/v1/jobs/{id}/cancel", "api_commands", handleCancelJob);
 
     router.add(bhttp::verb::post, "/api/v1/short-urls", "api_links", handleCompatCreateLink);
     router.add(bhttp::verb::get, "/api/v1/short-urls/{slug}", "api_links", handleCompatGetLinkBySlug);

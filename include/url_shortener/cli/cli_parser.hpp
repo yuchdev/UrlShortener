@@ -5,11 +5,15 @@
 #pragma once
 
 #include <optional>
+#include <stdexcept>
 #include <string>
+#include <utility>
 #include <variant>
+#include <vector>
 
 #include <url_shortener/app/link_command_service.hpp>
 #include <url_shortener/core/config.hpp>
+#include <url_shortener/observability/logging_config.hpp>
 
 /// Link-management subcommand recognized as `link <verb>` on the command line.
 ///
@@ -69,6 +73,191 @@ struct LinkCliCommand
         payload;
 };
 
+/// Logging policy of the one-shot CLI modes (`cmd`, `link <verb>`), decision
+/// log D14.
+///
+/// A one-shot invocation never starts the server's logging subsystem, so an
+/// uninitialized logger would leak its audit lines to stderr (threat model
+/// T-80). These two flags select the explicit policy @ref
+/// one_shot_logging_config turns into a `LoggingConfig`: silence by default, a
+/// file sink with `--log-file`, or a stderr sink with `--verbose`. The two
+/// flags are mutually exclusive (rejected at parse time). Shared by the `cmd`
+/// parser (subtask 12) and the `cmd`/`link` dispatchers (subtasks 13, 15).
+struct OneShotLogging
+{
+    ///< `--log-file <path>`: enable a File sink writing to this path. Empty or
+    ///< combined with @ref verbose is a parse error, so when set the path is
+    ///< non-empty. `std::nullopt` means the flag was not given.
+    std::optional<std::string> log_file;
+
+    ///< `--verbose`: enable a Stderr sink. Combined with @ref log_file is a
+    ///< parse error. `false` means the flag was not given.
+    bool verbose = false;
+};
+
+/// A recognized `cmd <name> [options]` one-shot invocation, carried verbatim.
+///
+/// This subtask (12) only turns `argv` into plain strings and booleans; nothing
+/// is executed, the registry is not consulted, and `--json`/`--arg` values are
+/// stored untouched (their length and JSON validity are checked later by the
+/// envelope/registry layer). @ref command is shape-checked against @ref
+/// is_valid_command_name only. @ref json_args and @ref arg_pairs are mutually
+/// exclusive at the source grammar (a parse error rejects using both).
+struct CmdCliCommand
+{
+    ///< The dotted command name (argv after `cmd`), shape-checked against @ref
+    ///< is_valid_command_name; never resolved against the registry here.
+    std::string command;
+
+    ///< `--json <text>` body, stored verbatim; never `"-"` (that sets @ref
+    ///< json_from_stdin) and never combined with @ref arg_pairs.
+    ///< `std::nullopt` when `--json` was not given.
+    std::optional<std::string> json_args;
+
+    ///< `true` when `--json -` requested reading the args object from stdin;
+    ///< the actual read happens in the dispatcher (subtask 13), not here.
+    bool json_from_stdin = false;
+
+    ///< `--arg <name>=<value>` operands in command-line order (first-seen order
+    ///< preserved); each stored as the raw name/value halves, unescaped and
+    ///< unvalidated. Empty when `--json` was used instead.
+    std::vector<std::pair<std::string, std::string>> arg_pairs;
+
+    ///< `true` when at least one `--arg` operand was malformed — a token with
+    ///< no
+    ///< `=` (`foo`) or an empty name (`=v`). The malformed operand itself is
+    ///< dropped (never added to @ref arg_pairs) and no value is retained, so
+    ///< the marker carries no untrusted text. The dispatcher turns this into an
+    ///< `invalid_envelope` response (exit 2) rather than the parser throwing.
+    ///< `--arg k=` (empty VALUE) is well-formed and does NOT set this.
+    bool malformed_arg = false;
+
+    ///< `--id <text>` correlation id, non-empty and at most
+    ///< `ServerConfig::request_id_max_length` bytes. `std::nullopt` when the
+    ///< flag was not given.
+    std::optional<std::string> request_id;
+
+    ///< `--raw`: print only the envelope's `result` (dispatcher behaviour).
+    bool raw = false;
+
+    ///< `--dry-run`: set `options.dry_run` on the request envelope.
+    bool dry_run = false;
+
+    ///< `--async`: set `options.async` on the request envelope.
+    bool async = false;
+
+    ///< `--no-wait`: do not wait for an asynchronous job to finish.
+    bool no_wait = false;
+
+    ///< `--read-only`: run the local session as `ControlSet::User` rather than
+    ///< the default `Admin` (ADR 0002 Authorization).
+    bool read_only = false;
+
+    ///< `cmd <name> --help`: the dispatcher prints the descriptor's help and
+    ///< executes nothing. Never set for `cmd --help` with no name (that sets
+    ///< `ParseResult::help_requested` instead).
+    bool help = false;
+
+    ///< Logging policy from `--log-file`/`--verbose` (decision log D14).
+    OneShotLogging logging;
+};
+
+/// Options parsed from a `serve-stdio [options]` one-shot invocation.
+///
+/// `serve-stdio` runs the NDJSON stdio transport (Task 05.0 subtask 17): one
+/// request envelope per stdin line, one response per stdout line, EOF ends the
+/// session. This subtask (16) only turns `argv` into this struct; nothing is
+/// executed and no transport, `io_context` or `HttpServer` is constructed.
+///
+/// The three fields harden the session for the case where the parent process
+/// relays stdin from a less-trusted producer such as a webview sidecar (threat
+/// model T-107). By default the local caller is `ControlSet::Admin` with full
+/// filesystem access, so a sidecar deployment is expected to set @ref read_only
+/// and one of @ref no_file_paths / @ref path_root.
+struct ServeStdioCliOptions
+{
+    ///< `--read-only`: run the local session as `ControlSet::User` rather than
+    ///< the default `Admin` (ADR 0002 Authorization). `false` when the flag was
+    ///< not given.
+    bool read_only = false;
+
+    ///< `--no-file-paths`: reject `link.import`/`link.export` `path` arguments
+    ///< as `unsupported` (decision Q6, recommended for webview-driven
+    ///< sidecars). Mutually exclusive with @ref path_root (rejected at parse
+    ///< time). `false` when the flag was not given.
+    bool no_file_paths = false;
+
+    ///< `--path-root <dir>`: confine `link.import`/`link.export` `path` to this
+    ///< directory (05.0/07 rule 6). Stored with any trailing separator stripped
+    ///< (except a lone "/"), so the value is never empty and never ends in a
+    ///< separator; a trailing separator would otherwise make every in-root path
+    ///< fail the lexical root check in `pair_file_access`. The directory's
+    ///< existence is validated at startup (subtask 17), not here. Mutually
+    ///< exclusive with @ref no_file_paths. `std::nullopt` when the flag was not
+    ///< given.
+    std::optional<std::string> path_root;
+};
+
+/// Options parsed from a `tui [options]` one-shot invocation (ADR 0003
+/// "Launching", Task 06.0 subtask 19).
+///
+/// `tui` launches the interactive terminal UI over the configured storage
+/// backend; it starts no HTTP/HTTPS server, binds no socket, and never touches
+/// `uri.txt`/`UriMapSingleton` (milestone contract C5). The parser only turns
+/// `argv` into this struct and validates the theme spelling; no FTXUI type is
+/// named here (the struct lives in `url_shortener_common`, which builds even
+/// with `URLSHORTENER_ENABLE_TUI=OFF`). The concrete mapping to the TUI's own
+/// `url_shortener::tui::TuiOptions` happens in `tui_entry.cpp` via
+/// `to_tui_options`, which re-validates the theme with `parse_theme_name`.
+///
+/// Like every mode, the storage-config path is recorded on
+/// `ParseResult::config.storage_config_path` (via
+/// `extract_storage_config_flag`), never duplicated here.
+struct TuiCliOptions
+{
+    ///< `--read-only`: run the local session as `ControlSet::User` rather than
+    ///< the default `Admin`; write controls render disabled, not hidden
+    ///< (ADR 0003 rule 5). `false` when the flag was not given.
+    bool read_only = false;
+
+    ///< `--yes`: skip mutation confirmation dialogs for scripted runs
+    ///< (ADR 0003 rule 4). `false` when the flag was not given.
+    bool assume_yes = false;
+
+    ///< `--theme <dark|light|mono>`: the colour theme name, validated at parse
+    ///< time against exactly those three lower-case spellings. Defaults to
+    ///< `"dark"`. Stored as a string so this header needs no FTXUI/`ThemeName`
+    ///< dependency; `to_tui_options` maps it to a `ThemeName`.
+    std::string theme = "dark";
+
+    ///< `--log-file <path>`: when set, logs and audit lines go to this file
+    ///< (created `0600`) instead of the default `url_shortener-tui.log` in the
+    ///< current directory. Never a terminal sink while the TUI owns the screen
+    ///< (decision log D14, threat model T-119). `std::nullopt` means the flag
+    ///< was not given; when set, the path is non-empty (empty is rejected).
+    std::optional<std::string> log_file;
+
+    ///< `--no-file-paths`: reject `link.import`/`link.export` `path` arguments
+    ///< as `unsupported`, so a `tui` session can never open an operator file
+    ///< (parity with `serve-stdio`, 07.0/20 ruling (a), threat model T-118).
+    ///< Mutually exclusive with @ref path_root (rejected at parse time).
+    ///< `false` when the flag was not given (today's local-operator default:
+    ///< full filesystem access).
+    bool no_file_paths = false;
+
+    ///< `--path-root <dir>`: confine `link.import`/`link.export` `path` to this
+    ///< directory (05.0/07 rule 6, threat model T-96). Routed through the same
+    ///< `normalize_path_root` as `serve-stdio`, so `/foo/` normalizes to `/foo`
+    ///< (trailing separator stripped, separator runs collapsed) and the value
+    ///< is never empty and never ends in a separator; a trailing separator or a
+    ///< string-prefix trap (`/foo` vs `/foobar`) would otherwise defeat the
+    ///< component-wise root check in `pair_file_access`. `.`/`..`/`~`/non-
+    ///< absolute values are rejected. Mutually exclusive with @ref
+    ///< no_file_paths. `std::nullopt` when the flag was not given (full
+    ///< filesystem access, local-operator default).
+    std::optional<std::string> path_root;
+};
+
 /// Result returned by CliParser::parse().
 ///
 /// When help_requested is true, help_text contains the formatted usage
@@ -86,6 +275,71 @@ struct ParseResult
 
     /// Set only for `link <verb>` invocations; std::nullopt for server mode.
     std::optional<LinkCliCommand> command;
+
+    /// Set only for `cmd <name>` invocations; std::nullopt otherwise. Never
+    /// engaged at the same time as @ref command (the two top-level modes are
+    /// mutually exclusive).
+    std::optional<CmdCliCommand> cmd;
+
+    /// Set only for `serve-stdio` invocations; std::nullopt otherwise. Never
+    /// engaged at the same time as @ref command or @ref cmd (the top-level
+    /// modes are mutually exclusive).
+    std::optional<ServeStdioCliOptions> serve_stdio;
+
+    /// Set only for `tui` invocations; std::nullopt otherwise. Never engaged at
+    /// the same time as @ref command, @ref cmd or @ref serve_stdio (the
+    /// top-level modes are mutually exclusive).
+    std::optional<TuiCliOptions> tui;
+};
+
+/**
+ * @brief Maps a one-shot logging policy to a concrete `LoggingConfig`.
+ *
+ * Realises decision log D14 for the `cmd` and `link <verb>` modes: the sink is
+ * chosen from the two mutually exclusive flags, never Stdout (which carries the
+ * command result).
+ *
+ * @param logging The parsed `--log-file`/`--verbose` policy.
+ * @return A `LoggingConfig` that is disabled when neither flag is set;
+ * `{enabled, File, file_path}` when `logging.log_file` is set; or
+ * `{enabled, Stderr}` when `logging.verbose` is set. When both are set
+ * (a state the parser rejects) the file sink takes precedence.
+ */
+url_shortener::observability::LoggingConfig one_shot_logging_config(
+    const OneShotLogging& logging);
+
+/**
+ * @brief Exception marking a genuine command-line *usage* error, as opposed to
+ * a runtime/startup failure.
+ *
+ * `CliParser::parse` throws this for every malformed-argv condition in every
+ * top-level mode - an unknown subcommand, an unknown `link` verb, an unknown
+ * flag, a flag missing its value, a bad flag value (bad boolean, out-of-range
+ * port, unknown redirect type), a missing required argument, or a
+ * mutually-exclusive flag combination. The entry point (`src/main.cpp`)
+ * catches it to report a concise `error: <message>` diagnostic plus a
+ * `--help` hint on stderr and exit with code `2` (bad input), never the FATAL
+ * `unhandled_exception` log line and exit `1` reserved for genuinely
+ * unexpected exceptions. A dedicated type (rather than inspecting `what()`
+ * text) is what lets the boundary tell a usage error apart from an
+ * environment-variable or storage/TLS startup failure, which keep their own
+ * handling.
+ *
+ * The carried message is guaranteed printable-ASCII and length-bounded: every
+ * byte outside `0x20`-`0x7E` (CR, LF, ESC, NUL, any other control byte) has
+ * been replaced before construction, so echoing `what()` to stderr can neither
+ * forge a log line nor inject a terminal escape sequence from an
+ * attacker-controlled argv token (CWE-117). It also never contains a supplied
+ * flag *value* (which may be a secret); only flag names/stems are echoed
+ * (threat model T-77).
+ *
+ * Derives from `std::invalid_argument` so existing callers and tests that catch
+ * `std::invalid_argument` continue to observe it.
+ */
+class UsageError : public std::invalid_argument
+{
+public:
+    using std::invalid_argument::invalid_argument;
 };
 
 /**
@@ -99,6 +353,12 @@ struct ParseResult
  *  - Recognizes a leading `link <verb>` positional as a one-shot
  *    link-management command and returns it via `ParseResult::command`,
  *    short-circuiting all server-flag parsing.
+ *  - Recognizes a leading `cmd <name>` positional as the generic one-shot
+ *    command mode and returns it via `ParseResult::cmd`, likewise
+ *    short-circuiting all server-flag parsing.
+ *  - Recognizes a leading `serve-stdio` positional as the NDJSON stdio
+ *    transport mode and returns its options via `ParseResult::serve_stdio`,
+ *    likewise short-circuiting all server-flag parsing.
  *  - Defines and documents every supported CLI option in one place.
  *  - Validates argument values and produces clear error messages.
  *  - Handles `--help` and `link [<verb>] --help` by populating
@@ -114,9 +374,11 @@ public:
      * The following environment variables are read before any flag:
      * `SHORTENER_BASE_DOMAIN`, `SHORTENER_DEFAULT_REDIRECT_TYPE`,
      * `SHORTENER_DEFAULT_EXPIRY_SECONDS`,
-     * `SHORTENER_GENERATED_SLUG_LENGTH`, and
-     * `SHORTENER_ALLOW_PRIVATE_TARGETS`; a CLI flag overrides the value
-     * set by its corresponding env var when both are present.
+     * `SHORTENER_GENERATED_SLUG_LENGTH`,
+     * `SHORTENER_ALLOW_PRIVATE_TARGETS`, and
+     * `URL_SHORTENER_STORAGE_CONFIG` (the storage configuration YAML
+     * path, equivalent to `--storage-config`); a CLI flag overrides the
+     * value set by its corresponding env var when both are present.
      *
      * When `argv[1]` is `"link"`, link-subcommand mode is entered and
      * all server-flag parsing is skipped.
@@ -133,13 +395,20 @@ public:
      *   - `command` holds the parsed `LinkCliCommand` for a
      *     `link <verb>` invocation (without `--help`); `std::nullopt`
      *     in server mode.
-     * @throws std::invalid_argument On an unrecognized flag, an invalid
-     * flag value (bad boolean, out-of-range port, unknown redirect-type
-     * token), a missing or unrecognized `link` verb, or a missing or
-     * malformed verb flag.
+     * @throws UsageError On any command-line *usage* error in any mode: an
+     * unrecognized flag, an invalid flag value (bad boolean, out-of-range
+     * port, unknown redirect-type token), a missing or unrecognized `link`
+     * verb, a missing or malformed verb flag, an unknown subcommand, or a
+     * flag missing its value. Its message is already control-sanitized and
+     * value-free (see @ref UsageError). `UsageError` derives from
+     * `std::invalid_argument`, so callers catching the base type still
+     * observe it.
      * @throws std::runtime_error If `SHORTENER_DEFAULT_EXPIRY_SECONDS`
      * or `SHORTENER_GENERATED_SLUG_LENGTH` cannot be parsed as a valid
-     * unsigned integer or exceeds the `uint32_t` range.
+     * unsigned integer or exceeds the `uint32_t` range. This environment
+     * configuration failure is deliberately NOT a @ref UsageError: the entry
+     * point keeps it on the FATAL path rather than treating it as a flag-parse
+     * error.
      */
     ParseResult parse(int argc, char* argv[]) const;
 };

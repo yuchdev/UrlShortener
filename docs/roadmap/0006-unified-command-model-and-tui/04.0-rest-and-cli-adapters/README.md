@@ -44,21 +44,21 @@ factory mean subtask 13 and `03.0/18` (`build_command_runtime`) respectively.
 
 | # | Document | Status | Depends on | Blocks |
 |---|----------|--------|------------|--------|
-| 01 | [Args object builder](01-args-object-builder.md) | ⬜ Not started | 01.0/01 | 02, 03, 04, 05, 06, 07, 11, 14 |
-| 02 | [REST command bridge](02-rest-command-bridge.md) | ⬜ Not started | 01, 01.0/02, 01.0/07, 03.0/18 | 03, 04, 05, 06, 07, 09, 05.0/11 |
-| 03 | [REST read routes through the registry](03-rest-read-routes-via-registry.md) | ⬜ Not started | 01, 02, 03.0/08, 03.0/11 | 06 |
-| 04 | [REST create through the registry](04-rest-create-via-registry.md) | ⬜ Not started | 01, 02, 03.0/11 | 06 |
-| 05 | [REST PATCH through the registry](05-rest-patch-via-registry.md) | ⬜ Not started | 01, 02, 03.0/09, 03.0/11 | 06 |
-| 06 | [REST delete and lifecycle through the registry, handler cleanup](06-rest-delete-and-lifecycle-via-registry.md) | ⬜ Not started | 01, 02, 03, 04, 05, 03.0/10 | 07, 09 |
-| 07 | [GET /api/v1/links route (gated)](07-rest-list-links-route.md) | ⬜ Not started | 01, 02, 06, 08, 03.0/14, 03.0/18 | 10 |
-| 08 | [Command API configuration gate](08-command-api-config-gate.md) | ⬜ Not started | 01.0/06 | 07, 09, 10, 05.0/11 |
-| 09 | [POST /api/v1/commands](09-rest-post-commands-endpoint.md) | ⬜ Not started | 02, 06, 08, 01.0/03, 01.0/04, 01.0/07, 03.0/18 | 10, 05.0/11, 07.0/08 |
-| 10 | [GET /api/v1/commands and API reference regeneration](10-rest-get-commands-and-api-docs.md) | ⬜ Not started | 07, 08, 09, 01.0/10 | 07.0/17, 08.0/09 |
-| 11 | [CLI `--arg` coercion](11-cli-arg-coercion.md) | ⬜ Not started | 01, 01.0/05 | 13 |
-| 12 | [`cmd` parsing](12-cli-cmd-parsing.md) | ⬜ Not started | 01.0/03, 02.0/10 | 13 |
-| 13 | [`cmd` dispatch](13-cli-cmd-dispatch.md) | ⬜ Not started | 11, 12, 01.0/04, 01.0/07, 01.0/11, 03.0/18 | 15 |
-| 14 | [`link` flags to `args` converters and coverage test](14-cli-link-args-json-converters.md) | ⬜ Not started | 01, 03.0/11 | 15 |
-| 15 | [`link <verb>` through the registry](15-cli-link-verbs-via-registry.md) | ⬜ Not started | 13, 14, 01.0/02, 01.0/04, 03.0/18 | none |
+| 01 | [Args object builder](01-args-object-builder.md) | ✅ Complete | 01.0/01 | 02, 03, 04, 05, 06, 07, 11, 14 |
+| 02 | [REST command bridge](02-rest-command-bridge.md) | ✅ Complete | 01, 01.0/02, 01.0/07, 03.0/18 | 03, 04, 05, 06, 07, 09, 05.0/11 |
+| 03 | [REST read routes through the registry](03-rest-read-routes-via-registry.md) | ✅ Complete | 01, 02, 03.0/08, 03.0/11 | 06 |
+| 04 | [REST create through the registry](04-rest-create-via-registry.md) | ✅ Complete | 01, 02, 03.0/11 | 06 |
+| 05 | [REST PATCH through the registry](05-rest-patch-via-registry.md) | ✅ Complete | 01, 02, 03.0/09, 03.0/11 | 06 |
+| 06 | [REST delete and lifecycle through the registry, handler cleanup](06-rest-delete-and-lifecycle-via-registry.md) | ✅ Complete | 01, 02, 03, 04, 05, 03.0/10 | 07, 09 |
+| 07 | [GET /api/v1/links route (gated)](07-rest-list-links-route.md) | ✅ Complete | 01, 02, 06, 08, 03.0/14, 03.0/18 | 10 |
+| 08 | [Command API configuration gate](08-command-api-config-gate.md) | ✅ Complete | 01.0/06 | 07, 09, 10, 05.0/11 |
+| 09 | [POST /api/v1/commands](09-rest-post-commands-endpoint.md) | ✅ Complete | 02, 06, 08, 01.0/03, 01.0/04, 01.0/07, 03.0/18 | 10, 05.0/11, 07.0/08 |
+| 10 | [GET /api/v1/commands and API reference regeneration](10-rest-get-commands-and-api-docs.md) | ✅ Complete | 07, 08, 09, 01.0/10 | 07.0/17, 08.0/09 |
+| 11 | [CLI `--arg` coercion](11-cli-arg-coercion.md) | ✅ Complete | 01, 01.0/05 | 13 |
+| 12 | [`cmd` parsing](12-cli-cmd-parsing.md) | ✅ Complete | 01.0/03, 02.0/10 | 13 |
+| 13 | [`cmd` dispatch](13-cli-cmd-dispatch.md) | ✅ Complete | 11, 12, 01.0/04, 01.0/07, 01.0/11, 03.0/18 | 15 |
+| 14 | [`link` flags to `args` converters and coverage test](14-cli-link-args-json-converters.md) | ✅ Complete | 01, 03.0/11 | 15 |
+| 15 | [`link <verb>` through the registry](15-cli-link-verbs-via-registry.md) | ✅ Complete | 13, 14, 01.0/02, 01.0/04, 03.0/18 | none |
 
 Dependency mini-graph (`->` = must finish first):
 

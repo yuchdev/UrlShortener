@@ -29,7 +29,7 @@ web/admin/src/pages/LoginPage.tsx
 
 1. `AuthProvider` loads `GET /admin/api/v1/auth/me` on startup and exposes
    auth state `checking | authenticated | anonymous | error` (
-   [02-react-frontend-architecture.md §4](/docs/roadmap/0002-admin_console/02-react-frontend-architecture.md)).
+   02-react-frontend-architecture.md §4 (`docs/roadmap/0002-admin_console/02-react-frontend-architecture.md`, planned, not yet written)).
 2. `ProtectedRoute` behavior: `checking` -> app loader; `anonymous` ->
    redirect to `/admin/login`; `authenticated` -> render the route.
 3. `PermissionGate` hides controls the current user's `permissions[]` does
@@ -45,7 +45,7 @@ web/admin/src/pages/LoginPage.tsx
    session - never write tokens to `localStorage`.
 6. `LoginPage` shows field-level and request-level validation errors and
    redirects to `/admin/dashboard` (never `/admin/url-pairs`) on success (
-   [01-product-and-ux-spec.md §5](/docs/roadmap/0002-admin_console/01-product-and-ux-spec.md)).
+   01-product-and-ux-spec.md §5 (`docs/roadmap/0002-admin_console/01-product-and-ux-spec.md`, planned, not yet written)).
 7. Wire `TopBar` (from subtask 01) to show the real username, role badge,
    and a working logout button that calls `POST /auth/logout` and clears
    query cache.
@@ -53,7 +53,7 @@ web/admin/src/pages/LoginPage.tsx
 ## Constraints
 
 - `auth/me` query key is `['auth', 'me']` with a 60s stale time (
-  [02-react-frontend-architecture.md §5](/docs/roadmap/0002-admin_console/02-react-frontend-architecture.md)).
+  02-react-frontend-architecture.md §5 (`docs/roadmap/0002-admin_console/02-react-frontend-architecture.md`, planned, not yet written)).
 - Do not hand-roll fetch calls outside `apiClient.ts`/`authApi.ts` - every
   later API module builds on this client.
 

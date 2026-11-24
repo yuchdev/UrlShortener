@@ -1,0 +1,483 @@
+{
+  "corpus_version": 1,
+  "suite": "link_state",
+  "description": "link.delete / enable / disable / restore lifecycle transitions, their not_found and selector errors, the full lifecycle matrix, and the user authorization gate on every mutating state command.",
+  "cases": [
+    {
+      "name": "link_delete_soft",
+      "doc": "delete soft-deletes the link; the returned view and a follow-up get both report status deleted",
+      "command": "link.delete",
+      "steps": [
+        {
+          "label": "seed",
+          "request": {
+            "v": 1,
+            "command": "link.create",
+            "args": { "target_url": "https://example.com/d1", "slug": "del-soft" }
+          },
+          "rest_resource": {
+            "method": "POST",
+            "path": "/api/v1/links",
+            "body": { "target_url": "https://example.com/d1", "slug": "del-soft" },
+            "status": 201
+          },
+          "expect": { "ok": true, "result": { "slug": "del-soft", "status": "active" }, "match": "subset" }
+        },
+        {
+          "label": "delete",
+          "request": {
+            "v": 1,
+            "id": "del-1",
+            "command": "link.delete",
+            "args": { "slug": "del-soft" }
+          },
+          "rest_resource": { "method": "DELETE", "path": "/api/v1/links/del-soft", "status": 200 },
+          "expect": { "ok": true, "result": { "slug": "del-soft", "status": "deleted" }, "match": "subset" }
+        },
+        {
+          "label": "get",
+          "request": {
+            "v": 1,
+            "command": "link.get",
+            "args": { "slug": "del-soft" }
+          },
+          "expect": { "ok": true, "result": { "slug": "del-soft", "status": "deleted" }, "match": "subset" }
+        }
+      ]
+    },
+    {
+      "name": "link_delete_not_found",
+      "doc": "deleting an unknown slug is not_found",
+      "command": "link.delete",
+      "steps": [
+        {
+          "label": "delete",
+          "request": {
+            "v": 1,
+            "command": "link.delete",
+            "args": { "slug": "del-ghost" }
+          },
+          "rest_resource": { "method": "DELETE", "path": "/api/v1/links/del-ghost", "status": 404 },
+          "expect": { "ok": false, "error": { "code": "not_found" } }
+        }
+      ]
+    },
+    {
+      "name": "link_delete_twice",
+      "doc": "deleting an already-deleted link succeeds idempotently and keeps status deleted",
+      "command": "link.delete",
+      "steps": [
+        {
+          "label": "seed",
+          "request": {
+            "v": 1,
+            "command": "link.create",
+            "args": { "target_url": "https://example.com/d2", "slug": "del-twice" }
+          },
+          "rest_resource": {
+            "method": "POST",
+            "path": "/api/v1/links",
+            "body": { "target_url": "https://example.com/d2", "slug": "del-twice" },
+            "status": 201
+          },
+          "expect": { "ok": true, "result": { "slug": "del-twice" }, "match": "subset" }
+        },
+        {
+          "label": "delete-first",
+          "request": {
+            "v": 1,
+            "command": "link.delete",
+            "args": { "slug": "del-twice" }
+          },
+          "rest_resource": { "method": "DELETE", "path": "/api/v1/links/del-twice", "status": 200 },
+          "expect": { "ok": true, "result": { "slug": "del-twice", "status": "deleted" }, "match": "subset" }
+        },
+        {
+          "label": "delete-second",
+          "request": {
+            "v": 1,
+            "command": "link.delete",
+            "args": { "slug": "del-twice" }
+          },
+          "rest_resource": { "method": "DELETE", "path": "/api/v1/links/del-twice", "status": 200 },
+          "expect": { "ok": true, "result": { "slug": "del-twice", "status": "deleted" }, "match": "subset" }
+        }
+      ]
+    },
+    {
+      "name": "link_disable_then_preview",
+      "doc": "disabling a link flips its status to disabled and preview reflects it",
+      "command": "link.disable",
+      "steps": [
+        {
+          "label": "seed",
+          "request": {
+            "v": 1,
+            "command": "link.create",
+            "args": { "target_url": "https://example.com/d3", "slug": "state-disable" }
+          },
+          "rest_resource": {
+            "method": "POST",
+            "path": "/api/v1/links",
+            "body": { "target_url": "https://example.com/d3", "slug": "state-disable" },
+            "status": 201
+          },
+          "expect": { "ok": true, "result": { "slug": "state-disable", "status": "active" }, "match": "subset" }
+        },
+        {
+          "label": "disable",
+          "request": {
+            "v": 1,
+            "command": "link.disable",
+            "args": { "slug": "state-disable" }
+          },
+          "rest_resource": { "method": "POST", "path": "/api/v1/links/state-disable/disable", "status": 200 },
+          "expect": { "ok": true, "result": { "slug": "state-disable", "status": "disabled" }, "match": "subset" }
+        },
+        {
+          "label": "preview",
+          "request": {
+            "v": 1,
+            "command": "link.preview",
+            "args": { "slug": "state-disable" }
+          },
+          "rest_resource": { "method": "GET", "path": "/api/v1/links/state-disable/preview", "status": 200 },
+          "expect": {
+            "ok": true,
+            "result": { "slug": "state-disable", "status": "disabled", "enabled": false },
+            "match": "subset"
+          }
+        }
+      ]
+    },
+    {
+      "name": "link_enable_after_disable",
+      "doc": "enabling a disabled link returns it to active",
+      "command": "link.enable",
+      "steps": [
+        {
+          "label": "seed",
+          "request": {
+            "v": 1,
+            "command": "link.create",
+            "args": { "target_url": "https://example.com/d4", "slug": "state-enable" }
+          },
+          "rest_resource": {
+            "method": "POST",
+            "path": "/api/v1/links",
+            "body": { "target_url": "https://example.com/d4", "slug": "state-enable" },
+            "status": 201
+          },
+          "expect": { "ok": true, "result": { "slug": "state-enable" }, "match": "subset" }
+        },
+        {
+          "label": "disable",
+          "request": {
+            "v": 1,
+            "command": "link.disable",
+            "args": { "slug": "state-enable" }
+          },
+          "rest_resource": { "method": "POST", "path": "/api/v1/links/state-enable/disable", "status": 200 },
+          "expect": { "ok": true, "result": { "slug": "state-enable", "status": "disabled" }, "match": "subset" }
+        },
+        {
+          "label": "enable",
+          "request": {
+            "v": 1,
+            "command": "link.enable",
+            "args": { "slug": "state-enable" }
+          },
+          "rest_resource": { "method": "POST", "path": "/api/v1/links/state-enable/enable", "status": 200 },
+          "expect": { "ok": true, "result": { "slug": "state-enable", "status": "active" }, "match": "subset" }
+        }
+      ]
+    },
+    {
+      "name": "link_enable_not_found",
+      "doc": "enabling an unknown slug is not_found",
+      "command": "link.enable",
+      "steps": [
+        {
+          "label": "enable",
+          "request": {
+            "v": 1,
+            "command": "link.enable",
+            "args": { "slug": "enable-ghost" }
+          },
+          "rest_resource": { "method": "POST", "path": "/api/v1/links/enable-ghost/enable", "status": 404 },
+          "expect": { "ok": false, "error": { "code": "not_found" } }
+        }
+      ]
+    },
+    {
+      "name": "link_disable_not_found",
+      "doc": "disabling an unknown slug is not_found",
+      "command": "link.disable",
+      "steps": [
+        {
+          "label": "disable",
+          "request": {
+            "v": 1,
+            "command": "link.disable",
+            "args": { "slug": "disable-ghost" }
+          },
+          "rest_resource": { "method": "POST", "path": "/api/v1/links/disable-ghost/disable", "status": 404 },
+          "expect": { "ok": false, "error": { "code": "not_found" } }
+        }
+      ]
+    },
+    {
+      "name": "link_restore_after_delete",
+      "doc": "restoring a soft-deleted link clears deleted_at so the link resolves active again",
+      "command": "link.restore",
+      "steps": [
+        {
+          "label": "seed",
+          "request": {
+            "v": 1,
+            "command": "link.create",
+            "args": { "target_url": "https://example.com/d5", "slug": "state-restore" }
+          },
+          "rest_resource": {
+            "method": "POST",
+            "path": "/api/v1/links",
+            "body": { "target_url": "https://example.com/d5", "slug": "state-restore" },
+            "status": 201
+          },
+          "expect": { "ok": true, "result": { "slug": "state-restore" }, "match": "subset" }
+        },
+        {
+          "label": "delete",
+          "request": {
+            "v": 1,
+            "command": "link.delete",
+            "args": { "slug": "state-restore" }
+          },
+          "rest_resource": { "method": "DELETE", "path": "/api/v1/links/state-restore", "status": 200 },
+          "expect": { "ok": true, "result": { "slug": "state-restore", "status": "deleted" }, "match": "subset" }
+        },
+        {
+          "label": "restore",
+          "request": {
+            "v": 1,
+            "command": "link.restore",
+            "args": { "slug": "state-restore" }
+          },
+          "rest_resource": { "method": "POST", "path": "/api/v1/links/state-restore/restore", "status": 200 },
+          "expect": { "ok": true, "result": { "slug": "state-restore", "status": "active" }, "match": "subset" }
+        }
+      ]
+    },
+    {
+      "name": "link_restore_not_deleted",
+      "doc": "restoring a link that was never deleted is a no-op that keeps status active (current behavior)",
+      "command": "link.restore",
+      "steps": [
+        {
+          "label": "seed",
+          "request": {
+            "v": 1,
+            "command": "link.create",
+            "args": { "target_url": "https://example.com/d6", "slug": "restore-active" }
+          },
+          "rest_resource": {
+            "method": "POST",
+            "path": "/api/v1/links",
+            "body": { "target_url": "https://example.com/d6", "slug": "restore-active" },
+            "status": 201
+          },
+          "expect": { "ok": true, "result": { "slug": "restore-active", "status": "active" }, "match": "subset" }
+        },
+        {
+          "label": "restore",
+          "request": {
+            "v": 1,
+            "command": "link.restore",
+            "args": { "slug": "restore-active" }
+          },
+          "rest_resource": { "method": "POST", "path": "/api/v1/links/restore-active/restore", "status": 200 },
+          "expect": { "ok": true, "result": { "slug": "restore-active", "status": "active" }, "match": "subset" }
+        }
+      ]
+    },
+    {
+      "name": "link_restore_not_found",
+      "doc": "restoring an unknown slug is not_found",
+      "command": "link.restore",
+      "steps": [
+        {
+          "label": "restore",
+          "request": {
+            "v": 1,
+            "command": "link.restore",
+            "args": { "slug": "restore-ghost" }
+          },
+          "rest_resource": { "method": "POST", "path": "/api/v1/links/restore-ghost/restore", "status": 404 },
+          "expect": { "ok": false, "error": { "code": "not_found" } }
+        }
+      ]
+    },
+    {
+      "name": "link_state_lifecycle_matrix",
+      "doc": "the full create -> disable -> delete -> restore -> enable transition, asserting the resolved status at each step",
+      "command": "link.disable",
+      "steps": [
+        {
+          "label": "create",
+          "request": {
+            "v": 1,
+            "command": "link.create",
+            "args": { "target_url": "https://example.com/d7", "slug": "lifecycle" }
+          },
+          "rest_resource": {
+            "method": "POST",
+            "path": "/api/v1/links",
+            "body": { "target_url": "https://example.com/d7", "slug": "lifecycle" },
+            "status": 201
+          },
+          "expect": { "ok": true, "result": { "slug": "lifecycle", "status": "active" }, "match": "subset" }
+        },
+        {
+          "label": "disable",
+          "request": {
+            "v": 1,
+            "command": "link.disable",
+            "args": { "slug": "lifecycle" }
+          },
+          "rest_resource": { "method": "POST", "path": "/api/v1/links/lifecycle/disable", "status": 200 },
+          "expect": { "ok": true, "result": { "slug": "lifecycle", "status": "disabled" }, "match": "subset" }
+        },
+        {
+          "label": "delete",
+          "request": {
+            "v": 1,
+            "command": "link.delete",
+            "args": { "slug": "lifecycle" }
+          },
+          "rest_resource": { "method": "DELETE", "path": "/api/v1/links/lifecycle", "status": 200 },
+          "expect": { "ok": true, "result": { "slug": "lifecycle", "status": "deleted" }, "match": "subset" }
+        },
+        {
+          "label": "restore",
+          "request": {
+            "v": 1,
+            "command": "link.restore",
+            "args": { "slug": "lifecycle" }
+          },
+          "rest_resource": { "method": "POST", "path": "/api/v1/links/lifecycle/restore", "status": 200 },
+          "expect": { "ok": true, "result": { "slug": "lifecycle", "status": "disabled" }, "match": "subset" }
+        },
+        {
+          "label": "enable",
+          "request": {
+            "v": 1,
+            "command": "link.enable",
+            "args": { "slug": "lifecycle" }
+          },
+          "rest_resource": { "method": "POST", "path": "/api/v1/links/lifecycle/enable", "status": 200 },
+          "expect": { "ok": true, "result": { "slug": "lifecycle", "status": "active" }, "match": "subset" }
+        }
+      ]
+    },
+    {
+      "name": "link_enable_missing_slug",
+      "doc": "enable with the required slug argument absent is rejected invalid_field",
+      "command": "link.enable",
+      "steps": [
+        {
+          "label": "enable",
+          "request": {
+            "v": 1,
+            "command": "link.enable",
+            "args": {}
+          },
+          "expect": { "ok": false, "error": { "code": "invalid_field" } }
+        }
+      ]
+    },
+    {
+      "name": "link_delete_blank_slug",
+      "doc": "an intentionally asserted uniform behavior: the argument layer does not reject empty strings, so a present-but-blank slug is a valid-shaped request that resolves to no link, and delete returns not_found identically on every transport (not invalid_field)",
+      "command": "link.delete",
+      "steps": [
+        {
+          "label": "delete",
+          "request": {
+            "v": 1,
+            "command": "link.delete",
+            "args": { "slug": "" }
+          },
+          "expect": { "ok": false, "error": { "code": "not_found" } }
+        }
+      ]
+    },
+    {
+      "name": "link_delete_user_not_authorized",
+      "doc": "a read-only user cannot delete a link",
+      "command": "link.delete",
+      "caller": "user",
+      "steps": [
+        {
+          "label": "delete",
+          "request": {
+            "v": 1,
+            "command": "link.delete",
+            "args": { "slug": "state-denied" }
+          },
+          "expect": { "ok": false, "error": { "code": "not_authorized" } }
+        }
+      ]
+    },
+    {
+      "name": "link_enable_user_not_authorized",
+      "doc": "a read-only user cannot enable a link",
+      "command": "link.enable",
+      "caller": "user",
+      "steps": [
+        {
+          "label": "enable",
+          "request": {
+            "v": 1,
+            "command": "link.enable",
+            "args": { "slug": "state-denied" }
+          },
+          "expect": { "ok": false, "error": { "code": "not_authorized" } }
+        }
+      ]
+    },
+    {
+      "name": "link_disable_user_not_authorized",
+      "doc": "a read-only user cannot disable a link",
+      "command": "link.disable",
+      "caller": "user",
+      "steps": [
+        {
+          "label": "disable",
+          "request": {
+            "v": 1,
+            "command": "link.disable",
+            "args": { "slug": "state-denied" }
+          },
+          "expect": { "ok": false, "error": { "code": "not_authorized" } }
+        }
+      ]
+    },
+    {
+      "name": "link_restore_user_not_authorized",
+      "doc": "a read-only user cannot restore a link",
+      "command": "link.restore",
+      "caller": "user",
+      "steps": [
+        {
+          "label": "restore",
+          "request": {
+            "v": 1,
+            "command": "link.restore",
+            "args": { "slug": "state-denied" }
+          },
+          "expect": { "ok": false, "error": { "code": "not_authorized" } }
+        }
+      ]
+    }
+  ]
+}

@@ -58,13 +58,24 @@ std::string formatTimestamp(
     const std::chrono::system_clock::time_point time_point);
 
 /**
- * @brief Parses a strict RFC3339 Zulu timestamp string.
+ * @brief Parses a strict RFC3339 Zulu (UTC) timestamp string.
  *
- * Accepts only the `"%Y-%m-%dT%H:%M:%SZ"` format; sub-second
- * precision and non-Zulu offsets are not supported.
+ * Accepts exactly `YYYY-MM-DDTHH:MM:SS`, optionally followed by a `.`
+ * and 1..9 fractional-second digits, then a mandatory trailing `Z`.
+ * The date/time separator `T` and the zone designator `Z` must both be
+ * uppercase; lowercase variants, numeric offsets (e.g. `+00:00`),
+ * date-only values, and any trailing bytes are all rejected.
+ *
+ * The calendar fields are range-checked: month `1..12`, day against the
+ * month's length using the Gregorian leap-year rule, hour `0..23`,
+ * minute `0..59`, second `0..59`. A leap second (`:60`) is rejected
+ * because the broken-down-time conversion cannot represent it. The
+ * fractional-second component, when present, is validated but then
+ * discarded: the returned time point is floored to whole-second
+ * resolution.
  * @param value String to parse.
- * @return The parsed time point; `std::nullopt` if `value` does not
- * match the expected format.
+ * @return The parsed UTC time point; `std::nullopt` if `value` does not
+ * conform to the format above or carries an out-of-range calendar field.
  */
 std::optional<std::chrono::system_clock::time_point> parseRfc3339Zulu(
     const std::string& value);
@@ -294,14 +305,32 @@ std::optional<std::string> headerString(
 // ---------------------------------------------------------------------------
 
 /**
- * @brief Escapes a string for safe embedding inside a JSON string
- * literal.
+ * @brief Escapes a string so the result is always a valid JSON string body
+ * (no surrounding quotes), regardless of what bytes @p input contains.
  *
- * Escapes `\`, `"`, `\n`, `\r`, and `\t` with standard JSON
- * backslash sequences. Other characters are passed through unchanged;
- * control characters other than those four are not escaped.
- * @param input Raw string to escape.
- * @return Escaped string without surrounding quotes.
+ * Shared by every JSON serializer in the codebase (REST bodies, command
+ * results, `db.*` rows), so it treats @p input as fully untrusted and
+ * guarantees well-formed, control-character-free output:
+ * - `\`, `"`, `\n`, `\r`, and `\t` become their short JSON backslash
+ *   sequences (unchanged from the historical behavior).
+ * - every other ASCII control byte (`< 0x20`) and `0x7F` (DEL) become a
+ *   `\u00XX` escape, so no raw control byte ever reaches the output.
+ * - the Unicode line/paragraph separators U+2028 and U+2029 become
+ *   ` `/` ` (valid JSON but invalid in JavaScript string
+ *   literals, so escaping them keeps embedded output safe).
+ * - any byte sequence that is not valid UTF-8 (a lone continuation byte, a
+ *   truncated multi-byte tail, an overlong encoding, a surrogate code
+ *   point, or a code point above U+10FFFF) is replaced with the Unicode
+ *   replacement character U+FFFD (`EF BF BD`); one replacement is emitted
+ *   per offending byte and decoding resynchronizes at the next byte.
+ *
+ * Valid UTF-8 text that contains none of the escaped code points is copied
+ * through byte-for-byte, so already-valid inputs serialize identically to
+ * the historical implementation.
+ *
+ * @param input Raw, untrusted string to escape.
+ * @return Escaped string without surrounding quotes; always valid as the
+ * contents of a JSON string literal.
  */
 std::string jsonEscape(const std::string& input);
 

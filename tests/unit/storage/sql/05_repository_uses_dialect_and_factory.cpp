@@ -5,8 +5,10 @@
 class StubDialect final : public SqlDialect {
 public:
     std::string BootstrapSchemaSql() const override { return "bootstrap"; }
+    std::string CreateIdIndexSql() const override { return "create_id_index"; }
     std::string InsertSql() const override { return "insert"; }
     std::string SelectByShortCodeSql() const override { return "select"; }
+    std::string SelectByIdSql() const override { return "select_by_id"; }
     std::string UpdateSql() const override { return "update"; }
     std::string DeleteSql() const override { return "delete"; }
     std::string ExistsSql() const override { return "exists"; }
@@ -20,6 +22,7 @@ public:
     bool Bootstrap(const std::string&, RepoError*) override { ++bootstrap_calls; return true; }
     bool InsertLink(const std::string&, const SqlRow&, RepoError*) override { ++insert_calls; return true; }
     std::optional<SqlRow> SelectByShortCode(const std::string&, const std::string&, RepoError* error) override { if (error) *error = RepoError::not_found; return std::nullopt; }
+    std::optional<SqlRow> SelectById(const std::string&, const std::string&, RepoError* error) override { if (error) *error = RepoError::not_found; return std::nullopt; }
     bool UpdateLink(const std::string&, const SqlRow&, RepoError*) override { return true; }
     bool DeleteLink(const std::string&, const std::string&, RepoError*) override { return true; }
     bool Exists(const std::string&, const std::string&, bool* exists, RepoError*) override { *exists = false; return true; }

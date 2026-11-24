@@ -152,3 +152,10 @@ sure leftover database files do not break re-entrancy (the tests use fresh
   README R-3); not asserted here.
 - SQLite lock contention between simultaneous CLI processes is not exercised;
   the tests are sequential.
+
+*(amended 2026-11-14 after implementation)* Two field names above do not
+match the CLI's JSON: the target is emitted as `url` (not `target_url`), and
+`enabled` / `deleted_at` appear only in the `link preview` projection
+(`link get` carries lifecycle state in `status`). The tests assert the real
+fields: `url`, and `enabled`/`deleted_at` via `link preview` with `status`
+cross-checked via `link get`.

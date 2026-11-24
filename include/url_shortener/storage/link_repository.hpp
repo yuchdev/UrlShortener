@@ -1,9 +1,11 @@
 #pragma once
 
+#include <functional>
 #include <optional>
 #include <shared_mutex>
 #include <string>
 #include <unordered_map>
+#include <vector>
 
 #include <url_shortener/core/types.hpp>
 
@@ -87,6 +89,24 @@ public:
      * `link.id`.
      */
     virtual bool update(const Link& link, RepoError* error = nullptr) = 0;
+
+    /**
+     * @brief Returns a copy of every stored link, regardless of lifecycle
+     * state.
+     *
+     * The returned vector includes disabled, expired and soft-deleted links
+     * (lifecycle filtering is the caller's concern, e.g.
+     * `app::LegacyLinkLister`); the order of the elements is unspecified.
+     * This is a read-only operation intended for the management-plane browse
+     * path only: it must never be called on the redirect fast path, and
+     * implementations must acquire at most a shared lock so concurrent reads
+     * and writes are not stalled.
+     *
+     * @return A snapshot copy of all stored links; empty when the repository
+     * holds none. The copy is independent of the repository, so a later
+     * mutation does not affect an already-returned vector.
+     */
+    virtual std::vector<Link> snapshot() const = 0;
 };
 
 /**
@@ -127,6 +147,40 @@ public:
      * @param slug Cache key to evict.
      */
     virtual void erase(const std::string& slug) = 0;
+
+    /**
+     * @brief Mutates a cached `Link` in place without refreshing its
+     * expiry anchor, if the implementation tracks one.
+     *
+     * Non-pure so existing caches (e.g. the legacy non-expiring
+     * `InMemoryLinkCacheStore`) need no change: the base implementation
+     * is a no-op that returns `false`, i.e. "nothing patched". An
+     * expiry-aware cache (`app::ExpiringLinkCache`) overrides it to
+     * mutate the stored value in place while leaving its stored-at time
+     * untouched, so a hot entry still expires one TTL after it was
+     * loaded no matter how often it is patched (threat model T-32).
+     *
+     * The write-behind redirect-stats path (`app::RepositoryLinkStore::
+     * recordRedirect`, subtask 05) uses this instead of `set` precisely
+     * so a continuously hit link whose record was disabled/deleted by
+     * another process still expires from L1 within one TTL rather than
+     * being kept alive forever.
+     * @param slug Cache key to mutate.
+     * @param mutator Callback invoked with a mutable reference to the
+     * stored `Link`; called at most once, only when the entry is present
+     * and live. Overrides may hold an internal lock while invoking it, so
+     * it must not call back into the cache and must not throw.
+     * @return `true` if an entry was present, live, and mutated; `false`
+     * if absent/expired or if the implementation does not patch in place.
+     * The base implementation always returns `false`.
+     */
+    virtual bool patch(const std::string& slug,
+                       const std::function<void(Link&)>& mutator)
+    {
+        (void)slug;
+        (void)mutator;
+        return false;
+    }
 };
 
 /**
@@ -176,6 +230,12 @@ public:
      * @see IMetadataRepository::update
      */
     bool update(const Link& link, RepoError* error = nullptr) override;
+
+    /**
+     * @brief Copies every value of `by_id_` under a shared lock.
+     * @see IMetadataRepository::snapshot
+     */
+    std::vector<Link> snapshot() const override;
 
 private:
     ///< Protects repository maps.

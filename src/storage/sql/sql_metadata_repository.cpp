@@ -21,6 +21,12 @@ bool SqlMetadataRepository::EnsureBootstrapped(ISqlSession& session, RepoError* 
     if (!session.Bootstrap(dialect_->BootstrapSchemaSql(), error)) {
         return false;
     }
+    // The id index DDL must be a separate Bootstrap statement: SOCI/SQLite
+    // executes a single statement per `session_ << sql`, so it cannot be
+    // concatenated onto the table DDL. Both are IF NOT EXISTS and idempotent.
+    if (!session.Bootstrap(dialect_->CreateIdIndexSql(), error)) {
+        return false;
+    }
     bootstrapped_ = true;
     return true;
 }
@@ -58,6 +64,37 @@ std::optional<LinkRecord> SqlMetadataRepository::GetByShortCode(const std::strin
     }
     auto row = session->SelectByShortCode(dialect_->SelectByShortCodeSql(), short_code, error);
     if (!row.has_value()) {
+        return std::nullopt;
+    }
+    LinkRecord out;
+    if (!mapper_->FromRow(*row, &out, error)) {
+        return std::nullopt;
+    }
+    return out;
+}
+
+std::optional<LinkRecord> SqlMetadataRepository::GetById(const std::string& id,
+                                                         RepoError* error) const
+{
+    if (id.empty()) {
+        return std::nullopt;
+    }
+    auto session = session_factory_->Create(error);
+    if (!session) {
+        return std::nullopt;
+    }
+    if (!EnsureBootstrapped(*session, error)) {
+        return std::nullopt;
+    }
+    // Use a local error for the lookup so a plain not-found leaves the
+    // caller's `error` untouched (port contract: absent is not a backend
+    // error). Only a real backend failure is propagated.
+    RepoError lookup_error = RepoError::none;
+    auto row = session->SelectById(dialect_->SelectByIdSql(), id, &lookup_error);
+    if (!row.has_value()) {
+        if (lookup_error != RepoError::not_found && error != nullptr) {
+            *error = lookup_error;
+        }
         return std::nullopt;
     }
     LinkRecord out;

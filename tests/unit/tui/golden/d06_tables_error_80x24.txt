@@ -1,0 +1,24 @@
+╭ Tables ────────────────────╮links  (1,204 rows)
+│> links           1,204     │filter: []
+│  click_events    912,550   │ slug url  status created_at
+│  jobs            3         │! backend unavailable
+│                            │r retry
+│                            │
+│                            │
+│                            │
+│                            │
+│                            │
+│                            │
+│                            │
+│                            │
+│                            │
+│                            │
+│                            │
+│                            │
+│                            │
+│                            │
+├────────────────────────────┤
+│read-only logical views over│      ╭ ! storage_failure ───────────────────────╮
+│storage ports; no           │      │backend unavailable                       │
+│auth/secret tables          │page 1│(db.rows, id tui-2)              [d]etails│
+╰────────────────────────────╯Enter ╰──────────────────────────────────────────╯

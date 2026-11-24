@@ -36,6 +36,7 @@ implements the screen transitions of **D11**. Screens are registered through an
 | `src/tui/screens/placeholder_screen.cpp` | create | "not implemented" body used until 11-17 land and for the Analytics tab |
 | `tests/unit/tui/04_router_test.cpp`, `04_frame_model_test.cpp` | create | model tests |
 | `tests/unit/tui/04_frame_render_test.cpp` | create | snapshot tests |
+| `tests/unit/tui/04_terminal_restore_test.cpp` | create | terminal-restore assertions on exception + simulated signal (T-123/T-124) |
 | `tests/unit/tui/golden/d01_frame_80x24.txt`, `d01_frame_memory_banner_80x24.txt`, `d01_frame_narrow_60x20.txt` | create | goldens |
 | `sources.cmake` | modify | add all `.cpp` (model vs UI lists) and tests (`TUI_MODEL_UNIT_SOURCES` / `TUI_RENDER_UNIT_SOURCES`) |
 
@@ -99,6 +100,7 @@ D11 edge table (encode exactly): dashboard->{links,tables,import_export,jobs,pal
 6. Analytics tab ([6] in D1): register `placeholder_screen` rendering "Analytics: provided by Milestone 0002" (ADR 0003 non-goal); keep the tab visible to match D1.
 6b. Settings tab ([7] in D1, added 2026-10-22, ADR 0003 D13): unlike Analytics this is a **real** screen, not a placeholder - this subtask only registers the `[7]` tab slot and the `7` hotkey (`navigate_tab`), rendering `placeholder_screen` as a temporary body until 06.0/21 registers its own `SettingsScreen` via `register_screen`; no code in this subtask reads `system.info` or any `ServerConfig` field itself.
 7. 80x24 minimum: if `Terminal::Size()` is smaller render a single "terminal too small (need 80x24)" element instead of the frame.
+8. **Terminal restoration is a tested requirement (T-123/T-124):** wrap `ScreenInteractive::Loop` in an RAII guard + `catch (...)` so that on *every* exit path - normal quit, an exception thrown from a screen component, or a signal - the alt-screen is left, the cursor is shown, and **mouse tracking (SET 1000/1006) and bracketed paste are disabled** (mouse is an ADR 0003 non-goal: confirm whether `Fullscreen()` enables it at pin time and disable it on exit if so - T-124). FTXUI owns SIGINT; install a minimal SIGTERM handler (or document FTXUI's behaviour) that drives the same restore so a `kill` does not leave a half-raw terminal. (`run_tui` in 19 owns process-level logging/signal wiring; this subtask owns the App-level RAII restore and its test.)
 
 ## Commands
 
@@ -114,6 +116,7 @@ ctest --test-dir cmake-build -R "^tui__04_" --output-on-failure
 | `04_router_test.cpp` | `tui__04_router_test` | unit | start = dashboard; every legal D11 edge accepted, every other pair rejected (exhaustive 14x14 loop vs the table, `ScreenId` now has 14 values including `settings`); `pop` at tab root is a no-op; tab keys from nested screens reset the stack; `confirm` return target restored |
 | `04_frame_model_test.cpp` | `tui__04_frame_model_test` | unit | title for Admin vs User (`user: local/User`); banner only when `!persistent`; tab list has 7 entries + palette, active flag follows `ScreenId`; long backend label truncated at 60 chars with `...` |
 | `04_frame_render_test.cpp` | `tui__04_frame_render_test` | unit | golden `d01_frame_80x24.txt` (placeholder body), `d01_frame_memory_banner_80x24.txt`, `d01_frame_narrow_60x20.txt` shows the too-small message; resizing 80x24 -> 100x30 keeps footer on last row |
+| `04_terminal_restore_test.cpp` | `tui__04_terminal_restore_test` | unit | **T-123** an exception thrown from a screen component unwinds through `App::run` and the RAII restore guard runs exactly once (observed via a spy on the restore abstraction): alt-screen left, cursor shown, mouse tracking + bracketed paste disabled; a simulated SIGTERM during the loop drives the same restore; normal quit also restores once (no double-restore) — **T-124** the mouse-tracking-disabled step is asserted present |
 
 Manual: start/quit cleanly in Windows Terminal, legacy conhost, a Linux terminal (see [20](/docs/roadmap/0006-unified-command-model-and-tui/06.0-tui/20-manual-smoke-checklist.md)).
 
@@ -135,4 +138,4 @@ Manual: start/quit cleanly in Windows Terminal, legacy conhost, a Linux terminal
 
 - Real screen bodies (11-17), help overlay and toasts (05, 06).
 - **ADR 0003 inconsistency:** D1 lists `[6]Analytics` but D11 and the Non-goals have no Analytics screen; this subtask renders a placeholder tab.
-- Risk: FTXUI Ctrl-C handling differs per version; verify the loop always restores the terminal (alt screen, cursor) on exit paths including exceptions.
+- Risk: FTXUI Ctrl-C handling differs per version; the loop must always restore the terminal (alt screen, cursor, mouse tracking off, bracketed paste off) on every exit path including exceptions and SIGTERM - now a tested requirement via `04_terminal_restore_test.cpp` (T-123/T-124).

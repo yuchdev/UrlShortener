@@ -1,0 +1,569 @@
+/**
+ * @file case_runner.cpp
+ * @brief Implementation of the conformance case runner (see case_runner.hpp).
+ */
+
+#include <algorithm>
+#include <atomic>
+#include <chrono>
+#include <cstdio>
+#include <cstdlib>
+#include <exception>
+#include <fstream>
+#include <functional>
+#include <random>
+#include <string>
+#include <system_error>
+#include <thread>
+#include <utility>
+
+#include "case_runner.hpp"
+
+#include "matcher.hpp"
+
+namespace conformance
+{
+
+const std::string& process_unique_token()
+{
+    static const std::string token = []
+    {
+        std::random_device device;
+        const auto draw = (static_cast<unsigned long long>(device()) << 32U)
+            ^ static_cast<unsigned long long>(device());
+        const auto start = static_cast<unsigned long long>(
+            std::chrono::steady_clock::now().time_since_epoch().count());
+        char buffer[48];
+        std::snprintf(buffer, sizeof(buffer), "%llx_%llx", draw, start);
+        return std::string(buffer);
+    }();
+    return token;
+}
+
+namespace
+{
+
+/**
+ * @brief Runs a cleanup callback on scope exit.
+ *
+ * Used to guarantee a case's adapter teardown (@ref
+ * IConformanceAdapter::end_case) and per-case temp-dir removal run even when
+ * @ref IConformanceAdapter::begin_case or a step throws (a fixture-build
+ * failure, a handler bug): without it a throw mid-case would leak the temp
+ * directory and leave the adapter holding a stale per-case resource, so two
+ * fixtures could coexist while process globals are reset.
+ */
+class ScopeGuard
+{
+public:
+    /// @param on_exit Callback invoked once when this guard is destroyed.
+    explicit ScopeGuard(std::function<void()> on_exit)
+        : m_on_exit(std::move(on_exit))
+    {
+    }
+
+    /// Invokes the stored callback.
+    ~ScopeGuard()
+    {
+        if (m_on_exit) {
+            m_on_exit();
+        }
+    }
+
+    ScopeGuard(const ScopeGuard&) = delete;
+    ScopeGuard& operator=(const ScopeGuard&) = delete;
+
+private:
+    std::function<void()> m_on_exit;  ///< The cleanup callback.
+};
+
+/// Reduces @p name to a safe `[A-Za-z0-9_]` token for a directory component.
+/// Never uses the raw case name (which, for an in-process case, is untrusted)
+/// so the temp-dir path cannot be steered outside the temp root.
+std::string sanitize_token(const std::string& name)
+{
+    std::string token;
+    for (const char c : name) {
+        const bool keep = (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z')
+            || (c >= '0' && c <= '9') || c == '_';
+        token.push_back(keep ? c : '_');
+        if (token.size() >= 40) {
+            break;
+        }
+    }
+    return token;
+}
+
+/// Returns a process-unique temp directory path for a case run (not created).
+std::filesystem::path unique_tmp_dir(const std::string& case_name)
+{
+    static std::atomic<unsigned long long> counter {0};
+    const unsigned long long n = counter.fetch_add(1);
+    return std::filesystem::temp_directory_path()
+        / ("conformance_" + process_unique_token() + "_"
+           + sanitize_token(case_name) + "_" + std::to_string(n));
+}
+
+/// `true` iff lexically normalizing `base / name` stays strictly under @p base.
+bool stays_under(const std::filesystem::path& base, const std::string& name)
+{
+    const std::filesystem::path full = (base / name).lexically_normal();
+    const std::filesystem::path root = base.lexically_normal();
+    const auto mismatch =
+        std::mismatch(root.begin(), root.end(), full.begin(), full.end());
+    return mismatch.first == root.end() && mismatch.second != full.end();
+}
+
+/// Builds the expected envelope from an @ref Expect block (after substitution).
+Json build_expected(const Expect& expect, const VariableMap& vars)
+{
+    Json envelope = Json::object();
+    envelope.set("v", Json::integer(1));
+    envelope.set("id", Json::string("<id>"));
+    envelope.set("ok", Json::boolean(expect.ok));
+    std::string substitute_error;
+    Json body = Matcher::substitute(expect.value, vars, &substitute_error);
+    switch (expect.body) {
+        case Expect::Body::Result:
+            envelope.set("result", std::move(body));
+            break;
+        case Expect::Body::Job:
+            envelope.set("job", std::move(body));
+            break;
+        case Expect::Body::Error:
+            envelope.set("error", std::move(body));
+            break;
+        case Expect::Body::None:
+            break;
+    }
+    return envelope;
+}
+
+/// `true` when a job `state` string denotes a terminal job. Mirrors the Python
+/// harness `_TERMINAL_JOB_STATES` exactly - no broader set, or the poll would
+/// break early on a still-running record.
+bool is_terminal_state(const std::string& state)
+{
+    return state == "succeeded" || state == "failed" || state == "cancelled";
+}
+
+/// Reads `response.result.state`, or an empty string when absent. The real
+/// `job.get` (`src/commands/job_commands.cpp` `serialize_job_json`) always
+/// wraps the job record under `result`, even while queued/running.
+std::string job_record_state(const Json& response)
+{
+    const Json* record = response.find("result");
+    if (record != nullptr && record->is_object()) {
+        const Json* state = record->find("state");
+        if (state != nullptr && state->is_string()) {
+            return state->as_string();
+        }
+    }
+    return std::string();
+}
+
+/// Projects a terminal `job.get` response into a flat outcome envelope.
+///
+/// Byte-for-byte port of `conformance_common._project_terminal_job`: a terminal
+/// record carries the command result at `result.result` (succeeded) or the
+/// error at `result.error` (failed / cancelled); the corpus `expect` compares
+/// against that command outcome, so it is re-expressed as `{v, id?, ok,
+/// result|error}`.
+Json project_terminal_job(const Json& terminal)
+{
+    const Json* record_ptr = terminal.find("result");
+    const Json record = (record_ptr != nullptr && record_ptr->is_object())
+        ? *record_ptr
+        : Json::object();
+    const Json* state = record.find("state");
+    const bool succeeded = state != nullptr && state->is_string()
+        && state->as_string() == "succeeded";
+
+    Json outcome = Json::object();
+    const Json* v = terminal.find("v");
+    outcome.set("v", v != nullptr ? *v : Json::integer(1));
+    outcome.set("ok", Json::boolean(succeeded));
+    if (const Json* id = terminal.find("id")) {
+        outcome.set("id", *id);
+    }
+    if (succeeded) {
+        const Json* result = record.find("result");
+        outcome.set("result", result != nullptr ? *result : Json::object());
+    }
+    else {
+        const Json* error = record.find("error");
+        outcome.set(
+            "error",
+            (error != nullptr && error->is_object()) ? *error : Json::object());
+    }
+    return outcome;
+}
+
+/// Applies a step's `save` captures from @p response into @p vars.
+void apply_save(const Step& step, const Json& response, VariableMap& vars)
+{
+    for (const auto& capture : step.save) {
+        const Json* value = response.path(capture.second);
+        if (value != nullptr) {
+            vars[capture.first] = *value;
+        }
+    }
+}
+
+/// Writes the per-transport coverage summary; a write failure is ignored.
+void write_summary(Transport transport, const RunReport& report)
+{
+    std::filesystem::path out;
+    if (const char* dir = std::getenv("URLSHORTENER_CONFORMANCE_OUT")) {
+        out = std::filesystem::path(dir)
+            / (std::string(transport_id(transport)) + "_summary.json");
+    }
+    else {
+        out = std::filesystem::temp_directory_path()
+            / (std::string(transport_id(transport)) + "_summary.json");
+    }
+
+    Json summary = Json::object();
+    summary.set("transport",
+                Json::string(std::string(transport_id(transport))));
+    summary.set("ran", Json::integer(report.ran));
+    Json skipped = Json::array();
+    for (const auto& entry : report.skips) {
+        Json item = Json::object();
+        item.set("case", Json::string(entry.first));
+        item.set("reason", Json::string(entry.second));
+        skipped.push_back(std::move(item));
+    }
+    summary.set("skipped", std::move(skipped));
+
+    std::ofstream stream(out, std::ios::binary | std::ios::trunc);
+    if (stream) {
+        stream << summary.dump();
+    }
+}
+
+}  // namespace
+
+CaseRunner::CaseRunner()
+    : m_sleep([](int ms)
+              { std::this_thread::sleep_for(std::chrono::milliseconds(ms)); })
+{
+}
+
+CaseRunner::CaseRunner(SleepFn sleep)
+    : m_sleep(std::move(sleep))
+{
+}
+
+RunReport CaseRunner::run(const std::vector<Case>& cases,
+                          IConformanceAdapter& adapter)
+{
+    RunReport report;
+    const Transport transport = adapter.transport();
+    const TransportCaps caps = adapter.caps();
+    const std::string transport_name(transport_id(transport));
+
+    for (const Case& test_case : cases) {
+        // --- Skip resolution (only / skip / capability) ------------------
+        if (!test_case.only.empty()
+            && test_case.only.find(transport) == test_case.only.end())
+        {
+            ++report.skipped;
+            report.skips.emplace_back(test_case.name,
+                                      "transport not in case.only");
+            continue;
+        }
+        const auto skip_it = test_case.skip.find(transport);
+        if (skip_it != test_case.skip.end()) {
+            ++report.skipped;
+            report.skips.emplace_back(test_case.name, skip_it->second);
+            continue;
+        }
+        bool needs_raw = false;
+        for (const Step& step : test_case.steps) {
+            if (step.raw_request.has_value()) {
+                needs_raw = true;
+            }
+        }
+        if (needs_raw && !caps.carries_raw) {
+            ++report.skipped;
+            report.skips.emplace_back(test_case.name,
+                                      "transport cannot carry raw_request");
+            continue;
+        }
+
+        // --- Per-case temp dir, from a sanitized token (never the raw name) --
+        const std::filesystem::path tmp = unique_tmp_dir(test_case.name);
+
+        // Reject any unsafe files key before touching the filesystem: it must
+        // be a safe bare name AND lexically stay under tmp. Guards path
+        // traversal (CWE-22/73) when a case is built in-process rather than
+        // linted.
+        std::string unsafe_key;
+        for (const auto& file : test_case.files) {
+            if (!is_safe_bare_name(file.first) || !stays_under(tmp, file.first))
+            {
+                unsafe_key = file.first;
+                break;
+            }
+        }
+        if (!unsafe_key.empty()) {
+            ++report.failed;
+            report.failures.push_back(transport_name + "/" + test_case.name
+                                      + ": unsafe files key '" + unsafe_key
+                                      + "' refused (path traversal)");
+            continue;
+        }
+
+        // --- Materialize files -------------------------------------------
+        std::error_code ec;
+        std::filesystem::create_directories(tmp, ec);
+        for (const auto& file : test_case.files) {
+            std::ofstream stream(tmp / file.first, std::ios::binary);
+            stream << file.second;
+        }
+
+        // Teardown runs on every exit path (normal, `continue`, or a throw from
+        // begin_case / a step): it calls end_case only when begin_case
+        // succeeded and always removes the temp dir, so a mid-case throw never
+        // leaks the directory nor lets two per-case fixtures coexist.
+        bool began = false;
+        ScopeGuard cleanup(
+            [&]()
+            {
+                if (began) {
+                    adapter.end_case();
+                }
+                std::error_code remove_ec;
+                std::filesystem::remove_all(tmp, remove_ec);
+            });
+
+        try {
+            const std::optional<std::string> declined =
+                adapter.begin_case(test_case, tmp);
+            if (declined.has_value()) {
+                ++report.skipped;
+                report.skips.emplace_back(test_case.name, *declined);
+                continue;  // cleanup guard removes tmp (began == false)
+            }
+            began = true;
+
+            // --- Replay steps ---------------------------------------------
+            VariableMap vars;
+            vars["tmp"] = Json::string(tmp.string());
+            bool case_failed = false;
+            for (std::size_t i = 0; i < test_case.steps.size() && !case_failed;
+                 ++i)
+            {
+                const Step& step = test_case.steps[i];
+                case_failed = !run_step(adapter,
+                                        transport_name,
+                                        test_case,
+                                        step,
+                                        i,
+                                        caps,
+                                        vars,
+                                        report);
+            }
+            if (case_failed) {
+                ++report.failed;
+            }
+            else {
+                ++report.ran;
+            }
+        } catch (const std::exception& error) {
+            ++report.failed;
+            report.failures.push_back(transport_name + "/" + test_case.name
+                                      + ": threw during replay: "
+                                      + error.what());
+        }
+    }
+
+    write_summary(transport, report);
+    return report;
+}
+
+bool CaseRunner::run_step(IConformanceAdapter& adapter,
+                          const std::string& transport_name,
+                          const Case& test_case,
+                          const Step& step,
+                          std::size_t index,
+                          const TransportCaps& caps,
+                          VariableMap& vars,
+                          RunReport& report)
+{
+    // Build the request text (substituted) and the request object for N4.
+    std::string substitute_error;
+    std::optional<Json> request_json;
+    std::string request_text;
+    if (step.request.has_value()) {
+        request_json =
+            Matcher::substitute(*step.request, vars, &substitute_error);
+        request_text = request_json->dump();
+    }
+    else {
+        const Json raw = Matcher::substitute(
+            Json::string(*step.raw_request), vars, &substitute_error);
+        request_text = raw.is_string() ? raw.as_string() : *step.raw_request;
+    }
+
+    const std::string label = step.label.empty()
+        ? ("step[" + std::to_string(index) + "]")
+        : ("step[" + step.label + "]");
+    const std::string where =
+        transport_name + "/" + test_case.name + "/" + label;
+
+    if (!substitute_error.empty()) {
+        report.failures.push_back(where + ": " + substitute_error);
+        return false;
+    }
+
+    const std::string response_text = adapter.send(step, request_text);
+    std::string parse_error;
+    const std::optional<Json> response =
+        Json::parse(response_text, &parse_error);
+    if (!response.has_value()) {
+        report.failures.push_back(where + ": response is not valid JSON ("
+                                  + parse_error + "): " + response_text);
+        return false;
+    }
+
+    apply_save(step, *response, vars);
+
+    const Json* request_ptr =
+        request_json.has_value() ? &request_json.value() : nullptr;
+
+    // Async job step: assert the immediate accept envelope, then poll to a
+    // terminal state and assert expect against the PROJECTED outcome. Mirrors
+    // the Python harness _run_step job path.
+    if (step.await_job.has_value()) {
+        if (step.expect_accept.present) {
+            if (!check_expect(where + " (accept)",
+                              step.expect_accept,
+                              *response,
+                              request_ptr,
+                              caps,
+                              vars,
+                              report))
+            {
+                return false;
+            }
+        }
+        const PollResult poll = poll_job(adapter, step, vars);
+        bool ok = true;
+        if (poll.finding.has_value()) {
+            report.failures.push_back(where + ": " + *poll.finding);
+            ok = false;
+        }
+        if (poll.response.has_value()) {
+            const Json outcome = project_terminal_job(*poll.response);
+            // request = nullptr and the transport-default carries_id, exactly
+            // as Python checks the projected outcome envelope.
+            if (!check_expect(
+                    where, step.expect, outcome, nullptr, caps, vars, report))
+            {
+                ok = false;
+            }
+        }
+        return ok;
+    }
+
+    return check_expect(
+        where, step.expect, *response, request_ptr, caps, vars, report);
+}
+
+PollResult CaseRunner::poll_job(IConformanceAdapter& adapter,
+                                const Step& step,
+                                VariableMap& vars)
+{
+    const AwaitJob& await = *step.await_job;
+    PollResult out;
+
+    const auto it = vars.find(await.var);
+    if (it == vars.end()) {
+        out.finding =
+            "await_job references unsaved variable '" + await.var + "'";
+        return out;
+    }
+
+    // Clamp the budget to the same 60 s ceiling as the Python harness so a
+    // corpus typo cannot hang the suite.
+    constexpr int kMaxAwaitTimeoutMs = 60000;
+    constexpr int kPollIntervalMs = 25;
+    int timeout_ms = await.timeout_ms;
+    if (timeout_ms < 0) {
+        timeout_ms = 5000;
+    }
+    if (timeout_ms > kMaxAwaitTimeoutMs) {
+        timeout_ms = kMaxAwaitTimeoutMs;
+    }
+
+    Json args = Json::object();
+    args.set("id", it->second);
+    Json request = Json::object();
+    request.set("v", Json::integer(1));
+    request.set("command", Json::string("job.get"));
+    request.set("args", std::move(args));
+    const std::string request_text = request.dump();
+
+    int elapsed = 0;
+    for (;;) {
+        std::string text;
+        try {
+            text = adapter.send(step, request_text);
+        } catch (const std::exception& ex) {
+            out.finding = std::string("job.get poll raised: ") + ex.what();
+            return out;
+        }
+        std::string parse_error;
+        std::optional<Json> doc = Json::parse(text, &parse_error);
+        std::string state;
+        if (doc.has_value()) {
+            state = job_record_state(*doc);
+            out.response = std::move(doc);
+        }
+        if (!state.empty() && is_terminal_state(state)) {
+            return out;  // terminal: no finding
+        }
+        if (elapsed >= timeout_ms) {
+            out.finding = "job did not reach a terminal state within "
+                + std::to_string(timeout_ms) + " ms (last state "
+                + (state.empty() ? std::string("null") : state) + ")";
+            return out;
+        }
+        m_sleep(kPollIntervalMs);
+        elapsed += kPollIntervalMs;
+    }
+}
+
+bool CaseRunner::check_expect(const std::string& where,
+                              const Expect& expect,
+                              const Json& response,
+                              const Json* request,
+                              const TransportCaps& caps,
+                              const VariableMap& vars,
+                              RunReport& report)
+{
+    std::vector<std::string> findings;
+    const Json normalized = Matcher::normalize_actual(
+        response, request, caps.carries_id, &findings);
+    const Json expected = build_expected(expect, vars);
+    const MatchResult result =
+        Matcher::match(expected, normalized, expect.subset, vars);
+    for (const std::string& reason : result.findings) {
+        findings.push_back(reason);
+    }
+    if (findings.empty()) {
+        return true;
+    }
+    std::string message = where;
+    for (const std::string& finding : findings) {
+        message += "\n  " + finding;
+    }
+    message += "\n  expected: " + expected.dump();
+    message += "\n  actual:   " + normalized.dump();
+    report.failures.push_back(std::move(message));
+    return false;
+}
+
+}  // namespace conformance

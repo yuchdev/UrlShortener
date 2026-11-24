@@ -52,7 +52,7 @@ Event routing order: column chooser (if open) -> filter `Input` (if focused, Esc
 
 ## Implementation steps
 
-1. Build `std::vector<std::vector<std::string>>` from `model.rows()` using `model.layout(width)` and `truncate_to_width`; header row bold/`header_row` style; selected row `inverted` with `>` prefix column.
+1. Build `std::vector<std::vector<std::string>>` from `model.rows()` by passing every cell string through `text_fit::sanitize_for_terminal` **before** `model.layout(width)`/`truncate_to_width` (T-110: cells carry untrusted stored data - slugs, targets, tags, job errors - and must never deliver `ESC`/CSI/OSC/C1/bidi to the terminal; this supersedes the earlier "newline/tab -> space" scope, which is now one case of the central sanitizer); header row bold/`header_row` style; selected row `inverted` with `>` prefix column.
 2. Obtain the available width from `Terminal::Size()` at render time through an `ftxui::Element` using `Elements` that read `Box` is unreliable; instead wrap in a custom `Node`/`Renderer` that receives the final width: use `ftxui::size(...)` with `flex` and a measuring `Renderer` that stores `Box` via `reflect(box)` (`ftxui::reflect`, VERIFY AT PIN TIME) then lays out on the next frame; the golden test renders twice (first frame measures).
 3. State rows: `loading` -> dim "loading..."; `empty` -> "no rows"; `error` -> `! message` in error style plus hint `r retry`.
 4. Footer line: left `page_footer`, right overflow marker `< more >` when `overflow_left/right`.
@@ -70,12 +70,13 @@ ctest --test-dir cmake-build -R "^tui__10_" --output-on-failure
 
 | Test file | Target | Label | Cases |
 |---|---|---|---|
-| `10_table_view_render_test.cpp` | `tui__10_table_view_render_test` | unit | D3-shaped body (5 columns, 4 rows incl. a long URL truncated with `...`, `page 1/61  (20 per page)`) matches golden; loading/empty/error states; horizontal scroll left/right goldens (ensures `<`/`>` markers); 80x12 and 120x30 widths; mono theme ASCII-only; zero columns visible impossible; cell with newline/tab sanitised to a space |
+| `10_table_view_render_test.cpp` | `tui__10_table_view_render_test` | unit | D3-shaped body (5 columns, 4 rows incl. a long URL truncated with `...`, `page 1/61  (20 per page)`) matches golden; loading/empty/error states; horizontal scroll left/right goldens (ensures `<`/`>` markers); 80x12 and 120x30 widths; mono theme ASCII-only; zero columns visible impossible; **T-110 hostile cell** from `support/hostile_strings.hpp` (a row whose slug/target holds `ESC[2J`, `OSC 52`, `U+202E`, `U+200B`, a C1 byte) renders with no `ESC`/C1/bidi byte anywhere in the `render_to_text` grid - newline/tab collapse to a space is now just one case of this |
 | `10_table_view_keys_test.cpp` | `tui__10_table_view_keys_test` | unit | `j`,`k`,Down,Up,PgDn,PgUp,`g`,`G` map to model calls and emit queries as expected (count queries via the handler); `/` + text + Enter sets filter and emits exactly one query; Esc clears filter; `s` toggles sort on the sorted column; `c` opens chooser, toggling hides the column in the next render; extra-key callback receives selected row; keys ignored while `text_input_active`; `r` refresh emits one query |
 
 ## Constraints
 
 - No command knowledge: columns and mapping come from the owning screen (C1, C8).
+- Every stored cell string is passed through `text_fit::sanitize_for_terminal` before layout (T-110); no raw server bytes reach FTXUI `text()`.
 - Rendering is a function of `TableModel` state only - no hidden state, so goldens are reproducible.
 - Must work at 80x24 (D3 width) and degrade (hscroll) below; mono theme supported.
 - No blocking calls; data arrives via `TableModel::apply_result` posted by the screen.

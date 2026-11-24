@@ -1,7 +1,7 @@
 # Task 08.0 - Docs and registry sync
 
 **Parent milestone:** [Milestone 0006 - Unified Command Model and TUI](/docs/roadmap/0006-unified-command-model-and-tui/plan.md)
-**Status:** ⬜ Not started
+**Status:** ✅ Complete
 **Depends on:** [07.0](/docs/roadmap/0006-unified-command-model-and-tui/07.0-tests-and-conformance/README.md) (subtask 34 gates passed). Documentation drafts that only describe settled contracts (subtasks 01-04, 14-15) may start earlier; subtasks 05-13 describe shipped behavior and must be verified against the built binary.
 
 ## Scope
@@ -42,23 +42,23 @@ and reconcile Milestones 0002 and 0004 with the command model. Ends with
 
 | # | Document | Status | Depends on | Blocks |
 |---|----------|--------|------------|--------|
-| 01 | [ADR 0002/0003 acceptance gate](01-adr-0002-0003-acceptance-gate.md) | ⬜ Not started | 07.0/34 | 02, 16 |
-| 02 | [ADR 0001 amendment and ADR index](02-adr-0001-amendment-and-adr-index.md) | ⬜ Not started | 01 | 16 |
-| 03 | [Command catalog finalization](03-command-catalog-finalization.md) | ⬜ Not started | 01.0, 07.0/16 | 04, 05-07 |
-| 04 | [Adding-a-transport guide verification](04-adding-a-transport-verification.md) | ⬜ Not started | 03, 05.0 | 13 |
-| 05 | [ARCHITECTURE.md update](05-architecture-md-update.md) | ⬜ Not started | 03 | 17 |
-| 06 | [CLAUDE.md update](06-claude-md-update.md) | ⬜ Not started | 03 | 17 |
-| 07 | [README.md update](07-readme-md-update.md) | ⬜ Not started | 03 | 17 |
-| 08 | [CLI reference update](08-cli-reference-update.md) | ⬜ Not started | 02.0, 04.0, 05.0, 06.0 | 17 |
-| 09 | [API reference regeneration](09-api-reference-regeneration.md) | ⬜ Not started | 04.0, 07.0/17 | 17 |
-| 10 | [TUI user guide](10-tui-user-guide.md) | ⬜ Not started | 06.0, 07.0/24, 07.0/25 | 11, 13, 17 |
-| 11 | [TUI development guide](11-tui-development-guide.md) | ⬜ Not started | 10, 07.0/22-28 | 13, 17 |
-| 12 | [Testing docs sync](12-testing-docs-sync.md) | ⬜ Not started | 07.0 | 13, 17 |
-| 13 | [Docs registry and agent docs](13-docs-registry-and-agent-docs.md) | ⬜ Not started | 04, 10, 11, 12 | 17 |
-| 14 | [Reconcile Milestone 0002](14-reconcile-milestone-0002.md) | ⬜ Not started | plan.md | 16 |
-| 15 | [Reconcile Milestone 0004](15-reconcile-milestone-0004.md) | ⬜ Not started | plan.md | 16 |
-| 16 | [Roadmap index and milestone status sync](16-roadmap-index-and-status-sync.md) | ⬜ Not started | 01, 02, 14, 15 | 17 |
-| 17 | [Final link, registry and claims gates](17-final-link-registry-and-claims-gates.md) | ⬜ Not started | 05-13, 16 | none |
+| 01 | [ADR 0002/0003 acceptance gate](01-adr-0002-0003-acceptance-gate.md) | ✅ Complete | 07.0/34 | 02, 16 |
+| 02 | [ADR 0001 amendment and ADR index](02-adr-0001-amendment-and-adr-index.md) | ✅ Complete | 01 | 16 |
+| 03 | [Command catalog finalization](03-command-catalog-finalization.md) | ✅ Complete | 01.0, 07.0/16 | 04, 05-07 |
+| 04 | [Adding-a-transport guide verification](04-adding-a-transport-verification.md) | ✅ Complete | 03, 05.0 | 13 |
+| 05 | [ARCHITECTURE.md update](05-architecture-md-update.md) | ✅ Complete | 03 | 17 |
+| 06 | [CLAUDE.md update](06-claude-md-update.md) | ✅ Complete | 03 | 17 |
+| 07 | [README.md update](07-readme-md-update.md) | ✅ Complete | 03 | 17 |
+| 08 | [CLI reference update](08-cli-reference-update.md) | ✅ Complete | 02.0, 04.0, 05.0, 06.0 | 17 |
+| 09 | [API reference regeneration](09-api-reference-regeneration.md) | ✅ Complete | 04.0, 07.0/17 | 17 |
+| 10 | [TUI user guide](10-tui-user-guide.md) | ✅ Complete | 06.0, 07.0/24, 07.0/25 | 11, 13, 17 |
+| 11 | [TUI development guide](11-tui-development-guide.md) | ✅ Complete | 10, 07.0/22-28 | 13, 17 |
+| 12 | [Testing docs sync](12-testing-docs-sync.md) | ✅ Complete | 07.0 | 13, 17 |
+| 13 | [Docs registry and agent docs](13-docs-registry-and-agent-docs.md) | ✅ Complete | 04, 10, 11, 12 | 17 |
+| 14 | [Reconcile Milestone 0002](14-reconcile-milestone-0002.md) | ✅ Complete | plan.md | 16 |
+| 15 | [Reconcile Milestone 0004](15-reconcile-milestone-0004.md) | ✅ Complete | plan.md | 16 |
+| 16 | [Roadmap index and milestone status sync](16-roadmap-index-and-status-sync.md) | ✅ Complete | 01, 02, 14, 15 | 17 |
+| 17 | [Final link, registry and claims gates](17-final-link-registry-and-claims-gates.md) | ✅ Complete | 05-13, 16 | none |
 
 ## Key constraints
 

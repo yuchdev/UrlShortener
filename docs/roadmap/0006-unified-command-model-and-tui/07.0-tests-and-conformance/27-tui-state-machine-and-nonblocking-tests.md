@@ -7,29 +7,53 @@
 **Estimated size:** M
 **Suggested agent:** testing-expert
 
+> **Amended 2026-11-20 (as-built reconciliation).** There is **no
+> `App::currentScreen()`** and no way to render `App` headlessly (`App::run()`
+> starts the FTXUI loop). Navigation legality is proven through
+> **`Router::is_legal`** (shipped `tui__04_router_test`, exhaustive over D11) and
+> the shipped **`tui__20_app_navigation_test`**; assert on the `Router` state and
+> on `MockCommandClient::recorded_requests()`, not on a current-screen accessor
+> or a frame marker. Async non-blocking is proven with the shipped
+> **`InlinePoster`** (`run_pending`) plus `MockCommandClient::set_delay` and a
+> real `AsyncCaller` worker thread - **no fake clock**. Consumed: `tui__03`,
+> `tui__04_router`, `tui__04_app_teardown`, `tui__16_poll_ticker`,
+> `tui__20_app_navigation`. Gaps -> new stems `tui__31/32/33`: the
+> requests-per-transition table, hotkey/palette completeness, and real-thread
+> render-under-latency.
+
 ## Objective
 
-Verify ADR 0003 D11 (screen state machine) transition by transition with
-synthetic key events, and ADR 0003 rule 3 (the UI thread never blocks on a
-command): a slow `ICommandClient` must not freeze rendering or input.
+Verify ADR 0003 D11 (screen state machine) transition by transition against
+`Router::is_legal` and the requests each transition issues, and ADR 0003 rule 3
+(the UI thread never blocks on a command): a slow `ICommandClient` must not
+freeze the posted-response drain.
+
+## Coverage already delivered (06.0)
+
+| Need | Delivered by (consumed) |
+|---|---|
+| D11 legality exhaustive | `tui__04_router_test` (`Router::is_legal`) |
+| navigation smoke across tabs | `tui__20_app_navigation_test` |
+| async cancel/epoch/alive-guard, teardown ordering | `tui__03_async_caller_test`, `tui__04_app_teardown_test` |
+| timer-driven job polling | `tui__16_poll_ticker_test` |
 
 ## Dependencies
 
-- Subtasks 22, 23 (`press_keys`, `render_to_text`, mock latency); 06.0/04 `Router::is_legal` and screen ids.
-- 06.0 hooks: a way to name the current screen for assertions (`App::currentScreen() -> ScreenId` or a hidden marker in the frame; **UNVERIFIED** - prefer a test accessor over parsing frames), a deterministic executor/`drain` for worker responses, and the hotkey map from D1/D3.
+- Subtasks 22, 23 (`tui_test_support.hpp`, shipped `render_to_text`/`send_events`/`InlinePoster::run_pending`); 06.0/04 `Router::is_legal` and screen ids.
+- 06.0: `Router` edge set (for the completeness check), the hotkey map from D1/D3, `AsyncCaller` + `InlinePoster`. No current-screen accessor is required or exists.
 
 ## Files affected
 
 | Path | create/modify | What changes |
 |---|---|---|
-| `tests/unit/tui/50_screen_state_machine_test.cpp` | create | D11 transitions |
-| `tests/unit/tui/51_hotkeys_and_focus_test.cpp` | create | hotkey table, focus rules |
-| `tests/unit/tui/52_nonblocking_ui_test.cpp` | create | latency/threading |
-| `sources.cmake` | modify | Append to `TUI_RENDER_UNIT_SOURCES` (owned by Task 06.0 subtask 01) |
+| `tests/unit/tui/31_screen_transition_requests_test.cpp` | create | D11 transitions vs `Router::is_legal` + requests issued |
+| `tests/unit/tui/32_hotkeys_and_focus_test.cpp` | create | hotkey table, focus rules, palette completeness |
+| `tests/unit/tui/33_nonblocking_ui_test.cpp` | create | latency/threading via `InlinePoster` + real `AsyncCaller` thread |
+| `sources.cmake` | modify | Append to the owning TUI list (06.0/01); render-coupled files go to `TUI_RENDER_UNIT_SOURCES`, model-only to `TUI_MODEL_UNIT_SOURCES` |
 
 ## Classes and functions
 
-State machine (file 50): table-driven from the D11 mermaid; each row is `{from_screen, keys, to_screen, requests_expected}`:
+State machine (file 31): table-driven from the D11 mermaid; each row is `{from_screen, keys, to_screen, requests_expected}`, checked against `Router::is_legal` and `recorded_requests()`:
 
 | From | Keys | To | Requests sent |
 |---|---|---|---|
@@ -58,53 +82,54 @@ discards the stale response (no render of the old screen's data on the new
 screen); `n` on the `click_events` table does nothing (non-writable);
 `n` in read-only mode shows disabled with the registry's reason (detail in 28).
 
-Hotkeys (file 51): every hotkey listed in the D1/D3/D6/D8 footers exists in
-the hotkey table and in the help overlay (`F1`) text; no two screens bind the
-same key to different meanings within one screen; every action reachable by hotkey is also in the palette.
+Hotkeys (file 32): every hotkey listed in the D1/D3/D6/D8 footers exists in
+the hotkey table and in the help overlay (`F1`) text (shipped
+`tui__05_help_model_test` is the help-model source of truth); no two screens
+bind the same key to different meanings within one screen; every action
+reachable by hotkey is also in the palette.
 
-Non-blocking (file 52):
+Non-blocking (file 33), using `InlinePoster` + a real `AsyncCaller` thread:
 
 | Case | Assertion |
 |---|---|
-| `slow_command_does_not_block_render` | mock latency 500 ms for `link.list`; calling `OnEvent` and `render_to_text` returns within 50 ms (measured with `steady_clock`, generous 10x margin for CI) and shows the loading state |
-| `input_accepted_while_request_in_flight` | type into the filter while a request is pending; text appears |
-| `response_posted_exactly_once` | after `drain`, frame shows data, request count is 1 |
-| `concurrent_responses_ordered_by_request_id` | two quick refreshes: first response (slower) arrives after second; UI shows the latest request's data (stale discard) |
-| `job_polling_is_timer_driven_not_blocking` | no blocking wait in the event handler; polling uses 1 s fake-clock ticks (shared with 25) |
-| `shutdown_waits_for_workers` | `App` destruction with a request in flight returns without deadlock within 2 s and the mock records no use-after-destroy (sanitizer build advisory) |
+| `slow_command_does_not_block_render` | `set_delay(500 ms)` for `link.list` on the mock; the event-handling + `render_to_text` path returns within a generous bound (10x CI margin, `steady_clock`) and shows the loading state while the worker is still delayed |
+| `input_accepted_while_request_in_flight` | type into the filter while a request is pending (not yet `run_pending`-drained); text appears |
+| `response_posted_exactly_once` | after `InlinePoster::run_pending`, the frame shows data and `recorded_requests()` count is 1 |
+| `stale_response_discarded` | two quick refreshes: the slower first response, when drained, is dropped by `AsyncCaller`'s epoch stale-drop; the latest request's data shows |
+| `job_polling_is_timer_driven_not_blocking` | no blocking wait in the event handler; `PollTicker` drives polling (shipped `tui__16_poll_ticker_test` is the ticker source of truth) |
+| `shutdown_waits_for_workers` | `AsyncCaller`/screen teardown with a request in flight returns without deadlock within 2 s and the mock records no use-after-destroy (sanitizer build advisory; mirrors `tui__04_app_teardown_test`) |
 | `client_exception_is_contained` | a mock client that throws turns into an error toast `internal`, no crash |
 
 ## Implementation steps
 
-1. Add the 06.0 test hooks (listed in Dependencies) as explicit requirements on 06.0 subtask 01 if missing.
-2. Implement table-driven test for 50 from an array literal mirroring D11; keep the mermaid and the table adjacent in a comment so reviewers can diff.
-3. Implement 51 by reading the hotkey table object, not by scraping rendered text.
-4. Implement 52 with mock latency and a real worker thread (not the deterministic executor) - these are the only tests that use real threads; keep each under 1 s.
+1. Implement file 31 from an array literal mirroring D11; assert each edge against `Router::is_legal` and the requests via `recorded_requests()`; keep the mermaid and the table adjacent in a comment.
+2. Implement file 32 by reading the hotkey table object and the help model, not by scraping rendered text.
+3. Implement file 33 with `MockCommandClient::set_delay`, the shipped `InlinePoster` (`run_pending`) and a real `AsyncCaller` worker thread - the only tests here that use real threads; keep each under 1 s. No fake clock.
 
 ## Commands
 
 ```bash
-ctest --test-dir cmake-build -R "^tui__5[0-2]_" --output-on-failure
-ctest --test-dir cmake-build -R "^tui__5[0-2]_" --repeat until-fail:20    # flake check once before merge
+ctest --test-dir cmake-build -R "^tui__3[1-3]_" --output-on-failure
+ctest --test-dir cmake-build -R "^tui__3[1-3]_" --repeat until-fail:20    # flake check once before merge
 ```
 
 ## Tests
 
 | Test file | Target | CTest label | Cases |
 |---|---|---|---|
-| `tests/unit/tui/50_screen_state_machine_test.cpp` | `tui__50_screen_state_machine_test` | `unit` | table (16 transitions) + 6 edge cases |
-| `tests/unit/tui/51_hotkeys_and_focus_test.cpp` | `tui__51_hotkeys_and_focus_test` | `unit` | 4 |
-| `tests/unit/tui/52_nonblocking_ui_test.cpp` | `tui__52_nonblocking_ui_test` | `unit` | 7 |
+| `tests/unit/tui/31_screen_transition_requests_test.cpp` | `tui__31_screen_transition_requests_test` | `unit` | table (16 transitions) + 6 edge cases |
+| `tests/unit/tui/32_hotkeys_and_focus_test.cpp` | `tui__32_hotkeys_and_focus_test` | `unit` | 4 |
+| `tests/unit/tui/33_nonblocking_ui_test.cpp` | `tui__33_nonblocking_ui_test` | `unit` | 7 |
 
 ## Constraints
 
 - Timing assertions use generous bounds and relative comparisons (no absolute millisecond SLAs on shared CI).
 - No `sleep`-based synchronization except bounded polling loops with a 2 s deadline.
-- No terminal, no real FTXUI `ScreenInteractive::Loop` (screens are driven by direct `OnEvent` calls).
+- No terminal, no real FTXUI `ScreenInteractive::Loop` (screens/components are driven by direct `OnEvent` calls and `InlinePoster::run_pending`).
 
 ## Success criteria
 
-1. Every D11 edge exists as a test row; adding a screen transition in 06.0 without a row fails a completeness check (the transition table in the app exposes its edges; test asserts the sets are equal - **requires** that 06.0 expose the edge list; otherwise manual review).
+1. Every D11 edge in `Router::is_legal` has a test row; a new transition without a row fails a completeness check (assert the Router edge set equals the test's set).
 2. 20 repeated runs are green.
 3. A deliberate synchronous `sleep` in a screen handler makes `slow_command_does_not_block_render` fail.
 

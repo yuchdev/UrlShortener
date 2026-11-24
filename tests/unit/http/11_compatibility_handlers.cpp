@@ -1,10 +1,9 @@
 #define BOOST_TEST_MODULE CompatibilityHandlers
 #include <boost/test/unit_test.hpp>
-
 #include <url_shortener/core/config.hpp>
 #include <url_shortener/core/utils.hpp>
-#include <url_shortener/http/router_builder.hpp>
 #include <url_shortener/http/handlers/compatibility_handlers.hpp>
+#include <url_shortener/http/router_builder.hpp>
 #include <url_shortener/storage/link_repository.hpp>
 
 namespace bhttp = boost::beast::http;
@@ -13,14 +12,14 @@ using url_shortener::http::BeastRequest;
 using url_shortener::http::RouteContext;
 using url_shortener::http::RouterBuilder;
 
-namespace {
-
-BeastRequest make_request(
-    const bhttp::verb method,
-    const std::string& target,
-    const std::string& body = "{}")
+namespace
 {
-    BeastRequest req{method, target, 11};
+
+BeastRequest make_request(const bhttp::verb method,
+                          const std::string& target,
+                          const std::string& body = "{}")
+{
+    BeastRequest req {method, target, 11};
     req.set(bhttp::field::host, "short.test");
     req.set(bhttp::field::content_type, "application/json");
     req.body() = body;
@@ -62,11 +61,12 @@ void expect_api_error(
     const std::string& code)
 {
     BOOST_TEST(res.result_int() == status);
-    BOOST_TEST(res.body().find("\"code\":\"" + code + "\"") != std::string::npos);
+    BOOST_TEST(res.body().find("\"code\":\"" + code + "\"")
+               != std::string::npos);
     BOOST_TEST(!res.base()["X-Request-Id"].empty());
 }
 
-} // namespace
+}  // namespace
 
 BOOST_AUTO_TEST_CASE(compat_create_accepts_code_and_generated_slug)
 {
@@ -75,28 +75,30 @@ BOOST_AUTO_TEST_CASE(compat_create_accepts_code_and_generated_slug)
         "/api/v1/short-urls",
         "{\"url\":\"https://example.com/compat\",\"code\":\"chcreate001\"}"));
     BOOST_TEST(with_code.result_int() == 201);
-    BOOST_TEST(with_code.body().find("\"slug\":\"chcreate001\"") != std::string::npos);
-    BOOST_TEST(std::string(with_code[bhttp::field::content_type]) == "application/json");
+    BOOST_TEST(with_code.body().find("\"slug\":\"chcreate001\"")
+               != std::string::npos);
+    BOOST_TEST(std::string(with_code[bhttp::field::content_type])
+               == "application/json");
 
-    auto generated = dispatch(make_request(
-        bhttp::verb::post,
-        "/api/v1/short-urls",
-        "{\"url\":\"https://example.com/generated\"}"));
+    auto generated =
+        dispatch(make_request(bhttp::verb::post,
+                              "/api/v1/short-urls",
+                              "{\"url\":\"https://example.com/generated\"}"));
     BOOST_TEST(generated.result_int() == 201);
     BOOST_TEST(generated.body().find("\"slug\":") != std::string::npos);
 }
 
 BOOST_AUTO_TEST_CASE(compat_create_prefers_slug_when_slug_and_code_are_present)
 {
-    auto res = dispatch(make_request(
-        bhttp::verb::post,
-        "/api/v1/short-urls",
-        "{\"url\":\"https://example.com/both\","
-        "\"slug\":\"chslugwins001\","
-        "\"code\":\"chcodeignored001\"}"));
+    auto res = dispatch(make_request(bhttp::verb::post,
+                                     "/api/v1/short-urls",
+                                     "{\"url\":\"https://example.com/both\","
+                                     "\"slug\":\"chslugwins001\","
+                                     "\"code\":\"chcodeignored001\"}"));
 
     BOOST_TEST(res.result_int() == 201);
-    BOOST_TEST(res.body().find("\"slug\":\"chslugwins001\"") != std::string::npos);
+    BOOST_TEST(res.body().find("\"slug\":\"chslugwins001\"")
+               != std::string::npos);
     BOOST_TEST(res.body().find("chcodeignored001") == std::string::npos);
     BOOST_TEST(!url_shortener::linkRepository().slugExists("chcodeignored001"));
 }
@@ -111,13 +113,12 @@ BOOST_AUTO_TEST_CASE(compat_create_validates_code)
         400,
         "invalid_slug");
 
-    expect_api_error(
-        dispatch(make_request(
-            bhttp::verb::post,
-            "/api/v1/short-urls",
-            "{\"url\":\"https://example.com\",\"code\":\"api\"}")),
-        409,
-        "reserved_slug");
+    expect_api_error(dispatch(make_request(
+                         bhttp::verb::post,
+                         "/api/v1/short-urls",
+                         "{\"url\":\"https://example.com\",\"code\":\"api\"}")),
+                     409,
+                     "reserved_slug");
 
     create_link("chdupe001");
     expect_api_error(
@@ -133,36 +134,34 @@ BOOST_AUTO_TEST_CASE(compat_read_uses_slug_path_param)
 {
     create_link("chread001");
 
-    auto read = dispatch(make_request(
-        bhttp::verb::get,
-        "/api/v1/short-urls/chread001"));
+    auto read = dispatch(
+        make_request(bhttp::verb::get, "/api/v1/short-urls/chread001"));
     BOOST_TEST(read.result_int() == 200);
     BOOST_TEST(read.body().find("\"slug\":\"chread001\"") != std::string::npos);
-    BOOST_TEST(std::string(read[bhttp::field::content_type]) == "application/json");
+    BOOST_TEST(std::string(read[bhttp::field::content_type])
+               == "application/json");
 
-    expect_api_error(
-        dispatch(make_request(
-            bhttp::verb::get,
-            "/api/v1/short-urls/chmissing001")),
-        404,
-        "not_found");
+    expect_api_error(dispatch(make_request(bhttp::verb::get,
+                                           "/api/v1/short-urls/chmissing001")),
+                     404,
+                     "not_found");
 }
 
 BOOST_AUTO_TEST_CASE(compat_router_preserves_wrong_method_shape)
 {
-    expect_api_error(
-        dispatch(make_request(
-            bhttp::verb::get,
-            "/api/v1/short-urls")),
-        400,
-        "invalid_method");
+    // GET /api/v1/short-urls matches the POST-only compatibility create path,
+    // so it is 405 invalid_method with Allow: POST (RFC 9110 15.5.6).
+    const auto get_create =
+        dispatch(make_request(bhttp::verb::get, "/api/v1/short-urls"));
+    expect_api_error(get_create, 405, "invalid_method");
+    BOOST_TEST(std::string(get_create.base()[bhttp::field::allow]) == "POST");
 
-    expect_api_error(
-        dispatch(make_request(
-            bhttp::verb::post,
-            "/api/v1/short-urls/chread001")),
-        400,
-        "invalid_method");
+    // POST /api/v1/short-urls/{slug} matches the GET-only compatibility read
+    // path, so it is 405 invalid_method with Allow: GET.
+    const auto post_read = dispatch(
+        make_request(bhttp::verb::post, "/api/v1/short-urls/chread001"));
+    expect_api_error(post_read, 405, "invalid_method");
+    BOOST_TEST(std::string(post_read.base()[bhttp::field::allow]) == "GET");
 }
 
 BOOST_AUTO_TEST_CASE(compat_read_missing_context_slug_fails_as_not_found)

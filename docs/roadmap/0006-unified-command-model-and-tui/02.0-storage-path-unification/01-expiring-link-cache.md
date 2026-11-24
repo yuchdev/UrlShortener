@@ -54,6 +54,9 @@ public:
     std::optional<Link> get(const std::string& slug) override;   // lazy expiry on read
     void set(const std::string& slug, const Link& link) override;
     void erase(const std::string& slug) override;
+    // (amended 2026-11-14, threat model T-32)
+    bool patch(const std::string& slug,
+               const std::function<void(Link&)>& mutator);  // mutate stored Link in place under the lock; keeps stored_at; no-op (returns false) on miss or expired entry - never inserts or resurrects
     void clear();
     std::size_t size() const;                                    // for tests / metrics
 
@@ -76,6 +79,26 @@ Eviction on `set` when `size() >= max_entries`: first remove all expired
 entries; if still full remove one arbitrary entry (map iteration order). No LRU:
 the cache is a latency optimization, not a correctness mechanism, and the
 bound only protects memory.
+
+*(amended 2026-11-14 after the implementation security review)* A full
+expired sweep is O(n) under the global lock on the redirect path once the map
+is full, so eviction instead examines a small fixed number of entries, evicts
+the first expired one found, and otherwise evicts one arbitrary entry -
+bounded constant work per insert (C10). Expiry is also clock-safe: an entry
+whose `stored_at` lies in the future relative to `now` (a backward wall-clock
+step) counts as expired, so a clock anomaly can only shorten a lifetime and
+cannot reopen T-32.
+
+`patch(slug, mutator)` (amended 2026-11-14, threat model T-32): under `m_mutex`,
+look the slug up; if it is absent or already expired (the same lazy-expiry rule
+as `get`) do nothing and return `false` - `patch` never inserts and never
+resurrects an expired entry. If it is present and live, invoke
+`mutator(entry.link)` to mutate the stored `Link` in place and return `true`,
+leaving `entry.stored_at` unchanged so the TTL stays anchored to the original
+load time. This is the operation `recordRedirect` (subtask 05) uses for the
+in-memory counter bump: using `set` there would reset `stored_at` on every
+redirect, so a continuously hit, cross-process-disabled/deleted link would keep
+redirecting indefinitely instead of expiring within one TTL.
 
 The clock is held by reference (same convention as `LinkService`,
 `InMemoryCacheStore`); the owner (bootstrap, subtask 11) keeps a `SystemClock`
@@ -113,6 +136,17 @@ ctest --test-dir cmake-build -R "^app__19_expiring_link_cache$" --output-on-fail
   the live one survives).
 - `clear()` empties; `erase` of an absent key is a no-op.
 - Overwrite: a second `set` for the same slug replaces the value.
+- `patch` preserves `stored_at` (amended 2026-11-14, threat model T-32): with
+  `ttl = 5 s` and `ManualClock`, `set` at t0, `patch` at t3 mutates the `Link`
+  and returns `true`; a read at exactly t5 is still a miss (the entry is removed)
+  - `patch` did not refresh the TTL.
+- `patch` on a hot entry repeatedly still expires at the original TTL (amended
+  2026-11-14, threat model T-32): `set` at t0, `patch` at t1/t2/t3/t4, a read at
+  exactly `ttl` is a miss regardless of patch frequency.
+- `patch` on a miss / expired does not insert (amended 2026-11-14, threat model
+  T-32): `patch` on an unknown slug returns `false`, `size()` is unchanged and a
+  subsequent `get` is `nullopt`; `patch` on an entry past its TTL returns `false`
+  and does not resurrect it (the entry stays absent).
 - Thread-safety smoke: 4 threads x 1000 mixed set/get/erase; no crash, final
   `size() <= max_entries`.
 
@@ -120,6 +154,10 @@ ctest --test-dir cmake-build -R "^app__19_expiring_link_cache$" --output-on-fail
 
 - Hot path (C10): `get` is O(1) average and takes one short lock; no I/O, no
   allocation beyond copying the `Link`.
+- Hot path (C10): `patch` is O(1) average, takes the same single short lock as
+  `get`/`set`, performs no I/O and adds no new lock or thread (it collapses the
+  previous `recordRedirect` get+set into one locked lookup-and-mutate). (amended
+  2026-11-14, threat model T-32)
 - Does not touch the legacy `InMemoryLinkCacheStore`/`linkCache()` singletons.
 - C++17; naming per `.clang-tidy`: `m_` prefix for private members.
 - Never stores or logs anything but the `Link` values passed in.

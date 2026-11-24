@@ -7,7 +7,7 @@ native convention (`.github/`).
 It is a straight **mirror**: no agent/skill/hook behaviour was added, removed, or
 redesigned. Only the on-disk **format and location** were translated so Copilot
 CLI discovers and runs the fleet natively. The Python→C++ domain migration is
-already documented in [`.claude/MIGRATION_REPORT.md`](../.claude/MIGRATION_REPORT.md);
+already documented in `.claude/MIGRATION_REPORT.md` (planned, not yet written);
 this report only covers the Claude→Copilot format translation.
 
 ## Why the port was needed

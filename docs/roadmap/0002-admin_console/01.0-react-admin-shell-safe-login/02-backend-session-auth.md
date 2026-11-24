@@ -41,7 +41,7 @@ GET  /admin/api/v1/auth/me
 ```
 
 `GET /auth/me` response shape (see
-[04-admin-api-contract.md §3](/docs/roadmap/0002-admin_console/04-admin-api-contract.md)):
+04-admin-api-contract.md §3 (`docs/roadmap/0002-admin_console/04-admin-api-contract.md`, planned, not yet written)):
 
 ```json
 {

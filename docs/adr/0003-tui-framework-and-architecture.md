@@ -1,6 +1,8 @@
 # 0003 - TUI Framework and Architecture
 
-> **Status:** Proposed
+> **Status:** Implemented
+>
+> **Accepted:** 2026-11-21 (decision-log Q17)
 >
 > **Date:** 2026-10-19
 >
@@ -34,14 +36,32 @@ Use **FTXUI** (`ArthurSonzogni/FTXUI`, MIT).
 | ImTui | yes | partial | Dear ImGui | immediate-mode | little maintained; drags ImGui in |
 | Terminal.Gui, Textual, Ratatui, Bubble Tea | n/a | - | - | - | not C++ |
 
-Why FTXUI: the most widely adopted modern C++ TUI library (largest C++ TUI
-community, active releases, used in many open-source tools), zero external
-dependencies, first-class Windows support, an element/component split that
-maps cleanly to our "forms generated from descriptors" design, and it is
-packaged in vcpkg (`ftxui`) and trivially fetched with CMake `FetchContent`,
-matching how `yaml-cpp`/`hiredis`/`SOCI` are already handled. The exact
-version is pinned at implementation time (Task 06.0 subtask 01); the chosen
-release must compile as C++17.
+Why FTXUI: zero external dependencies, first-class Windows support (Win32
+console + VT), an element/component split that maps cleanly to our "forms
+generated from descriptors" design, and it is packaged in vcpkg (`ftxui`) and
+trivially fetched with CMake `FetchContent`, matching how
+`yaml-cpp`/`hiredis`/`SOCI` are already handled. The chosen release compiles
+as C++17 (verified at pin time; see the Dependency pin policy below).
+
+**Dependency pin policy (T-122, supply chain).** FTXUI is pinned by an
+**immutable identifier** - an exact commit SHA given to `FetchContent_Declare`
+(`GIT_TAG <40-hex-sha>`), or a release tarball with `URL_HASH SHA256=...` - never
+a movable Git tag or branch: a tag can be re-pointed upstream and `GIT_SHALLOW`
+would then fetch whatever it currently references (CWE-494/CWE-829). The resolved
+SHA and the date it was verified are recorded here at pin time by subtask 01
+(pinned FTXUI **v7.0.3**, commit SHA `f921fad208912747c17d129a8ef75ec7624b6eec`,
+verified `2026-11-18`); FTXUI is included as a `SYSTEM` target (FTXUI marks its
+interface include dirs `SYSTEM` for FetchContent consumers, so its headers raise
+no warnings in our targets) and the vcpkg `tui` feature stays behind the
+checked-in baseline. Verification done at pin time: the tag commit is dated
+2026-08-06 (>2 weeks old) and GPG-signed; its `CMakeLists.txt` builds the
+`screen`/`dom`/`component` libraries as `cxx_std_17` (`cmake/ftxui_set_options.cmake`),
+the CMake option names (`FTXUI_BUILD_EXAMPLES/DOCS/TESTS/MODULES`,
+`FTXUI_ENABLE_INSTALL`) and the `ftxui::screen`/`ftxui::dom`/`ftxui::component`
+aliases match what `cmake/FetchFTXUI.cmake` relies on, and a depth-1 fetch of the
+exact SHA succeeds on GitHub (so `GIT_SHALLOW TRUE` is safe). Bumping the pin
+follows the subtask-01 procedure (new SHA -> re-verify the C++17 build ->
+regenerate goldens with `UPDATE_GOLDEN=1` -> review diff).
 
 The TUI is built behind CMake option `URLSHORTENER_ENABLE_TUI` (default `ON`).
 Everything outside `src/tui/` compiles and runs without FTXUI.
@@ -97,8 +117,23 @@ Rules:
 ## Launching
 
 ```text
-url_shortener tui [--storage-config <file>] [--read-only] [--yes] [--theme dark|light|mono]
+url_shortener tui [--storage-config <FILE>] [--theme dark|light|mono]
+                  [--read-only] [--yes]
+                  [--no-file-paths | --path-root <DIR>]
+                  [--log-file <PATH>]
 ```
+
+Flag summary (verified against `cmake-build/url_shortener tui --help`):
+
+| Flag | Default | Description |
+|---|---|---|
+| `--storage-config <FILE>` | in-memory | Storage configuration YAML |
+| `--theme dark\|light\|mono` | `dark` | Colour theme |
+| `--read-only` | off | Session runs as `ControlSet::User`; write controls rendered disabled, not hidden |
+| `--yes` | off | Skip mutation confirmation dialogs |
+| `--no-file-paths` | off | Refuse any `path` arg (`unsupported`); mutually exclusive with `--path-root` |
+| `--path-root <DIR>` | off | Confine `path` args to this absolute directory; mutually exclusive with `--no-file-paths` |
+| `--log-file <PATH>` | `./url_shortener-tui.log` | Write logs and audit lines to this file (created 0600) |
 
 Like CLI one-shot mode, TUI mode never starts `HttpServer` or binds a socket.
 Console logging would corrupt the screen and the logger is enabled with a
@@ -379,6 +414,67 @@ inconsistent way to configure the server. The screen is therefore always read-on
 settings, listener ports and `analytics_client_hash_salt` are deliberately never shown (never read by
 `system.info` at all, not merely hidden): see 03.0/17's Dependencies section for the exact, named exclusion
 list.
+
+## As-built amendments (Task 06.0 implementation)
+
+The diagrams above are the design intent; implementation (subtasks 06.0/01-21)
+intentionally deviated in the places below. Each is listed with its reason, per
+the ADR rule "deviations amend the ADR". The deviations were verified rendering
+in the manual smoke checklist
+([`docs/testing/tui_manual_smoke.md`](/docs/testing/tui_manual_smoke.md), D1-D13
+matrix); non-rendering/wire deviations already recorded in the milestone
+`status.md` "Notes & decisions" are cross-referenced, not duplicated.
+
+1. **Inline hosting of detail, forms and row-JSON (D4, D5, D6).** The link
+   detail/stats view (D4), the new/edit and generic command forms (D5), and the
+   Tables row-JSON view (D6) are hosted **inline inside their parent screen**
+   (Links, Tables, Palette), not as separate screen nodes on the D11 stack.
+   *Reason:* FTXUI focus and teardown are simpler and UAF-safe when a transient
+   child is `Add`-ed to and `Detach`-ed from its parent component than when a
+   new screen is pushed on the router stack; the parent already owns the
+   `ScreenContext` lifetime the child needs. D11's `LinkDetail`/`RowJson`/
+   `LinkForm`/`GenericForm` nodes are therefore sub-modes of their parent, not
+   independent screens.
+
+2. **Key bindings for the generic command flow and import (D7, D9).** In the
+   generic command/palette flow, **`Ctrl-R`** toggles the raw-JSON args editor
+   and **`Ctrl-S`** runs the command; in Import/Export, **`Ctrl-S`** starts the
+   import. *Reason:* FTXUI's `Input` consumes `Enter`/`Tab` for text entry and
+   field/button activation, so a plain-key submit would be ambiguous while a
+   field is focused; a `Ctrl-` chord is unambiguous and never collides with
+   typing. (The D9 sketch did not pin a submit key; this records the chosen one.)
+
+3. **Read-only display rules (D2, D3).** Ratified 2026-11-19 (see `status.md`).
+   Because `link.list`/`link.export` raise their required permission to `write`
+   for `status=all|deleted` (and export `path`) via `permission_for`, a
+   `--read-only` (`ControlSet::User`) session cannot run those argument shapes.
+   The TUI therefore: on the **Dashboard (D2)** renders `total` and `deleted`
+   counts and the redirects line as `n/a (read-only)` while `active`/`disabled`
+   still load; on the **Links table (D3)** defaults the status filter to
+   `active` and renders the `all`/`deleted` radios disabled with the
+   `not_authorized` reason. Nothing is hidden (ADR rule 5). *Reason:* issuing a
+   request the server will refuse would surface a confusing error toast on the
+   landing screen; the client preflight (`ICommandClient::required_permission`,
+   contract C8 extension) evaluates the real `max(base, permission_for(args))`
+   and dims the un-runnable choices instead.
+
+4. **Dashboard count sourcing (D2).** The Dashboard issues **four** `link.list`
+   calls (`status = all | active | disabled | deleted`, each `limit:1`, reading
+   only `total`) for the counts line, and renders redirects-24h / success% / p50
+   / "Top slugs" as `n/a` or a bounded sample, because no `stats.summary`
+   command exists in Milestone 0006. *Reason:* already noted as aspirational in
+   D2; this records the concrete as-built sourcing.
+
+5. **`--path-root` / `--no-file-paths` / `--log-file` flags added to Launching
+   (Task 06.0, verified Task 07.0).** The original Launching synopsis listed
+   only `--storage-config`, `--read-only`, `--yes`, and `--theme`. The shipped
+   binary adds three flags: `--path-root <DIR>` (confine import/export `path`
+   to a directory, per decision-log Q6), `--no-file-paths` (reject any `path`
+   arg as `unsupported`; mutually exclusive with `--path-root`), and
+   `--log-file <PATH>` (default `./url_shortener-tui.log`; never to the
+   terminal, per decision log D14 and ADR 0002 Authorization table). The
+   security behavior (`path` checks, mutually exclusive flags) is covered by
+   Task 07.0 subtask 20. Verified via `cmake-build/url_shortener tui --help`.
 
 ## Alternatives Considered
 

@@ -1,0 +1,288 @@
+{
+  "corpus_version": 1,
+  "suite": "db_tables",
+  "description": "db.tables and db.rows over the port-backed allowlist. db.tables exposes exactly links, click_events and jobs (never an auth/session table); db.rows reads only the documented, non-secret columns, returns not_found with no name echo for any unregistered or auth table, and enforces the sort allowlist and the 1..500 limit bound. The db.rows table=jobs page is deferred to the PR that first has the job runtime (05.0); only the jobs table listing is pinned here.",
+  "cases": [
+    {
+      "name": "db_tables_lists_allowlist",
+      "doc": "db.tables lists exactly links, click_events and jobs with their writable flags, row counts and column metadata; links columns are pinned in full (no secret-shaped column exists)",
+      "command": "db.tables",
+      "steps": [
+        { "label": "seed-1", "request": { "v": 1, "command": "link.create", "args": { "target_url": "https://example.com/t1", "slug": "tbl-one" } }, "expect": { "ok": true, "result": { "slug": "tbl-one" }, "match": "subset" } },
+        { "label": "seed-2", "request": { "v": 1, "command": "link.create", "args": { "target_url": "https://example.com/t2", "slug": "tbl-two" } }, "expect": { "ok": true, "result": { "slug": "tbl-two" }, "match": "subset" } },
+        {
+          "label": "tables",
+          "request": { "v": 1, "id": "tables-1", "command": "db.tables", "args": {} },
+          "expect": {
+            "ok": true,
+            "result": {
+              "tables": [
+                {
+                  "name": "links",
+                  "rows": 2,
+                  "writable": true,
+                  "columns": [
+                    { "name": "id", "type": "string", "sortable": false, "searchable": false },
+                    { "name": "slug", "type": "string", "sortable": true, "searchable": true },
+                    { "name": "url", "type": "string", "sortable": false, "searchable": true },
+                    { "name": "status", "type": "string", "sortable": false, "searchable": false },
+                    { "name": "enabled", "type": "bool", "sortable": false, "searchable": false },
+                    { "name": "redirect_type", "type": "string", "sortable": false, "searchable": false },
+                    { "name": "created_at", "type": "timestamp", "sortable": true, "searchable": false },
+                    { "name": "updated_at", "type": "timestamp", "sortable": true, "searchable": false },
+                    { "name": "expires_at", "type": "timestamp", "sortable": false, "searchable": false },
+                    { "name": "deleted_at", "type": "timestamp", "sortable": false, "searchable": false }
+                  ]
+                },
+                { "name": "click_events", "rows": 0, "writable": false, "columns": "<any>" },
+                { "name": "jobs", "rows": 0, "writable": false, "columns": "<any>" }
+              ]
+            },
+            "match": "subset"
+          }
+        }
+      ]
+    },
+    {
+      "name": "db_tables_no_auth_tables",
+      "doc": "the db.tables name set is exactly the three allowlisted tables; no app_users, auth_sessions, auth_audit_log, service_clients or user_credentials table is ever exposed (a fourth table would change the array length and fail)",
+      "command": "db.tables",
+      "steps": [
+        {
+          "label": "tables",
+          "request": { "v": 1, "command": "db.tables", "args": {} },
+          "expect": {
+            "ok": true,
+            "result": { "tables": [ { "name": "links" }, { "name": "click_events" }, { "name": "jobs" } ] },
+            "match": "subset"
+          }
+        }
+      ]
+    },
+    {
+      "name": "db_rows_links_first_page",
+      "doc": "db.rows table=links returns the documented link columns and the first page of rows under an explicit slug-ascending order",
+      "command": "db.rows",
+      "steps": [
+        { "label": "seed-a", "request": { "v": 1, "command": "link.create", "args": { "target_url": "https://example.com/ra", "slug": "row-a" } }, "expect": { "ok": true, "result": { "slug": "row-a" }, "match": "subset" } },
+        { "label": "seed-b", "request": { "v": 1, "command": "link.create", "args": { "target_url": "https://example.com/rb", "slug": "row-b" } }, "expect": { "ok": true, "result": { "slug": "row-b" }, "match": "subset" } },
+        { "label": "seed-c", "request": { "v": 1, "command": "link.create", "args": { "target_url": "https://example.com/rc", "slug": "row-c" } }, "expect": { "ok": true, "result": { "slug": "row-c" }, "match": "subset" } },
+        {
+          "label": "rows",
+          "request": { "v": 1, "command": "db.rows", "args": { "table": "links", "sort": "slug", "order": "asc", "offset": 0, "limit": 2 } },
+          "expect": {
+            "ok": true,
+            "result": {
+              "table": "links",
+              "columns": [
+                { "name": "id", "type": "string" },
+                { "name": "slug", "type": "string" },
+                { "name": "url", "type": "string" },
+                { "name": "status", "type": "string" },
+                { "name": "enabled", "type": "bool" },
+                { "name": "redirect_type", "type": "string" },
+                { "name": "created_at", "type": "timestamp" },
+                { "name": "updated_at", "type": "timestamp" },
+                { "name": "expires_at", "type": "timestamp" },
+                { "name": "deleted_at", "type": "timestamp" }
+              ],
+              "rows": [ { "slug": "row-a" }, { "slug": "row-b" } ],
+              "offset": 0,
+              "limit": 2,
+              "total": 3
+            },
+            "match": "subset"
+          }
+        }
+      ]
+    },
+    {
+      "name": "db_rows_links_sort_filter",
+      "doc": "db.rows table=links applies the free-text q over searchable columns and the slug sort together; only the two matching rows are returned, slug-ascending",
+      "command": "db.rows",
+      "steps": [
+        { "label": "seed-skip", "request": { "v": 1, "command": "link.create", "args": { "target_url": "https://example.com/nomatch", "slug": "sf-skip" } }, "expect": { "ok": true, "result": { "slug": "sf-skip" }, "match": "subset" } },
+        { "label": "seed-two", "request": { "v": 1, "command": "link.create", "args": { "target_url": "https://example.com/common-tag-two", "slug": "sf-two" } }, "expect": { "ok": true, "result": { "slug": "sf-two" }, "match": "subset" } },
+        { "label": "seed-one", "request": { "v": 1, "command": "link.create", "args": { "target_url": "https://example.com/common-tag-one", "slug": "sf-one" } }, "expect": { "ok": true, "result": { "slug": "sf-one" }, "match": "subset" } },
+        {
+          "label": "rows",
+          "request": { "v": 1, "command": "db.rows", "args": { "table": "links", "q": "common-tag", "sort": "slug", "order": "asc", "offset": 0, "limit": 50 } },
+          "expect": {
+            "ok": true,
+            "result": {
+              "table": "links",
+              "rows": [ { "slug": "sf-one" }, { "slug": "sf-two" } ],
+              "offset": 0,
+              "limit": 50,
+              "total": 2
+            },
+            "match": "subset"
+          }
+        }
+      ]
+    },
+    {
+      "name": "db_rows_click_events_empty",
+      "doc": "db.rows table=click_events exposes only the analytics columns (the sole client identifier is the HMAC client_id_hash) and is empty in a process that served no redirects",
+      "command": "db.rows",
+      "steps": [
+        {
+          "label": "rows",
+          "request": { "v": 1, "command": "db.rows", "args": { "table": "click_events", "offset": 0, "limit": 50 } },
+          "expect": {
+            "ok": true,
+            "result": {
+              "table": "click_events",
+              "columns": [
+                { "name": "event_id", "type": "string" },
+                { "name": "occurred_at", "type": "timestamp" },
+                { "name": "slug", "type": "string" },
+                { "name": "link_id", "type": "string" },
+                { "name": "domain", "type": "string" },
+                { "name": "status_code", "type": "int" },
+                { "name": "referrer", "type": "string" },
+                { "name": "user_agent", "type": "string" },
+                { "name": "client_id_hash", "type": "string" }
+              ],
+              "rows": [],
+              "offset": 0,
+              "limit": 50,
+              "total": 0
+            },
+            "match": "subset"
+          }
+        }
+      ]
+    },
+    {
+      "name": "db_rows_unknown_table_not_found",
+      "doc": "an unregistered table name is not_found; the fixed message never echoes the requested name and the code is identical on every transport",
+      "command": "db.rows",
+      "steps": [
+        { "label": "rows", "request": { "v": 1, "command": "db.rows", "args": { "table": "widgets" } }, "expect": { "ok": false, "error": { "code": "not_found" } } }
+      ]
+    },
+    {
+      "name": "db_rows_auth_table_not_found",
+      "doc": "an auth/session table resolves to the same not_found as an unknown table, so db.rows is no existence oracle for the auth schema (threat model T-51)",
+      "command": "db.rows",
+      "steps": [
+        { "label": "app-users", "request": { "v": 1, "command": "db.rows", "args": { "table": "app_users" } }, "expect": { "ok": false, "error": { "code": "not_found" } } },
+        { "label": "audit-log", "request": { "v": 1, "command": "db.rows", "args": { "table": "auth_audit_log" } }, "expect": { "ok": false, "error": { "code": "not_found" } } },
+        { "label": "credentials", "request": { "v": 1, "command": "db.rows", "args": { "table": "user_credentials" } }, "expect": { "ok": false, "error": { "code": "not_found" } } }
+      ]
+    },
+    {
+      "name": "db_rows_disallowed_sort_column",
+      "doc": "a sort naming a real but non-sortable column (url) is rejected invalid_field; the error names only the field, never the value",
+      "command": "db.rows",
+      "steps": [
+        { "label": "seed", "request": { "v": 1, "command": "link.create", "args": { "target_url": "https://example.com/s", "slug": "sort-one" } }, "expect": { "ok": true, "result": { "slug": "sort-one" }, "match": "subset" } },
+        { "label": "rows", "request": { "v": 1, "command": "db.rows", "args": { "table": "links", "sort": "url" } }, "expect": { "ok": false, "error": { "code": "invalid_field" } } }
+      ]
+    },
+    {
+      "name": "db_rows_limit_bounds",
+      "doc": "the db.rows limit is bounded to 1..500: 501 and 0 are both rejected invalid_field before any source is read",
+      "command": "db.rows",
+      "steps": [
+        { "label": "over", "request": { "v": 1, "command": "db.rows", "args": { "table": "links", "limit": 501 } }, "expect": { "ok": false, "error": { "code": "invalid_field" } } },
+        { "label": "under", "request": { "v": 1, "command": "db.rows", "args": { "table": "links", "limit": 0 } }, "expect": { "ok": false, "error": { "code": "invalid_field" } } }
+      ]
+    },
+    {
+      "name": "db_rows_missing_table_invalid_field",
+      "doc": "omitting the required table argument is rejected invalid_field by the descriptor before the handler runs",
+      "command": "db.rows",
+      "steps": [
+        { "label": "rows", "request": { "v": 1, "command": "db.rows", "args": {} }, "expect": { "ok": false, "error": { "code": "invalid_field" } } }
+      ]
+    },
+    {
+      "name": "db_rows_columns_exclude_secrets",
+      "doc": "the links column set is exactly the ten documented scalar columns; none is named like a hash, token, salt, secret, dsn or password (contract C6, subtask 18)",
+      "command": "db.rows",
+      "steps": [
+        { "label": "seed", "request": { "v": 1, "command": "link.create", "args": { "target_url": "https://example.com/col", "slug": "col-one" } }, "expect": { "ok": true, "result": { "slug": "col-one" }, "match": "subset" } },
+        {
+          "label": "rows",
+          "request": { "v": 1, "command": "db.rows", "args": { "table": "links", "offset": 0, "limit": 50 } },
+          "expect": {
+            "ok": true,
+            "result": {
+              "table": "links",
+              "columns": [
+                { "name": "id", "type": "string" },
+                { "name": "slug", "type": "string" },
+                { "name": "url", "type": "string" },
+                { "name": "status", "type": "string" },
+                { "name": "enabled", "type": "bool" },
+                { "name": "redirect_type", "type": "string" },
+                { "name": "created_at", "type": "timestamp" },
+                { "name": "updated_at", "type": "timestamp" },
+                { "name": "expires_at", "type": "timestamp" },
+                { "name": "deleted_at", "type": "timestamp" }
+              ],
+              "offset": 0,
+              "limit": 50,
+              "total": 1
+            },
+            "match": "subset"
+          }
+        }
+      ]
+    },
+    {
+      "name": "db_rows_jobs_after_import",
+      "doc": "after a link.import job reaches its terminal state, db.rows table=jobs exposes the single job through exactly the eight documented metadata columns (id, command, state, done, total, error_code, created_at, finished_at); no args, args_digest, result payload or failure message column exists (T-94/C6). The jobs table is the in-process JobRunner, so the one-shot cmd CLI never shares it; the import is awaited so finished_at is a real timestamp, and state is matched (never a literal).",
+      "command": "db.rows",
+      "transports": { "skip": { "cli_cmd": "the jobs table is the in-process JobRunner; the one-shot cmd runs the import to completion and the next cmd process (db.rows) shares no job, so it would read an empty jobs table" } },
+      "steps": [
+        {
+          "label": "import",
+          "request": { "v": 1, "command": "link.import", "args": { "format": "csv", "data": "full_url,slug\nhttps://example.com/jr,jr-one\n" } },
+          "save": { "job_id": "$.job.id" },
+          "expect_accept": { "ok": true, "job": { "id": "<id>", "state": "queued" } },
+          "await_job": { "var": "job_id", "timeout_ms": 5000 },
+          "expect": { "ok": true, "result": { "total": 1, "created": 1, "skipped": 0, "overwritten": 0, "failed": 0, "errors": [], "errors_omitted": 0, "dry_run": false }, "match": "exact" }
+        },
+        {
+          "label": "rows",
+          "request": { "v": 1, "command": "db.rows", "args": { "table": "jobs", "offset": 0, "limit": 50 } },
+          "expect": {
+            "ok": true,
+            "result": {
+              "table": "jobs",
+              "columns": [
+                { "name": "id", "type": "string" },
+                { "name": "command", "type": "string" },
+                { "name": "state", "type": "string" },
+                { "name": "done", "type": "int" },
+                { "name": "total", "type": "int" },
+                { "name": "error_code", "type": "string" },
+                { "name": "created_at", "type": "timestamp" },
+                { "name": "finished_at", "type": "timestamp" }
+              ],
+              "rows": [
+                {
+                  "id": "<id>",
+                  "command": "link.import",
+                  "state": "<regex:queued|running|succeeded>",
+                  "done": "<uint>",
+                  "total": "<uint>",
+                  "error_code": "",
+                  "created_at": "<ts>",
+                  "finished_at": "<ts>"
+                }
+              ],
+              "offset": 0,
+              "limit": 50,
+              "total": 1
+            },
+            "match": "exact"
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,24 @@
+╭ link docs   [e]dit [s]tats ──────────────────────────────────────────────────╮
+│id        l-1  short url https://sho.rt/docs                                  │
+│target    https://example.com/docs/getting-started                            │
+│status    active  redirect  permanent                                         │
+│created   2024-01-01T00:00:00Z  expires   -                                   │
+│tags      guide, docs  campaign  autumn / twitter / social                    │
+│metadata  team=docs                                                           │
+├──────────────────────────────────────────────────────────────────────────────┤
+│Stats (7d)  attempts 84,210  success 83,720  [bucket: day]                    │
+│trend ▃▆▂█▅▇▃                                                                 │
+│Thu 120  Fri 340  Sat 80  Sun 500  Mon 260  Tue 410  Wed 150                  │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+├──────────────────────────────────────────────────────────────────────────────┤
+│e edit  p preview  s stats  r refresh  u restore  q back                      │
+╰──────────────────────────────────────────────────────────────────────────────╯

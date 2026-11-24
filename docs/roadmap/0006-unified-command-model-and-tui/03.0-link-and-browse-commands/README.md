@@ -36,24 +36,24 @@ Two halves that can run in parallel:
 
 | # | Document | Status | Depends on | Blocks |
 |---|----------|--------|------------|--------|
-| 01 | [ListLinksQuery extension, eval helper, `ListLinksPage`](01-list-links-query-and-page.md) | ⬜ Not started | none | 02, 12, 05.0/10 |
-| 02 | [Contract tests for extended listing](02-list-links-page-contract-tests.md) | ⬜ Not started | 01 | 12 |
-| 03 | [`IClickEventRepository::ListEvents` and in-memory impl](03-click-event-listing-interface-and-memory.md) | ⬜ Not started | none | 04, 16 |
-| 04 | [`ListEvents` for the SQL repository](04-click-event-listing-sql.md) | ⬜ Not started | 03 | 16 |
-| 05 | [Link command codec helpers](05-link-command-codec-helpers.md) | ⬜ Not started | 01.0/02, 01.0/05, 01.0/06, 01.0/07 | 07, 08, 09, 10, 05.0/08 |
-| 06 | [Dry-run validation methods on `LinkCommandService`](06-service-dry-run-validation.md) | ⬜ Not started | none | 07, 09, 05.0/08 |
-| 07 | [`link.create` command](07-link-create-command.md) | ⬜ Not started | 05, 06, 01.0/05, 01.0/06, 01.0/07 | 11, 05.0/08 |
-| 08 | [`link.get`, `link.preview`, `link.stats` commands](08-link-get-preview-stats-commands.md) | ⬜ Not started | 05, 01.0/05, 01.0/06, 01.0/07 | 11, 04.0/03, 06.0/13 |
-| 09 | [`link.update` command](09-link-update-command.md) | ⬜ Not started | 05, 06, 01.0/05, 01.0/06, 01.0/07 | 11, 04.0/05 |
-| 10 | [`link.delete`, `link.enable`, `link.disable`, `link.restore`](10-link-lifecycle-commands.md) | ⬜ Not started | 05, 01.0/05, 01.0/06, 01.0/07 | 11, 04.0/06 |
-| 11 | [Register the nine commands and REST parity gate](11-register-link-commands-and-rest-parity.md) | ⬜ Not started | 07, 08, 09, 10, 02.0/07 | 14, 18, 04.0/03, 04.0/04, 04.0/05, 04.0/14, 06.0/12, 06.0/13 |
-| 12 | [`ILinkLister` port and repository-backed lister](12-link-lister-port-and-repository-impl.md) | ⬜ Not started | 01, 02, 02.0/02 | 13, 14, 16, 05.0/10 |
-| 13 | [Lister for the default (legacy) store](13-legacy-link-lister.md) | ⬜ Not started | 12 | 18 |
-| 14 | [`link.list` command](14-link-list-command.md) | ⬜ Not started | 11, 12, 01.0/05, 01.0/06, 01.0/07 | 18, 04.0/07, 05.0/10, 06.0/12, 06.0/17 |
-| 15 | [`ITableSource` port, `db.tables`, `db.rows`](15-table-source-port-and-db-commands.md) | ⬜ Not started | 01.0/05, 01.0/06, 01.0/07 | 16, 05.0/21, 06.0/14, 06.0/17 |
-| 16 | [Links and click-events table sources](16-links-and-click-events-table-sources.md) | ⬜ Not started | 03, 04, 12, 15 | 18, 06.0/14 |
-| 17 | [`system.info` command](17-system-info-command.md) | ⬜ Not started | 01.0/05, 01.0/06, 01.0/07, 02.0/10 | 18, 06.0/17 |
-| 18 | [Register browse commands and security regression tests](18-register-browse-commands-and-security-tests.md) | ⬜ Not started | 11, 13, 14, 16, 17, 01.0/09, 01.0/10, 02.0/12 | 04.0/02, 04.0/07, 04.0/09, 04.0/13, 04.0/15, 05.0/20, 06.0/19, Task 07.0 |
+| 01 | [ListLinksQuery extension, eval helper, `ListLinksPage`](01-list-links-query-and-page.md) | ✅ Complete | none | 02, 12, 05.0/10 |
+| 02 | [Contract tests for extended listing](02-list-links-page-contract-tests.md) | ✅ Complete | 01 | 12 |
+| 03 | [`IClickEventRepository::ListEvents` and in-memory impl](03-click-event-listing-interface-and-memory.md) | ✅ Complete | none | 04, 16 |
+| 04 | [`ListEvents` for the SQL repository](04-click-event-listing-sql.md) | ✅ Complete | 03 | 16 |
+| 05 | [Link command codec helpers](05-link-command-codec-helpers.md) | ✅ Complete | 01.0/02, 01.0/05, 01.0/06, 01.0/07 | 07, 08, 09, 10, 05.0/08 |
+| 06 | [Dry-run validation methods on `LinkCommandService`](06-service-dry-run-validation.md) | ✅ Complete | none | 07, 09, 05.0/08 |
+| 07 | [`link.create` command](07-link-create-command.md) | ✅ Complete | 05, 06, 01.0/05, 01.0/06, 01.0/07 | 11, 05.0/08 |
+| 08 | [`link.get`, `link.preview`, `link.stats` commands](08-link-get-preview-stats-commands.md) | ✅ Complete | 05, 01.0/05, 01.0/06, 01.0/07 | 11, 04.0/03, 06.0/13 |
+| 09 | [`link.update` command](09-link-update-command.md) | ✅ Complete | 05, 06, 01.0/05, 01.0/06, 01.0/07 | 11, 04.0/05 |
+| 10 | [`link.delete`, `link.enable`, `link.disable`, `link.restore`](10-link-lifecycle-commands.md) | ✅ Complete | 05, 01.0/05, 01.0/06, 01.0/07 | 11, 04.0/06 |
+| 11 | [Register the nine commands and REST parity gate](11-register-link-commands-and-rest-parity.md) | ✅ Complete | 07, 08, 09, 10, 02.0/07 | 14, 18, 04.0/03, 04.0/04, 04.0/05, 04.0/14, 06.0/12, 06.0/13 |
+| 12 | [`ILinkLister` port and repository-backed lister](12-link-lister-port-and-repository-impl.md) | ✅ Complete | 01, 02, 02.0/02 | 13, 14, 16, 05.0/10 |
+| 13 | [Lister for the default (legacy) store](13-legacy-link-lister.md) | ✅ Complete | 12 | 18 |
+| 14 | [`link.list` command](14-link-list-command.md) | ✅ Complete | 11, 12, 01.0/05, 01.0/06, 01.0/07 | 18, 04.0/07, 05.0/10, 06.0/12, 06.0/17 |
+| 15 | [`ITableSource` port, `db.tables`, `db.rows`](15-table-source-port-and-db-commands.md) | ✅ Complete | 01.0/05, 01.0/06, 01.0/07 | 16, 05.0/21, 06.0/14, 06.0/17 |
+| 16 | [Links and click-events table sources](16-links-and-click-events-table-sources.md) | ✅ Complete | 03, 04, 12, 15 | 18, 06.0/14 |
+| 17 | [`system.info` command](17-system-info-command.md) | ✅ Complete | 01.0/05, 01.0/06, 01.0/07, 02.0/10 | 18, 06.0/17 |
+| 18 | [Register browse commands and security regression tests](18-register-browse-commands-and-security-tests.md) | ✅ Complete | 11, 13, 14, 16, 17, 01.0/09, 01.0/10, 02.0/12 | 04.0/02, 04.0/07, 04.0/09, 04.0/13, 04.0/15, 05.0/20, 06.0/19, Task 07.0 |
 
 Dependency mini-graph (`->` = must finish first; `02.0/x` and `01.0/x` are other tasks' subtasks):
 

@@ -48,6 +48,27 @@ This may be split into:
 - no-external-dependency integration suite
 - service-backed integration suite using PostgreSQL/Redis containers where configured
 
+### 3.3.1 Conformance and TUI jobs
+
+Milestone 0006 extends the minimum pipeline with the following jobs (full
+details and local reproduction commands in
+[section 10](#milestone-0006-unified-command-model-and-tui)):
+
+| Job | Workflow file | What it runs | Mandatory |
+|---|---|---|---|
+| `unit-tests` | `ubuntu-unit-tests.yml` | `-L unit` in a `tui: [ON, OFF]` matrix; the OFF leg asserts no `tui__*` test is registered | yes |
+| `integration-tests` | `ubuntu-integration-tests.yml` | `-L integration` (includes the `conformance` suite) then CLI e2e sections | yes |
+| `qa` | `e2e-tests.yml` | live-service e2e sections; path-filtered on `tests/e2e/**`, `tests/conformance/**`, `docs/commands/**` | yes (when paths match) |
+| `perf-analytics` | `perf-analytics.yml` | nightly `-L perf` on a Release build; publishes the redirect fast-path guard table to the job summary | no (advisory; `continue-on-error`) |
+
+**Failure policy:**
+
+- **Hard gates** (block merge): `unit-tests`, `integration-tests` (which
+  subsumes the conformance suite, catalog-drift check, and authz-matrix drift
+  check), and the structural redirect isolation guard
+  (`commands__80_redirect_isolation_test`, `unit` label).
+- **Advisory** (continue-on-error, never blocks merge): `perf-analytics`.
+
 ### 3.4 Static quality job
 
 When tools are configured, run:
@@ -167,6 +188,29 @@ CI adds analytics pipeline tests and optional perf-smoke comparison.
 ### Stage 05
 
 CI adds hardening/negative/fuzz-oriented coverage where practical and finalizes documentation checks.
+
+### Milestone 0006 (unified command model and TUI)
+
+CI wiring for the command-model / TUI milestone (07.0 subtask 33) adds the
+following to the baseline jobs. Reproduce each locally with the commands in
+`docs/roadmap/0006-unified-command-model-and-tui/07.0-tests-and-conformance/33-ci-wiring.md`.
+
+| Job (workflow) | What it runs | Mandatory |
+|---|---|---|
+| `unit-tests` (`ubuntu-unit-tests.yml`) | `-L unit` in a `tui: [ON, OFF]` matrix; the OFF leg asserts no `tui__*` test is registered | yes |
+| `integration-tests` (`ubuntu-integration-tests.yml`) | `-L integration` (includes the `conformance` suite and security process tests), then the CLI e2e sections `-L e2e -E "^e2e_(0[1-9]|10)_"`; uploads the per-transport conformance summaries (and `coverage_matrix.md` when present) | yes |
+| `qa` (`e2e-tests.yml`) | live-service e2e sections 01-10; path-filtered on `tests/e2e/**`, `tests/conformance/**`, `docs/commands/**`, `docs/qa/**` | yes (when paths match) |
+| `perf-analytics` (`perf-analytics.yml`) | nightly `-L perf` on a Release build; publishes the redirect fast-path guard table to the job summary | no (advisory; `continue-on-error`) |
+
+All jobs declare a least-privilege `permissions: contents: read`. By repo
+convention, GitHub Actions are pinned by release tag (e.g. `actions/checkout@v4`)
+rather than by commit SHA; keep new workflow steps consistent with that choice.
+
+The redirect guard stays advisory: `URLSHORTENER_PERF_GATE` is left unset, and
+the committed `tests/perf/redirect/baseline.json` is a placeholder until a
+maintainer records a real baseline on the nightly runner class (the guard
+refuses `--write-baseline` under `CI=true`; see `tests/perf/README.md`).
+Windows and macOS have no CI; conformance runs there are manual (`-C Debug`).
 
 ---
 

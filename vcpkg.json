@@ -16,5 +16,13 @@
     "libpq",
     "sqlite3"
   ],
+  "features": {
+    "tui": {
+      "description": "Terminal UI (FTXUI). Optional: default installs omit it. The audited release is 7.0.3 (SHA-pinned in cmake/FetchFTXUI.cmake); the builtin-baseline only provides ftxui 6.1.9, so no 7.0.3 override is set here. CMake requires find_package(ftxui 7.0.3), so a baseline 6.1.9 install is rejected and the SHA-pinned FetchContent is authoritative. Bumping the baseline to expose 7.0.3 is a separate change.",
+      "dependencies": [
+        "ftxui"
+      ]
+    }
+  },
   "builtin-baseline": "32305df7d0b9a308e6ac454dd98ebfe550342c09"
 }

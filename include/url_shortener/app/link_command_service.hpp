@@ -10,6 +10,7 @@
 #include <url_shortener/app/app_error.hpp>
 #include <url_shortener/core/config.hpp>
 #include <url_shortener/core/types.hpp>
+#include <url_shortener/core/utils.hpp>
 
 namespace url_shortener
 {
@@ -154,6 +155,28 @@ struct RestoreLinkCommand
 {
     ///< Slug of the link to restore (required).
     std::string slug;
+};
+
+/**
+ * @brief Command to replace only the target URL of an existing link.
+ *
+ * The sole application-layer path that changes a stored `target_url`:
+ * `UpdateLinkCommand` (PATCH) deliberately has no target field. Backs
+ * `link.import` with `on_conflict=overwrite`. The replacement URL is
+ * validated and normalized through the same `normalizeTargetUrl` /
+ * private-target (SSRF) check as `CreateLinkCommand::target_url`, so an
+ * overwrite can never store an unvalidated or disallowed URL.
+ */
+struct ReplaceLinkTargetCommand
+{
+    ///< Slug of the existing, non-deleted link whose target is replaced
+    ///< (required).
+    std::string slug;
+
+    ///< New destination URL, un-normalized; validated and normalized by
+    ///< `LinkCommandService::ReplaceLinkTarget` exactly as `CreateLink`
+    ///< validates `CreateLinkCommand::target_url`.
+    std::string target_url;
 };
 
 /**
@@ -398,6 +421,49 @@ public:
      * exist or the backend rejected the write.
      */
     virtual bool update(const Link& link, AppError* error = nullptr) = 0;
+
+    /**
+     * @brief Records one successful redirect of @p served (the record
+     * the redirect path just read).
+     *
+     * Best effort and non-authoritative: the caller ignores the result,
+     * and a `false` return must never change the redirect response or its
+     * latency (analytics/stat best-effort rule, CLAUDE.md). The redirect
+     * counters this maintains are provisional; `GetLinkStats` click-event
+     * aggregates remain the authoritative metric.
+     *
+     * Non-pure so every existing `ILinkStore` implementer compiles
+     * unchanged: the default body reproduces the legacy handler behavior
+     * exactly — it copies @p served, increments
+     * `total_redirects`/`redirects_24h`/`redirects_7d`, stamps
+     * `last_accessed_at` with the current wall-clock time, and writes the
+     * whole record back through @ref update (which also invalidates the
+     * cache). `RepositoryLinkStore` overrides it with a write-behind path
+     * that adds no repository I/O to the request thread (subtask 05).
+     *
+     * @param served The link that served the redirect, as read by the
+     * redirect path.
+     * @param[out] error If non-null and the underlying @ref update fails,
+     * receives that failure (storage-layer dependent); left untouched on
+     * success. Overrides that never touch the repository on the request
+     * thread leave it untouched.
+     * @return `true` if the update was recorded; `false` if the default's
+     * @ref update call failed. Overrides may always return `true`.
+     */
+    virtual bool recordRedirect(const Link& served, AppError* error = nullptr)
+    {
+        // Legacy behavior, moved verbatim out of the redirect handler
+        // (incrementRedirectStats): copy the served record, bump all three
+        // monotonic counters and the last-access timestamp, and write the
+        // whole record back through update (which also invalidates the
+        // cache).
+        Link updated = served;
+        updated.stats.total_redirects++;
+        updated.stats.redirects_24h++;
+        updated.stats.redirects_7d++;
+        updated.stats.last_accessed_at = currentTimestamp();
+        return update(updated, error);
+    }
 };
 
 /**
@@ -486,6 +552,31 @@ public:
     Result<LinkView> CreateLink(const CreateLinkCommand& command) const;
 
     /**
+     * @brief Run every `CreateLink` check and return the view `CreateLink`
+     * would return, without calling `ILinkStore::create` or
+     * `ILinkStore::invalidateCache`.
+     *
+     * Honors the `options.dry_run` command contract ("validate and authorize,
+     * do not mutate"): the full validation path (URL normalization, slug
+     * choice, redirect type, expiry parse/default, tag/metadata/campaign
+     * validators) runs and returns the identical `Result<LinkView>` a real
+     * `CreateLink` would, but no record is written and no cache entry is
+     * evicted. The returned `id`/`created_at` are freshly generated
+     * placeholders; a generated slug is NOT reserved, so a later real
+     * `CreateLink` may choose a different one and a concurrent create may make
+     * a previously valid dry-run slug conflict.
+     *
+     * @param command Command with the same fields and constraints as
+     * `CreateLink`.
+     * @return `Result<LinkView>` populated on success with the would-be view;
+     * on failure the same `AppErrorCode`/detail `CreateLink` returns
+     * (`invalid_url`, `invalid_slug`, `reserved_slug`, `slug_conflict`,
+     * `invalid_field`, `internal`). `storage_failure` is never returned because
+     * no repository write is attempted.
+     */
+    Result<LinkView> ValidateCreateLink(const CreateLinkCommand& command) const;
+
+    /**
      * @brief Retrieves a link by slug or stable ID.
      * @param query Lookup discriminator and value.
      * @return `Result<LinkView>` on success; `not_found` if no link
@@ -519,6 +610,27 @@ public:
     Result<LinkView> UpdateLink(const UpdateLinkCommand& command) const;
 
     /**
+     * @brief Run every `UpdateLink` check (including the existence lookup)
+     * without calling `ILinkStore::update`.
+     *
+     * Honors the `options.dry_run` command contract ("validate and authorize,
+     * do not mutate"): the link is loaded via `ILinkStore::findBySlug`, the
+     * PATCH fields are applied through the same validators `UpdateLink` uses
+     * and `updated_at` is refreshed, but the result is never written back, so
+     * the stored record is left byte-identical. The returned view is the
+     * would-be post-update state (fields applied, `updated_at` refreshed in the
+     * view only).
+     *
+     * @param command Partial-update command with the same PATCH semantics as
+     * `UpdateLink`.
+     * @return `Result<LinkView>` with the would-be updated view on success;
+     * `not_found` if the slug does not exist; `invalid_field` if any present
+     * field fails validation. `storage_failure` is never returned because no
+     * repository write is attempted.
+     */
+    Result<LinkView> ValidateUpdateLink(const UpdateLinkCommand& command) const;
+
+    /**
      * @brief Soft-delete an existing link by setting `deleted_at`.
      * @param command Command identifying the slug to soft-delete.
      * @return `Result<LinkView>` reflecting the post-delete state on
@@ -548,6 +660,35 @@ public:
     Result<LinkView> RestoreLink(const RestoreLinkCommand& command) const;
 
     /**
+     * @brief Replace the target URL of an existing, non-deleted link.
+     *
+     * The only application-layer method that changes a stored `target_url`
+     * (`UpdateLink`/PATCH carries no target field). The replacement URL goes
+     * through the same `normalizeTargetUrl` normalization and private-target
+     * (SSRF) check as `CreateLink`, so an invalid or disallowed URL is never
+     * stored. Only `target_url` and `updated_at` change; `id`, `created_at`,
+     * `enabled`, `tags`, `metadata`, `campaign`, `expires_at` and
+     * `redirect_type` are preserved. The write goes through
+     * `ILinkStore::update`, which also invalidates any cached copy of the
+     * slug (cache-aside contract); no second invalidation path is added here.
+     *
+     * Backs `link.import` with `on_conflict=overwrite`. Because the overwrite
+     * is destructive it is audited at the enclosing job level (one audit line
+     * carrying the job id, no per-row values) rather than per call.
+     *
+     * @param command Slug of the link to retarget and the un-normalized new
+     * target URL.
+     * @return `Result<LinkView>` with the retargeted view on success; on
+     * failure: `invalid_url` if `target_url` is not a valid absolute
+     * HTTP/HTTPS URL or targets a disallowed private host; `not_found` if no
+     * link has the slug; `slug_conflict` if the slug belongs to a soft-deleted
+     * link (restore it first — overwrite never resurrects or silently edits a
+     * deleted record); `storage_failure` if the repository write failed.
+     */
+    Result<LinkView> ReplaceLinkTarget(
+        const ReplaceLinkTargetCommand& command) const;
+
+    /**
      * @brief Look up a link for preview without mutating it.
      *
      * Returns the same `LinkView` shape as `GetLink`; the transport
@@ -559,7 +700,64 @@ public:
      */
     Result<LinkView> PreviewLink(const GetLinkQuery& query) const;
 
+    /**
+     * @brief Projects a `Link` into the same `LinkView` every query and
+     * command method returns, for callers that already hold a decoded link.
+     *
+     * Public, thin wrapper over the private `toView`: it computes `short_url`
+     * from `config_` and `status` via `resolveLinkStatus` exactly as `GetLink`
+     * does, so a view produced here is byte-identical (after
+     * `serializeLinkViewJson`) to the one `GetLink` would return for the same
+     * link. Used by `RepositoryLinkLister` (and the legacy lister) so list
+     * items can never disagree with `link.get` about a link's projection or
+     * status. Performs no storage access and does not mutate this service.
+     *
+     * @param link Already-decoded link (e.g. from `record_to_link`) to
+     * project; taken by const reference and not retained.
+     * @return The corresponding `LinkView`, identical to the `GetLink`
+     * projection of the same link.
+     */
+    LinkView ViewOf(const Link& link) const;
+
 private:
+    /**
+     * @brief Shared create path for `CreateLink` and `ValidateCreateLink`.
+     *
+     * Runs the full validate-and-build sequence exactly once (normalize URL,
+     * choose slug, resolve redirect type, parse/default expiry, validate
+     * tags/metadata/campaign, build the `Link`). The persistence step
+     * (`ILinkStore::create` followed by `ILinkStore::invalidateCache`) runs
+     * only when @p persist is `true`.
+     * @param command The create command to validate and (optionally) persist.
+     * @param persist `true` for the real `CreateLink` (write and invalidate
+     * cache); `false` for `ValidateCreateLink` (dry run: skip the write, no
+     * `storage_failure` possible).
+     * @return `Result<LinkView>` with the created/would-be view on success, or
+     * the first validation/persistence error; see `CreateLink` for the full
+     * error set.
+     */
+    Result<LinkView> CreateLinkImpl(const CreateLinkCommand& command,
+                                    bool persist) const;
+
+    /**
+     * @brief Shared update path for `UpdateLink` and `ValidateUpdateLink`.
+     *
+     * Loads the link, applies the PATCH fields through the shared validators
+     * and refreshes `updated_at` exactly once. The write-back
+     * (`ILinkStore::update`) runs only when @p persist is `true`.
+     * @param command The partial-update command to validate and (optionally)
+     * persist.
+     * @param persist `true` for the real `UpdateLink` (write back); `false`
+     * for `ValidateUpdateLink` (dry run: skip the write, no `storage_failure`
+     * possible).
+     * @return `Result<LinkView>` with the updated/would-be view on success;
+     * `not_found` if the slug does not exist; `invalid_field` on a failing
+     * field; `storage_failure` only when @p persist is `true` and the write
+     * fails.
+     */
+    Result<LinkView> UpdateLinkImpl(const UpdateLinkCommand& command,
+                                    bool persist) const;
+
     /**
      * @brief Validates or generates the slug for a `CreateLink` call.
      *
@@ -643,6 +841,31 @@ std::string serializeLinkPreviewJson(const LinkView& link);
  * @return JSON object string with all stats fields.
  */
 std::string serializeLinkStatsJson(const LinkStatsView& stats);
+
+/**
+ * @brief Serializes the lifetime redirect counters of a link to JSON.
+ *
+ * Emits the six-key lifetime-stats body the
+ * `GET /api/v1/links/{slug}/stats` REST endpoint returns when no
+ * `from`/`to`/`bucket` range is supplied, in this exact order:
+ * `slug`, `total_redirects`, `redirects_24h`, `redirects_7d`,
+ * `last_accessed_at` (a JSON string when present, otherwise `null`),
+ * `created_at`. The three counters come from @ref LinkView::stats and
+ * are written as bare JSON numbers; `slug`, `last_accessed_at` and
+ * `created_at` are escaped via `jsonString`. This is the lifetime
+ * (non-range) stats shape, distinct from the range report produced by
+ * @ref serializeLinkStatsJson.
+ *
+ * Shared verbatim so the REST handler and the `link.stats` command stay
+ * byte-for-byte identical (milestone contract C1/C3): the output is
+ * byte-equal to the inline body built in
+ * `src/http/handlers/link_handlers.cpp::handleLinkStats`.
+ *
+ * @param link Fully populated view returned by
+ * @ref LinkCommandService::GetLink for the addressed slug.
+ * @return The canonical lifetime-stats JSON object for @p link.
+ */
+std::string serializeLinkLifetimeStatsJson(const LinkView& link);
 
 }  // namespace app
 }  // namespace url_shortener

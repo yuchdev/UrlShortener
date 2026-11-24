@@ -46,26 +46,26 @@ GET /admin/api/v1/ips/{ip_id}/visitor-profiles
 ## Requirements
 
 1. Fingerprint list columns (
-   [01-product-and-ux-spec.md §7.4](/docs/roadmap/0002-admin_console/01-product-and-ux-spec.md)):
+   01-product-and-ux-spec.md §7.4 (`docs/roadmap/0002-admin_console/01-product-and-ux-spec.md`, planned, not yet written)):
    `Fingerprint ID, Provider, First Seen, Last Seen, Redirects, Unique
    Links, Unique IPs, Visitor Profile, Regeneration Attempts, Risk Score`.
    Detail adds: normalized fingerprint summary, provider confidence, smart
    signals, associated visitor profile, IP history, redirect history,
    regeneration history, related fingerprints, suspicious signals - **never**
    raw components by default (
-   [01-product-and-ux-spec.md §7.4](/docs/roadmap/0002-admin_console/01-product-and-ux-spec.md),
-   [06-security-privacy-permissions.md §6](/docs/roadmap/0002-admin_console/06-security-privacy-permissions.md)).
+   01-product-and-ux-spec.md §7.4 (`docs/roadmap/0002-admin_console/01-product-and-ux-spec.md`, planned, not yet written),
+   06-security-privacy-permissions.md §6 (`docs/roadmap/0002-admin_console/06-security-privacy-permissions.md`, planned, not yet written)).
 2. IP list columns (
-   [01-product-and-ux-spec.md §7.5](/docs/roadmap/0002-admin_console/01-product-and-ux-spec.md)):
+   01-product-and-ux-spec.md §7.5 (`docs/roadmap/0002-admin_console/01-product-and-ux-spec.md`, planned, not yet written)):
    `IP or Masked IP, First Seen, Last Seen, Redirects, Unique Links, Unique
    Fingerprints, Visitor Profiles, Blocked Events, Risk Score`. Detail adds
    IP summary, associated fingerprints/visitor profiles, redirect timeline,
    rate-limit events, suspicious events, user-agent distribution, top
    clicked links.
 3. `FingerprintDto`/`IpAddressDto` map from
-   [05-data-model-and-storage.md §3, §5](/docs/roadmap/0002-admin_console/05-data-model-and-storage.md).
+   05-data-model-and-storage.md §3, §5 (`docs/roadmap/0002-admin_console/05-data-model-and-storage.md`, planned, not yet written).
 4. IP display policy (
-   [06-security-privacy-permissions.md §5](/docs/roadmap/0002-admin_console/06-security-privacy-permissions.md)):
+   06-security-privacy-permissions.md §5 (`docs/roadmap/0002-admin_console/06-security-privacy-permissions.md`, planned, not yet written)):
    admin with `ips:read_full` -> full IP if storage policy allows; admin
    without it -> masked; read-only -> always masked. Implement this as a
    narrow policy check in `IpAddressesController` that task 08.0's
@@ -78,7 +78,7 @@ GET /admin/api/v1/ips/{ip_id}/visitor-profiles
 
 - Provider-specific raw JSON must never leak into `FingerprintDto` - only
   the normalized envelope/signal fields defined in
-  [03-fingerprint-and-suspicion-model.md §6](/docs/roadmap/0002-admin_console/03-fingerprint-and-suspicion-model.md)
+  03-fingerprint-and-suspicion-model.md §6 (`docs/roadmap/0002-admin_console/03-fingerprint-and-suspicion-model.md`, planned, not yet written)
   (
   [plan.md - Shared contract C1](/docs/roadmap/0002-admin_console/plan.md)).
 - All raw/full sensitive fields must be entirely absent from the response

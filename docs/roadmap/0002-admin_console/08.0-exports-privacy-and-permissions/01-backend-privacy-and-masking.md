@@ -24,7 +24,7 @@ src/admin/privacy/MaskingService.cpp
 ## Requirements
 
 1. `PrivacyPolicy` centralizes the rules from
-   [06-security-privacy-permissions.md §5-6](/docs/roadmap/0002-admin_console/06-security-privacy-permissions.md):
+   06-security-privacy-permissions.md §5-6 (`docs/roadmap/0002-admin_console/06-security-privacy-permissions.md`, planned, not yet written):
 
    ```text
    admin + ips:read_full -> full IP if storage policy allows
@@ -43,7 +43,7 @@ src/admin/privacy/MaskingService.cpp
    of a local policy check.
 4. Support a privacy-policy config hook, retention settings, and a raw-
    payload disable switch as configurable inputs to `PrivacyPolicy` (
-   [06-security-privacy-permissions.md §11](/docs/roadmap/0002-admin_console/06-security-privacy-permissions.md)),
+   06-security-privacy-permissions.md §11 (`docs/roadmap/0002-admin_console/06-security-privacy-permissions.md`, planned, not yet written)),
    reusing `FingerprintConfig`'s `store_raw_debug_payloads` flag (task 06.0
    subtask 01) rather than duplicating it.
 

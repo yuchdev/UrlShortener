@@ -15,9 +15,11 @@ class AnalyticsStatsSchema(LinkManagementIntegrationBase):
         create_link(self.port,"anx02","https://example.com")
         request(self.port,"GET","/anx02")
         now = int(time.time())
+        # Bounded +-1h window: keeps the span under the T-76 10,000-bucket
+        # cap (04.0/03) while still bracketing the just-recorded event.
         status,payload,_=request(
             self.port,"GET",
-            f"/api/v1/links/anx02/stats?from=0&to={now + 3600}&bucket=hour"
+            f"/api/v1/links/anx02/stats?from={now - 3600}&to={now + 3600}&bucket=hour"
         )
         self.assertEqual(200,status)
         for k in ['slug','total_attempts','successful_redirects','time_buckets']:

@@ -1,15 +1,17 @@
-#include <url_shortener/app/link_command_service.hpp>
-
-#include <url_shortener/core/utils.hpp>
-
 #include <algorithm>
 #include <chrono>
 #include <sstream>
 #include <utility>
 
-namespace url_shortener {
-namespace app {
-namespace {
+#include <url_shortener/app/link_command_service.hpp>
+#include <url_shortener/core/utils.hpp>
+
+namespace url_shortener
+{
+namespace app
+{
+namespace
+{
 
 std::string shortUrlFor(const ServerConfig& config, const std::string& slug)
 {
@@ -22,15 +24,14 @@ std::string shortUrlFor(const ServerConfig& config, const std::string& slug)
 
 AppError error(const AppErrorCode code, std::string detail)
 {
-    return AppError{code, std::move(detail)};
+    return AppError {code, std::move(detail)};
 }
 
-} // namespace
+}  // namespace
 
-LinkCommandService::LinkCommandService(
-    ILinkStore& store,
-    ILinkStatsReader& stats_reader,
-    const ServerConfig& config)
+LinkCommandService::LinkCommandService(ILinkStore& store,
+                                       ILinkStatsReader& stats_reader,
+                                       const ServerConfig& config)
     : store_(store)
     , stats_reader_(stats_reader)
     , config_(config)
@@ -42,13 +43,17 @@ Result<std::string> LinkCommandService::chooseSlug(
 {
     if (command.slug.has_value()) {
         if (!isValidSlug(*command.slug)) {
-            return {std::nullopt, error(AppErrorCode::invalid_slug, "slug format is invalid")};
+            return {
+                std::nullopt,
+                error(AppErrorCode::invalid_slug, "slug format is invalid")};
         }
         if (isReservedSlug(*command.slug)) {
-            return {std::nullopt, error(AppErrorCode::reserved_slug, "slug is reserved")};
+            return {std::nullopt,
+                    error(AppErrorCode::reserved_slug, "slug is reserved")};
         }
         if (store_.slugExists(*command.slug)) {
-            return {std::nullopt, error(AppErrorCode::slug_conflict, "slug already in use")};
+            return {std::nullopt,
+                    error(AppErrorCode::slug_conflict, "slug already in use")};
         }
         return {*command.slug, {}};
     }
@@ -60,15 +65,30 @@ Result<std::string> LinkCommandService::chooseSlug(
         }
     }
 
-    return {std::nullopt, error(AppErrorCode::internal, "unable to generate a unique slug")};
+    return {std::nullopt,
+            error(AppErrorCode::internal, "unable to generate a unique slug")};
 }
 
 Result<LinkView> LinkCommandService::CreateLink(
     const CreateLinkCommand& command) const
 {
+    return CreateLinkImpl(command, true);
+}
+
+Result<LinkView> LinkCommandService::ValidateCreateLink(
+    const CreateLinkCommand& command) const
+{
+    return CreateLinkImpl(command, false);
+}
+
+Result<LinkView> LinkCommandService::CreateLinkImpl(
+    const CreateLinkCommand& command, bool persist) const
+{
     const auto normalized_url = normalizeTargetUrl(command.target_url, config_);
     if (!normalized_url.has_value()) {
-        return {std::nullopt, error(AppErrorCode::invalid_url, "url must be an absolute http/https URL")};
+        return {std::nullopt,
+                error(AppErrorCode::invalid_url,
+                      "url must be an absolute http/https URL")};
     }
 
     const auto slug = chooseSlug(command);
@@ -80,15 +100,22 @@ Result<LinkView> LinkCommandService::CreateLink(
     if (command.redirect_type.has_value()) {
         redirect_type = *command.redirect_type;
     }
-    else if (const auto parsed = parseRedirectType(config_.shortener_default_redirect_type); parsed.has_value()) {
+    else if (const auto parsed =
+                 parseRedirectType(config_.shortener_default_redirect_type);
+             parsed.has_value())
+    {
         redirect_type = *parsed;
     }
 
     std::optional<std::string> expires_at = command.expires_at;
     if (expires_at.has_value() && !parseRfc3339Zulu(*expires_at).has_value()) {
-        return {std::nullopt, error(AppErrorCode::invalid_field, "expires_at must be RFC3339 UTC")};
+        return {std::nullopt,
+                error(AppErrorCode::invalid_field,
+                      "expires_at must be RFC3339 UTC")};
     }
-    if (!expires_at.has_value() && config_.shortener_default_expiry_seconds.has_value()) {
+    if (!expires_at.has_value()
+        && config_.shortener_default_expiry_seconds.has_value())
+    {
         expires_at = formatTimestamp(
             std::chrono::system_clock::now()
             + std::chrono::seconds(*config_.shortener_default_expiry_seconds));
@@ -96,13 +123,18 @@ Result<LinkView> LinkCommandService::CreateLink(
 
     auto tags = command.tags;
     if (!validateTags(tags)) {
-        return {std::nullopt, error(AppErrorCode::invalid_field, "tags violate constraints")};
+        return {std::nullopt,
+                error(AppErrorCode::invalid_field, "tags violate constraints")};
     }
     if (!validateMetadata(command.metadata)) {
-        return {std::nullopt, error(AppErrorCode::invalid_field, "metadata must be flat object with limits")};
+        return {std::nullopt,
+                error(AppErrorCode::invalid_field,
+                      "metadata must be flat object with limits")};
     }
     if (!validateCampaign(command.campaign)) {
-        return {std::nullopt, error(AppErrorCode::invalid_field, "campaign must be valid object")};
+        return {std::nullopt,
+                error(AppErrorCode::invalid_field,
+                      "campaign must be valid object")};
     }
 
     Link link;
@@ -118,14 +150,17 @@ Result<LinkView> LinkCommandService::CreateLink(
     link.campaign = command.campaign;
     link.redirect_type = redirect_type;
 
-    AppError store_error;
-    if (!store_.create(link, &store_error)) {
-        if (store_error.code == AppErrorCode::none) {
-            store_error = error(AppErrorCode::slug_conflict, "slug already in use");
+    if (persist) {
+        AppError store_error;
+        if (!store_.create(link, &store_error)) {
+            if (store_error.code == AppErrorCode::none) {
+                store_error =
+                    error(AppErrorCode::slug_conflict, "slug already in use");
+            }
+            return {std::nullopt, store_error};
         }
-        return {std::nullopt, store_error};
+        store_.invalidateCache(link.slug);
     }
-    store_.invalidateCache(link.slug);
     return {toView(link), {}};
 }
 
@@ -142,6 +177,18 @@ Result<LinkView> LinkCommandService::GetLink(const GetLinkQuery& query) const
 
 Result<LinkView> LinkCommandService::UpdateLink(
     const UpdateLinkCommand& command) const
+{
+    return UpdateLinkImpl(command, true);
+}
+
+Result<LinkView> LinkCommandService::ValidateUpdateLink(
+    const UpdateLinkCommand& command) const
+{
+    return UpdateLinkImpl(command, false);
+}
+
+Result<LinkView> LinkCommandService::UpdateLinkImpl(
+    const UpdateLinkCommand& command, bool persist) const
 {
     auto link = store_.findBySlug(command.slug);
     if (!link.has_value()) {
@@ -166,21 +213,27 @@ Result<LinkView> LinkCommandService::UpdateLink(
             link->expires_at = *value;
         }
         else {
-            return {std::nullopt, error(AppErrorCode::invalid_field, "expires_at must be RFC3339 UTC or null")};
+            return {std::nullopt,
+                    error(AppErrorCode::invalid_field,
+                          "expires_at must be RFC3339 UTC or null")};
         }
     }
 
     if (command.tags.has_value()) {
         auto normalized = *command.tags;
         if (!validateTags(normalized)) {
-            return {std::nullopt, error(AppErrorCode::invalid_field, "tags violate constraints")};
+            return {
+                std::nullopt,
+                error(AppErrorCode::invalid_field, "tags violate constraints")};
         }
         link->tags = std::move(normalized);
     }
 
     if (command.metadata.has_value()) {
         if (!validateMetadata(*command.metadata)) {
-            return {std::nullopt, error(AppErrorCode::invalid_field, "metadata must be flat object with string values")};
+            return {std::nullopt,
+                    error(AppErrorCode::invalid_field,
+                          "metadata must be flat object with string values")};
         }
         link->metadata = *command.metadata;
     }
@@ -193,17 +246,23 @@ Result<LinkView> LinkCommandService::UpdateLink(
         else {
             std::optional<Link::Campaign> candidate = value;
             if (!validateCampaign(candidate)) {
-                return {std::nullopt, error(AppErrorCode::invalid_field, "campaign fields exceed limits")};
+                return {std::nullopt,
+                        error(AppErrorCode::invalid_field,
+                              "campaign fields exceed limits")};
             }
             link->campaign = candidate;
         }
     }
 
     link->updated_at = currentTimestamp();
-    if (AppError update_error; !store_.update(*link, &update_error)) {
-        return {std::nullopt, update_error.code == AppErrorCode::none
-            ? error(AppErrorCode::storage_failure, "failed to persist link update")
-            : update_error};
+    if (persist) {
+        if (AppError update_error; !store_.update(*link, &update_error)) {
+            return {std::nullopt,
+                    update_error.code == AppErrorCode::none
+                        ? error(AppErrorCode::storage_failure,
+                                "failed to persist link update")
+                        : update_error};
+        }
     }
     return {toView(*link), {}};
 }
@@ -219,9 +278,11 @@ Result<LinkView> LinkCommandService::DeleteLink(
     link->deleted_at = now;
     link->updated_at = now;
     if (AppError update_error; !store_.update(*link, &update_error)) {
-        return {std::nullopt, update_error.code == AppErrorCode::none
-            ? error(AppErrorCode::storage_failure, "failed to persist link update")
-            : update_error};
+        return {std::nullopt,
+                update_error.code == AppErrorCode::none
+                    ? error(AppErrorCode::storage_failure,
+                            "failed to persist link update")
+                    : update_error};
     }
     return {toView(*link), {}};
 }
@@ -236,9 +297,11 @@ Result<LinkView> LinkCommandService::SetLinkEnabled(
     link->enabled = command.enabled;
     link->updated_at = currentTimestamp();
     if (AppError update_error; !store_.update(*link, &update_error)) {
-        return {std::nullopt, update_error.code == AppErrorCode::none
-            ? error(AppErrorCode::storage_failure, "failed to persist link update")
-            : update_error};
+        return {std::nullopt,
+                update_error.code == AppErrorCode::none
+                    ? error(AppErrorCode::storage_failure,
+                            "failed to persist link update")
+                    : update_error};
     }
     return {toView(*link), {}};
 }
@@ -253,14 +316,58 @@ Result<LinkView> LinkCommandService::RestoreLink(
     link->deleted_at.reset();
     link->updated_at = currentTimestamp();
     if (AppError update_error; !store_.update(*link, &update_error)) {
-        return {std::nullopt, update_error.code == AppErrorCode::none
-            ? error(AppErrorCode::storage_failure, "failed to persist link update")
-            : update_error};
+        return {std::nullopt,
+                update_error.code == AppErrorCode::none
+                    ? error(AppErrorCode::storage_failure,
+                            "failed to persist link update")
+                    : update_error};
     }
     return {toView(*link), {}};
 }
 
-Result<LinkView> LinkCommandService::PreviewLink(const GetLinkQuery& query) const
+Result<LinkView> LinkCommandService::ReplaceLinkTarget(
+    const ReplaceLinkTargetCommand& command) const
+{
+    // Single validation path: the replacement target is normalized and
+    // SSRF-checked exactly as CreateLink does, so an overwrite can never
+    // store an unvalidated or disallowed URL (same message as CreateLink).
+    const auto normalized_url = normalizeTargetUrl(command.target_url, config_);
+    if (!normalized_url.has_value()) {
+        return {std::nullopt,
+                error(AppErrorCode::invalid_url,
+                      "url must be an absolute http/https URL")};
+    }
+
+    auto link = store_.findBySlug(command.slug);
+    if (!link.has_value()) {
+        return {std::nullopt, error(AppErrorCode::not_found, "Link not found")};
+    }
+    // A soft-deleted link still occupies its slug; overwrite never resurrects
+    // or silently edits a deleted record. The message is value-free (no slug).
+    if (link->deleted_at.has_value()) {
+        return {std::nullopt,
+                error(AppErrorCode::slug_conflict,
+                      "slug belongs to a deleted link; restore it first")};
+    }
+
+    // Only the target and the mutation timestamp change; every other field is
+    // preserved verbatim.
+    link->target_url = *normalized_url;
+    link->updated_at = currentTimestamp();
+    // store_.update invalidates any cached copy of the slug per the ILinkStore
+    // contract; no separate invalidateCache call is added here.
+    if (AppError update_error; !store_.update(*link, &update_error)) {
+        return {std::nullopt,
+                update_error.code == AppErrorCode::none
+                    ? error(AppErrorCode::storage_failure,
+                            "failed to persist link update")
+                    : update_error};
+    }
+    return {toView(*link), {}};
+}
+
+Result<LinkView> LinkCommandService::PreviewLink(
+    const GetLinkQuery& query) const
 {
     const auto link = query.by == GetLinkBy::id
         ? store_.findById(query.value)
@@ -275,6 +382,11 @@ Result<LinkStatsView> LinkCommandService::GetLinkStats(
     const GetLinkStatsQuery& query) const
 {
     return stats_reader_.read(query);
+}
+
+LinkView LinkCommandService::ViewOf(const Link& link) const
+{
+    return toView(link);
 }
 
 LinkView LinkCommandService::toView(const Link& link) const
@@ -308,7 +420,8 @@ std::string serializeLinkViewJson(const LinkView& link)
          << ",\"created_at\":" << jsonString(link.created_at)
          << ",\"updated_at\":" << jsonString(link.updated_at)
          << ",\"status\":" << jsonString(linkStatusToString(link.status))
-         << ",\"redirect_type\":" << jsonString(redirectTypeToString(link.redirect_type))
+         << ",\"redirect_type\":"
+         << jsonString(redirectTypeToString(link.redirect_type))
          << ",\"tags\":[";
     for (size_t i = 0; i < link.tags.size(); ++i) {
         if (i > 0) {
@@ -319,23 +432,26 @@ std::string serializeLinkViewJson(const LinkView& link)
     body << "],\"metadata\":{";
     if (!link.metadata.empty()) {
         std::vector<std::pair<std::string, std::string>> items(
-            link.metadata.begin(),
-            link.metadata.end());
-        std::sort(items.begin(), items.end(), [](const auto& lhs, const auto& rhs) {
-            return lhs.first < rhs.first;
-        });
+            link.metadata.begin(), link.metadata.end());
+        std::sort(items.begin(),
+                  items.end(),
+                  [](const auto& lhs, const auto& rhs)
+                  { return lhs.first < rhs.first; });
         for (size_t i = 0; i < items.size(); ++i) {
             if (i > 0) {
                 body << ',';
             }
-            body << jsonString(items[i].first) << ':' << jsonString(items[i].second);
+            body << jsonString(items[i].first) << ':'
+                 << jsonString(items[i].second);
         }
     }
     body << "},\"campaign\":";
     if (link.campaign.has_value()) {
         body << '{';
         bool first = true;
-        const auto append = [&](const char* key, const std::optional<std::string>& value) {
+        const auto append =
+            [&](const char* key, const std::optional<std::string>& value)
+        {
             if (!value.has_value()) {
                 return;
             }
@@ -415,8 +531,8 @@ std::string serializeLinkStatsJson(const LinkStatsView& stats)
         if (i > 0) {
             os << ',';
         }
-        os << '"' << stats.status_code_counts[i].status_code << "\":"
-           << stats.status_code_counts[i].count;
+        os << '"' << stats.status_code_counts[i].status_code
+           << "\":" << stats.status_code_counts[i].count;
     }
     os << "},\"attempts_by_domain\":{";
     for (size_t i = 0; i < stats.domain_counts.size(); ++i) {
@@ -434,11 +550,35 @@ std::string serializeLinkStatsJson(const LinkStatsView& stats)
         os << "{\"bucket_start\":" << stats.time_buckets[i].bucket_start_epoch
            << ",\"count\":" << stats.time_buckets[i].count << '}';
     }
-    os << "],\"from\":" << stats.from
-       << ",\"to\":" << stats.to
+    os << "],\"from\":" << stats.from << ",\"to\":" << stats.to
        << ",\"bucket\":" << jsonString(stats.bucket) << '}';
     return os.str();
 }
 
-} // namespace app
-} // namespace url_shortener
+std::string serializeLinkLifetimeStatsJson(const LinkView& link)
+{
+    // Lifetime (non-range) stats body shared verbatim with the REST
+    // GET /api/v1/links/{slug}/stats handler (src/http/handlers/
+    // link_handlers.cpp::handleLinkStats, no-range branch). The field set and
+    // order here are load-bearing and pinned byte-for-byte by the
+    // characterization tests; do not add or reorder fields without updating
+    // those tests deliberately (contract C1/C3). Task 04.0 switches the REST
+    // handler onto this function.
+    std::ostringstream body;
+    body << "{\"slug\":" << jsonString(link.slug)
+         << ",\"total_redirects\":" << link.stats.total_redirects
+         << ",\"redirects_24h\":" << link.stats.redirects_24h
+         << ",\"redirects_7d\":" << link.stats.redirects_7d
+         << ",\"last_accessed_at\":";
+    if (link.stats.last_accessed_at.has_value()) {
+        body << jsonString(*link.stats.last_accessed_at);
+    }
+    else {
+        body << "null";
+    }
+    body << ",\"created_at\":" << jsonString(link.created_at) << '}';
+    return body.str();
+}
+
+}  // namespace app
+}  // namespace url_shortener

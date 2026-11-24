@@ -4,6 +4,8 @@
 #include <string>
 #include <unordered_map>
 
+#include <boost/asio/ip/address.hpp>
+
 namespace url_shortener
 {
 namespace http
@@ -23,6 +25,18 @@ struct RouteContext
 
     ///< Stable metrics/logging route label.
     std::string route_label;
+
+    ///< TCP peer (client) address of the connection, as read from the
+    ///< accepted socket by the session layer. `std::nullopt` when the
+    ///< request was not dispatched from a live socket (unit tests, tools)
+    ///< or when `remote_endpoint()` reported an error (fail-closed for any
+    ///< downstream locality/throttle gate: an absent peer is treated as
+    ///< "no key"/"non-loopback", never guessed). The create throttle keys
+    ///< on this value only; it is **never** derived from an
+    ///< `X-Forwarded-For`/`Forwarded` header and is **never** logged as it
+    ///< is client PII (threat model T-70/T-84). The redirect fast path
+    ///< ignores it (contract C10).
+    std::optional<boost::asio::ip::address> peer;
 };
 
 /// @brief Returns a captured path parameter value when present.

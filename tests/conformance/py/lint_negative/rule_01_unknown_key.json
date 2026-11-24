@@ -1,0 +1,19 @@
+{
+  "corpus_version": 1,
+  "suite": "neg",
+  "description": "RULE-1 negative: an unknown key on a step object.",
+  "cases": [
+    {
+      "name": "neg_unknown_key",
+      "doc": "step carries a key outside the step schema",
+      "command": "link.get",
+      "steps": [
+        {
+          "request": { "v": 1, "command": "link.get", "args": { "slug": "a" } },
+          "expect": { "ok": true, "result": { "slug": "a" }, "match": "subset" },
+          "bogus_key": true
+        }
+      ]
+    }
+  ]
+}

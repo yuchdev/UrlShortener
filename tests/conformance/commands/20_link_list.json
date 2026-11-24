@@ -1,0 +1,374 @@
+{
+  "corpus_version": 1,
+  "suite": "link_list",
+  "description": "link.list: the status lifecycle filter (active default, all/disabled/expired/deleted), the T-71 write raise for all/deleted, q/tag/campaign filters, slug and created ordering, offset/limit paging and every argument bound. Multi-item ordering is pinned with an explicit sort=slug&order=asc so a second-granular created_at tie never makes the item array non-deterministic; the default-sort case asserts count/total only.",
+  "cases": [
+    {
+      "name": "link_list_default_active_only",
+      "doc": "the default status is active (Q9): seed-c (disabled) and seed-d (deleted) are excluded; order pinned by an explicit sort=slug asc so the five active items are deterministic",
+      "command": "link.list",
+      "steps": [
+        { "label": "seed-a", "request": { "v": 1, "command": "link.create", "args": { "target_url": "https://example.com/a", "slug": "seed-a", "tags": ["red"], "campaign": { "name": "spring" } } }, "expect": { "ok": true, "result": { "slug": "seed-a" }, "match": "subset" } },
+        { "label": "seed-b", "request": { "v": 1, "command": "link.create", "args": { "target_url": "https://example.com/b", "slug": "seed-b", "tags": ["blue", "red"] } }, "expect": { "ok": true, "result": { "slug": "seed-b" }, "match": "subset" } },
+        { "label": "seed-c", "request": { "v": 1, "command": "link.create", "args": { "target_url": "https://example.com/c", "slug": "seed-c" } }, "expect": { "ok": true, "result": { "slug": "seed-c" }, "match": "subset" } },
+        { "label": "disable-c", "request": { "v": 1, "command": "link.disable", "args": { "slug": "seed-c" } }, "expect": { "ok": true, "result": { "slug": "seed-c", "status": "disabled" }, "match": "subset" } },
+        { "label": "seed-d", "request": { "v": 1, "command": "link.create", "args": { "target_url": "https://example.com/d", "slug": "seed-d" } }, "expect": { "ok": true, "result": { "slug": "seed-d" }, "match": "subset" } },
+        { "label": "delete-d", "request": { "v": 1, "command": "link.delete", "args": { "slug": "seed-d" } }, "expect": { "ok": true, "result": { "slug": "seed-d", "status": "deleted" }, "match": "subset" } },
+        { "label": "seed-e", "request": { "v": 1, "command": "link.create", "args": { "target_url": "https://example.com/e", "slug": "seed-e", "tags": ["green"] } }, "expect": { "ok": true, "result": { "slug": "seed-e" }, "match": "subset" } },
+        { "label": "seed-f", "request": { "v": 1, "command": "link.create", "args": { "target_url": "https://example.com/f", "slug": "seed-f", "campaign": { "name": "summer" } } }, "expect": { "ok": true, "result": { "slug": "seed-f" }, "match": "subset" } },
+        { "label": "seed-g", "request": { "v": 1, "command": "link.create", "args": { "target_url": "https://example.com/g", "slug": "seed-g" } }, "expect": { "ok": true, "result": { "slug": "seed-g" }, "match": "subset" } },
+        {
+          "label": "list",
+          "request": { "v": 1, "command": "link.list", "args": { "sort": "slug", "order": "asc", "limit": 50 } },
+          "rest_resource": { "method": "GET", "path": "/api/v1/links", "query": { "sort": "slug", "order": "asc", "limit": "50" }, "status": 200 },
+          "expect": {
+            "ok": true,
+            "result": {
+              "items": [
+                { "slug": "seed-a", "status": "active" },
+                { "slug": "seed-b", "status": "active" },
+                { "slug": "seed-e", "status": "active" },
+                { "slug": "seed-f", "status": "active" },
+                { "slug": "seed-g", "status": "active" }
+              ],
+              "offset": 0,
+              "limit": 50,
+              "total": 5
+            },
+            "match": "subset"
+          }
+        }
+      ]
+    },
+    {
+      "name": "link_list_status_all",
+      "doc": "status=all lists every lifecycle state including the disabled and deleted seeds (admin caller; all raises the required permission to write, T-71)",
+      "command": "link.list",
+      "steps": [
+        { "label": "seed-a", "request": { "v": 1, "command": "link.create", "args": { "target_url": "https://example.com/a", "slug": "seed-a", "tags": ["red"], "campaign": { "name": "spring" } } }, "expect": { "ok": true, "result": { "slug": "seed-a" }, "match": "subset" } },
+        { "label": "seed-b", "request": { "v": 1, "command": "link.create", "args": { "target_url": "https://example.com/b", "slug": "seed-b", "tags": ["blue", "red"] } }, "expect": { "ok": true, "result": { "slug": "seed-b" }, "match": "subset" } },
+        { "label": "seed-c", "request": { "v": 1, "command": "link.create", "args": { "target_url": "https://example.com/c", "slug": "seed-c" } }, "expect": { "ok": true, "result": { "slug": "seed-c" }, "match": "subset" } },
+        { "label": "disable-c", "request": { "v": 1, "command": "link.disable", "args": { "slug": "seed-c" } }, "expect": { "ok": true, "result": { "slug": "seed-c", "status": "disabled" }, "match": "subset" } },
+        { "label": "seed-d", "request": { "v": 1, "command": "link.create", "args": { "target_url": "https://example.com/d", "slug": "seed-d" } }, "expect": { "ok": true, "result": { "slug": "seed-d" }, "match": "subset" } },
+        { "label": "delete-d", "request": { "v": 1, "command": "link.delete", "args": { "slug": "seed-d" } }, "expect": { "ok": true, "result": { "slug": "seed-d", "status": "deleted" }, "match": "subset" } },
+        { "label": "seed-e", "request": { "v": 1, "command": "link.create", "args": { "target_url": "https://example.com/e", "slug": "seed-e", "tags": ["green"] } }, "expect": { "ok": true, "result": { "slug": "seed-e" }, "match": "subset" } },
+        { "label": "seed-f", "request": { "v": 1, "command": "link.create", "args": { "target_url": "https://example.com/f", "slug": "seed-f", "campaign": { "name": "summer" } } }, "expect": { "ok": true, "result": { "slug": "seed-f" }, "match": "subset" } },
+        { "label": "seed-g", "request": { "v": 1, "command": "link.create", "args": { "target_url": "https://example.com/g", "slug": "seed-g" } }, "expect": { "ok": true, "result": { "slug": "seed-g" }, "match": "subset" } },
+        {
+          "label": "list",
+          "request": { "v": 1, "id": "list-all-1", "command": "link.list", "args": { "status": "all", "sort": "slug", "order": "asc", "limit": 50 } },
+          "rest_resource": { "method": "GET", "path": "/api/v1/links", "query": { "status": "all", "sort": "slug", "order": "asc", "limit": "50" }, "status": 200 },
+          "expect": {
+            "ok": true,
+            "result": {
+              "items": [
+                { "slug": "seed-a", "status": "active" },
+                { "slug": "seed-b", "status": "active" },
+                { "slug": "seed-c", "status": "disabled" },
+                { "slug": "seed-d", "status": "deleted" },
+                { "slug": "seed-e", "status": "active" },
+                { "slug": "seed-f", "status": "active" },
+                { "slug": "seed-g", "status": "active" }
+              ],
+              "offset": 0,
+              "limit": 50,
+              "total": 7
+            },
+            "match": "subset"
+          }
+        }
+      ]
+    },
+    {
+      "name": "link_list_status_disabled",
+      "doc": "status=disabled returns only the disabled link and excludes the active one (read permission; a user caller is allowed)",
+      "command": "link.list",
+      "steps": [
+        { "label": "seed-active", "request": { "v": 1, "command": "link.create", "args": { "target_url": "https://example.com/act", "slug": "act-one" } }, "expect": { "ok": true, "result": { "slug": "act-one" }, "match": "subset" } },
+        { "label": "seed-disabled", "request": { "v": 1, "command": "link.create", "args": { "target_url": "https://example.com/dis", "slug": "dis-one" } }, "expect": { "ok": true, "result": { "slug": "dis-one" }, "match": "subset" } },
+        { "label": "disable", "request": { "v": 1, "command": "link.disable", "args": { "slug": "dis-one" } }, "expect": { "ok": true, "result": { "slug": "dis-one", "status": "disabled" }, "match": "subset" } },
+        {
+          "label": "list",
+          "request": { "v": 1, "command": "link.list", "args": { "status": "disabled" } },
+          "rest_resource": { "method": "GET", "path": "/api/v1/links", "query": { "status": "disabled" }, "status": 200 },
+          "expect": { "ok": true, "result": { "items": [ { "slug": "dis-one", "status": "disabled" } ], "offset": 0, "limit": 50, "total": 1 }, "match": "subset" }
+        }
+      ]
+    },
+    {
+      "name": "link_list_status_deleted",
+      "doc": "status=deleted returns only the soft-deleted link (admin caller; deleted raises the required permission to write, T-71)",
+      "command": "link.list",
+      "steps": [
+        { "label": "seed-active", "request": { "v": 1, "command": "link.create", "args": { "target_url": "https://example.com/act", "slug": "keep-one" } }, "expect": { "ok": true, "result": { "slug": "keep-one" }, "match": "subset" } },
+        { "label": "seed-deleted", "request": { "v": 1, "command": "link.create", "args": { "target_url": "https://example.com/del", "slug": "del-one" } }, "expect": { "ok": true, "result": { "slug": "del-one" }, "match": "subset" } },
+        { "label": "delete", "request": { "v": 1, "command": "link.delete", "args": { "slug": "del-one" } }, "expect": { "ok": true, "result": { "slug": "del-one", "status": "deleted" }, "match": "subset" } },
+        {
+          "label": "list",
+          "request": { "v": 1, "command": "link.list", "args": { "status": "deleted" } },
+          "rest_resource": { "method": "GET", "path": "/api/v1/links", "query": { "status": "deleted" }, "status": 200 },
+          "expect": { "ok": true, "result": { "items": [ { "slug": "del-one", "status": "deleted" } ], "offset": 0, "limit": 50, "total": 1 }, "match": "subset" }
+        }
+      ]
+    },
+    {
+      "name": "link_list_status_expired",
+      "doc": "status=expired returns the link whose expiry is in the past (status enum member expired, read permission)",
+      "command": "link.list",
+      "steps": [
+        { "label": "seed-active", "request": { "v": 1, "command": "link.create", "args": { "target_url": "https://example.com/live", "slug": "live-one" } }, "expect": { "ok": true, "result": { "slug": "live-one" }, "match": "subset" } },
+        { "label": "seed-expired", "request": { "v": 1, "command": "link.create", "args": { "target_url": "https://example.com/old", "slug": "old-one", "expires_at": "2000-01-01T00:00:00Z" } }, "expect": { "ok": true, "result": { "slug": "old-one", "status": "expired" }, "match": "subset" } },
+        {
+          "label": "list",
+          "request": { "v": 1, "command": "link.list", "args": { "status": "expired" } },
+          "rest_resource": { "method": "GET", "path": "/api/v1/links", "query": { "status": "expired" }, "status": 200 },
+          "expect": { "ok": true, "result": { "items": [ { "slug": "old-one", "status": "expired" } ], "offset": 0, "limit": 50, "total": 1 }, "match": "subset" }
+        }
+      ]
+    },
+    {
+      "name": "link_list_default_excludes_expired",
+      "doc": "the default active status excludes an expired link (03.0/12/14: active no longer includes expired)",
+      "command": "link.list",
+      "steps": [
+        { "label": "seed-active", "request": { "v": 1, "command": "link.create", "args": { "target_url": "https://example.com/live", "slug": "ex-live" } }, "expect": { "ok": true, "result": { "slug": "ex-live" }, "match": "subset" } },
+        { "label": "seed-expired", "request": { "v": 1, "command": "link.create", "args": { "target_url": "https://example.com/old", "slug": "ex-old", "expires_at": "2000-01-01T00:00:00Z" } }, "expect": { "ok": true, "result": { "slug": "ex-old", "status": "expired" }, "match": "subset" } },
+        {
+          "label": "list",
+          "request": { "v": 1, "command": "link.list", "args": { "sort": "slug", "order": "asc" } },
+          "rest_resource": { "method": "GET", "path": "/api/v1/links", "query": { "sort": "slug", "order": "asc" }, "status": 200 },
+          "expect": { "ok": true, "result": { "items": [ { "slug": "ex-live", "status": "active" } ], "offset": 0, "limit": 50, "total": 1 }, "match": "subset" }
+        }
+      ]
+    },
+    {
+      "name": "link_list_q_slug_substring",
+      "doc": "q matches a case-insensitive substring of the slug; only the matching link is returned",
+      "command": "link.list",
+      "steps": [
+        { "label": "seed-match", "request": { "v": 1, "command": "link.create", "args": { "target_url": "https://example.com/m", "slug": "find-me-slug" } }, "expect": { "ok": true, "result": { "slug": "find-me-slug" }, "match": "subset" } },
+        { "label": "seed-other", "request": { "v": 1, "command": "link.create", "args": { "target_url": "https://example.com/o", "slug": "other-slug" } }, "expect": { "ok": true, "result": { "slug": "other-slug" }, "match": "subset" } },
+        {
+          "label": "list",
+          "request": { "v": 1, "command": "link.list", "args": { "q": "find-me" } },
+          "rest_resource": { "method": "GET", "path": "/api/v1/links", "query": { "q": "find-me" }, "status": 200 },
+          "expect": { "ok": true, "result": { "items": [ { "slug": "find-me-slug", "status": "active" } ], "offset": 0, "limit": 50, "total": 1 }, "match": "subset" }
+        }
+      ]
+    },
+    {
+      "name": "link_list_q_target_substring",
+      "doc": "q matches a case-insensitive substring of the target URL; only the matching link is returned",
+      "command": "link.list",
+      "steps": [
+        { "label": "seed-match", "request": { "v": 1, "command": "link.create", "args": { "target_url": "https://example.com/needle-xyz", "slug": "qt-one" } }, "expect": { "ok": true, "result": { "slug": "qt-one" }, "match": "subset" } },
+        { "label": "seed-other", "request": { "v": 1, "command": "link.create", "args": { "target_url": "https://example.com/other", "slug": "qt-two" } }, "expect": { "ok": true, "result": { "slug": "qt-two" }, "match": "subset" } },
+        {
+          "label": "list",
+          "request": { "v": 1, "command": "link.list", "args": { "q": "needle-xyz" } },
+          "rest_resource": { "method": "GET", "path": "/api/v1/links", "query": { "q": "needle-xyz" }, "status": 200 },
+          "expect": { "ok": true, "result": { "items": [ { "slug": "qt-one", "url": "https://example.com/needle-xyz" } ], "offset": 0, "limit": 50, "total": 1 }, "match": "subset" }
+        }
+      ]
+    },
+    {
+      "name": "link_list_tag_filter",
+      "doc": "tag matches links carrying that exact tag; a link without it is excluded",
+      "command": "link.list",
+      "steps": [
+        { "label": "seed-tagged", "request": { "v": 1, "command": "link.create", "args": { "target_url": "https://example.com/t1", "slug": "tag-one", "tags": ["wanted", "misc"] } }, "expect": { "ok": true, "result": { "slug": "tag-one" }, "match": "subset" } },
+        { "label": "seed-untagged", "request": { "v": 1, "command": "link.create", "args": { "target_url": "https://example.com/t2", "slug": "tag-two", "tags": ["nope"] } }, "expect": { "ok": true, "result": { "slug": "tag-two" }, "match": "subset" } },
+        {
+          "label": "list",
+          "request": { "v": 1, "command": "link.list", "args": { "tag": "wanted" } },
+          "rest_resource": { "method": "GET", "path": "/api/v1/links", "query": { "tag": "wanted" }, "status": 200 },
+          "expect": { "ok": true, "result": { "items": [ { "slug": "tag-one" } ], "offset": 0, "limit": 50, "total": 1 }, "match": "subset" }
+        }
+      ]
+    },
+    {
+      "name": "link_list_campaign_filter",
+      "doc": "campaign matches links whose campaign.name equals the filter; a link with a different campaign is excluded",
+      "command": "link.list",
+      "steps": [
+        { "label": "seed-camp", "request": { "v": 1, "command": "link.create", "args": { "target_url": "https://example.com/c1", "slug": "camp-one", "campaign": { "name": "promo2026" } } }, "expect": { "ok": true, "result": { "slug": "camp-one" }, "match": "subset" } },
+        { "label": "seed-nocamp", "request": { "v": 1, "command": "link.create", "args": { "target_url": "https://example.com/c2", "slug": "camp-two", "campaign": { "name": "other" } } }, "expect": { "ok": true, "result": { "slug": "camp-two" }, "match": "subset" } },
+        {
+          "label": "list",
+          "request": { "v": 1, "command": "link.list", "args": { "campaign": "promo2026" } },
+          "rest_resource": { "method": "GET", "path": "/api/v1/links", "query": { "campaign": "promo2026" }, "status": 200 },
+          "expect": { "ok": true, "result": { "items": [ { "slug": "camp-one" } ], "offset": 0, "limit": 50, "total": 1 }, "match": "subset" }
+        }
+      ]
+    },
+    {
+      "name": "link_list_sort_slug_asc",
+      "doc": "sort=slug order=asc orders by slug, not creation order (seeded out of alphabetical order)",
+      "command": "link.list",
+      "steps": [
+        { "label": "seed-c", "request": { "v": 1, "command": "link.create", "args": { "target_url": "https://example.com/sc", "slug": "s-c" } }, "expect": { "ok": true, "result": { "slug": "s-c" }, "match": "subset" } },
+        { "label": "seed-a", "request": { "v": 1, "command": "link.create", "args": { "target_url": "https://example.com/sa", "slug": "s-a" } }, "expect": { "ok": true, "result": { "slug": "s-a" }, "match": "subset" } },
+        { "label": "seed-b", "request": { "v": 1, "command": "link.create", "args": { "target_url": "https://example.com/sb", "slug": "s-b" } }, "expect": { "ok": true, "result": { "slug": "s-b" }, "match": "subset" } },
+        {
+          "label": "list",
+          "request": { "v": 1, "command": "link.list", "args": { "sort": "slug", "order": "asc" } },
+          "rest_resource": { "method": "GET", "path": "/api/v1/links", "query": { "sort": "slug", "order": "asc" }, "status": 200 },
+          "expect": {
+            "ok": true,
+            "result": {
+              "items": [ { "slug": "s-a" }, { "slug": "s-b" }, { "slug": "s-c" } ],
+              "offset": 0,
+              "limit": 50,
+              "total": 3
+            },
+            "match": "subset"
+          }
+        }
+      ]
+    },
+    {
+      "name": "link_list_sort_created_desc_default",
+      "doc": "the default sort is created_at desc; created_at is second-granular so a rapid seed can tie, therefore only the item count and total are asserted (exact ordering is pinned by link_list_sort_slug_asc)",
+      "command": "link.list",
+      "steps": [
+        { "label": "seed-1", "request": { "v": 1, "command": "link.create", "args": { "target_url": "https://example.com/d1", "slug": "d-one" } }, "expect": { "ok": true, "result": { "slug": "d-one" }, "match": "subset" } },
+        { "label": "seed-2", "request": { "v": 1, "command": "link.create", "args": { "target_url": "https://example.com/d2", "slug": "d-two" } }, "expect": { "ok": true, "result": { "slug": "d-two" }, "match": "subset" } },
+        { "label": "seed-3", "request": { "v": 1, "command": "link.create", "args": { "target_url": "https://example.com/d3", "slug": "d-three" } }, "expect": { "ok": true, "result": { "slug": "d-three" }, "match": "subset" } },
+        {
+          "label": "list",
+          "request": { "v": 1, "command": "link.list", "args": {} },
+          "rest_resource": { "method": "GET", "path": "/api/v1/links", "status": 200 },
+          "expect": { "ok": true, "result": { "items": ["<any>", "<any>", "<any>"], "offset": 0, "limit": 50, "total": 3 }, "match": "subset" }
+        }
+      ]
+    },
+    {
+      "name": "link_list_offset_limit_pages",
+      "doc": "two pages (offset 0 then offset 2, limit 2) under sort=slug asc do not overlap and report the same total",
+      "command": "link.list",
+      "steps": [
+        { "label": "seed-a", "request": { "v": 1, "command": "link.create", "args": { "target_url": "https://example.com/pa", "slug": "p-a" } }, "expect": { "ok": true, "result": { "slug": "p-a" }, "match": "subset" } },
+        { "label": "seed-b", "request": { "v": 1, "command": "link.create", "args": { "target_url": "https://example.com/pb", "slug": "p-b" } }, "expect": { "ok": true, "result": { "slug": "p-b" }, "match": "subset" } },
+        { "label": "seed-c", "request": { "v": 1, "command": "link.create", "args": { "target_url": "https://example.com/pc", "slug": "p-c" } }, "expect": { "ok": true, "result": { "slug": "p-c" }, "match": "subset" } },
+        { "label": "seed-d", "request": { "v": 1, "command": "link.create", "args": { "target_url": "https://example.com/pd", "slug": "p-d" } }, "expect": { "ok": true, "result": { "slug": "p-d" }, "match": "subset" } },
+        {
+          "label": "page-1",
+          "request": { "v": 1, "command": "link.list", "args": { "sort": "slug", "order": "asc", "offset": 0, "limit": 2 } },
+          "rest_resource": { "method": "GET", "path": "/api/v1/links", "query": { "sort": "slug", "order": "asc", "offset": "0", "limit": "2" }, "status": 200 },
+          "expect": { "ok": true, "result": { "items": [ { "slug": "p-a" }, { "slug": "p-b" } ], "offset": 0, "limit": 2, "total": 4 }, "match": "subset" }
+        },
+        {
+          "label": "page-2",
+          "request": { "v": 1, "command": "link.list", "args": { "sort": "slug", "order": "asc", "offset": 2, "limit": 2 } },
+          "rest_resource": { "method": "GET", "path": "/api/v1/links", "query": { "sort": "slug", "order": "asc", "offset": "2", "limit": "2" }, "status": 200 },
+          "expect": { "ok": true, "result": { "items": [ { "slug": "p-c" }, { "slug": "p-d" } ], "offset": 2, "limit": 2, "total": 4 }, "match": "subset" }
+        }
+      ]
+    },
+    {
+      "name": "link_list_limit_max_500_ok",
+      "doc": "limit=500 is the inclusive upper bound and is accepted; the page echoes limit 500",
+      "command": "link.list",
+      "steps": [
+        { "label": "seed", "request": { "v": 1, "command": "link.create", "args": { "target_url": "https://example.com/one", "slug": "max-one" } }, "expect": { "ok": true, "result": { "slug": "max-one" }, "match": "subset" } },
+        {
+          "label": "list",
+          "request": { "v": 1, "command": "link.list", "args": { "status": "active", "sort": "slug", "order": "asc", "limit": 500 } },
+          "rest_resource": { "method": "GET", "path": "/api/v1/links", "query": { "status": "active", "sort": "slug", "order": "asc", "limit": "500" }, "status": 200 },
+          "expect": { "ok": true, "result": { "items": [ { "slug": "max-one", "status": "active" } ], "offset": 0, "limit": 500, "total": 1 }, "match": "subset" }
+        }
+      ]
+    },
+    {
+      "name": "link_list_limit_501_invalid",
+      "doc": "limit=501 exceeds the 1..500 bound and is rejected invalid_field (asserted via the generic command path; the bound is enforced by the descriptor before the lister runs)",
+      "command": "link.list",
+      "steps": [
+        { "label": "list", "request": { "v": 1, "command": "link.list", "args": { "limit": 501 } }, "expect": { "ok": false, "error": { "code": "invalid_field" } } }
+      ]
+    },
+    {
+      "name": "link_list_limit_zero_invalid",
+      "doc": "limit=0 is below the 1..500 bound and is rejected invalid_field",
+      "command": "link.list",
+      "steps": [
+        { "label": "list", "request": { "v": 1, "command": "link.list", "args": { "limit": 0 } }, "expect": { "ok": false, "error": { "code": "invalid_field" } } }
+      ]
+    },
+    {
+      "name": "link_list_offset_negative_invalid",
+      "doc": "a negative offset is below the 0..1000000 bound and is rejected invalid_field",
+      "command": "link.list",
+      "steps": [
+        { "label": "list", "request": { "v": 1, "command": "link.list", "args": { "offset": -1 } }, "expect": { "ok": false, "error": { "code": "invalid_field" } } }
+      ]
+    },
+    {
+      "name": "link_list_unknown_sort_invalid",
+      "doc": "a sort value outside the created_at|slug|updated_at enum is rejected invalid_field",
+      "command": "link.list",
+      "steps": [
+        { "label": "list", "request": { "v": 1, "command": "link.list", "args": { "sort": "bogus" } }, "expect": { "ok": false, "error": { "code": "invalid_field" } } }
+      ]
+    },
+    {
+      "name": "link_list_status_all_user_not_authorized",
+      "doc": "a read-only user cannot list status=all: the status-dependent permission raise to write (T-71) denies before any row is read",
+      "command": "link.list",
+      "caller": "user",
+      "steps": [
+        {
+          "label": "list",
+          "request": { "v": 1, "command": "link.list", "args": { "status": "all" } },
+          "rest_resource": { "method": "GET", "path": "/api/v1/links", "query": { "status": "all" }, "status": 403 },
+          "expect": { "ok": false, "error": { "code": "not_authorized" } }
+        }
+      ]
+    },
+    {
+      "name": "link_list_status_deleted_user_not_authorized",
+      "doc": "a read-only user cannot list status=deleted: the status-dependent permission raise to write (T-71) denies before any row is read",
+      "command": "link.list",
+      "caller": "user",
+      "steps": [
+        {
+          "label": "list",
+          "request": { "v": 1, "command": "link.list", "args": { "status": "deleted" } },
+          "rest_resource": { "method": "GET", "path": "/api/v1/links", "query": { "status": "deleted" }, "status": 403 },
+          "expect": { "ok": false, "error": { "code": "not_authorized" } }
+        }
+      ]
+    },
+    {
+      "name": "link_list_status_active_user_allowed",
+      "doc": "a read-only user may list status=active (a read); the admin seeds the link and the user reads the shared store",
+      "command": "link.list",
+      "steps": [
+        { "label": "seed", "request": { "v": 1, "command": "link.create", "args": { "target_url": "https://example.com/u", "slug": "user-active" } }, "expect": { "ok": true, "result": { "slug": "user-active" }, "match": "subset" } },
+        {
+          "label": "list",
+          "caller": "user",
+          "request": { "v": 1, "command": "link.list", "args": { "status": "active" } },
+          "rest_resource": { "method": "GET", "path": "/api/v1/links", "query": { "status": "active" }, "status": 200 },
+          "expect": { "ok": true, "result": { "items": [ { "slug": "user-active", "status": "active" } ], "offset": 0, "limit": 50, "total": 1 }, "match": "subset" }
+        }
+      ]
+    },
+    {
+      "name": "link_list_status_disabled_user_allowed",
+      "doc": "a read-only user may list status=disabled (a read, not raised to write); the admin seeds and disables, the user reads",
+      "command": "link.list",
+      "steps": [
+        { "label": "seed", "request": { "v": 1, "command": "link.create", "args": { "target_url": "https://example.com/ud", "slug": "user-disabled" } }, "expect": { "ok": true, "result": { "slug": "user-disabled" }, "match": "subset" } },
+        { "label": "disable", "request": { "v": 1, "command": "link.disable", "args": { "slug": "user-disabled" } }, "expect": { "ok": true, "result": { "slug": "user-disabled", "status": "disabled" }, "match": "subset" } },
+        {
+          "label": "list",
+          "caller": "user",
+          "request": { "v": 1, "command": "link.list", "args": { "status": "disabled" } },
+          "rest_resource": { "method": "GET", "path": "/api/v1/links", "query": { "status": "disabled" }, "status": 200 },
+          "expect": { "ok": true, "result": { "items": [ { "slug": "user-disabled", "status": "disabled" } ], "offset": 0, "limit": 50, "total": 1 }, "match": "subset" }
+        }
+      ]
+    }
+  ]
+}

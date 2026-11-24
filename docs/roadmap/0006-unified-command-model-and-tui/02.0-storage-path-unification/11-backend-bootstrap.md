@@ -2,7 +2,7 @@
 
 **Parent task:** 02.0 Storage path unification
 **State:** ⬜ Not started
-**Depends on:** 02.0/04, 02.0/05, 02.0/07, 02.0/10
+**Depends on:** 02.0/04, 02.0/05, 02.0/07, 02.0/10, 02.0/16
 **Blocks:** 12
 **Estimated size:** M
 **Suggested agent:** cpp-expert (review: security-auditor, secrets handling)

@@ -1,0 +1,19 @@
+{
+  "corpus_version": 1,
+  "suite": "neg",
+  "description": "RULE-9 negative: a transports.skip entry has an empty reason.",
+  "cases": [
+    {
+      "name": "neg_empty_skip_reason",
+      "doc": "skip tui with no reason",
+      "command": "link.get",
+      "transports": { "skip": { "tui": "" } },
+      "steps": [
+        {
+          "request": { "v": 1, "command": "link.get", "args": { "slug": "a" } },
+          "expect": { "ok": true, "result": { "slug": "a" }, "match": "subset" }
+        }
+      ]
+    }
+  ]
+}

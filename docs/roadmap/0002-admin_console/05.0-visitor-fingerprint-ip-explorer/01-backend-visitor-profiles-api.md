@@ -33,7 +33,7 @@ GET /admin/api/v1/visitor-profiles/{visitor_profile_id}/ips
 ## Requirements
 
 1. List columns (
-   [01-product-and-ux-spec.md §7.3](/docs/roadmap/0002-admin_console/01-product-and-ux-spec.md)):
+   01-product-and-ux-spec.md §7.3 (`docs/roadmap/0002-admin_console/01-product-and-ux-spec.md`, planned, not yet written)):
 
    ```text
    Visitor Profile ID, First Seen, Last Seen, Redirects, Unique Links,
@@ -43,16 +43,16 @@ GET /admin/api/v1/visitor-profiles/{visitor_profile_id}/ips
 2. Detail response covers identity summary, associated fingerprints,
    associated IPs, clicked links, activity timeline, fingerprint changes,
    IP changes, risk indicators (
-   [01-product-and-ux-spec.md §7.3](/docs/roadmap/0002-admin_console/01-product-and-ux-spec.md)).
+   01-product-and-ux-spec.md §7.3 (`docs/roadmap/0002-admin_console/01-product-and-ux-spec.md`, planned, not yet written)).
 3. `VisitorProfileDto` maps directly from the `visitor_profile` schema (
-   [05-data-model-and-storage.md §6](/docs/roadmap/0002-admin_console/05-data-model-and-storage.md)):
+   05-data-model-and-storage.md §6 (`docs/roadmap/0002-admin_console/05-data-model-and-storage.md`, planned, not yet written)):
    `id, primary_fingerprint_id, first_seen_at, last_seen_at, redirect_count,
    known_fingerprint_count, known_ip_count, regeneration_attempt_count,
    current_risk_score, current_risk_level`.
 4. `/events`, `/fingerprints`, `/ips` sub-resources are paginated via task
    02.0 primitives and use the `redirect_event(visitor_profile_id,
    timestamp)` / `fingerprint(visitor_profile_id)` indexes (
-   [05-data-model-and-storage.md §11](/docs/roadmap/0002-admin_console/05-data-model-and-storage.md)).
+   05-data-model-and-storage.md §11 (`docs/roadmap/0002-admin_console/05-data-model-and-storage.md`, planned, not yet written)).
 5. Enforce `visitor_profiles:read`.
 6. `current_risk_score`/`current_risk_level` will read as low/zero until
    task 06.0 populates them - return the real stored column, not a

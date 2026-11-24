@@ -31,9 +31,9 @@ web/admin/src/pages/AnalyticsOverviewPage.tsx
    `apiClient` (task 01.0) using `PageRequest`/`TimeRange` query shapes
    (task 02.0); query key `['analytics', 'overview', filters]` with a 30s
    stale time (
-   [02-react-frontend-architecture.md §5](/docs/roadmap/0002-admin_console/02-react-frontend-architecture.md)).
+   02-react-frontend-architecture.md §5 (`docs/roadmap/0002-admin_console/02-react-frontend-architecture.md`, planned, not yet written)).
 2. Dashboard widgets (
-   [01-product-and-ux-spec.md §6.1](/docs/roadmap/0002-admin_console/01-product-and-ux-spec.md)):
+   01-product-and-ux-spec.md §6.1 (`docs/roadmap/0002-admin_console/01-product-and-ux-spec.md`, planned, not yet written)):
 
    ```text
    Total redirects, Successful redirects, Failed redirects,
@@ -43,7 +43,7 @@ web/admin/src/pages/AnalyticsOverviewPage.tsx
    ```
 
 3. Dashboard charts (
-   [01-product-and-ux-spec.md §6.2](/docs/roadmap/0002-admin_console/01-product-and-ux-spec.md)):
+   01-product-and-ux-spec.md §6.2 (`docs/roadmap/0002-admin_console/01-product-and-ux-spec.md`, planned, not yet written)):
 
    ```text
    Redirects over time, Successful vs failed redirects,
@@ -53,11 +53,11 @@ web/admin/src/pages/AnalyticsOverviewPage.tsx
 
 4. `TimeSeriesChart` and `TopNBarChart`-equivalent (`TopListCard`) are the
    only two ECharts wrappers required for this MVP page (
-   [02-react-frontend-architecture.md §7](/docs/roadmap/0002-admin_console/02-react-frontend-architecture.md)) -
+   02-react-frontend-architecture.md §7 (`docs/roadmap/0002-admin_console/02-react-frontend-architecture.md`, planned, not yet written)) -
    do not call ECharts directly from `DashboardPage`.
 5. `AnalyticsOverviewPage` at `/admin/analytics/overview` covers the
    required sections from
-   [01-product-and-ux-spec.md §7.1](/docs/roadmap/0002-admin_console/01-product-and-ux-spec.md):
+   01-product-and-ux-spec.md §7.1 (`docs/roadmap/0002-admin_console/01-product-and-ux-spec.md`, planned, not yet written):
    traffic volume, unique identity counts, top links, top referrers, top
    target domains, browser/device distribution, security summary, recent
    suspicious events.

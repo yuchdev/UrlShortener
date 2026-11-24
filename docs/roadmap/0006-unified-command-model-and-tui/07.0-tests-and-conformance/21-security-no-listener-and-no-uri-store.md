@@ -7,6 +7,16 @@
 **Estimated size:** S
 **Suggested agent:** testing-expert
 
+> **Amended 2026-11-20 (as-built reconciliation).** The `tui` non-interactive
+> exit is no longer **UNVERIFIED**: `run_tui` refuses a non-TTY stdin with exit
+> code 2 (`src/tui/tui_entry.cpp` ~:135-138) and `tui --help` exists
+> (`buildTuiHelpText`). The process test uses EOF-on-stdin or `--help` for a
+> deterministic non-interactive exit, then runs the PID socket-ownership check -
+> no skip hedge. The structural scan remains the tripwire. Existing
+> `link`/`cmd`/`serve-stdio` no-listener checks (`cli/04`, `e2e 13`, stdio
+> `40/41`, `tui/02`, `tui/19`) are *consumed*; the gaps are `commands__79`,
+> `conformance_32`, and `e2e` section 19.
+
 ## Objective
 
 Enforce plan.md C5 for the three new entry points: `cmd`, `serve-stdio` and
@@ -18,7 +28,7 @@ never create or read `uri.txt` / `UriMapSingleton`. Extends the existing
 ## Dependencies
 
 - Existing pattern: port-probe in `13_cli_no_server_socket.sh` (python socket connect to 127.0.0.1:8000) and `04_cli_exits_no_listening_port.py`.
-- `tui` requires a PTY; the test uses `tui --help`-style non-interactive exit if 06.0 provides one (e.g. `tui --version-check` or EOF on stdin makes it exit) - **UNVERIFIED**; otherwise only the structural check (below) covers `tui`.
+- `tui` requires a PTY for interactive use, but exits non-interactively as built: a non-TTY stdin exits 2 (`tui_entry.cpp` ~:135-138) and `tui --help` prints usage and exits 0. The process test uses EOF-on-stdin (or `--help`) and then runs the PID socket-ownership check. No skip hedge.
 
 ## Files affected
 
@@ -42,7 +52,7 @@ never create or read `uri.txt` / `UriMapSingleton`. Extends the existing
 | `test_serve_stdio_no_listener` | start, send `command.list`, assert PID owns no LISTEN socket, close stdin |
 | `test_no_uri_txt_created` | run `cmd`, `serve-stdio` in an empty cwd; `uri.txt` does not exist afterwards; pre-create a `uri.txt` with sentinel content and assert it is not modified (mtime and bytes) and its keys are not visible via any command |
 | `test_server_flag_with_cmd_rejected_or_ignored` | `cmd --port 9999 command.list` does not listen on 9999 |
-| `test_tui_non_interactive_exit_no_listener` | only if 06.0 offers non-interactive exit; else skipped with reason |
+| `test_tui_non_interactive_exit_no_listener` | `tui` with EOF-on-stdin exits 2 (or `tui --help` exits 0) within 5 s and the PID owns no LISTEN socket; no skip |
 
 `19_cmd_serve_stdio_no_listener.sh`: same checks in shell with `ss -ltnp | grep <pid>` / `/proc/net/tcp`, mirroring section 13's style (`set -euo pipefail`, `URLSHORTENER_BIN`, skip if port 8000 busy).
 

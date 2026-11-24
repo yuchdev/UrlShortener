@@ -1,0 +1,24 @@
+╭ Import pairs (command: link.import, runs as a job) ──────────────────────────╮
+│(Import)   Export    F2 switch                                                │
+│                                                                              │
+│Source:  (*) paste   ( ) file path []                                         │
+│Format:  (*) CSV  full_url,slug   ( ) NDJSON                                  │
+│On conflict: (*) skip   ( ) fail   ( ) overwrite (destructive)                │
+│                                                                              │
+│╭────────────────────────────────────────────────────────────────────────────╮│
+││aaaaaaaaa                                                                   ││
+│╰────────────────────────────────────────────────────────────────────────────╯│
+│1 line; 1 warning                                                             │
+│                                                                              │
+│[ ] dry run (validate only)      [ Start import ]  [ Cancel ]                 │
+│! pasted payload exceeds the inline limit; use a file path                    │
+│                                                                              │
+│Tab move  Space/</> set  Ctrl-S start  F2 export                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯

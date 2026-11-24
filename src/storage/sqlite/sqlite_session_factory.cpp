@@ -101,6 +101,26 @@ public:
         }
     }
 
+    std::optional<SqlRow> SelectById(const std::string& sql,
+                                     const std::string& id,
+                                     RepoError* error) override
+    {
+        try {
+            soci::rowset<soci::row> rs = (session_.prepare << sql,
+                soci::use(id, "id"));
+            auto it = rs.begin();
+            if (it == rs.end()) {
+                if (error) *error = RepoError::not_found;
+                return std::nullopt;
+            }
+            if (error) *error = RepoError::none;
+            return RowFromSoci(*it);
+        } catch (const std::exception& ex) {
+            if (error) *error = mapper_.MapException(ex);
+            return std::nullopt;
+        }
+    }
+
     bool UpdateLink(const std::string& sql, const SqlRow& row, RepoError* error) override
     {
         std::string target_url = row.target_url.value_or("");
@@ -211,18 +231,37 @@ private:
         return r.get<T>(name);
     }
 
-    // SQLite3 returns INTEGER columns as dt_integer (int) not dt_long_long.
-    // Use this helper to safely retrieve integer columns as long long.
+    /**
+     * @brief Reads a nullable 64-bit integer column (an epoch-seconds
+     * timestamp: `created_at`, `updated_at`, or `expires_at`) from a
+     * dynamic SOCI row without 32-bit truncation.
+     *
+     * SOCI's SQLite backend derives a column's reported data type from its
+     * *declared* type, so a `created_at INTEGER` column is always reported
+     * as `dt_integer` regardless of the stored value's magnitude. SOCI
+     * nevertheless widens any value outside `int` range into a 64-bit
+     * holder when materializing the row. The consequence is that
+     * `row::get<int>` throws `std::bad_cast` — not a silent truncation —
+     * for every epoch value past 2038-01-19 (> `INT32_MAX`), which the
+     * callers map to `RepoError::permanent_failure`. `row::get<long long>`
+     * reads both the small (`int` holder) and large (64-bit holder) cases
+     * losslessly, so this helper always reads as `long long`. This needs
+     * no schema change and therefore round-trips existing SQLite database
+     * files whose `links` table still declares these columns as `INTEGER`.
+     *
+     * @param r Dynamic SOCI row to read from.
+     * @param name Column name to read.
+     * @return `std::nullopt` when the column is SQL `NULL`; otherwise the
+     * column value as a `long long`. May throw `std::bad_cast`/`soci_error`
+     * if the column is not integer-typed (a corrupt-schema condition the
+     * caller catches and maps to a backend error).
+     */
     static std::optional<long long> GetOptLL(const soci::row& r, const std::string& name)
     {
         if (r.get_indicator(name) == soci::i_null) {
             return std::nullopt;
         }
-        const auto& props = r.get_properties(name);
-        if (props.get_data_type() == soci::dt_long_long) {
-            return r.get<long long>(name);
-        }
-        return static_cast<long long>(r.get<int>(name));
+        return r.get<long long>(name);
     }
 
     static SqlRow RowFromSoci(const soci::row& r)

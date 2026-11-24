@@ -1,0 +1,24 @@
+╭ Edit link  (command: link.update) ───────────────────────────────────────────╮
+│slug*   [docs                                    ]                            │
+│enabled [x]                                                                   │
+│tags    [docs, public                            ]             comma separated│
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│[ Save ]  [ Cancel ]                                       validation: slug ok│
+├──────────────────────────────────────────────────────────────────────────────┤
+│Equivalent: url_shortener cmd link.update --json '{"slug":"docs"}'            │
+╰──────────────────────────────────────────────────────────────────────────────╯

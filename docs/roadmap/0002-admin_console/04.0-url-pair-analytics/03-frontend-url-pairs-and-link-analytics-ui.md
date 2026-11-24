@@ -28,7 +28,7 @@ web/admin/src/components/analytics/RecentRedirectEventsTable.tsx
 1. `UrlPairsPage` (`/admin/url-pairs`) uses `PaginatedTable` (task 02.0)
    with columns `Short Code, Target URL, Created At, Updated At, Status,
    Redirect Count, Unique Visitors, Last Redirect, Actions` (
-   [01-product-and-ux-spec.md §8.1](/docs/roadmap/0002-admin_console/01-product-and-ux-spec.md)).
+   01-product-and-ux-spec.md §8.1 (`docs/roadmap/0002-admin_console/01-product-and-ux-spec.md`, planned, not yet written)).
 2. Row actions: View analytics, Copy short URL, Open target, Disable
    (admin-only, `url_pairs:write` via `PermissionGate`), Edit (if backend
    supports it), Delete (only if backend supports safe deletion - omit if
@@ -38,7 +38,7 @@ web/admin/src/components/analytics/RecentRedirectEventsTable.tsx
    Unique IPs, Unique Fingerprints, Last Redirect, Suspicious %, Status`.
 4. `LinkDetailPage` (`/admin/analytics/links/{url_pair_id}`) required
    sections (
-   [01-product-and-ux-spec.md §7.2](/docs/roadmap/0002-admin_console/01-product-and-ux-spec.md)):
+   01-product-and-ux-spec.md §7.2 (`docs/roadmap/0002-admin_console/01-product-and-ux-spec.md`, planned, not yet written)):
 
    ```text
    identity header, metric cards, redirect timeline, referrers table,
@@ -53,7 +53,7 @@ web/admin/src/components/analytics/RecentRedirectEventsTable.tsx
    success.
 6. Query keys: `['urlPairs', filters, pagination]`,
    `['analytics', 'links', filters, pagination]` (
-   [02-react-frontend-architecture.md §5](/docs/roadmap/0002-admin_console/02-react-frontend-architecture.md)).
+   02-react-frontend-architecture.md §5 (`docs/roadmap/0002-admin_console/02-react-frontend-architecture.md`, planned, not yet written)).
 
 ## Constraints
 

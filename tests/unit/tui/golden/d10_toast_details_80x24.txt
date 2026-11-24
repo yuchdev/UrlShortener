@@ -1,0 +1,24 @@
+
+
+
+
+
+
+
+
+
+
+                                    ╭ ! slug_conflict ─────────────────────────╮
+                                    │slug "docs" already exists.               │
+                                    │(link.create, id c-42)           [d]etails│
+                                    ├──────────────────────────────────────────┤
+                                    │{                                         │
+                                    │  "v": 1,                                 │
+                                    │  "id": "c-42",                           │
+                                    │  "ok": false,                            │
+                                    │  "error": {                              │
+                                    │    "code": "slug_conflict",              │
+                                    │    "message": "slug \"docs\" already...  │
+                                    │  }                                       │
+                                    │}                                         │
+                                    ╰──────────────────────────────────────────╯

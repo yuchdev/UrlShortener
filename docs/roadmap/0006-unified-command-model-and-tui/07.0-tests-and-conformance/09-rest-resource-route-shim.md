@@ -48,7 +48,7 @@ class RestResourceAdapter(Adapter):
 **Wrapping rule (the only adapter that synthesizes an envelope):** for 2xx,
 `{"v":1,"ok":true,"result": <body>}`; for 4xx/5xx,
 `{"v":1,"ok":false,"error":{"code": <code from body>}}` where the code is read
-with the same field the legacy handlers emit. Task 03.0's README records that legacy REST error bodies use the codes `invalid_request`, `repository`, `internal_error` (and `codeForAppError` names for the rest), not the envelope vocabulary; `rest_resource_status.json` therefore carries a `legacy_code -> envelope_code` column (the same mapping Task 01.0's error table keeps in its `legacy_*` columns) and the wrapper translates through it. **UNVERIFIED:** the JSON key that carries the code in the body (inspect `src/http/handlers/link_handlers.cpp` and `tests/unit/http/10_link_handlers.cpp`). The wrapper then lets the standard
+with the same field the legacy handlers emit. Task 03.0's README records that legacy REST error bodies use the codes `invalid_request`, `repository`, `internal_error` (and `codeForAppError` names for the rest), not the envelope vocabulary; `rest_resource_status.json` therefore carries a `legacy_code -> envelope_code` column (the same mapping Task 01.0's error table keeps in its `legacy_*` columns) and the wrapper translates through it. **Verified (2026-11-20):** the legacy body carries the code at `error.code` (pinned by `test_error_body_code_key_is_error_dot_code` in `tests/conformance/py/14_rest_resource_corpus.py`). The wrapper then lets the standard
 matcher compare `result` bodies and error codes; `id` is not compared
 (`caps.id = False`).
 

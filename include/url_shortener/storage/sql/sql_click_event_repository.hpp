@@ -81,6 +81,46 @@ public:
     bool DeleteOlderThan(analytics::Timestamp cutoff,
                          analytics::AnalyticsError* error = nullptr) override;
 
+    /**
+     * @brief Reads a bounded, ordered page of individual click events matching
+     * `query`, for the management-plane browse surface. Not reachable from the
+     * redirect hot path.
+     *
+     * Every value derived from `query` is passed as a bound SOCI parameter; the
+     * only query text chosen from `query` is the whitelisted
+     * column/direction literal selected by a `switch` over
+     * `analytics::ClickEventSort` in the ORDER BY clause - no user text is ever
+     * concatenated into SQL. The `text` filter is matched case-insensitively
+     * against `slug` OR `domain` with `LIKE ... ESCAPE '\'`, where `\`, `%`, and
+     * `_` are escaped so wildcards are treated literally. Results are identical
+     * across the SQLite and PostgreSQL backends (both lower-case the column and
+     * the pattern); only the timestamp representation differs
+     * (`INTEGER` epoch seconds vs `TIMESTAMPTZ` via `to_timestamp`/`EXTRACT`).
+     * `total` (a `COUNT(*)` before `OFFSET`/`LIMIT`) and the row window are read
+     * under a single lock hold so they are mutually consistent.
+     *
+     * @param query Filter, ordering, and paging parameters. `query.limit` is
+     * clamped to `analytics::kMaxClickEventPageSize`. `query.text`, when set,
+     * must be at most `kMaxClickEventTextFilterLength` bytes (defense in depth;
+     * the arg layer already bounds it).
+     * @param[out] page Receives the window and total on success; must be
+     * non-null. Left unmodified on failure.
+     * @param[out] error If non-null and the call fails, receives
+     * `AnalyticsErrorCode::validation` when `page` is null, when both
+     * `query.from` and `query.to` are set with `from > to`, or when
+     * `query.text` exceeds `kMaxClickEventTextFilterLength`; and
+     * `AnalyticsErrorCode::repository` (with the SOCI exception message) on a
+     * backend failure. Left untouched on success.
+     * @return `true` if the query executed and `page` was populated; `false`
+     * when `page` is null, the range is inverted, the text filter is too long,
+     * or a SOCI exception occurred.
+     * @note Each returned event exposes only the HMAC `client_id_hash`; no raw
+     * client identifier is stored or returned (C6).
+     */
+    bool ListEvents(const analytics::ClickEventQuery& query,
+                    analytics::ClickEventPage* page,
+                    analytics::AnalyticsError* error = nullptr) override;
+
 private:
     /**
      * @brief Creates the `click_events` table and composite indexes.

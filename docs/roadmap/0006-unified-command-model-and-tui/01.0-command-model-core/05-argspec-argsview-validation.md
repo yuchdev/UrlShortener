@@ -111,6 +111,30 @@ Behavior details:
   `slug` vs `id`).
 - Strings are checked for embedded NUL after decoding (rejected as
   `wrong_type`).
+- Embedded NUL in a **decoded key** is rejected, the same way an embedded NUL
+  in a decoded **string value** is rejected (`wrong_type`). Neither the raw nor
+  the decoded key/value byte sequence is echoed in the message (the message
+  names the sanitized arg name only). *(amended 2026-11-14, threat model T-03)*
+  The key case is caught by the sanctioned scanner before `validate_args` can
+  enumerate members, so it surfaces as `invalid_field` with message
+  `args: malformed`, not with reason `unknown`. *(amended 2026-11-14 after
+  implementation: reason word follows the scanner)*
+- `validate_args` enforces the 64 KiB request-hardening byte cap on
+  `args_json` itself, independent of the envelope scan, because CLI `--arg`
+  and REST resource routes build `args_json` without `parse_request`.
+  *(amended 2026-11-14, security review of the implementation)*
+- **Nested `scan_limits` for list/object-typed args.** When `validate_args`
+  re-scans the raw token of a `string_list`/`string_map`/`object` arg with the
+  scanner's `scan_array`/`scan_object`, it derives a per-arg `scan_limits` from
+  that arg's own `ArgSpec` rather than using the scanner defaults: `max_items`
+  maps to the nested `max_members`, and `max_length` maps to the nested string /
+  byte cap (`max_key_len` and the per-value length bound). The **top-level**
+  envelope scan (subtask 03) keeps the request-hardening defaults
+  (`max_bytes` 65536, `max_members` 256) unchanged. Because D10 raises the nine
+  link commands' caps to 65536 bytes / 4096 items, a list arg declaring
+  `max_items == 4096` is scanned with `max_members == 4096` and therefore
+  accepts what REST accepts today (contract C3 preserved), while the top-level
+  envelope DoS caps are not relaxed. *(amended 2026-11-14, threat model T-06)*
 
 Validation does **not** apply domain rules (URL validity, slug syntax, SSRF);
 those stay in `LinkCommandService`, exactly once (milestone C1).
@@ -143,8 +167,13 @@ ctest --test-dir cmake-build -R "^commands__05_arg_spec_validation$" --output-on
 - Integer bounds: `min`, `max`, `min-1`, `max+1`, `9223372036854775808`
   (overflow), `1.0`, `1e2`, `"5"`.
 - Enum: valid, wrong case, empty.
-- Timestamp: `2026-01-01T00:00:00Z` ok; `2026-13-01T00:00:00Z`, missing `Z`,
-  non-string -> `invalid_timestamp`.
+- Timestamp: `2026-01-01T00:00:00Z` ok; `2026-13-01T00:00:00Z` and non-string
+  -> `invalid_timestamp`. A value missing the trailing `Z` is whatever the
+  shared `parseRfc3339Zulu` decides (accepted on macOS today); the command
+  layer must not be stricter than REST, because 04.0 routes REST through the
+  registry and contract C3 forbids changing what REST accepts. The test pins
+  the shared validator's behavior rather than a fixed expectation.
+  *(amended 2026-11-14 after implementation)*
 - List/map caps: `max_items`, `max_items+1`, element longer than `max_length`.
 - Nested `object` (shape of `link.create` `campaign`): known and unknown
   members, non-string member.
@@ -155,6 +184,15 @@ ctest --test-dir cmake-build -R "^commands__05_arg_spec_validation$" --output-on
   `std::nullopt` for absent/null.
 - A spec set mirroring the `link.create` / `link.update` tables from the
   catalog validates their example bodies (catches schema/doc drift early).
+- *(amended 2026-11-14, threat model T-06)* A `string_list` arg declaring
+  `max_items == 4096` accepts a 4096-item list and rejects a 4097-item list with
+  `too_many_items` whose message names the arg, not the element values; a
+  top-level envelope object with 257 members is still rejected by the
+  request-envelope scan (`too_many_members`), confirming the per-arg nested caps
+  do not relax the top-level envelope DoS caps.
+- *(amended 2026-11-14, threat model T-03)* A `\u0000` in a decoded key is
+  rejected (`unknown`) and a `\u0000` in a decoded string value is rejected
+  (`wrong_type`); neither message contains the raw NUL or any other input byte.
 
 ## Constraints
 

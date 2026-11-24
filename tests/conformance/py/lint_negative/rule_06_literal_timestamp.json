@@ -1,0 +1,22 @@
+{
+  "corpus_version": 1,
+  "suite": "neg",
+  "description": "RULE-6 negative: a literal timestamp under created_at in expect.",
+  "cases": [
+    {
+      "name": "neg_literal_timestamp",
+      "doc": "created_at is pinned to a literal instead of <ts>",
+      "command": "link.get",
+      "steps": [
+        {
+          "request": { "v": 1, "command": "link.get", "args": { "slug": "a" } },
+          "expect": {
+            "ok": true,
+            "result": { "slug": "a", "created_at": "2024-01-02T03:04:05Z" },
+            "match": "subset"
+          }
+        }
+      ]
+    }
+  ]
+}

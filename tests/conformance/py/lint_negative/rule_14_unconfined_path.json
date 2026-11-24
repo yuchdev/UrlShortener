@@ -1,0 +1,27 @@
+{
+  "corpus_version": 1,
+  "suite": "neg_rule_14",
+  "description": "Rule 14: an unconfined, literal-absolute path arg with no transport scoping.",
+  "cases": [
+    {
+      "name": "neg_unconfined_path",
+      "doc": "export to a literal absolute path, case not transport-scoped",
+      "command": "link.export",
+      "steps": [
+        {
+          "label": "export",
+          "request": {
+            "v": 1,
+            "command": "link.export",
+            "args": { "format": "csv", "path": "/etc/hosts" }
+          },
+          "expect": {
+            "ok": true,
+            "result": { "exported": 0 },
+            "match": "subset"
+          }
+        }
+      ]
+    }
+  ]
+}

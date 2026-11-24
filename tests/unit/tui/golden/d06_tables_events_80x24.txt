@@ -1,0 +1,24 @@
+╭ Tables ────────────────────╮click_events  (912,550 rows)
+│  links           1,204     │filter: []
+│> click_events    912,550   │ occurred_at slug referrer    user_agent status_co
+│  jobs            3         │>2026-01-02  home https://ref curl               3
+│                            │
+│                            │
+│                            │
+│                            │
+│                            │
+│                            │
+│                            │
+│                            │
+│                            │
+│                            │
+│                            │
+│                            │
+│                            │
+│                            │
+│                            │
+├────────────────────────────┤
+│read-only logical views over│
+│storage ports; no           │
+│auth/secret tables          │page 1/45628  (20 per page)
+╰────────────────────────────╯Enter row JSON  / search  s sort  c cols  Tab pane

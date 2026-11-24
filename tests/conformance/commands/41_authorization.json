@@ -1,0 +1,255 @@
+{
+  "corpus_version": 1,
+  "suite": "authorization",
+  "description": "Hand-written role cases: a read-only user (ControlSet::User) may run read commands (link.get, job.list) and is refused every write command with not_authorized. The refusal precedes argument validation (authz_check_precedes_validation) and lookup (authz_user_unknown_command_is_unknown stays unknown_command), and a denied write leaves the store unchanged (authz_denied_step_has_no_side_effect). The generated descriptor x role matrix lives in 42_authorization_matrix.json.",
+  "cases": [
+    {
+      "name": "authz_user_can_read_link_get",
+      "doc": "a read-only user may run the read command link.get on a link an admin created",
+      "command": "link.get",
+      "steps": [
+        {
+          "label": "seed",
+          "request": {
+            "v": 1,
+            "command": "link.create",
+            "args": {
+              "target_url": "https://example.com/authz-read",
+              "slug": "authz-read"
+            }
+          },
+          "expect": {
+            "ok": true,
+            "result": {
+              "slug": "authz-read"
+            },
+            "match": "subset"
+          }
+        },
+        {
+          "label": "get",
+          "caller": "user",
+          "request": {
+            "v": 1,
+            "command": "link.get",
+            "args": {
+              "slug": "authz-read"
+            }
+          },
+          "expect": {
+            "ok": true,
+            "result": {
+              "slug": "authz-read",
+              "status": "active"
+            },
+            "match": "subset"
+          }
+        }
+      ]
+    },
+    {
+      "name": "authz_user_can_list_jobs",
+      "doc": "a read-only user may run the read command job.list; a process that ran no job returns an empty list",
+      "command": "job.list",
+      "caller": "user",
+      "steps": [
+        {
+          "label": "list",
+          "request": {
+            "v": 1,
+            "command": "job.list",
+            "args": {}
+          },
+          "expect": {
+            "ok": true,
+            "result": {
+              "items": [],
+              "total": 0
+            },
+            "match": "exact"
+          }
+        }
+      ]
+    },
+    {
+      "name": "authz_user_denied_link_create",
+      "doc": "a read-only user is refused the write command link.create with not_authorized, even with fully valid args",
+      "command": "link.create",
+      "caller": "user",
+      "steps": [
+        {
+          "label": "create",
+          "request": {
+            "v": 1,
+            "command": "link.create",
+            "args": {
+              "target_url": "https://example.com/denied",
+              "slug": "authz-denied"
+            }
+          },
+          "expect": {
+            "ok": false,
+            "error": {
+              "code": "not_authorized"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "authz_user_denied_link_import",
+      "doc": "a read-only user is refused the write job command link.import with not_authorized, before any job is created",
+      "command": "link.import",
+      "caller": "user",
+      "steps": [
+        {
+          "label": "import",
+          "request": {
+            "v": 1,
+            "command": "link.import",
+            "args": {
+              "format": "csv",
+              "data": "full_url,slug\nhttps://example.com/a,a\n"
+            }
+          },
+          "expect": {
+            "ok": false,
+            "error": {
+              "code": "not_authorized"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "authz_user_denied_job_cancel",
+      "doc": "a read-only user is refused the write command job.cancel with not_authorized, before the job id is even looked up",
+      "command": "job.cancel",
+      "caller": "user",
+      "steps": [
+        {
+          "label": "cancel",
+          "request": {
+            "v": 1,
+            "command": "job.cancel",
+            "args": {
+              "id": "j-1"
+            }
+          },
+          "expect": {
+            "ok": false,
+            "error": {
+              "code": "not_authorized"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "authz_check_precedes_validation",
+      "doc": "authorization precedes argument validation: a read-only user calling link.create with invalid (missing-required) args gets not_authorized, never invalid_field (ADR 0002 order; threat model T-08)",
+      "command": "link.create",
+      "caller": "user",
+      "steps": [
+        {
+          "label": "create",
+          "request": {
+            "v": 1,
+            "command": "link.create",
+            "args": {}
+          },
+          "expect": {
+            "ok": false,
+            "error": {
+              "code": "not_authorized"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "authz_user_unknown_command_is_unknown",
+      "doc": "an unknown command is unknown_command even for a read-only user: lookup fails before the permission check, so the role never changes the outcome",
+      "command": "nope.nothing",
+      "caller": "user",
+      "steps": [
+        {
+          "label": "send",
+          "request": {
+            "v": 1,
+            "command": "nope.nothing",
+            "args": {}
+          },
+          "expect": {
+            "ok": false,
+            "error": {
+              "code": "unknown_command"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "authz_denied_step_has_no_side_effect",
+      "doc": "a denied write has no side effect: an admin creates an enabled link, a user link.update is refused not_authorized, and an admin link.get shows the link still active (the denied update never ran)",
+      "command": "link.update",
+      "steps": [
+        {
+          "label": "seed",
+          "request": {
+            "v": 1,
+            "command": "link.create",
+            "args": {
+              "target_url": "https://example.com/side",
+              "slug": "authz-side"
+            }
+          },
+          "expect": {
+            "ok": true,
+            "result": {
+              "slug": "authz-side",
+              "status": "active"
+            },
+            "match": "subset"
+          }
+        },
+        {
+          "label": "denied-update",
+          "caller": "user",
+          "request": {
+            "v": 1,
+            "command": "link.update",
+            "args": {
+              "slug": "authz-side",
+              "enabled": false
+            }
+          },
+          "expect": {
+            "ok": false,
+            "error": {
+              "code": "not_authorized"
+            }
+          }
+        },
+        {
+          "label": "unchanged",
+          "request": {
+            "v": 1,
+            "command": "link.get",
+            "args": {
+              "slug": "authz-side"
+            }
+          },
+          "expect": {
+            "ok": true,
+            "result": {
+              "slug": "authz-side",
+              "status": "active"
+            },
+            "match": "subset"
+          }
+        }
+      ]
+    }
+  ]
+}

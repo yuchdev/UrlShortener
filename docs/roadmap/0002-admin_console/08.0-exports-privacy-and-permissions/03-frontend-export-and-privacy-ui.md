@@ -33,7 +33,7 @@ web/admin/src/pages/SettingsPage.tsx
    (`exports:create_aggregate`, `exports:create_raw`) do not allow -
    `PermissionGate`-driven, backend-enforced regardless.
 3. `PrivacyNotice` surfaces the privacy-policy text/config hook from
-   [06-security-privacy-permissions.md §11](/docs/roadmap/0002-admin_console/06-security-privacy-permissions.md);
+   06-security-privacy-permissions.md §11 (`docs/roadmap/0002-admin_console/06-security-privacy-permissions.md`, planned, not yet written);
    mount it on pages that show identity data (visitor profiles,
    fingerprints, IPs - task 05.0) and near export controls.
 4. `SettingsPage` replaces the task 01.0 placeholder with real content:

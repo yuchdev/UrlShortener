@@ -65,9 +65,9 @@ class ImportExportScreen final : public IScreen { /* id() == ScreenId::import_ex
 2. Paste area shows placeholder with the D7 sample lines when empty; live `Preview` line "3 lines, 1 blank slug (will be generated)" under the area.
 3. `[ Start import ]`: `blocking_error()` -> inline message, no request; otherwise `run_mutation(link.import)` (mutating, so confirm yes/no unless `--yes`; with `dry_run` checked the confirm text says "validate only" and does not require confirm because nothing mutates - policy still treats it as mutating in v1, simpler and safer; documented).
 4. On `job` response: toast "job j-9 accepted", `Router::push(jobs)` and tell the Jobs screen to focus `j-9` via `ScreenContext.focus_job_id` (D7 footer arrow: "after Start -> Jobs screen").
-5. A non-job response (e.g. `unsupported` for `path` on a remote client, `invalid_field`) -> toast; form data preserved.
-6. Export: `[ Start export ]` -> same job flow; Jobs detail later shows `rows` and `path`/inline `data`. Inline `data` result > 64 KiB is displayed truncated with the line count and a hint to use `path`.
-7. File-path source: only a text field (no file browser); path existence is not checked client-side (server validates; avoids TOCTOU and keeps TUI free of filesystem logic).
+5. A non-job response (e.g. `unsupported` for `path` on a remote client, `invalid_field`) -> toast; form data preserved. A **path-capability / `--path-root` denial** (`not_authorized` for an export `path` in read-only, or the server's default-deny/jail rejection from 05.0 T-95/96) is surfaced as a clear toast whose text is **value-free** (the `error.code` + the server message, never the path bytes) (T-118); no client-side path logic is added.
+6. Export: `[ Start export ]` -> same job flow; Jobs detail later shows `rows` and `path`/inline `data`, fetched with `job.get` (the `job`/`job.list` payloads carry no `result` body - carry-forward from 05.0/16). **Export never silently overwrites** (T-118): the server opens the target with `O_CREAT | O_EXCL` (05.0 T-99), so an existing file comes back as a conflict error that this screen shows as a toast - the TUI does not pre-check, prompt-to-replace, or delete. Inline `data` result > 64 KiB is displayed truncated with the line count and a hint to use `path`.
+7. File-path source: only a text field (no file browser); path existence is not checked client-side (server validates; avoids TOCTOU and keeps TUI free of filesystem logic). In a read-only session the export **path field renders disabled** with the `not_authorized` reason (export with `path` raises the permission to `write`; 18), while inline export stays available.
 
 ## Commands
 
@@ -82,14 +82,14 @@ ctest --test-dir cmake-build -R "^tui__15_" --output-on-failure
 |---|---|---|---|
 | `15_import_model_test.cpp` | `tui__15_import_model_test` | unit | `to_request` bytes golden for CSV paste, NDJSON paste (newlines/quotes escaped inside `data`), file path (no `data` key), dry run (`options.dry_run:true`); boundary: payload exactly `max_inline_bytes` OK, +1 blocked; empty; CRLF line endings preserved; line without comma flagged; trailing newline; blank slug counted; unicode URLs |
 | `15_export_model_test.cpp` | `tui__15_export_model_test` | unit | formats; filters map to `status/q/tag/campaign`; path optional |
-| `15_import_export_screen_test.cpp` | `tui__15_import_export_screen_test` | unit | D7 golden; typing into the paste area then Start (confirm) sends one `link.import`; job response -> router at `jobs` with focus id `j-9`; `invalid_field` response keeps data; `--yes` skips confirm; read-only disables Start with reason and sends nothing; oversize shows blocking message and no request |
+| `15_import_export_screen_test.cpp` | `tui__15_import_export_screen_test` | unit | D7 golden; typing into the paste area then Start (confirm) sends one `link.import`; job response -> router at `jobs` with focus id `j-9`; `invalid_field` response keeps data; `--yes` skips confirm; read-only disables Start with reason and sends nothing; oversize shows blocking message and no request; **T-118** read-only disables the export `path` field with the `not_authorized` reason (inline export still works); an export to an existing path returns a conflict that shows as a toast with no path bytes; a `--path-root`/capability denial renders a value-free toast |
 
 Manual: paste 3 lines incl. blank slug, run with dry-run, then for real; check Jobs and the Links screen.
 
 ## Constraints
 
 - Import rows are processed by `link.import` -> `CreateLink` server-side (C1); the TUI does no URL/SSRF validation of its own (preview is syntactic only).
-- `path` is a local-operator capability; the TUI never opens or reads the file itself.
+- `path` is a local-operator capability; the TUI never opens or reads the file itself. Export never silently overwrites: the server's `O_EXCL` conflict (05.0 T-99) is shown as a toast (T-118), and a capability/`--path-root` denial is a value-free toast (no path bytes).
 - `overwrite` conflict mode requires an explicit radio selection (never default) and its label includes "destructive".
 - Layout per D7 at 80 columns; multi-line `Input` must scroll (`yframe`).
 

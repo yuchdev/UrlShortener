@@ -2,23 +2,22 @@
  *  @brief Characterizes current wrong-method and validation error responses.
  */
 #define BOOST_TEST_MODULE HttpMethodAndErrorCharacterization
-#include <boost/test/unit_test.hpp>
-
-#include <url_shortener/url_shortener.hpp>
-
 #include <string>
+
+#include <boost/test/unit_test.hpp>
+#include <url_shortener/url_shortener.hpp>
 
 using namespace url_shortener;
 namespace bhttp = boost::beast::http;
 
-namespace {
-
-bhttp::request<bhttp::string_body> make_request(
-    const bhttp::verb method,
-    const std::string& target,
-    const std::string& body = "{}")
+namespace
 {
-    bhttp::request<bhttp::string_body> req{method, target, 11};
+
+bhttp::request<bhttp::string_body> make_request(const bhttp::verb method,
+                                                const std::string& target,
+                                                const std::string& body = "{}")
+{
+    bhttp::request<bhttp::string_body> req {method, target, 11};
     req.set(bhttp::field::host, "short.test");
     req.set(bhttp::field::content_type, "application/json");
     req.body() = body;
@@ -46,11 +45,11 @@ Link create_link(const std::string& slug)
     return link;
 }
 
-void expect_api_error(
-    const bhttp::response<bhttp::string_body>& res,
-    const int status,
-    const std::string& code,
-    const std::string& message_fragment = "")
+void expect_api_error(const bhttp::response<bhttp::string_body>& res,
+                      const int status,
+                      const std::string& code,
+                      const std::string& message_fragment = "",
+                      const std::string& allow = "")
 {
     BOOST_TEST(res.result_int() == status);
     BOOST_TEST(res.body().find("\"code\":\"" + code + "\"")
@@ -58,15 +57,22 @@ void expect_api_error(
     if (!message_fragment.empty()) {
         BOOST_TEST(res.body().find(message_fragment) != std::string::npos);
     }
+    // RFC 9110 15.5.6: a 405 Method Not Allowed names the supported methods in
+    // the Allow header; other error shapes carry no Allow header.
+    if (!allow.empty()) {
+        BOOST_TEST(std::string(res.base()[bhttp::field::allow]) == allow);
+    }
     BOOST_TEST(!res.base()["X-Request-Id"].empty());
 }
 
-} // namespace
+}  // namespace
 
 /**
- * [Unit][HTTP] Wrong methods keep current 400 invalid_method responses.
+ * [Unit][HTTP] Wrong methods return 405 Method Not Allowed with an Allow header
+ * naming the supported methods (RFC 9110 15.5.6); the JSON body shape and the
+ * `invalid_method` error code are unchanged.
  */
-BOOST_AUTO_TEST_CASE(wrong_methods_return_current_invalid_method_shape)
+BOOST_AUTO_TEST_CASE(wrong_methods_return_method_not_allowed_shape)
 {
     const auto config = test_config();
     create_link("mepreview001");
@@ -76,57 +82,64 @@ BOOST_AUTO_TEST_CASE(wrong_methods_return_current_invalid_method_shape)
     expect_api_error(
         handleShortenerRequest(
             make_request(bhttp::verb::post, "/healthz"), config, false),
-        400,
+        405,
         "invalid_method",
-        "Only GET is supported");
+        "Only GET is supported",
+        "GET");
 
     expect_api_error(
         handleShortenerRequest(
             make_request(bhttp::verb::post, "/readyz"), config, false),
-        400,
+        405,
         "invalid_method",
-        "Only GET is supported");
+        "Only GET is supported",
+        "GET");
 
     expect_api_error(
         handleShortenerRequest(
             make_request(bhttp::verb::post, "/metrics"), config, false),
-        400,
+        405,
         "invalid_method",
-        "Only GET is supported");
+        "Only GET is supported",
+        "GET");
 
     expect_api_error(
         handleShortenerRequest(
             make_request(bhttp::verb::post, "/api/v1/links/id/unknown"),
             config,
             false),
-        400,
-        "invalid_method");
+        405,
+        "invalid_method",
+        "Only GET is supported",
+        "GET");
 
-    expect_api_error(
-        handleShortenerRequest(
-            make_request(
-                bhttp::verb::post,
-                "/api/v1/links/mepreview001/preview"),
-            config,
-            false),
-        400,
-        "invalid_method");
+    expect_api_error(handleShortenerRequest(
+                         make_request(bhttp::verb::post,
+                                      "/api/v1/links/mepreview001/preview"),
+                         config,
+                         false),
+                     405,
+                     "invalid_method",
+                     "Only GET is supported",
+                     "GET");
 
     expect_api_error(
         handleShortenerRequest(
             make_request(bhttp::verb::get, "/api/v1/links/meenable001/enable"),
             config,
             false),
-        400,
-        "invalid_method");
+        405,
+        "invalid_method",
+        "Only POST is supported",
+        "POST");
 
     expect_api_error(
         handleShortenerRequest(
-            make_request(bhttp::verb::post, "/r/meredirect001"),
-            config,
-            false),
-        400,
-        "invalid_method");
+            make_request(bhttp::verb::post, "/r/meredirect001"), config, false),
+        405,
+        "invalid_method",
+        "Only GET is supported",
+        "GET");
 }
 
 /**
@@ -136,20 +149,17 @@ BOOST_AUTO_TEST_CASE(create_validation_errors_are_characterized)
 {
     const auto config = test_config();
 
-    expect_api_error(
-        handleShortenerRequest(
-            make_request(bhttp::verb::post, "/api/v1/links", "{}"),
-            config,
-            false),
-        400,
-        "invalid_url");
+    expect_api_error(handleShortenerRequest(
+                         make_request(bhttp::verb::post, "/api/v1/links", "{}"),
+                         config,
+                         false),
+                     400,
+                     "invalid_url");
 
     expect_api_error(
         handleShortenerRequest(
             make_request(
-                bhttp::verb::post,
-                "/api/v1/links",
-                "{\"url\":\"not-a-url\"}"),
+                bhttp::verb::post, "/api/v1/links", "{\"url\":\"not-a-url\"}"),
             config,
             false),
         400,
@@ -168,10 +178,9 @@ BOOST_AUTO_TEST_CASE(create_validation_errors_are_characterized)
 
     expect_api_error(
         handleShortenerRequest(
-            make_request(
-                bhttp::verb::post,
-                "/api/v1/links",
-                "{\"url\":\"https://example.com\",\"slug\":\"api\"}"),
+            make_request(bhttp::verb::post,
+                         "/api/v1/links",
+                         "{\"url\":\"https://example.com\",\"slug\":\"api\"}"),
             config,
             false),
         409,
@@ -188,24 +197,20 @@ BOOST_AUTO_TEST_CASE(patch_validation_errors_are_characterized)
     create_link("mepatch002");
 
     expect_api_error(
-        handleShortenerRequest(
-            make_request(
-                bhttp::verb::patch,
-                "/api/v1/links/mepatch001",
-                "{\"enabled\":\"false\"}"),
-            config,
-            false),
+        handleShortenerRequest(make_request(bhttp::verb::patch,
+                                            "/api/v1/links/mepatch001",
+                                            "{\"enabled\":\"false\"}"),
+                               config,
+                               false),
         400,
         "invalid_enabled");
 
     expect_api_error(
-        handleShortenerRequest(
-            make_request(
-                bhttp::verb::patch,
-                "/api/v1/links/mepatch002",
-                "{\"expires_at\":\"tomorrow\"}"),
-            config,
-            false),
+        handleShortenerRequest(make_request(bhttp::verb::patch,
+                                            "/api/v1/links/mepatch002",
+                                            "{\"expires_at\":\"tomorrow\"}"),
+                               config,
+                               false),
         400,
         "invalid_expires_at");
 }
@@ -220,9 +225,8 @@ BOOST_AUTO_TEST_CASE(stats_query_validation_errors_are_characterized)
     create_link("mestats002");
 
     auto invalid_time = handleShortenerRequest(
-        make_request(
-            bhttp::verb::get,
-            "/api/v1/links/mestats001/stats?from=x&to=2&bucket=day"),
+        make_request(bhttp::verb::get,
+                     "/api/v1/links/mestats001/stats?from=x&to=2&bucket=day"),
         config,
         false);
     BOOST_TEST(invalid_time.result_int() == 400);
@@ -231,9 +235,8 @@ BOOST_AUTO_TEST_CASE(stats_query_validation_errors_are_characterized)
     BOOST_TEST(!invalid_time.base()["X-Request-Id"].empty());
 
     auto invalid_bucket = handleShortenerRequest(
-        make_request(
-            bhttp::verb::get,
-            "/api/v1/links/mestats002/stats?from=1&to=2&bucket=bad"),
+        make_request(bhttp::verb::get,
+                     "/api/v1/links/mestats002/stats?from=1&to=2&bucket=bad"),
         config,
         false);
     BOOST_TEST(invalid_bucket.result_int() == 400);

@@ -1,0 +1,616 @@
+{
+  "corpus_version": 1,
+  "suite": "link_read",
+  "description": "link.get / link.preview / link.stats: slug and id lookups, the one-of selector errors, soft-delete visibility, the preview status matrix and the two stats result shapes.",
+  "cases": [
+    {
+      "name": "link_get_by_slug",
+      "doc": "get by slug returns the full LinkView shape (serializer parity oracle)",
+      "command": "link.get",
+      "steps": [
+        {
+          "label": "seed",
+          "request": {
+            "v": 1,
+            "command": "link.create",
+            "args": { "target_url": "https://example.com/read", "slug": "read-me" }
+          },
+          "rest_resource": {
+            "method": "POST",
+            "path": "/api/v1/links",
+            "body": { "target_url": "https://example.com/read", "slug": "read-me" },
+            "status": 201
+          },
+          "expect": { "ok": true, "result": { "slug": "read-me" }, "match": "subset" }
+        },
+        {
+          "label": "get",
+          "request": {
+            "v": 1,
+            "id": "get-slug-1",
+            "command": "link.get",
+            "args": { "slug": "read-me" }
+          },
+          "rest_resource": { "method": "GET", "path": "/api/v1/links/read-me", "status": 200 },
+          "expect": {
+            "ok": true,
+            "result": {
+              "id": "<id>",
+              "slug": "read-me",
+              "url": "https://example.com/read",
+              "short_url": "<regex:.*/read-me>",
+              "created_at": "<ts>",
+              "updated_at": "<ts>",
+              "status": "active",
+              "redirect_type": "temporary",
+              "tags": [],
+              "metadata": {},
+              "campaign": null,
+              "stats": {
+                "total_redirects": 0,
+                "redirects_24h": 0,
+                "redirects_7d": 0,
+                "last_accessed_at": null
+              }
+            },
+            "match": "exact"
+          }
+        }
+      ]
+    },
+    {
+      "name": "link_get_by_id",
+      "doc": "get by opaque id returns the same link captured at create time",
+      "command": "link.get",
+      "steps": [
+        {
+          "label": "seed",
+          "request": {
+            "v": 1,
+            "command": "link.create",
+            "args": { "target_url": "https://example.com/byid", "slug": "by-id-page" }
+          },
+          "rest_resource": {
+            "method": "POST",
+            "path": "/api/v1/links",
+            "body": { "target_url": "https://example.com/byid", "slug": "by-id-page" },
+            "status": 201
+          },
+          "save": { "id": "$.result.id" },
+          "expect": { "ok": true, "result": { "slug": "by-id-page" }, "match": "subset" }
+        },
+        {
+          "label": "get",
+          "request": {
+            "v": 1,
+            "command": "link.get",
+            "args": { "id": "${id}" }
+          },
+          "rest_resource": { "method": "GET", "path": "/api/v1/links/id/${id}", "status": 200 },
+          "expect": {
+            "ok": true,
+            "result": { "id": "${id}", "slug": "by-id-page", "url": "https://example.com/byid", "status": "active" },
+            "match": "subset"
+          }
+        }
+      ]
+    },
+    {
+      "name": "link_get_both_slug_and_id",
+      "doc": "supplying both slug and id violates the one-of selector",
+      "command": "link.get",
+      "steps": [
+        {
+          "label": "get",
+          "request": {
+            "v": 1,
+            "command": "link.get",
+            "args": { "slug": "read-me", "id": "abc123" }
+          },
+          "expect": { "ok": false, "error": { "code": "invalid_field" } }
+        }
+      ]
+    },
+    {
+      "name": "link_get_neither",
+      "doc": "supplying neither slug nor id violates the one-of selector",
+      "command": "link.get",
+      "steps": [
+        {
+          "label": "get",
+          "request": {
+            "v": 1,
+            "command": "link.get",
+            "args": {}
+          },
+          "expect": { "ok": false, "error": { "code": "invalid_field" } }
+        }
+      ]
+    },
+    {
+      "name": "link_get_not_found",
+      "doc": "an unknown slug is not_found",
+      "command": "link.get",
+      "steps": [
+        {
+          "label": "get",
+          "request": {
+            "v": 1,
+            "command": "link.get",
+            "args": { "slug": "ghost-page" }
+          },
+          "rest_resource": { "method": "GET", "path": "/api/v1/links/ghost-page", "status": 404 },
+          "expect": { "ok": false, "error": { "code": "not_found" } }
+        }
+      ]
+    },
+    {
+      "name": "link_preview_unknown_not_found",
+      "doc": "previewing an unknown slug is not_found on every transport",
+      "command": "link.preview",
+      "steps": [
+        {
+          "label": "preview",
+          "request": {
+            "v": 1,
+            "command": "link.preview",
+            "args": { "slug": "prev-ghost" }
+          },
+          "rest_resource": { "method": "GET", "path": "/api/v1/links/prev-ghost/preview", "status": 404 },
+          "expect": { "ok": false, "error": { "code": "not_found" } }
+        }
+      ]
+    },
+    {
+      "name": "link_get_deleted_visible_to_management",
+      "doc": "a soft-deleted link is still returned by link.get with status deleted (management visibility)",
+      "command": "link.get",
+      "steps": [
+        {
+          "label": "seed",
+          "request": {
+            "v": 1,
+            "command": "link.create",
+            "args": { "target_url": "https://example.com/gone", "slug": "soft-gone" }
+          },
+          "rest_resource": {
+            "method": "POST",
+            "path": "/api/v1/links",
+            "body": { "target_url": "https://example.com/gone", "slug": "soft-gone" },
+            "status": 201
+          },
+          "expect": { "ok": true, "result": { "slug": "soft-gone" }, "match": "subset" }
+        },
+        {
+          "label": "delete",
+          "request": {
+            "v": 1,
+            "command": "link.delete",
+            "args": { "slug": "soft-gone" }
+          },
+          "rest_resource": { "method": "DELETE", "path": "/api/v1/links/soft-gone", "status": 200 },
+          "expect": { "ok": true, "result": { "slug": "soft-gone", "status": "deleted" }, "match": "subset" }
+        },
+        {
+          "label": "get",
+          "request": {
+            "v": 1,
+            "command": "link.get",
+            "args": { "slug": "soft-gone" }
+          },
+          "rest_resource": { "method": "GET", "path": "/api/v1/links/soft-gone", "status": 200 },
+          "expect": { "ok": true, "result": { "slug": "soft-gone", "status": "deleted" }, "match": "subset" }
+        }
+      ]
+    },
+    {
+      "name": "link_preview_active",
+      "doc": "preview of an active link returns the reduced preview projection with status active",
+      "command": "link.preview",
+      "steps": [
+        {
+          "label": "seed",
+          "request": {
+            "v": 1,
+            "command": "link.create",
+            "args": { "target_url": "https://example.com/pa", "slug": "prev-active" }
+          },
+          "rest_resource": {
+            "method": "POST",
+            "path": "/api/v1/links",
+            "body": { "target_url": "https://example.com/pa", "slug": "prev-active" },
+            "status": 201
+          },
+          "expect": { "ok": true, "result": { "slug": "prev-active" }, "match": "subset" }
+        },
+        {
+          "label": "preview",
+          "request": {
+            "v": 1,
+            "command": "link.preview",
+            "args": { "slug": "prev-active" }
+          },
+          "rest_resource": { "method": "GET", "path": "/api/v1/links/prev-active/preview", "status": 200 },
+          "expect": {
+            "ok": true,
+            "result": {
+              "slug": "prev-active",
+              "url": "https://example.com/pa",
+              "status": "active",
+              "redirect_type": "temporary",
+              "enabled": true,
+              "expires_at": null
+            },
+            "match": "subset"
+          }
+        }
+      ]
+    },
+    {
+      "name": "link_preview_disabled",
+      "doc": "preview of a disabled link reports status disabled and enabled false",
+      "command": "link.preview",
+      "steps": [
+        {
+          "label": "seed",
+          "request": {
+            "v": 1,
+            "command": "link.create",
+            "args": { "target_url": "https://example.com/pd", "slug": "prev-disabled" }
+          },
+          "rest_resource": {
+            "method": "POST",
+            "path": "/api/v1/links",
+            "body": { "target_url": "https://example.com/pd", "slug": "prev-disabled" },
+            "status": 201
+          },
+          "expect": { "ok": true, "result": { "slug": "prev-disabled" }, "match": "subset" }
+        },
+        {
+          "label": "disable",
+          "request": {
+            "v": 1,
+            "command": "link.disable",
+            "args": { "slug": "prev-disabled" }
+          },
+          "rest_resource": { "method": "POST", "path": "/api/v1/links/prev-disabled/disable", "status": 200 },
+          "expect": { "ok": true, "result": { "slug": "prev-disabled", "status": "disabled" }, "match": "subset" }
+        },
+        {
+          "label": "preview",
+          "request": {
+            "v": 1,
+            "command": "link.preview",
+            "args": { "slug": "prev-disabled" }
+          },
+          "rest_resource": { "method": "GET", "path": "/api/v1/links/prev-disabled/preview", "status": 200 },
+          "expect": {
+            "ok": true,
+            "result": {
+              "slug": "prev-disabled",
+              "url": "https://example.com/pd",
+              "status": "disabled",
+              "redirect_type": "temporary",
+              "enabled": false,
+              "expires_at": null
+            },
+            "match": "subset"
+          }
+        }
+      ]
+    },
+    {
+      "name": "link_preview_expired",
+      "doc": "preview of a link with a past expiry reports status expired and echoes expires_at",
+      "command": "link.preview",
+      "steps": [
+        {
+          "label": "seed",
+          "request": {
+            "v": 1,
+            "command": "link.create",
+            "args": { "target_url": "https://example.com/pe", "slug": "prev-expired", "expires_at": "2000-01-01T00:00:00Z" }
+          },
+          "rest_resource": {
+            "method": "POST",
+            "path": "/api/v1/links",
+            "body": { "target_url": "https://example.com/pe", "slug": "prev-expired", "expires_at": "2000-01-01T00:00:00Z" },
+            "status": 201
+          },
+          "expect": { "ok": true, "result": { "slug": "prev-expired", "status": "expired" }, "match": "subset" }
+        },
+        {
+          "label": "preview",
+          "request": {
+            "v": 1,
+            "command": "link.preview",
+            "args": { "slug": "prev-expired" }
+          },
+          "rest_resource": { "method": "GET", "path": "/api/v1/links/prev-expired/preview", "status": 200 },
+          "expect": {
+            "ok": true,
+            "result": {
+              "slug": "prev-expired",
+              "url": "https://example.com/pe",
+              "status": "expired",
+              "redirect_type": "temporary",
+              "enabled": true,
+              "expires_at": "<ts>"
+            },
+            "match": "subset"
+          }
+        }
+      ]
+    },
+    {
+      "name": "link_preview_deleted",
+      "doc": "preview of a soft-deleted link reports status deleted and a deleted_at timestamp",
+      "command": "link.preview",
+      "steps": [
+        {
+          "label": "seed",
+          "request": {
+            "v": 1,
+            "command": "link.create",
+            "args": { "target_url": "https://example.com/px", "slug": "prev-deleted" }
+          },
+          "rest_resource": {
+            "method": "POST",
+            "path": "/api/v1/links",
+            "body": { "target_url": "https://example.com/px", "slug": "prev-deleted" },
+            "status": 201
+          },
+          "expect": { "ok": true, "result": { "slug": "prev-deleted" }, "match": "subset" }
+        },
+        {
+          "label": "delete",
+          "request": {
+            "v": 1,
+            "command": "link.delete",
+            "args": { "slug": "prev-deleted" }
+          },
+          "rest_resource": { "method": "DELETE", "path": "/api/v1/links/prev-deleted", "status": 200 },
+          "expect": { "ok": true, "result": { "slug": "prev-deleted", "status": "deleted" }, "match": "subset" }
+        },
+        {
+          "label": "preview",
+          "request": {
+            "v": 1,
+            "command": "link.preview",
+            "args": { "slug": "prev-deleted" }
+          },
+          "rest_resource": { "method": "GET", "path": "/api/v1/links/prev-deleted/preview", "status": 200 },
+          "expect": {
+            "ok": true,
+            "result": {
+              "slug": "prev-deleted",
+              "url": "https://example.com/px",
+              "status": "deleted",
+              "redirect_type": "temporary",
+              "enabled": true,
+              "expires_at": null,
+              "deleted_at": "<ts>"
+            },
+            "match": "exact"
+          }
+        }
+      ]
+    },
+    {
+      "name": "link_preview_by_id",
+      "doc": "preview by opaque id is supported on the generic transports only (the resource route stays slug-only)",
+      "command": "link.preview",
+      "transports": { "skip": { "rest_resource": "by-id preview is generic-only" } },
+      "steps": [
+        {
+          "label": "seed",
+          "request": {
+            "v": 1,
+            "command": "link.create",
+            "args": { "target_url": "https://example.com/pbyid", "slug": "prev-by-id" }
+          },
+          "save": { "id": "$.result.id" },
+          "expect": { "ok": true, "result": { "slug": "prev-by-id" }, "match": "subset" }
+        },
+        {
+          "label": "preview",
+          "request": {
+            "v": 1,
+            "command": "link.preview",
+            "args": { "id": "${id}" }
+          },
+          "expect": {
+            "ok": true,
+            "result": { "slug": "prev-by-id", "url": "https://example.com/pbyid", "status": "active", "enabled": true },
+            "match": "subset"
+          }
+        }
+      ]
+    },
+    {
+      "name": "link_stats_range_mode_empty",
+      "doc": "stats with from/to/bucket all present returns the empty range report (no analytics served)",
+      "command": "link.stats",
+      "steps": [
+        {
+          "label": "seed",
+          "request": {
+            "v": 1,
+            "command": "link.create",
+            "args": { "target_url": "https://example.com/sr", "slug": "stats-range" }
+          },
+          "rest_resource": {
+            "method": "POST",
+            "path": "/api/v1/links",
+            "body": { "target_url": "https://example.com/sr", "slug": "stats-range" },
+            "status": 201
+          },
+          "expect": { "ok": true, "result": { "slug": "stats-range" }, "match": "subset" }
+        },
+        {
+          "label": "stats",
+          "request": {
+            "v": 1,
+            "command": "link.stats",
+            "args": { "slug": "stats-range", "from": "100", "to": "200", "bucket": "hour" }
+          },
+          "rest_resource": {
+            "method": "GET",
+            "path": "/api/v1/links/stats-range/stats",
+            "query": { "from": "100", "to": "200", "bucket": "hour" },
+            "status": 200
+          },
+          "expect": {
+            "ok": true,
+            "result": {
+              "slug": "stats-range",
+              "total_attempts": 0,
+              "successful_redirects": 0,
+              "attempts_by_status_code": {},
+              "attempts_by_domain": {},
+              "time_buckets": [],
+              "from": 100,
+              "to": 200,
+              "bucket": "hour"
+            },
+            "match": "exact"
+          }
+        }
+      ]
+    },
+    {
+      "name": "link_stats_lifetime_counters_mode",
+      "doc": "stats with no range args returns the lifetime counters body",
+      "command": "link.stats",
+      "steps": [
+        {
+          "label": "seed",
+          "request": {
+            "v": 1,
+            "command": "link.create",
+            "args": { "target_url": "https://example.com/sl", "slug": "stats-life" }
+          },
+          "rest_resource": {
+            "method": "POST",
+            "path": "/api/v1/links",
+            "body": { "target_url": "https://example.com/sl", "slug": "stats-life" },
+            "status": 201
+          },
+          "expect": { "ok": true, "result": { "slug": "stats-life" }, "match": "subset" }
+        },
+        {
+          "label": "stats",
+          "request": {
+            "v": 1,
+            "command": "link.stats",
+            "args": { "slug": "stats-life" }
+          },
+          "rest_resource": { "method": "GET", "path": "/api/v1/links/stats-life/stats", "status": 200 },
+          "expect": {
+            "ok": true,
+            "result": {
+              "slug": "stats-life",
+              "total_redirects": 0,
+              "redirects_24h": 0,
+              "redirects_7d": 0,
+              "last_accessed_at": null,
+              "created_at": "<ts>"
+            },
+            "match": "exact"
+          }
+        }
+      ]
+    },
+    {
+      "name": "link_stats_invalid_window",
+      "doc": "a range whose from is not before to is rejected invalid_field",
+      "command": "link.stats",
+      "steps": [
+        {
+          "label": "seed",
+          "request": {
+            "v": 1,
+            "command": "link.create",
+            "args": { "target_url": "https://example.com/sw", "slug": "stats-window" }
+          },
+          "rest_resource": {
+            "method": "POST",
+            "path": "/api/v1/links",
+            "body": { "target_url": "https://example.com/sw", "slug": "stats-window" },
+            "status": 201
+          },
+          "expect": { "ok": true, "result": { "slug": "stats-window" }, "match": "subset" }
+        },
+        {
+          "label": "stats",
+          "request": {
+            "v": 1,
+            "command": "link.stats",
+            "args": { "slug": "stats-window", "from": "200", "to": "100", "bucket": "hour" }
+          },
+          "rest_resource": {
+            "method": "GET",
+            "path": "/api/v1/links/stats-window/stats",
+            "query": { "from": "200", "to": "100", "bucket": "hour" },
+            "status": 400
+          },
+          "expect": { "ok": false, "error": { "code": "invalid_field" } }
+        }
+      ]
+    },
+    {
+      "name": "link_stats_invalid_bucket",
+      "doc": "an unrecognized bucket granularity is rejected invalid_field",
+      "command": "link.stats",
+      "steps": [
+        {
+          "label": "seed",
+          "request": {
+            "v": 1,
+            "command": "link.create",
+            "args": { "target_url": "https://example.com/sb", "slug": "stats-bucket" }
+          },
+          "rest_resource": {
+            "method": "POST",
+            "path": "/api/v1/links",
+            "body": { "target_url": "https://example.com/sb", "slug": "stats-bucket" },
+            "status": 201
+          },
+          "expect": { "ok": true, "result": { "slug": "stats-bucket" }, "match": "subset" }
+        },
+        {
+          "label": "stats",
+          "request": {
+            "v": 1,
+            "command": "link.stats",
+            "args": { "slug": "stats-bucket", "from": "100", "to": "200", "bucket": "fortnight" }
+          },
+          "rest_resource": {
+            "method": "GET",
+            "path": "/api/v1/links/stats-bucket/stats",
+            "query": { "from": "100", "to": "200", "bucket": "fortnight" },
+            "status": 400
+          },
+          "expect": { "ok": false, "error": { "code": "invalid_field" } }
+        }
+      ]
+    },
+    {
+      "name": "link_stats_not_found",
+      "doc": "lifetime-mode stats for an unknown slug is not_found",
+      "command": "link.stats",
+      "steps": [
+        {
+          "label": "stats",
+          "request": {
+            "v": 1,
+            "command": "link.stats",
+            "args": { "slug": "stats-ghost" }
+          },
+          "rest_resource": { "method": "GET", "path": "/api/v1/links/stats-ghost/stats", "status": 404 },
+          "expect": { "ok": false, "error": { "code": "not_found" } }
+        }
+      ]
+    }
+  ]
+}

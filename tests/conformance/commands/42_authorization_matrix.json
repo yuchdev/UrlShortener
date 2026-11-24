@@ -1,0 +1,191 @@
+{
+  "corpus_version": 1,
+  "suite": "authorization_matrix",
+  "description": "Generated descriptor x role matrix: every command whose base permission is not 'read' is refused for a read-only user with not_authorized, before any argument validation (ADR 0002 order: authorize, then ArgSpec check). Regenerate with tools/conformance_gen_authz.py; CI checks it with --check.",
+  "cases": [
+    {
+      "name": "authz_matrix_job_cancel",
+      "doc": "a read-only user is refused job.cancel with not_authorized before any argument validation (authorize-then-validate, ADR 0002)",
+      "command": "job.cancel",
+      "caller": "user",
+      "steps": [
+        {
+          "request": {
+            "v": 1,
+            "command": "job.cancel",
+            "args": {
+              "id": "x"
+            }
+          },
+          "expect": {
+            "ok": false,
+            "error": {
+              "code": "not_authorized"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "authz_matrix_link_create",
+      "doc": "a read-only user is refused link.create with not_authorized before any argument validation (authorize-then-validate, ADR 0002)",
+      "command": "link.create",
+      "caller": "user",
+      "steps": [
+        {
+          "request": {
+            "v": 1,
+            "command": "link.create",
+            "args": {
+              "target_url": "x"
+            }
+          },
+          "expect": {
+            "ok": false,
+            "error": {
+              "code": "not_authorized"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "authz_matrix_link_delete",
+      "doc": "a read-only user is refused link.delete with not_authorized before any argument validation (authorize-then-validate, ADR 0002)",
+      "command": "link.delete",
+      "caller": "user",
+      "steps": [
+        {
+          "request": {
+            "v": 1,
+            "command": "link.delete",
+            "args": {
+              "slug": "x"
+            }
+          },
+          "expect": {
+            "ok": false,
+            "error": {
+              "code": "not_authorized"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "authz_matrix_link_disable",
+      "doc": "a read-only user is refused link.disable with not_authorized before any argument validation (authorize-then-validate, ADR 0002)",
+      "command": "link.disable",
+      "caller": "user",
+      "steps": [
+        {
+          "request": {
+            "v": 1,
+            "command": "link.disable",
+            "args": {
+              "slug": "x"
+            }
+          },
+          "expect": {
+            "ok": false,
+            "error": {
+              "code": "not_authorized"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "authz_matrix_link_enable",
+      "doc": "a read-only user is refused link.enable with not_authorized before any argument validation (authorize-then-validate, ADR 0002)",
+      "command": "link.enable",
+      "caller": "user",
+      "steps": [
+        {
+          "request": {
+            "v": 1,
+            "command": "link.enable",
+            "args": {
+              "slug": "x"
+            }
+          },
+          "expect": {
+            "ok": false,
+            "error": {
+              "code": "not_authorized"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "authz_matrix_link_import",
+      "doc": "a read-only user is refused link.import with not_authorized before any argument validation (authorize-then-validate, ADR 0002)",
+      "command": "link.import",
+      "caller": "user",
+      "steps": [
+        {
+          "request": {
+            "v": 1,
+            "command": "link.import",
+            "args": {
+              "format": "csv"
+            }
+          },
+          "expect": {
+            "ok": false,
+            "error": {
+              "code": "not_authorized"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "authz_matrix_link_restore",
+      "doc": "a read-only user is refused link.restore with not_authorized before any argument validation (authorize-then-validate, ADR 0002)",
+      "command": "link.restore",
+      "caller": "user",
+      "steps": [
+        {
+          "request": {
+            "v": 1,
+            "command": "link.restore",
+            "args": {
+              "slug": "x"
+            }
+          },
+          "expect": {
+            "ok": false,
+            "error": {
+              "code": "not_authorized"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "authz_matrix_link_update",
+      "doc": "a read-only user is refused link.update with not_authorized before any argument validation (authorize-then-validate, ADR 0002)",
+      "command": "link.update",
+      "caller": "user",
+      "steps": [
+        {
+          "request": {
+            "v": 1,
+            "command": "link.update",
+            "args": {
+              "slug": "x"
+            }
+          },
+          "expect": {
+            "ok": false,
+            "error": {
+              "code": "not_authorized"
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

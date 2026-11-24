@@ -1,0 +1,23 @@
+
+
+
+
+
+
+
+
+                                 ╭Columns─────╮
+                                 │▣ SLUG      │
+                                 │▣ TARGET URL│
+                                 │▣ STATUS    │
+                                 │▣ CLICKS    │
+                                 │▣ EXPIRES   │
+                                 ╰────────────╯
+
+
+
+
+
+
+
+

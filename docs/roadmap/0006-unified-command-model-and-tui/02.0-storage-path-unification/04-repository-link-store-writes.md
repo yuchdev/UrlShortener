@@ -59,10 +59,12 @@ No new public symbols. Behavior:
 1. `link_to_record(link, &record, &why)`; failure -> `internal`.
 2. `m_repo->UpdateLink(record, &repo_error)`: `not_found` -> `not_found`,
    "Link not found"; other failure -> `storage_failure`, "repository failure".
-3. Always (success or failure) `m_l1->erase(link.slug)`, and on success
+3. Always (success or failure) `m_l1->erase(link.slug)` and
    `m_cache->Delete(link.slug)`: the next read reloads, never serving a value
    older than this write. (Invalidate-on-failure is deliberate: a failed write
-   leaves an uncertain state.)
+   leaves an uncertain state and may have committed before the error.)
+   *(amended 2026-11-14 after the implementation security review: the cache
+   delete was previously success-only.)*
 
 Neither method takes a lock; atomicity is the repository's (uniqueness is a
 primary key in SQL and a map check under a mutex in memory). Two concurrent
@@ -101,7 +103,10 @@ ctest --test-dir cmake-build -R "^app__2[12]_repository_link_store" --output-on-
   (`lnk_deleted` present, `is_active == false`); L1 entry erased; `ICacheStore`
   `Delete` called once.
 - update of a missing record -> `not_found` / "Link not found"; L1 still erased.
-- update failure -> `storage_failure`, L1 erased, cache `Delete` not required.
+- update failure -> `storage_failure`, L1 erased, and the `ICacheStore` entry
+  deleted too *(amended 2026-11-14 after the implementation security review:
+  the write may have committed before the error, and the shared cache holds
+  non-expiring links without a TTL)*.
 - `error == nullptr` is accepted by both methods.
 - Read-your-writes: `create` then `findBySlug` returns the link without a repo
   read; `update` then `findBySlug` re-reads and returns the updated link.

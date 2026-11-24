@@ -33,6 +33,35 @@ def normalize(text):
     return tuple(tokens)
 
 
+_SORTABLE_RE = re.compile(
+    r"^\s*(#\s*include\b|using\s+[\w:]+\s*;)"
+)
+
+
+def _split_includes(text):
+    """Return (sorted sortable lines, text without them).
+
+    Sortable lines are the ones clang-format may reorder without changing
+    meaning: `#include` (SortIncludes, also `# include` inside an indented
+    `#if` block) and `using a::b;` declarations (SortUsingDeclarations).
+    Whitespace inside each line is removed before comparison.
+    """
+    lines = text.splitlines()
+    sortable = sorted(
+        re.sub(r"\s+", "", l) for l in lines if _SORTABLE_RE.match(l)
+    )
+    rest = "\n".join(l for l in lines if not _SORTABLE_RE.match(l))
+    return sortable, rest
+
+
+def include_order_only(old, new):
+    """True when the files differ only in the order of `#include` lines and
+    `using` declarations (what `clang-format -i` with `SortIncludes` /
+    `SortUsingDeclarations` produces). Same set of lines, everything else
+    token-identical."""
+    old_inc, old_rest = _split_includes(old)
+    new_inc, new_rest = _split_includes(new)
+    return old_inc == new_inc and normalize(old_rest) == normalize(new_rest)
 def _cpp_tokens(text):
     """Lex enough C++ to keep literals and comments out of normalization."""
     tokens = []
@@ -123,34 +152,6 @@ def _cpp_tokens(text):
     return tokens
 
 
-def _include_segments(text):
-    """Split text into include blocks and normalized C++ code segments."""
-    lines = text.splitlines(keepends=True)
-    segments = []
-    i = 0
-    while i < len(lines):
-        stripped = lines[i].strip()
-        if stripped.startswith("#include"):
-            includes = []
-            while i < len(lines) and lines[i].strip().startswith("#include"):
-                includes.append(lines[i].strip())
-                i += 1
-            segments.append(("include", tuple(sorted(includes))))
-            continue
-        code = []
-        while i < len(lines) and not lines[i].strip().startswith("#include"):
-            code.append(lines[i])
-            i += 1
-        segments.append(("code", normalize("".join(code))))
-    return segments
-
-
-def include_order_only(old, new):
-    """True when the files differ only in the order of their #include lines
-    within the same contiguous include block."""
-    return _include_segments(old) == _include_segments(new)
-
-
 def changed_files(rev):
     out = subprocess.check_output(
         ["git", "diff", "--name-only", rev, "--"], text=True
@@ -186,7 +187,7 @@ def main():
 
     print(f"{len(paths)} file(s) checked against {args.rev}")
     for path in reordered:
-        print(f"INCLUDE ORDER {path}  (clang-format SortIncludes; acceptable)")
+        print(f"INCLUDE ORDER {path}  (clang-format include/using sorting; acceptable)")
     for path in failed:
         print(f"CODE CHANGED {path}")
     if not failed:

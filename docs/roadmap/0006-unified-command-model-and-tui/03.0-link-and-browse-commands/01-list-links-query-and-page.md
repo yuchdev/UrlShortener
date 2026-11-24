@@ -34,6 +34,15 @@ filters are deliberately **not** repository concepts (see Dependencies); they ar
   that signature has four implementations (`SqliteSession`, `PostgresSession`, stubs in
   `tests/unit/storage/sql/05_...` and `tests/unit/storage/psql/psql_test_common.hpp`) and is therefore left unchanged. The new fields are
   honored **only** by `ListLinksPage`.
+- **(amended 2026-11-14, threat model T-50)** This subtask now also owns the Postgres `ListLinks` **owner-filter defect**
+  (carried item R-E; see the 03.0 threat model T-50). Verified 2026-11-14 on a fresh PostgreSQL 16 cluster:
+  `metadata__06_list_filtering_pagination` fails on Postgres because an owner-scoped `ListLinks` returns 0 rows.
+  Root cause: `PostgresSqlDialect::ListSql()` (`src/storage/postgres/postgres_sql_dialect.cpp` ~line 79) writes the owner
+  predicate as `(:owner_id IS NULL OR owner_id = :owner_id)`, repeating the named parameter `:owner_id`; the SOCI Postgres
+  backend expands the two occurrences to two positional placeholders but `PostgresSession::List`
+  (`src/storage/postgres/postgres_session_factory.cpp` ~line 182) binds `:owner_id` once, so the second occurrence is
+  unbound and no row matches. SQLite tolerates the repeated name and passes. The default `ListLinksPage` pages
+  `ListLinks(base)` with `base.owner = query.owner`, so it inherits this defect for every owner-scoped `link.list`.
 
 ## Files affected
 
@@ -47,6 +56,8 @@ filters are deliberately **not** repository concepts (see Dependencies); they ar
 | `tests/unit/storage/listing/02_list_links_page_default_impl.cpp` | create | Default `ListLinksPage` over a fake repository incl. scan-cap overflow. |
 | `sources.cmake` | modify | New list `LISTING_UNIT_SOURCES`; `src/storage/list_links_eval.cpp` in `COMMON_CPP_SOURCES`. |
 | `CMakeLists.txt` | modify | One line: `register_labeled_cpp_tests(LISTING_UNIT_SOURCES "unit")` next to the other registrations (~lines 173-192). |
+| `src/storage/postgres/postgres_sql_dialect.cpp` | modify | **(amended 2026-11-14, threat model T-50)** In `ListSql()`, replace the owner predicate `(:owner_id IS NULL OR owner_id = :owner_id)` with the single-use `has_owner` guard `(:has_owner = 0 OR owner_id = :owner_id)`. |
+| `src/storage/postgres/postgres_session_factory.cpp` | modify | **(amended 2026-11-14, threat model T-50)** In `PostgresSession::List`, bind `:has_owner = owner.has_value() ? 1 : 0` and keep binding `:owner_id` as typed text. `ISqlSession::List`'s signature is unchanged. |
 
 ## Classes and functions
 
@@ -97,6 +108,18 @@ Rules (Doxygen on each):
   `false`. Otherwise `*page = ApplyListQuery(...)` (which re-applies every filter, making backends that ignore flags such as SQL's
   `include_deleted` consistent) and return `true`.
 - Error handling follows the repo: `bool` + `RepoError*` out-param, no exceptions. `page == nullptr` -> `false`, `RepoError::invalid_argument`.
+- **(amended 2026-11-14, threat model T-50) Scan overflow is `permanent_failure`, never silent truncation.** Reaffirming the
+  rule above: a `ListLinks` result whose size equals `kListScanLimit` sets `*error = RepoError::permanent_failure` and returns
+  `false`. This is a threat-model requirement (T-50 / T-56) - it must not be weakened into a clamped or truncated page by any
+  later change. The default `ListLinksPage` therefore never returns a partial window disguised as success.
+- **(amended 2026-11-14, threat model T-50) Postgres owner-filter fix** (see Dependencies). Change
+  `PostgresSqlDialect::ListSql()` to the single-use guard `FROM links WHERE (:has_owner = 0 OR owner_id = :owner_id) AND
+  (:include_inactive = 1 OR is_active = TRUE) ...`, mirroring 03.0/04's `(:has_* = 0 OR col = :p)` pattern, and bind
+  `:has_owner = owner.has_value() ? 1 : 0` plus `:owner_id` (typed text) in `PostgresSession::List`. Affected components:
+  `PostgresSqlDialect`, `PostgresSession` (`postgres_session_factory.cpp`). Migration path: no API/signature change
+  (`ISqlSession::List`, `SqlMetadataRepository::ListLinks`, `StorageConfig`/factory wiring all untouched); SQLite and
+  in-memory backends are unaffected and need no migration; only the Postgres query text and one additional bound parameter
+  change, so existing Postgres deployments require no schema migration.
 
 ## Implementation steps
 
@@ -128,11 +151,20 @@ Target names follow `<parent_dir>__<stem>`. On a multi-config generator (Visual 
 
 Manual check: none (pure logic).
 
+**(amended 2026-11-14, threat model T-50)** The owner-bind fix is a SQL-text change, so its direct assertion is a backend
+contract test, not a pure unit test: the existing `metadata__06_list_filtering_pagination` must pass on Postgres (owner
+filter narrows) when `URL_SHORTENER_TEST_POSTGRES_DSN` is set - it fails today - and subtask 02 adds an explicit owner-narrowing
+case that runs on Postgres. Scan-overflow -> `permanent_failure` stays covered by `listing__02_list_links_page_default_impl`
+(fake returning exactly `kListScanLimit` -> `false` + `permanent_failure`); that case must not be relaxed.
+
 ## Constraints
 
 - C++17 only (no `std::span`, no designated initializers); naming per `.clang-tidy`.
 - `ListLinks` behavior for existing callers must not change (the redirect path never calls `ListLinks`, C10 untouched).
 - No SQL, SOCI or dialect change in this subtask; `ISqlSession::List` is frozen.
+- **(amended 2026-11-14, threat model T-50)** Exception to the line above: this subtask makes exactly one SQL edit - the
+  Postgres `ListSql()` owner predicate and the matching `:has_owner` bind in `PostgresSession::List`. `ISqlSession::List`
+  stays frozen (signature unchanged); no SQLite dialect, SOCI-layer, `SqlMetadataRepository` or stub-session change.
 - `extra_filter` is called only with records that already passed the native filters; it must not throw (document; the helper does not catch).
 - Every new `.cpp` in `COMMON_CPP_SOURCES`; tests in `sources.cmake`.
 
@@ -143,6 +175,11 @@ Manual check: none (pure logic).
 3. Scan overflow yields `false` + `RepoError::permanent_failure` (test 02).
 4. `ctest -R "^(listing__|metadata__06|inmemory__07|core__05)"` is green and `git diff --stat` shows no change under
    `src/storage/sql`, `src/storage/sqlite`, `src/storage/postgres`.
+   - **(amended 2026-11-14, threat model T-50)** Criterion 4 is relaxed for Postgres only: `git diff --stat` may change
+     exactly `src/storage/postgres/postgres_sql_dialect.cpp` and `src/storage/postgres/postgres_session_factory.cpp` (the
+     owner-bind fix); `src/storage/sql` and `src/storage/sqlite` still show **no** change. Additionally, with
+     `URL_SHORTENER_TEST_POSTGRES_DSN` set, `metadata__06_list_filtering_pagination` passes on the `postgres` harness (owner
+     filter narrows), not only on `inmemory`/`sqlite`.
 
 ## Out of scope / risks
 

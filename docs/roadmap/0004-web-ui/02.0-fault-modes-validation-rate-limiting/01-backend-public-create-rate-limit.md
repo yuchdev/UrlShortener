@@ -25,6 +25,13 @@ src/cli_parser.cpp                    # parse the new flags (edit)
 sources.cmake                         # only if a new .cpp is introduced
 ```
 
+After Milestone 0006, `handleCreateLink` runs via `CommandRegistry::execute`
+(Task 04.0 REST adapter). The rate-limit check is therefore a REST-adapter
+pre-execute policy keyed on the route->command table entry for `link.create`,
+not an in-handler call. It must also cover `POST /api/v1/commands` bodies
+whose `command` is `link.create` (inspect the envelope's `command` field only;
+do not parse `args`).
+
 `cpp-expert` decides the exact placement and whether a small helper file is
 warranted; the contract below is what matters.
 
@@ -51,6 +58,9 @@ warranted; the contract below is what matters.
 5. Do not log client IPs or the rate-limit key in a way that stores/leaks PII
    beyond existing conventions; follow the analytics/observability redaction
    rules already in the codebase.
+6. After Milestone 0006: both `POST /api/v1/links` and `POST /api/v1/commands`
+   (with `command: link.create`) must hit the same limiter bucket for the same
+   client address when the rate limit is enabled.
 
 ## Constraints
 
@@ -73,3 +83,6 @@ warranted; the contract below is what matters.
       (fail-open), not a `429` or `500`.
 - [ ] The redirect fast path and its existing limiter are unchanged.
 - [ ] New config flags are parsed and documented in the handler/config help.
+- [ ] After Milestone 0006: `POST /api/v1/links` and `POST /api/v1/commands`
+      (with `command: link.create`) consume the same limiter bucket for the
+      same client address.

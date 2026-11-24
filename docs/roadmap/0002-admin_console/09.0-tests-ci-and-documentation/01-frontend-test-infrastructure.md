@@ -66,7 +66,7 @@ added by tasks 02.0-08.0, rather than recreating them.
 6. `handlers.ts` must cover every endpoint introduced across tasks 01.0-08.0
    by the time this subtask is considered done - audit the full endpoint
    list in
-   [04-admin-api-contract.md](/docs/roadmap/0002-admin_console/04-admin-api-contract.md)
+   04-admin-api-contract.md (`docs/roadmap/0002-admin_console/04-admin-api-contract.md`, planned, not yet written)
    against it.
 
 ## Constraints

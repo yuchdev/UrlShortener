@@ -1,12 +1,16 @@
 # 0001 - CLI/REST Shared Command Layer
 
-> **Status:** Accepted
+> **Status:** Accepted (amended by [ADR 0002](/docs/adr/0002-unified-command-model.md))
 >
 > **Date:** 2026-09-23
 >
 > **Supersedes:** _(none)_
 >
 > **Superseded by:** _(none)_
+>
+> **Amended by:** [ADR 0002](/docs/adr/0002-unified-command-model.md) - adapter
+> layer only (registry + JSON envelope); Config DTOs, one service method per
+> command and shared serializers stand.
 
 ## Context
 
@@ -94,17 +98,19 @@ HTTP and `argv`.
 
 ### Negative
 
-- **The CLI does not support multi-step scripting across separate process
-  invocations with the current in-memory backend.** `linkRepository()` is a
+- **With the default in-memory backend, the CLI does not support multi-step
+  scripting across separate process invocations.** `linkRepository()` is a
   function-local `static` in-memory singleton, per-process only, with no
-  disk-backed persistence (finding confirmed in Task 03.0 subtask 02 and
-  re-confirmed in Task 05.0 subtask 03). A `link create` in one process is
-  invisible to a `link get` in a second process; only calls within the *same*
-  process observe each other. Because real CLI usage is one command per
-  process, `create`-then-read scripting across invocations does **not** work
-  today. This is a real, user-facing limitation, not a defect to be fixed in
-  this milestone - it follows directly from the storage-path duality left
-  unresolved (see Non-goals).
+  disk-backed persistence (confirmed in Task 03.0 subtask 02, re-confirmed in
+  Task 05.0 subtask 03). A `link create` in one process is invisible to a
+  `link get` in a second process; only calls within the *same* process observe
+  each other. This limitation applies to the **default mode** (no
+  `--storage-config`). With `--storage-config <yaml>` (or
+  `URL_SHORTENER_STORAGE_CONFIG`) pointing at a persistent backend, separate
+  CLI invocations and the running server all share that backend — the
+  storage-path duality described in the Non-goals below was resolved in
+  Milestone 0006 Task 02.0. See [`docs/cli/README.md`](../cli/README.md) for
+  usage details and cross-process visibility bounds.
 - The four previously-inline handlers now carry an extra indirection through
   `LinkCommandService`; per-field PATCH 400 codes deliberately stay in the
   REST handler (routing them through `codeForAppError` would collapse them
@@ -129,17 +135,30 @@ Restated from `plan.md` so a future milestone does not rediscover them:
     model. CLI mode never touches `uri.txt`.
   - (Placeholders `GET /api/v1/links/{slug}/qr`, `/routing` return
     `501 feature_not_enabled` and have nothing to expose yet.)
-- **The `LinkService` vs. `LegacyLinkStore` storage-path duality is not
-  resolved by this milestone.** The redirect fast path
-  (`LinkService::Resolve`) reads through the *pluggable*
-  `IMetadataRepository` selected via `StorageConfig`/`BuildStorageAdapters`,
-  while `LinkCommandService` (via `LegacyLinkStore`) reads/writes the older,
-  always-in-memory `linkRepository()` global singleton. These are two
-  different storage paths under the same interface name. This milestone
-  mirrors the command layer as it exists today onto the CLI; reconciling the
-  two storage paths (and thereby enabling cross-invocation CLI scripting on a
-  persistent backend) is a separate, pre-existing architectural question
-  tracked outside Milestone 0003.
+- **Storage-path duality resolved in Milestone 0006 Task 02.0**
+  (`app::LinkBackend` install hook + `RepositoryLinkStore`, Task
+  02.0/10–15). The redirect path, REST handlers, and CLI all obtain their
+  `ILinkStore` from `app::LinkBackend::store()`. With `--storage-config
+  <yaml>` (or `URL_SHORTENER_STORAGE_CONFIG`) the installed store is a
+  `RepositoryLinkStore` backed by the configured `IMetadataRepository`; the
+  default remains the in-memory `LegacyLinkStore`. CLI multi-step scripting
+  across separate invocations therefore works when both invocations (and the
+  server) point at the same persistent backend. See
+  [`docs/cli/README.md`](../cli/README.md) for usage and cross-process
+  visibility bounds.
+
+  > **Original non-goal (Milestone 0003):** "The `LinkService` vs.
+  > `LegacyLinkStore` storage-path duality is not resolved by this milestone.
+  > The redirect fast path (`LinkService::Resolve`) reads through the
+  > *pluggable* `IMetadataRepository` selected via
+  > `StorageConfig`/`BuildStorageAdapters`, while `LinkCommandService` (via
+  > `LegacyLinkStore`) reads/writes the older, always-in-memory
+  > `linkRepository()` global singleton. These are two different storage paths
+  > under the same interface name. This milestone mirrors the command layer as
+  > it exists today onto the CLI; reconciling the two storage paths (and
+  > thereby enabling cross-invocation CLI scripting on a persistent backend)
+  > is a separate, pre-existing architectural question tracked outside Milestone
+  > 0003."
 
 ## Validation / Rollout
 
@@ -149,10 +168,12 @@ Restated from `plan.md` so a future milestone does not rediscover them:
 - Command-service methods covered by unit tests
   (`tests/unit/app/13-17_link_command_service_*.cpp`); the CLI parser and
   dispatch by `tests/unit/cli/*` and integration/e2e suites.
-- The cross-process limitation is validated (and documented) by
-  `dispatch_create_then_get_roundtrip_same_process` and the still-red
-  `cli_03_link_create_then_get_persists_state` / `e2e_12_cli_link_get`, which
-  are expected failures under the in-memory backend, not defects.
+- The cross-process limitation (default mode) is validated by
+  `dispatch_create_then_get_roundtrip_same_process`. `cli_03_link_create_then_get_persists_state`
+  and `e2e_12_cli_link_get` were extended in Milestone 0006 Task 02.0/13 to
+  be two-sided: the SQLite case passes (cross-invocation persistence works
+  with `--storage-config`) and the in-memory case asserts isolation (the
+  default is unchanged). Both remain expected behavior, not defects.
 
 ## Links
 

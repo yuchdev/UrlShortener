@@ -48,7 +48,7 @@ tests/fixtures/fingerprints/many_fingerprints_same_ip.json
 1. Fixtures are synthetic, inspired by CreepJS-style inconsistent/headless/
    stealth fingerprint patterns, but must not depend on CreepJS as a runtime
    library anywhere (
-   [README.md source](/docs/roadmap/0002-admin_console/00-decision-record.md) -
+   README.md source (`docs/roadmap/0002-admin_console/00-decision-record.md`, planned, not yet written) -
    testing-only reference, never a production dependency).
 2. `FingerprintNormalizerTest` covers each provider's raw shape normalizing
    correctly into `ClientFingerprintEnvelope`.

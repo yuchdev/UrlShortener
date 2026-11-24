@@ -32,14 +32,14 @@ GET /admin/api/v1/audit-log
 ```
 
 Filters: `from, to, console_user, action, target_type, target_id, result` (
-[04-admin-api-contract.md §7](/docs/roadmap/0002-admin_console/04-admin-api-contract.md)).
+04-admin-api-contract.md §7 (`docs/roadmap/0002-admin_console/04-admin-api-contract.md`, planned, not yet written)).
 Requires `audit_log:read`.
 
 ## Requirements
 
 1. `AuditLogger` exposes a simple `record(event)` API that every controller
    in the milestone calls; record fields (
-   [06-security-privacy-permissions.md §7](/docs/roadmap/0002-admin_console/06-security-privacy-permissions.md)):
+   06-security-privacy-permissions.md §7 (`docs/roadmap/0002-admin_console/06-security-privacy-permissions.md`, planned, not yet written)):
 
    ```text
    timestamp, console_user, action, target_type, target_id,
@@ -47,7 +47,7 @@ Requires `audit_log:read`.
    ```
 
 2. Audited events (
-   [06-security-privacy-permissions.md §7](/docs/roadmap/0002-admin_console/06-security-privacy-permissions.md)):
+   06-security-privacy-permissions.md §7 (`docs/roadmap/0002-admin_console/06-security-privacy-permissions.md`, planned, not yet written)):
 
    ```text
    login success, login failure, logout, password change,
@@ -57,7 +57,7 @@ Requires `audit_log:read`.
    ```
 
 3. `GET /audit-log` list columns (
-   [01-product-and-ux-spec.md §8.6](/docs/roadmap/0002-admin_console/01-product-and-ux-spec.md)):
+   01-product-and-ux-spec.md §8.6 (`docs/roadmap/0002-admin_console/01-product-and-ux-spec.md`, planned, not yet written)):
    `Time, Console User, Action, Target Type, Target ID, Source IP, Result`,
    paginated via task 02.0's `PageRequest`.
 4. Rewire task 01.0 subtask 02's login-success/login-failure/logout calls
@@ -66,7 +66,7 @@ Requires `audit_log:read`.
    go through `AuditLogger` (replacing their interim stub).
 5. `AuditLogRepository` writes and queries the `audit_log` table using the
    `audit_log(timestamp)` index (
-   [05-data-model-and-storage.md §11](/docs/roadmap/0002-admin_console/05-data-model-and-storage.md)).
+   05-data-model-and-storage.md §11 (`docs/roadmap/0002-admin_console/05-data-model-and-storage.md`, planned, not yet written)).
 6. Permission-denied attempts (from `AdminPermissionMiddleware`, task 01.0
    subtask 02) must also call `AuditLogger.record(...)` - wire this in as
    part of this subtask since the middleware predates the logger.

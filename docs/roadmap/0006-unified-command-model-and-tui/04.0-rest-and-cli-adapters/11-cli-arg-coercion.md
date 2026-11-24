@@ -19,9 +19,9 @@ tokens and execution are subtasks 12 and 13.
 - `ArgSpec {name, type, required, nullable, enum_values, min, max, fields, ...}` and `ArgType {string, integer, boolean, enumeration, timestamp, string_list, string_map, object}` (01.0/05, specified).
 - `commands::args_builder` (subtask 01).
 - Design rules decided here (flag for review):
-  1. **Scalars:** `string`, `enumeration`, `timestamp` -> JSON string as given (validation by the registry). `integer`: the value must match `^-?[0-9]{1,18}$` and is emitted as a number; otherwise it is emitted as a *string* so the registry reports `<arg>: wrong_type`. `boolean`: exactly `true` or `false`, otherwise emitted as a string (registry rejects).
+  1. **Scalars:** `string`, `enumeration`, `timestamp` -> JSON string as given (validation by the registry). `integer`: the value must match `^[0-9]{1,18}$` (no sign, leading zeros stripped, base 10 - the same rule as the REST query adapter, 04.0/07) and is emitted as a number; otherwise it is emitted as a *string* so the registry reports `<arg>: wrong_type`. `boolean`: exactly `true` or `false`, otherwise emitted as a string (registry rejects).
   2. **Lists:** `string_list` args are built by repeating the name: `--arg tags=a --arg tags=b` -> `["a","b"]`. `--arg tags=` is a list with one empty string; empty lists and empty maps are expressed with `--json` (documented in the help text).
-  3. **Maps and objects** use dotted names: `--arg metadata.utm=email` -> `{"metadata":{"utm":"email"}}`, `--arg campaign.name=spring` -> `{"campaign":{"name":"spring"}}`. The part before the first `.` must be an arg of type `string_map` or `object`; otherwise the pair is passed through as a plain string name (the registry then reports it as unknown).
+  3. **Maps and objects** use dotted names: `--arg metadata.utm=email` -> `{"metadata":{"utm":"email"}}`, `--arg campaign.name=spring` -> `{"campaign":{"name":"spring"}}`. The part before the first `.` must be an arg of type `string_map` or `object`; otherwise `coerce_args` fails with `bad_name` (a key containing `.` cannot be emitted through `args_builder`, and rule 7's name grammar rejects it).
   4. **Null:** for an arg with `nullable = true`, the exact value `null` is JSON null (clears a field). For non-nullable args `null` is an ordinary string.
   5. **Unknown names and unknown commands:** names that match no `ArgSpec` are emitted as strings, so the registry produces the single `invalid_field` error; the coercer never decides validity.
   6. **Duplicates:** a repeated name is an error unless the arg is a `string_list`; the same dotted map entry twice is an error. The error vocabulary is listed below; the CLI prints it and exits 2.
@@ -44,7 +44,7 @@ namespace url_shortener::cli {
 struct arg_pair { std::string name; std::string value; };   // as typed after `--arg`
 
 /// Builds the args object text. @p specs may be empty (unknown command): everything is emitted as strings.
-/// On failure returns false and sets @p error to one of the fixed strings: bad_pair (no '='), bad_name,
+/// On failure returns false and sets @p error to one of the fixed strings: bad_name,
 /// duplicate_name, map_entry_empty, map_entry_duplicate. Never echoes values.
 bool coerce_args(const std::vector<commands::ArgSpec>& specs,
                  const std::vector<arg_pair>& pairs,
@@ -74,7 +74,7 @@ ctest --test-dir cmake-build -R "^cli__06_cli_arg_coercion$" --output-on-failure
 
 | Test file | Target | Label | Cases |
 |---|---|---|---|
-| `tests/unit/cli/06_cli_arg_coercion.cpp` | `cli__06_cli_arg_coercion` | unit | each `ArgType` with a valid value (`limit=10` -> `10`, `enabled=true` -> `true`, `redirect_type=permanent`, `expires_at=2030-01-01T00:00:00Z`); integer edge cases (`0`, `-1`, `+1` -> string, `1.5` -> string, 19 digits -> string, empty -> string); boolean `True` and `1` -> string; `string_list` repeated, single, with commas (kept literal); `metadata.utm=x` and `campaign.name=y` dotted forms incl. two entries and a duplicated dotted entry -> `map_entry_duplicate`; dotted prefix that is not a map/object arg -> passed as a plain name; `nullable` arg with `null` -> JSON null, non-nullable with `null` -> string; value containing `=`, quotes, backslash, newline, UTF-8 (round-trips); no `=` -> `bad_pair`; `=x` and `Bad=1` -> `bad_name`; duplicate scalar name -> `duplicate_name`; empty `specs` -> all strings; hostile names never reach `args_builder` (no exception); the `link.create` example from the success criteria passes `validate_args` (links 01.0's validator). |
+| `tests/unit/cli/06_cli_arg_coercion.cpp` | `cli__06_cli_arg_coercion` | unit | each `ArgType` with a valid value (`limit=10` -> `10`, `enabled=true` -> `true`, `redirect_type=permanent`, `expires_at=2030-01-01T00:00:00Z`); integer edge cases (`0`, `-1`, `+1` -> string, `1.5` -> string, 19 digits -> string, empty -> string); boolean `True` and `1` -> string; `string_list` repeated, single, with commas (kept literal); `metadata.utm=x` and `campaign.name=y` dotted forms incl. two entries and a duplicated dotted entry -> `map_entry_duplicate`; dotted prefix that is not a map/object arg -> `bad_name`; `nullable` arg with `null` -> JSON null, non-nullable with `null` -> string; value containing `=`, quotes, backslash, newline, UTF-8 (round-trips); no `=` -> `split_arg_pair` returns false (the 12 parser maps it to `bad_pair`); `=x` and `Bad=1` -> `bad_name`; duplicate scalar name -> `duplicate_name`; empty `specs` -> all strings; hostile names never reach `args_builder` (no exception); the `link.create` example from the success criteria passes `validate_args` (links 01.0's validator). |
 
 Manual check: none (exercised end-to-end in subtask 13).
 

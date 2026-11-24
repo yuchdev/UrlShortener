@@ -42,10 +42,14 @@ Descriptors (catalog 3.4):
 | Command | Perm | Args (ArgSpec) | Result |
 |---|---|---|---|
 | `job.get` | read | `id` string required | job object |
-| `job.list` | read | `state` enum queued\|running\|succeeded\|failed\|cancelled optional; `limit` int 1..500 default 50; `offset` int >=0 default 0 | `{"items":[job...],"total":n}` |
+| `job.list` | read | `state` enum queued\|running\|succeeded\|failed\|cancelled optional; `limit` int 1..500 default 50; `offset` int >=0 default 0 | `{"items":[job...],"total":n}` — items exclude `result` (T-109, see below) |
 | `job.cancel` | write, mutating | `id` string required | job object (no-op on finished jobs) |
 
 Job object: `{"id","command","state","progress":{"done","total"},"result"?:{...raw...},"error"?:{"code","message"},"created_at","started_at"?,"finished_at"?}`. `result` embeds `result_json` verbatim (already a serialized object); `error` is present for `failed` and for `cancelled` (code `job_cancelled`, per catalog error table: appears in `job.get` with HTTP 200). `started_at` is an additive field. Timestamps: `formatTimestamp` (RFC 3339 UTC).
+
+**`job.list` item shape excludes `result`** (2026-11-18 user decision, T-109). Each `job.list` item carries `id`, `command`, `state`, `progress`, `error` (including `job_cancelled` for a cancelled job), `created_at`, `started_at?` and `finished_at?`, but **never** `result`. Retaining up to the job cap (256) × up to ~1 MiB inline export result each would otherwise let one `job.list` build a ~256 MiB response (T-109 amplification). The serializer takes a `JobDetail` level — `summary` (list, no `result`) vs `full` (`job.get`/`job.cancel`, unchanged full object) — so the single-record shape is untouched; `serialize_job_json` defaults to `full`. Forward note: the 06.0 TUI Jobs/Dashboard screens show a job's `result` by calling `job.get` on the selected id, never from the `job.list` page.
+
+Trust invariant on `result` (C9, LOW follow-up from the same review): `result_json` is embedded verbatim and must be well-formed JSON produced by an in-process builder/serializer, never caller text. The `full` path re-validates it with the same guard `serialize_response` uses (`scan_object` over a `{"r":<value>}` probe at `k_result_scan_limits`); a value that fails is omitted rather than embedded, so a malformed result never corrupts the job object.
 
 Errors: unknown id -> `not_found` (message `job not found`; there is no `job_not_found` code, catalog section 1). `args_digest` is never serialized.
 
@@ -70,7 +74,7 @@ Windows/multi-config: `--config Debug` / `-C Debug`.
 
 | Test file | Target | Label | Cases |
 |---|---|---|---|
-| `tests/unit/commands/54_job_commands.cpp` | `commands__54_job_commands` | unit | `job.get` of queued/running/succeeded/failed/cancelled job shapes (field presence per state: `result` only when set, `error` for failed and cancelled, `finished_at` only when terminal); `job.get` unknown id -> `not_found`; `job.list` default limit, state filter, offset beyond total, limit 501 and 0 -> `invalid_field`, unknown state -> `invalid_field`; `job.cancel` queued, running (state still `running`, later `cancelled`), finished (no-op, same record), unknown -> `not_found`; `ControlSet::User` may `job.get`/`job.list` but `job.cancel` -> `not_authorized`; job JSON never contains the args digest or arg values; `result` is embedded unescaped as an object (valid nesting) |
+| `tests/unit/commands/54_job_commands.cpp` | `commands__54_job_commands` | unit | `job.get` of queued/running/succeeded/failed/cancelled job shapes (field presence per state: `result` only when set, `error` for failed and cancelled, `finished_at` only when terminal); `job.get` unknown id -> `not_found`; `job.list` default limit, state filter, offset beyond total, limit 501 and 0 -> `invalid_field`, unknown state -> `invalid_field`; `job.cancel` queued, running (state still `running`, later `cancelled`), finished (no-op, same record), unknown -> `not_found`; `ControlSet::User` may `job.get`/`job.list` but `job.cancel` -> `not_authorized`; job JSON never contains the args digest or arg values; `result` is embedded unescaped as an object (valid nesting); **`job.list` item for a succeeded job with a result has no `result` key while `job.get` for the same id does** (T-109); the C9 backstop omits a malformed `result_json` at `full` detail instead of embedding it |
 
 Manual check: none.
 

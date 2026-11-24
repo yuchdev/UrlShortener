@@ -17,7 +17,12 @@ HTTP/CLI flows.
 ## Required coverage
 
 - HTTP management and redirect flows through the built binary.
-- CLI command flows through the built binary.
+- CLI command flows through the built binary (`tests/integration/cli/`).
+- `serve-stdio` NDJSON sessions (`cli_40_serve_stdio_session`,
+  `cli_41_serve_stdio_jobs_and_eof`).
+- Conformance corpus replay through CLI/REST/stdio transports
+  (`conformance_10`..`conformance_14`); these tests carry both `conformance`
+  and `integration` labels and run inside the `-L integration` union.
 - Cache-aside and cache invalidation.
 - Config-driven backend selection.
 - SQLite/PostgreSQL/Redis adapter behavior where available.

@@ -52,7 +52,11 @@ This document lists runtime configuration keys for Stage 05 operations.
 
 ## Storage/backend (summary)
 
-See [`docs/storage/configuration.md`](./storage/configuration.md) for backend-specific keys.
+The storage backend is selected by the `--storage-config <FILE>` flag or the
+`URL_SHORTENER_STORAGE_CONFIG` environment variable (flag takes precedence over
+env; without either the built-in in-memory default is used). See
+[`docs/storage/configuration.md`](./storage/configuration.md) for backend YAML
+keys, selection-precedence rules, and file-permission guidance.
 
 ## Security/operational notes
 

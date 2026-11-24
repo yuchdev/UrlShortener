@@ -13,9 +13,11 @@ class AnalyticsStatsValidation(LinkManagementIntegrationBase):
     port=38324
     def test_unknown_slug_policy(self):
         now = int(time.time())
+        # Bounded +-1h window: keeps the span under the T-76 10,000-bucket
+        # cap (04.0/03) while still bracketing the just-recorded event.
         status, payload, _ = request(
             self.port, "GET",
-            f"/api/v1/links/nope/stats?from=0&to={now + 3600}&bucket=hour"
+            f"/api/v1/links/nope/stats?from={now - 3600}&to={now + 3600}&bucket=hour"
         )
         self.assertEqual(200, status)
         self.assertIn('"slug"', payload)

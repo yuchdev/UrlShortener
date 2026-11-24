@@ -1,87 +1,344 @@
 # URL Shortener CLI Reference
 
-The `url_shortener` binary exposes link-management commands through a `link <verb>`
-subcommand syntax, using the same `LinkCommandService` layer as the REST API. Every
-verb maps one-to-one to a REST operation; see [`docs/api/README.md`](../api/README.md)
-for the full REST inventory and field-by-field response documentation (this reference
-does not duplicate those descriptions).
+The `url_shortener` binary exposes operations through four local modes, all over
+the same command registry ([`docs/commands/README.md`](../commands/README.md)):
+`link <verb>` (sugar shortcuts for the nine legacy link commands), `cmd <command>`
+(generic one-shot runner), `serve-stdio` (NDJSON transport for a parent process),
+and `tui` (interactive terminal UI). The full REST inventory and field-by-field
+response documentation is in [`docs/api/README.md`](../api/README.md); this
+reference does not duplicate those descriptions.
 
-## Storage limitation
+## Storage and backend selection
 
-The CLI uses the in-memory link store (`linkRepository()`) which is a per-process,
-non-persistent singleton. **Two separate CLI invocations do not share state.** A link
-created by `link create` in one process invocation is invisible to `link get` in a
-separate invocation; only calls within the same process observe each other. Practical
-consequence: the CLI cannot be used for create-then-read scripting across separate
-process invocations with the current in-memory backend. See
-[Milestone 0003 status, Task 03.0](../roadmap/0003-cli_rest_interfaces/status.md)
-for full background on this design decision.
+By default the CLI uses the in-memory link store (`linkRepository()`), a
+per-process singleton. **Two separate CLI invocations with the default backend
+do not share state.** A link created by `link create` in one process invocation
+is invisible to `link get` in a separate invocation; only calls within the *same*
+process invocation observe each other. The default cases in the `cli_03` test
+suite assert this isolation and remain valid.
+
+### Global options
+
+The following option applies to all nine `link <verb>` commands and may appear
+anywhere among the verb's flags:
+
+| Option | Description |
+|--------|-------------|
+| `--storage-config <FILE>` | Path to a storage configuration YAML file. Selects the backend for this invocation. Overrides `URL_SHORTENER_STORAGE_CONFIG`. Default: in-memory. |
+
+**Selection precedence** (highest to lowest):
+
+1. `--storage-config <FILE>` flag on the command line.
+2. `URL_SHORTENER_STORAGE_CONFIG` environment variable.
+3. Built-in in-memory default (no config path set).
+
+An inherited `URL_SHORTENER_STORAGE_CONFIG` silently switches the backend for
+every CLI invocation in that shell session, including one-off commands that do
+not expect persistence (threat model T-41). Set it deliberately and unset it
+when done.
+
+`--storage-config` is a *reserved* global token: it is stripped from the
+argument list before the per-verb parser runs, so it cannot accidentally be
+parsed as another verb's flag value.
+
+### Sharing a backend with the server
+
+Pass `--storage-config <same-yaml>` to both the server and the CLI to share
+one persistent backend. Useful for one-off admin operations (`link disable`,
+`link delete`) against a running server without needing the REST API.
+
+**Example — SQLite backend, two separate invocations:**
+
+Assuming `storage.yaml` contains:
+
+```yaml
+metadata:
+  backend: sqlite
+  sqlite_path: /var/lib/shortener/links.db
+```
+
+```bash
+url_shortener link create \
+  --storage-config storage.yaml \
+  --url https://example.com/docs \
+  --slug docs
+
+url_shortener link get \
+  --storage-config storage.yaml \
+  --slug docs
+```
+
+The second command finds the link created by the first because both use the
+same SQLite database. Use an **absolute path** for `sqlite_path` when running
+CLI commands from different working directories; a relative path is resolved
+against the process working directory at startup.
+
+**Cross-process visibility:** a change made by the CLI (e.g. `link disable`)
+becomes visible to a running server within one L1 cache TTL — at most **5 s**
+for persistent backends, independent of redirect traffic rate.
+
+**Redirect counters (write-behind):** redirect counts are flushed to the
+database approximately every **30 s** and at server shutdown. `link stats`
+reads in-process click events accumulated since the last flush; it will show
+empty stats immediately after a server restart until the first redirect is
+recorded and flushed. Stats returned across separate processes reflect the
+last persisted snapshot only (limitation R-3).
+
+**Race note:** a concurrent server stats flush can overwrite a `disable` or
+soft-delete committed by a CLI command in its read→write window (cross-process
+race R-1, accepted limitation). Within a single process, flush-vs-update races
+are serialized. See [decision-log D12](
+../roadmap/0006-unified-command-model-and-tui/decision-log.md) for the full
+analysis.
+
+**Security:** the YAML file may hold database credentials (a Postgres DSN).
+Keep its permissions tight (`0600`, owned by the service account) and **never
+commit it to source control**. See
+[`docs/storage/configuration.md`](../storage/configuration.md) for the full
+permissions guidance.
 
 ## Invocation
+
+### link \<verb\> (sugar)
 
 ```
 url_shortener link <verb> [flags...]
 ```
 
-On success (exit 0), a single JSON object is written to **stdout**. On failure
-(exit > 0), a diagnostic line is written to **stderr** with stdout empty — suitable
-for scripting with `$?` alone:
+On success (exit 0), a single JSON object (the `result` field only, legacy
+format) is written to **stdout**. On failure (exit > 0), a diagnostic line is
+written to **stderr** with stdout empty — suitable for scripting with `$?`
+alone:
 
 ```bash
 url_shortener link create --url https://example.com/docs --slug docs | jq '.slug'
 ```
 
+Flags compile to the same `args` object as `cmd <name> --json`; `link <verb>`
+output is the `result` field only (backward-compatible), while `cmd` prints the
+full response envelope. See [`docs/commands/README.md`](../commands/README.md)
+for the full command catalog.
+
+### cmd
+
+```
+url_shortener cmd <name> [options]
+```
+
+One-shot generic command runner. Prints the full response envelope on stdout,
+then exits. The command name is a dotted identifier such as `link.create`.
+
+| Flag | Description | Default |
+|------|-------------|---------|
+| `--json <TEXT>` | Args as a JSON object. Use `--json -` to read from stdin (keeps secrets out of `argv`). Mutually exclusive with `--arg`. | - |
+| `--arg <NAME=VALUE>` | One typed argument; repeatable, order preserved. Mutually exclusive with `--json`. | - |
+| `--id <TEXT>` | Correlation id echoed in the response. | `cli-1` |
+| `--raw` | Print only the envelope's `result` field. | off |
+| `--dry-run` | Validate without applying (`options.dry_run`). | off |
+| `--async` | Request asynchronous execution (`options.async`). | off |
+| `--no-wait` | Do not wait for an asynchronous job; print the queued envelope and exit. | off |
+| `--read-only` | Run the local session as a read-only user. | off |
+| `--log-file <PATH>` | Write logs to a file. Mutually exclusive with `--verbose`. | disabled |
+| `--verbose` | Write logs to stderr. | off |
+| `--base-domain <URL>` | Base domain for generated short URLs. | - |
+| `--allow-private-targets <BOOL>` | Permit private/intranet targets (`true`/`false`). | - |
+| `--storage-config <FILE>` | Storage configuration YAML. | in-memory |
+
+**Default correlation id.** When `--id` is omitted the `cmd` mode assigns
+`"cli-1"`.
+
+**Output shape.** By default `cmd` prints the full response envelope:
+`{"v":1,"id":"cli-1","ok":true,"result":{...}}`. With `--raw` only the
+`result` object is printed. Exit code is derived from `error.code` per the
+table below.
+
+**Error behavior:**
+
+- An invalid command name (syntactically wrong, e.g. `LINK.CREATE`) →
+  `invalid_envelope` on stdout with exit 2; the operand is never echoed.
+- A malformed `--arg` token (no `=` separator, e.g. `--arg foo`) →
+  `invalid_envelope` on stdout with exit 2.
+- A usage error (unknown option, missing value, etc.) →
+  `cmd failed: invalid_request: <reason>` on **stderr** (not stdout), exit 2.
+
+**Examples:**
+
+```bash
+# Full envelope output
+url_shortener cmd link.create \
+  --json '{"target_url":"https://example.com/docs","slug":"docs"}'
+
+# result only
+url_shortener cmd system.info --raw
+
+# args via repeated --arg flags
+url_shortener cmd link.list --arg status=active --arg limit=10
+
+# read the args object from stdin (keeps secrets out of argv)
+echo '{"target_url":"https://example.com","slug":"ex"}' \
+  | url_shortener cmd link.create --json -
+```
+
+### serve-stdio
+
+```
+url_shortener serve-stdio [options]
+```
+
+NDJSON transport: one request envelope per stdin line, one response envelope
+per stdout line, strictly in order. Logs go to stderr (never stdout). EOF on
+stdin drains in-flight jobs and exits `0`. See
+[`docs/commands/adding-a-transport.md`](../commands/adding-a-transport.md) for
+the full framing rules, shutdown contract, and IPC design sketch.
+
+| Flag | Description | Default |
+|------|-------------|---------|
+| `--read-only` | Run as a read-only user (`ControlSet::User`). | admin |
+| `--no-file-paths` | Reject `link.import`/`link.export` `path` arguments (returns `unsupported`). Mutually exclusive with `--path-root`. | off |
+| `--path-root <DIR>` | Confine `link.import`/`link.export` `path` to this directory. Mutually exclusive with `--no-file-paths`. | off |
+| `--base-domain <URL>` | Base domain for generated short URLs. | - |
+| `--allow-private-targets <BOOL>` | Permit private/intranet targets. | - |
+| `--storage-config <FILE>` | Storage configuration YAML. | in-memory |
+
+Exit codes: `0` clean shutdown (EOF after drain); `2` startup error (e.g.
+invalid `--path-root`); `4` stream failure.
+
+**Security posture.** By default `serve-stdio` grants `ControlSet::Admin` and
+full filesystem access, because the assumed peer is the local operator (the
+parent process that launched it). For an untrusted or sidecar peer (e.g. a
+webview-driven parent), always pass both `--read-only` and `--no-file-paths`.
+
+**Example:**
+
+```bash
+echo '{"v":1,"id":"c-1","command":"link.create",' \
+'"args":{"target_url":"https://example.com/docs","slug":"docs"}}' \
+  | url_shortener serve-stdio
+```
+
+### tui
+
+```
+url_shortener tui [--storage-config <FILE>] [--theme dark|light|mono]
+                  [--read-only] [--yes] [--log-file <PATH>]
+                  [--no-file-paths | --path-root <DIR>]
+```
+
+Launches the interactive terminal UI over the configured storage backend. It
+runs the **same** commands as the REST API through the one shared command
+registry over the active backend, so it reads and writes the same store every
+other mode uses. No HTTP/HTTPS server is started, no socket is bound, and no
+`uri.txt` is touched. The mode requires an interactive terminal; run against a
+pipe or redirect it exits `2`.
+
+| Flag | Description | Default |
+|------|-------------|---------|
+| `--storage-config <FILE>` | Storage configuration YAML (the shared global flag above). | in-memory |
+| `--theme dark\|light\|mono` | Colour theme; `mono` is the ASCII/no-colour fallback. | `dark` |
+| `--read-only` | Run the session as a read-only user; write controls render disabled, not hidden. | off |
+| `--yes` | Skip mutation confirmation dialogs. | off |
+| `--log-file <PATH>` | Write logs and audit lines to this file (created `0600`). Logs never go to the terminal while the UI owns it. | `./url_shortener-tui.log` |
+| `--no-file-paths` | Refuse `link.import`/`link.export` `path` arguments; a `path` returns `unsupported`. Mutually exclusive with `--path-root`. | off |
+| `--path-root <DIR>` | Confine `link.import`/`link.export` `path` to this absolute directory; a target outside the canonicalized root is refused `invalid_field`. Mutually exclusive with `--no-file-paths`. | off |
+
+Exit codes: `0` on a clean quit; `1` for a parse error (an unknown flag, an
+invalid `--theme`, a non-absolute `--path-root`, or combining `--no-file-paths`
+with `--path-root`); `2` for a non-terminal stdin/stdout, a log-file open
+failure, or `built without TUI support` when compiled with
+`-DURLSHORTENER_ENABLE_TUI=OFF`; `4` on a storage/bootstrap failure.
+
+**File-path capability.** As a local-operator tool the TUI enables
+`link.import`/`link.export` `path` arguments against the operator's **full
+filesystem** by default. At parity with `serve-stdio`, `--no-file-paths` turns
+every `path` into `unsupported`, and `--path-root <DIR>` confines `path` to a
+canonical root (component-wise prefix; symlinks resolved; a target outside it
+is `invalid_field`). Both path forms require `write`, so a `--read-only`
+session cannot use `path` at all (the registry denies it). The log/audit file
+is created `0600` and the file sink refuses a pre-planted, group/other-readable,
+hard-linked, or symlinked path (fail closed).
+
 ## Exit codes
 
-| Code | Condition |
-|------|-----------|
-| `0` | Success. |
-| `1` | Link not found. |
-| `2` | Bad input: invalid URL, slug, or field value; or a reserved slug was supplied. |
-| `3` | Slug conflict: the requested slug is already in use. |
-| `4` | Storage or internal error. |
+| Code | Condition | Error code(s) |
+|------|-----------|---------------|
+| `0` | Success. | - |
+| `1` | Link or job not found. | `not_found` |
+| `2` | Bad input: invalid URL, slug, field, or command name; missing required arg; request not parseable; `dry_run`/`async` not supported for this command. | `invalid_envelope`, `unknown_command`, `invalid_field`, `invalid_url`, `invalid_slug`, `reserved_slug`, `unsupported` |
+| `3` | Slug conflict: the requested slug is already in use. | `slug_conflict` |
+| `4` | Storage or internal error; job queue full; job cancelled. | `storage_failure`, `internal`, `busy`, `job_cancelled` |
+| `5` | Caller's role lacks the required permission. | `not_authorized` |
 
-The mapping is implemented by `ExitCodeForAppError` in
-`src/cli/link_command_dispatch.cpp`.
+The exit-code mapping is implemented by `ExitCodeForAppError` in
+`src/cli/link_command_dispatch.cpp` and by the commands error catalog
+(`url_shortener::commands::all_error_infos()`). The full error table including
+HTTP statuses is in
+[`docs/commands/README.md`](../commands/README.md#1-envelope).
 
-Parse errors (an unrecognized flag, a malformed flag value, or a missing
-required flag) also exit `1`, thrown before any command reaches
-`LinkCommandService` - diagnostics appear on stderr, same as any other
-failure.
+**Usage errors (all modes).** A command-line *usage* error — an unknown
+subcommand (`url_shortener nonsense`), an unknown `link` verb
+(`url_shortener link bogus`), an unknown flag, a flag missing its value, a bad
+flag value, or a mutually-exclusive flag combination — is reported on **stderr**
+and exits `2` (bad input) in **every** mode, never the FATAL `unhandled_exception`
+log line and exit `1` that is reserved for genuinely unexpected failures.
+Diagnostics are value-free and control-sanitized: a supplied flag *value* is
+never echoed (only the flag name/stem), and any argv-derived byte outside
+printable ASCII is scrubbed to `?`, so a crafted token cannot forge a log line or
+inject a terminal escape sequence (CWE-117).
+
+**Per-mode shape.** Server, `link <verb>`, `serve-stdio`, and `tui` print a
+concise `error: <message>` line followed by a `Try 'url_shortener --help' for
+usage.` hint. `cmd` keeps its envelope-style boundary: argument and name errors
+exit `2` (`invalid_envelope` or `invalid_field`) on **stdout** as a full response
+envelope, while a `cmd` usage error (unknown option, missing value, …) prints
+`cmd failed: invalid_request: <reason>` on stderr with exit `2`.
+
+**Not a usage error.** A malformed environment variable
+(`SHORTENER_DEFAULT_EXPIRY_SECONDS`, `SHORTENER_GENERATED_SLUG_LENGTH`) and
+server-mode startup failures (unreadable TLS material, invalid storage config)
+are not flag-parse errors and keep their own handling (storage bootstrap failures
+exit `4`).
 
 ## Commands
 
-Nine verbs are available. `link get` is the only verb that covers two REST
-endpoints (`GET /api/v1/links/{slug}` and `GET /api/v1/links/id/{id}`) via a
-single verb with a `--slug`/`--id` selector. `link preview` maps to a single
-REST endpoint (`GET /api/v1/links/{slug}/preview`) but accepts the same
-`--slug`/`--id` selector as a CLI-only convenience - there is no
-by-id REST preview endpoint.
+Nine legacy `link <verb>` sugar commands are available. They compile flags to
+the same `args` object as `cmd <name> --json` and produce the `result` field
+only (backward-compatible with pre-0006 scripts). `link get` and `link preview`
+each cover two REST endpoints via a `--slug`/`--id` selector. For the full
+command catalog — including `link.list`, `db.*`, `job.*`, `system.info`,
+`link.import`, and `link.export` (accessible via `cmd`) — see
+[`docs/commands/README.md`](../commands/README.md).
 
-| Verb | REST operation_id | REST path |
-|------|-------------------|-----------|
-| `link create` | [`post_api_v1_links`](../api/README.md) | `POST /api/v1/links` |
-| `link get` | [`get_api_v1_links_slug`](../api/README.md) / [`get_api_v1_links_id_id`](../api/README.md) | `GET /api/v1/links/{slug}` / `GET /api/v1/links/id/{id}` |
-| `link update` | [`patch_api_v1_links_slug`](../api/README.md) | `PATCH /api/v1/links/{slug}` |
-| `link delete` | [`delete_api_v1_links_slug`](../api/README.md) | `DELETE /api/v1/links/{slug}` |
-| `link enable` | [`post_api_v1_links_slug_enable`](../api/README.md) | `POST /api/v1/links/{slug}/enable` |
-| `link disable` | [`post_api_v1_links_slug_disable`](../api/README.md) | `POST /api/v1/links/{slug}/disable` |
-| `link restore` | [`post_api_v1_links_slug_restore`](../api/README.md) | `POST /api/v1/links/{slug}/restore` |
-| `link preview` | [`get_api_v1_links_slug_preview`](../api/README.md) | `GET /api/v1/links/{slug}/preview` |
-| `link stats` | [`get_api_v1_links_slug_stats`](../api/README.md) | `GET /api/v1/links/{slug}/stats` |
+| Verb | Command | REST operation_id | REST path |
+|------|---------|-------------------|-----------|
+| `link create` | `link.create` | [`post_api_v1_links`](../api/README.md) | `POST /api/v1/links` |
+| `link get` | `link.get` | [`get_api_v1_links_slug`](../api/README.md) / [`get_api_v1_links_id_id`](../api/README.md) | `GET /api/v1/links/{slug}` / `GET /api/v1/links/id/{id}` |
+| `link update` | `link.update` | [`patch_api_v1_links_slug`](../api/README.md) | `PATCH /api/v1/links/{slug}` |
+| `link delete` | `link.delete` | [`delete_api_v1_links_slug`](../api/README.md) | `DELETE /api/v1/links/{slug}` |
+| `link enable` | `link.enable` | [`post_api_v1_links_slug_enable`](../api/README.md) | `POST /api/v1/links/{slug}/enable` |
+| `link disable` | `link.disable` | [`post_api_v1_links_slug_disable`](../api/README.md) | `POST /api/v1/links/{slug}/disable` |
+| `link restore` | `link.restore` | [`post_api_v1_links_slug_restore`](../api/README.md) | `POST /api/v1/links/{slug}/restore` |
+| `link preview` | `link.preview` | [`get_api_v1_links_slug_preview`](../api/README.md) | `GET /api/v1/links/{slug}/preview` |
+| `link stats` | `link.stats` | [`get_api_v1_links_slug_stats`](../api/README.md) | `GET /api/v1/links/{slug}/stats` |
 
 ## Command pairs
 
-Every CLI verb and its REST counterpart invoke the exact same
-`LinkCommandService` method (see [ADR 0001](../adr/0001-cli-rest-shared-command-layer.md)),
-so the two are functionally interchangeable - pick whichever transport fits the
-context. The commands below operate on the same link (`docs`) so the pairs can
-be compared directly; full flag/field references are in the sections below and
-in [`docs/api/README.md`](../api/README.md).
+Every `link <verb>` sugar command and its REST counterpart invoke the exact same
+command-registry handler (see [ADR 0001](../adr/0001-cli-rest-shared-command-layer.md)
+and [ADR 0002](../adr/0002-unified-command-model.md)), so the two are
+functionally interchangeable for the nine original link commands. The `cmd`
+column shows the equivalent generic invocation for every command including those
+without `link <verb>` sugar. The commands below operate on the same link
+(`docs`) so the pairs can be compared directly; full flag/field references are
+in the sections below and in [`docs/api/README.md`](../api/README.md).
+
+> **Note on gated routes.** The `GET /api/v1/links` (list), `GET /api/v1/jobs*`,
+> and `POST /api/v1/commands` routes require `--command-api-enabled true` on the
+> server. See [`docs/commands/README.md`](../commands/README.md#2-transports-how-each-carries-the-same-command)
+> for access-control details.
 
 | Command | REST | CLI |
 |---|---|---|
-| Create | `curl -X POST http://localhost:8000/api/v1/links -H 'Content-Type: application/json' -d '{"url":"https://example.com/docs","slug":"docs"}'` | `url_shortener link create --url https://example.com/docs --slug docs` |
+| Create | `curl -X POST http://localhost:8000/api/v1/links -H 'Content-Type: application/json' -d '{"target_url":"https://example.com/docs","slug":"docs"}'` (`url` also accepted) | `url_shortener link create --url https://example.com/docs --slug docs` |
 | Get by slug | `curl http://localhost:8000/api/v1/links/docs` | `url_shortener link get --slug docs` |
 | Get by ID | `curl http://localhost:8000/api/v1/links/id/<id>` | `url_shortener link get --id <id>` |
 | Update | `curl -X PATCH http://localhost:8000/api/v1/links/docs -H 'Content-Type: application/json' -d '{"enabled":false,"tags":["campaign"]}'` | `url_shortener link update --slug docs --enabled false --tags campaign` |
@@ -90,15 +347,78 @@ in [`docs/api/README.md`](../api/README.md).
 | Disable | `curl -X POST http://localhost:8000/api/v1/links/docs/disable` | `url_shortener link disable --slug docs` |
 | Restore | `curl -X POST http://localhost:8000/api/v1/links/docs/restore` | `url_shortener link restore --slug docs` |
 | Preview | `curl http://localhost:8000/api/v1/links/docs/preview` | `url_shortener link preview --slug docs` |
-| Stats | `curl http://localhost:8000/api/v1/links/docs/stats?from=0&to=9999999999&bucket=day` | `url_shortener link stats --slug docs --from 0 --to 9999999999 --bucket day` |
+| Stats | `curl 'http://localhost:8000/api/v1/links/docs/stats?from=1710000000&to=1710086400&bucket=day'` | `url_shortener link stats --slug docs --from 1710000000 --to 1710086400 --bucket day` |
+| List (active) | `curl 'http://localhost:8000/api/v1/links?status=active'` (gated) | `url_shortener cmd link.list --arg status=active` |
+| Import (inline) | `curl -X POST http://localhost:8000/api/v1/commands -H 'Content-Type: application/json' -d '{"v":1,"command":"link.import","args":{"format":"csv","data":"https://example.com/a,slug1"}}'` (gated) | `url_shortener cmd link.import --json '{"format":"csv","data":"https://example.com/a,slug1"}'` |
+| Export (inline) | `curl -X POST http://localhost:8000/api/v1/commands -H 'Content-Type: application/json' -d '{"v":1,"command":"link.export","args":{"format":"csv"}}'` (gated) | `url_shortener cmd link.export --arg format=csv` |
+| Get job | `curl http://localhost:8000/api/v1/jobs/<id>` (gated) | `url_shortener cmd job.get --arg id=<id>` |
+| List jobs | `curl http://localhost:8000/api/v1/jobs` (gated) | `url_shortener cmd job.list` |
+| Cancel job | `curl -X POST http://localhost:8000/api/v1/jobs/<id>/cancel` (gated) | `url_shortener cmd job.cancel --arg id=<id>` |
+| DB tables | `curl -X POST http://localhost:8000/api/v1/commands -H 'Content-Type: application/json' -d '{"v":1,"command":"db.tables"}'` (gated) | `url_shortener cmd db.tables` |
+| DB rows | `curl -X POST http://localhost:8000/api/v1/commands -H 'Content-Type: application/json' -d '{"v":1,"command":"db.rows","args":{"table":"links"}}'` (gated) | `url_shortener cmd db.rows --arg table=links` |
+| System info | `curl -X POST http://localhost:8000/api/v1/commands -H 'Content-Type: application/json' -d '{"v":1,"command":"system.info"}'` (gated) | `url_shortener cmd system.info` |
 
 **One real difference:** REST commands act on whatever link state the running
-server process holds; the CLI's in-memory store is per-invocation and does
-not persist across separate process runs (see [Storage limitation](#storage-limitation)
-above) - so, unlike the REST pairs above, running the CLI `create` example
-and then the CLI `get`/`update`/etc. example in *separate* invocations will
-not find the link. Within a single running server, the REST pairs above do
-work exactly as shown.
+server holds in its configured backend. The CLI's default in-memory store is
+per-invocation and does not persist across separate process runs (see
+[Storage and backend selection](#storage-and-backend-selection) above). To
+share the same persistent backend as the server, supply `--storage-config
+<yaml>` (or set `URL_SHORTENER_STORAGE_CONFIG`) pointing at the same config
+file. Within a single running server, the REST pairs above work exactly as
+shown regardless of storage backend.
+
+## Jobs from the CLI
+
+`link.import` and `link.export` are job-kind commands: `cmd` submits the job
+and, by default, waits for it to finish (polling `job.get` internally) and then
+prints the final job envelope:
+
+```json
+{"v":1,"id":"cli-1","ok":true,"result":{"id":"j-1","command":"link.import",
+"state":"succeeded","result":{"total":1,"created":1,...},...}}
+```
+
+Pass `--no-wait` to print the accepted (queued) envelope immediately without
+waiting. This is only useful against a long-lived process (a running server or
+`serve-stdio` session in a background shell); in a one-shot `cmd` invocation the
+process exits before the job can run.
+
+**Polling `job.get` manually:**
+
+```bash
+# Submit without waiting
+url_shortener cmd link.import \
+  --json '{"format":"csv","data":"https://example.com/a,slug1"}' \
+  --no-wait
+# Returns: {"v":1,"id":"cli-1","ok":true,"job":{"id":"j-1","state":"queued"}}
+
+# Poll until done (replace j-1 with the actual id)
+url_shortener cmd job.get --arg id=j-1
+
+# Cancel if needed
+url_shortener cmd job.cancel --arg id=j-1
+```
+
+Job records are held in memory by the process that owns the registry. They are
+lost on restart; `job.list` shows only the current process's jobs.
+
+## Security notes
+
+- **Local operator rights.** All local modes (`link <verb>`, `cmd`, `serve-stdio`,
+  `tui`) run as `ControlSet::Admin` by default, the same trust boundary as the
+  person who can start the process. Pass `--read-only` to any mode to downgrade
+  to `ControlSet::User` (read-only commands only).
+- **`path` arguments allowed locally, refused on REST.** `link.import`/`link.export`
+  `path` arguments are granted to local operators by default; REST always refuses
+  them with `unsupported`. Pass `--no-file-paths` to disable, or `--path-root <DIR>`
+  to confine to a directory.
+- **No listener in local modes.** `cmd`, `serve-stdio`, and `tui` never start an
+  HTTP/HTTPS server, never bind a socket, and never touch `uri.txt`. The process
+  communicates only via stdin/stdout (stdio) or the terminal (tui).
+- **No secrets in `cmd` output.** Logging is disabled by default in `cmd` so
+  stderr stays clean. Pass `--log-file <PATH>` to write an audit trail to a file,
+  or `--verbose` to write to stderr. Neither path logs request argument values
+  (audit lines record command name, `id`, and outcome only).
 
 ---
 

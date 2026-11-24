@@ -1,0 +1,9 @@
+{ "recorded": "2026-11-20", "compiler": "placeholder", "cpu": "placeholder (nightly CI runner class)", "calibration_ns": 1.0,
+  "scenarios": {
+    "root_cache_hit": {"p50_ns": 0, "p95_ns": 0, "p99_ns": 0, "n": 200000},
+    "root_cache_miss_repo_hit": {"p50_ns": 0, "p95_ns": 0, "p99_ns": 0, "n": 200000},
+    "prefixed_cache_hit": {"p50_ns": 0, "p95_ns": 0, "p99_ns": 0, "n": 200000},
+    "prefixed_cache_miss_repo_hit": {"p50_ns": 0, "p95_ns": 0, "p99_ns": 0, "n": 200000},
+    "root_404": {"p50_ns": 0, "p95_ns": 0, "p99_ns": 0, "n": 200000}
+  }
+}

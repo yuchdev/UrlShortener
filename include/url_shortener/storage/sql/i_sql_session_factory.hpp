@@ -120,6 +120,22 @@ public:
         RepoError* error) = 0;
 
     /**
+     * @brief Looks up a link row by its stable id.
+     * @param sql SELECT statement from `SqlDialect::SelectByIdSql` (binds
+     * `:id`, applies `LIMIT 1`).
+     * @param id Stable link id to look up.
+     * @param[out] error If non-null, set to `RepoError::not_found` when no
+     * row matches, the mapped exception error on a SOCI failure, or
+     * `RepoError::none` on a successful read.
+     * @return The matching `SqlRow` on success; `std::nullopt` if no row was
+     * found or if a SOCI exception occurred. Callers distinguish the two by
+     * checking `error`.
+     */
+    virtual std::optional<SqlRow> SelectById(const std::string& sql,
+                                             const std::string& id,
+                                             RepoError* error) = 0;
+
+    /**
      * @brief Updates an existing link row using the dialect's UPDATE SQL.
      * @param sql UPDATE statement from `SqlDialect::UpdateSql`.
      * @param row New column values; `short_code` identifies the row to

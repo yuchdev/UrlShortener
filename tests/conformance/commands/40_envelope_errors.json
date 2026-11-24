@@ -1,0 +1,371 @@
+{
+  "corpus_version": 1,
+  "suite": "envelope_errors",
+  "description": "Registry-level envelope validation and the catalog error codes it produces (invalid_envelope, unknown_command, invalid_field, unsupported). Malformed/closed-envelope cases are replayed verbatim through the raw_request-capable transports (direct, rest_generic, stdio); id echo/generation, unknown command and the options-unsupported cases use a real request envelope and run on every capability-eligible transport. Every code is asserted identically across transports.",
+  "cases": [
+    {
+      "name": "envelope_not_json",
+      "doc": "a body that is not JSON is rejected invalid_envelope with a server-minted id",
+      "command": "command.list",
+      "steps": [
+        {
+          "label": "send",
+          "raw_request": "{not json",
+          "expect": {
+            "ok": false,
+            "error": {
+              "code": "invalid_envelope"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "envelope_not_object",
+      "doc": "a top-level JSON array (not an object) is invalid_envelope",
+      "command": "command.list",
+      "steps": [
+        {
+          "label": "send",
+          "raw_request": "[1,2]",
+          "expect": {
+            "ok": false,
+            "error": {
+              "code": "invalid_envelope"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "envelope_missing_command",
+      "doc": "an envelope without the required command field is invalid_envelope",
+      "command": "command.list",
+      "steps": [
+        {
+          "label": "send",
+          "raw_request": "{\"v\":1}",
+          "expect": {
+            "ok": false,
+            "error": {
+              "code": "invalid_envelope"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "envelope_bad_version",
+      "doc": "an unsupported envelope version (v=2) is invalid_envelope",
+      "command": "command.list",
+      "steps": [
+        {
+          "label": "send",
+          "raw_request": "{\"v\":2,\"command\":\"command.list\"}",
+          "expect": {
+            "ok": false,
+            "error": {
+              "code": "invalid_envelope"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "envelope_missing_version",
+      "doc": "an envelope without the required v field is invalid_envelope",
+      "command": "command.list",
+      "steps": [
+        {
+          "label": "send",
+          "raw_request": "{\"command\":\"command.list\"}",
+          "expect": {
+            "ok": false,
+            "error": {
+              "code": "invalid_envelope"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "envelope_command_wrong_type",
+      "doc": "a non-string command (a number) is invalid_envelope",
+      "command": "command.list",
+      "steps": [
+        {
+          "label": "send",
+          "raw_request": "{\"v\":1,\"command\":5}",
+          "expect": {
+            "ok": false,
+            "error": {
+              "code": "invalid_envelope"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "envelope_id_too_long",
+      "doc": "a client id longer than the 64-byte cap is invalid_envelope; the response echoes a server-minted id, never the oversize client id",
+      "command": "command.list",
+      "steps": [
+        {
+          "label": "send",
+          "raw_request": "{\"v\":1,\"id\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"command\":\"command.list\"}",
+          "expect": {
+            "ok": false,
+            "error": {
+              "code": "invalid_envelope"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "envelope_extra_top_level_key",
+      "doc": "the closed envelope rejects an unknown top-level key with invalid_envelope",
+      "command": "command.list",
+      "steps": [
+        {
+          "label": "send",
+          "raw_request": "{\"v\":1,\"command\":\"command.list\",\"foo\":1}",
+          "expect": {
+            "ok": false,
+            "error": {
+              "code": "invalid_envelope"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "envelope_options_non_boolean",
+      "doc": "a non-boolean options.dry_run is invalid_envelope (options carry only boolean dry_run/async)",
+      "command": "command.list",
+      "steps": [
+        {
+          "label": "send",
+          "raw_request": "{\"v\":1,\"command\":\"command.list\",\"options\":{\"dry_run\":\"yes\"}}",
+          "expect": {
+            "ok": false,
+            "error": {
+              "code": "invalid_envelope"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "envelope_options_unknown_key",
+      "doc": "an unknown options key is invalid_envelope (the options object is closed)",
+      "command": "command.list",
+      "steps": [
+        {
+          "label": "send",
+          "raw_request": "{\"v\":1,\"command\":\"command.list\",\"options\":{\"nope\":true}}",
+          "expect": {
+            "ok": false,
+            "error": {
+              "code": "invalid_envelope"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "envelope_args_not_object",
+      "doc": "an args field that is a string, not an object, is invalid_envelope",
+      "command": "link.get",
+      "steps": [
+        {
+          "label": "send",
+          "raw_request": "{\"v\":1,\"command\":\"link.get\",\"args\":\"x\"}",
+          "expect": {
+            "ok": false,
+            "error": {
+              "code": "invalid_envelope"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "unknown_command_case_sensitive",
+      "doc": "an upper-case command name (LINK.CREATE) violates the lower-case command grammar and is rejected invalid_envelope at envelope validation, before registry lookup, identically on EVERY capability-eligible transport. Sent as a real request envelope (not raw_request) so the structured transports replay it too - in particular cli_cmd maps the invalid name to this same envelope instead of crashing with a FATAL line and exit 1 (see DEVIATIONS: spec table expected unknown_command, but the product rejects the malformed name shape first)",
+      "command": "command.list",
+      "steps": [
+        {
+          "label": "send",
+          "request": {
+            "v": 1,
+            "command": "LINK.CREATE",
+            "args": {}
+          },
+          "expect": {
+            "ok": false,
+            "error": {
+              "code": "invalid_envelope"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "envelope_nul_and_control_chars_in_string",
+      "doc": "a NUL (\\u0000) inside a string arg is rejected invalid_field (not invalid_envelope: the envelope is well-formed, the decoded arg is not) and the process stays healthy - the following command.list still succeeds",
+      "command": "link.create",
+      "steps": [
+        {
+          "label": "nul-arg",
+          "raw_request": "{\"v\":1,\"command\":\"link.create\",\"args\":{\"target_url\":\"https://example.com/x\",\"slug\":\"a\\u0000b\"}}",
+          "expect": {
+            "ok": false,
+            "error": {
+              "code": "invalid_field"
+            }
+          }
+        },
+        {
+          "label": "still-healthy",
+          "raw_request": "{\"v\":1,\"command\":\"command.list\",\"args\":{}}",
+          "expect": {
+            "ok": true,
+            "result": {
+              "commands": "<any>"
+            },
+            "match": "subset"
+          }
+        }
+      ]
+    },
+    {
+      "name": "unknown_command_basic",
+      "doc": "a well-formed but unregistered command name is unknown_command (lookup fails after the envelope validates), identically on every transport",
+      "command": "nope.nothing",
+      "steps": [
+        {
+          "label": "send",
+          "request": {
+            "v": 1,
+            "command": "nope.nothing",
+            "args": {}
+          },
+          "expect": {
+            "ok": false,
+            "error": {
+              "code": "unknown_command"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "envelope_id_echo",
+      "doc": "a request carrying an id has that id echoed in the response on every id-carrying transport (N4)",
+      "command": "command.list",
+      "steps": [
+        {
+          "label": "send",
+          "request": {
+            "v": 1,
+            "id": "c-77",
+            "command": "command.list",
+            "args": {}
+          },
+          "expect": {
+            "ok": true,
+            "result": {
+              "commands": "<any>"
+            },
+            "match": "subset"
+          }
+        }
+      ]
+    },
+    {
+      "name": "envelope_id_generated",
+      "doc": "a request with no id gets a server-minted id (srv-<n>, or the cli-<n> the one-shot CLI mints); the harness checks the generated-id shape via N4",
+      "command": "command.list",
+      "steps": [
+        {
+          "label": "send",
+          "request": {
+            "v": 1,
+            "command": "command.list",
+            "args": {}
+          },
+          "expect": {
+            "ok": true,
+            "result": {
+              "commands": "<any>"
+            },
+            "match": "subset"
+          }
+        }
+      ]
+    },
+    {
+      "name": "options_unsupported_dry_run",
+      "doc": "options.dry_run on a command that does not support it (link.get) is unsupported, after authorization and arg validation pass (the slug is valid)",
+      "command": "link.get",
+      "transports": {
+        "skip": {
+          "rest_resource": "rest_resource carries no envelope options block; the generic/CLI/stdio/TUI transports convey options and assert the unsupported outcome"
+        }
+      },
+      "steps": [
+        {
+          "label": "send",
+          "request": {
+            "v": 1,
+            "command": "link.get",
+            "args": {
+              "slug": "x"
+            },
+            "options": {
+              "dry_run": true
+            }
+          },
+          "expect": {
+            "ok": false,
+            "error": {
+              "code": "unsupported"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "options_unsupported_async",
+      "doc": "options.async on a sync, non-async-capable command (link.create) is unsupported; valid args ensure the failure is the options mode, not validation",
+      "command": "link.create",
+      "transports": {
+        "skip": {
+          "rest_resource": "rest_resource carries no envelope options block; the generic/CLI/stdio/TUI transports convey options and assert the unsupported outcome"
+        }
+      },
+      "steps": [
+        {
+          "label": "send",
+          "request": {
+            "v": 1,
+            "command": "link.create",
+            "args": {
+              "target_url": "https://example.com/x"
+            },
+            "options": {
+              "async": true
+            }
+          },
+          "expect": {
+            "ok": false,
+            "error": {
+              "code": "unsupported"
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

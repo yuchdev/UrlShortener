@@ -9,9 +9,20 @@ jobs:
   integration-tests:
     runs-on: ubuntu-24.04
 
+    # Least privilege: uploading artifacts uses the job token but needs no
+    # contents:write; reading the repo is sufficient.
+    permissions:
+      contents: read
+
+    # The conformance runners (C++ and Python) write a per-transport summary
+    # JSON to $URLSHORTENER_CONFORMANCE_OUT; setting it here lets the suite
+    # populate it during the integration run so the summaries can be uploaded.
+    env:
+      URLSHORTENER_CONFORMANCE_OUT: ${{ github.workspace }}/conformance_out
+
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       - name: Install dependencies
         run: ./scripts/setup_ubuntu_dependencies.sh
@@ -22,5 +33,30 @@ jobs:
       - name: Build
         run: cmake --build build
 
+      - name: Prepare conformance output directory
+        run: mkdir -p "$URLSHORTENER_CONFORMANCE_OUT"
+
+      # Includes the conformance suite (label "integration;conformance") and the
+      # security process-level tests, matching the existing integration gate.
       - name: Run integration tests
         run: ctest --test-dir build --output-on-failure -L "integration"
+
+      # CLI e2e sections (11-19, 30) run the real binary one-shot; they need no
+      # mock service, so they are excluded from the live-service e2e workflow.
+      # Mock-service sections 01-10 stay in e2e-tests.yml.
+      - name: Run CLI e2e sections
+        run: >-
+          ctest --test-dir build --output-on-failure
+          -L "e2e" -E "^e2e_(0[1-9]|10)_"
+
+      # Upload the coverage matrix (when the coverage gate tool has produced it)
+      # and the per-transport conformance summaries for review.
+      - name: Upload conformance artifacts
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: conformance-summaries
+          path: |
+            ${{ env.URLSHORTENER_CONFORMANCE_OUT }}/
+            coverage_matrix.md
+          if-no-files-found: ignore

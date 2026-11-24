@@ -62,7 +62,7 @@ Number formatting: thousands separators (`84,210`) via a pure `format_count`; ti
 ## Implementation steps
 
 1. `on_enter(slug)`: submit `link.get`, `link.preview` (for `enabled`/`expires_at`/`deleted_at`, absent from `LinkView` JSON) and `link.stats` together; render skeleton "loading..." for the panes.
-2. Left/right columns layout exactly as D4 (labels dim, values normal); status text `active (enabled)` / `deleted (disabled)` composed from `status` (link.get) + `enabled` (link.preview); `campaign` rendered `name / source / medium`; absent -> `-`.
+2. Left/right columns layout exactly as D4 (labels dim, values normal); status text `active (enabled)` / `deleted (disabled)` composed from `status` (link.get) + `enabled` (link.preview); `campaign` rendered `name / source / medium`; absent -> `-`. Every stored value rendered here (target URL, slug, tags, metadata, campaign fields) is passed through `text_fit::sanitize_for_terminal` before `text()` (T-110: these rows carry untrusted stored data, incl. legacy/pre-fix slugs and `metadata`/`tags`/`campaign`).
 3. Stats pane: header string + one row of bars `Mon ####### Tue ########...` built by `day_bars()` and `sparkline` per day scaled to a fixed width; weekday computed from the bucket timestamp (UTC) with a small pure helper (no `<chrono>` calendar API in C++17 -> use `std::gmtime`-free civil-date algorithm; unit-tested).
 4. `e` pushes `link_form` (`link.update` prefilled from the fetched JSON); `p` calls `link.preview` and opens the result viewer; `s` re-fetches stats with a toggle between buckets `day`/`hour` if the descriptor's `bucket` doc allows (otherwise key hidden - read the arg doc at runtime).
 5. `deleted` links: show `deleted_at`, hint `u restore` that delegates to the list's action helper (reuse `run_mutation` with `link.restore`).
@@ -80,11 +80,12 @@ ctest --test-dir cmake-build -R "^tui__13_" --output-on-failure
 | Test file | Target | Label | Cases |
 |---|---|---|---|
 | `13_link_detail_model_test.cpp` | `tui__13_link_detail_model_test` | unit | `stats_request` bytes with `ManualClock` (from/to as epoch-second strings, `bucket:"day"`); `sparkline` scale cases: empty, one value, all zero, huge values (2^63), width 1; ascii variant; `format_count` 0/999/1,000/84,210; `rows()` for full link, link without tags/campaign/expires, deleted link; weekday computation across month/year boundaries and leap day |
-| `13_link_detail_screen_test.cpp` | `tui__13_link_detail_screen_test` | unit | exactly two requests (`link.get`, `link.stats`) on enter; D4 golden; stats error leaves link pane intact and shows `stats unavailable: <code>`; `link.get` `not_found` -> toast and auto-pop; `e` opens `link.update` form prefilled; `p` shows preview JSON; mono golden is ASCII |
+| `13_link_detail_screen_test.cpp` | `tui__13_link_detail_screen_test` | unit | exactly two requests (`link.get`, `link.stats`) on enter; D4 golden; stats error leaves link pane intact and shows `stats unavailable: <code>`; `link.get` `not_found` -> toast and auto-pop; `e` opens `link.update` form prefilled; `p` shows preview JSON; mono golden is ASCII; **T-110** a link whose `target`/`tags`/`metadata` hold `ESC[2J`/`U+202E` (from `support/hostile_strings.hpp`) renders with no control/bidi byte in the grid |
 
 ## Constraints
 
 - C8: JSON only through `json_view` (over the 01.0/01 scanner); no `LinkView` DTO.
+- Every stored string rendered in the detail/stats rows passes through `text_fit::sanitize_for_terminal` (T-110).
 - D4 layout per ADR 0003; no raw identifiers beyond what the command returns (C6: stats are aggregates only, no client ids - the screen must not display `domain_counts`' raw referrers beyond what `LinkStatsView` already returns; v1 shows only attempts/success/time buckets).
 - Time-dependent code uses the injected clock only (deterministic goldens).
 

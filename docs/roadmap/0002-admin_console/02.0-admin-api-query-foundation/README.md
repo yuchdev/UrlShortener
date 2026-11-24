@@ -9,7 +9,9 @@ Build the reusable backend and frontend infrastructure for paginated admin
 queries, filters, sorting, and typed DTOs that every later analytics/list
 page depends on. Nothing in this task is user-visible on its own - it exists
 so tasks 03.0 through 08.0 do not each reinvent pagination, time-range
-parsing, or the table/filter UI.
+parsing, or the table/filter UI. Link and URL-pair list endpoints are
+projections of registry commands; this task builds the projection layer
+(`AdminCommandBridge`) plus the primitives needed by analytics endpoints.
 
 This is the pagination/filter/error-format contract described in
 [plan.md - Shared contracts C3 and C4](/docs/roadmap/0002-admin_console/plan.md);
@@ -41,3 +43,5 @@ those contracts are authoritative and this task is where they get built.
   [plan.md - Shared contract C4](/docs/roadmap/0002-admin_console/plan.md).
 - Query params must be reflected in URL search params so filtered views are
   shareable internally.
+- Do not re-implement list/filter/sort for links; map to `link.list`
+  ([Milestone 0006 catalog section 3.2](/docs/commands/README.md)).

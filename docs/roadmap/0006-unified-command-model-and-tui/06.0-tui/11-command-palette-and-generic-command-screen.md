@@ -65,9 +65,9 @@ command-name prefix, not by a hard-coded list.
 
 1. `PaletteModel` built from `ICommandClient::commands()` (so it includes commands added later, e.g. `auth.*`, with no change); sort: score desc then name.
 2. Disabled entries (write/migrate commands in read-only mode) are shown dim with reason `not_authorized (read-only session)` and cannot be activated (18 reuses this).
-3. Enter on an entry pushes `generic_form` with a `FormModel` for that command; commands with **no** args skip the form and go straight to confirm/execute (e.g. `db.tables`, `system.info`, `command.list`).
-4. Toggle `Ctrl-J` "raw JSON args": replaces the generated fields with one multi-line `Input` containing `{}`; submit passes the text as `args` after a cheap brace-balance check (escape hatch for tags/metadata values containing `,`/`=`). Server validation remains authoritative.
-5. After a response: success -> `ResultViewer` (scrollable; `y` shows equivalent CLI toast); `job` response -> toast "job j-N accepted" and key `5` jumps to Jobs; error -> toast (06) with form left open.
+3. Enter on an entry pushes `generic_form` with a `FormModel` for that command; commands with **no** args skip the form and go straight to confirm/execute (e.g. `db.tables`, `system.info`, `command.list`). A **no-arg *mutating*** generic command still routes through `CapabilityModel::can_run` + `run_mutation`/`ConfirmPolicy` (T-116): it is denied in read-only and confirmed like any mutation, never executed straight through.
+4. Toggle `Ctrl-J` "raw JSON args": replaces the generated fields with one multi-line `Input` containing `{}`; submit passes the text as `args` after a cheap brace-balance check (escape hatch for tags/metadata values containing `,`/`=`). This escape hatch is **not** a capability bypass (T-116): a `Ctrl-J` submit of a write/migrate command is gated by the same `CapabilityModel::can_run` and `run_mutation`/`ConfirmPolicy` as the generated form - zero write requests in read-only. Server validation remains authoritative.
+5. After a response: success -> `ResultViewer` (scrollable; `y` shows equivalent CLI toast); `job` response -> toast "job j-N accepted" and key `5` jumps to Jobs; error -> toast (06) with form left open. `ResultViewerModel::visible_lines` passes each emitted line through `text_fit::sanitize_for_terminal` (T-110: the viewer renders the raw `result`/`error`/`job` JSON of stored, untrusted data), and palette entries render `sanitize_for_terminal` of their name/summary.
 6. `Esc` returns palette -> previous screen (router `pop`).
 
 ## Commands
@@ -82,14 +82,15 @@ ctest --test-dir cmake-build -R "^tui__11_" --output-on-failure
 | Test file | Target | Label | Cases |
 |---|---|---|---|
 | `11_palette_model_test.cpp` | `tui__11_palette_model_test` | unit | empty query lists all, sorted; `link.` prefix shows only link commands; `lst` subsequence matches `link.list`; unknown query -> empty list; read-only marks write/migrate disabled with reason; a synthetic extra command appears with no code change (the D9 "zero TUI code" claim); stable order for equal scores |
-| `11_result_viewer_model_test.cpp` | `tui__11_result_viewer_model_test` | unit | wraps long strings at width; scroll clamps; empty JSON; 10,000-line result handled lazily |
+| `11_result_viewer_model_test.cpp` | `tui__11_result_viewer_model_test` | unit | wraps long strings at width; scroll clamps; empty JSON; 10,000-line result handled lazily (T-121 lazy cap as a tested invariant); **T-110** a result string from `support/hostile_strings.hpp` (`ESC[2J`, `OSC 52`, `U+202E`) yields `visible_lines` with no control/bidi byte |
 | `11_palette_render_test.cpp` | `tui__11_palette_render_test` | unit | D9 goldens (empty, `link.`, read-only dimming); selection marker; query line `: link.[` |
-| `11_generic_command_flow_test.cpp` | `tui__11_generic_command_flow_test` | unit | with Mock: choose `db.tables` -> exactly one request `{"command":"db.tables"}` and viewer shows the result; choose `link.delete`, fill slug, confirm token -> one request; cancel at confirm -> none; `job` response shows job toast; raw-JSON mode sends the typed text verbatim; read-only: Enter on a write entry sends nothing |
+| `11_generic_command_flow_test.cpp` | `tui__11_generic_command_flow_test` | unit | with Mock: choose `db.tables` -> exactly one request `{"command":"db.tables"}` and viewer shows the result; choose `link.delete`, fill slug, confirm token -> one request; cancel at confirm -> none; `job` response shows job toast; raw-JSON mode sends the typed text verbatim; read-only: Enter on a write entry sends nothing; **T-116** a `Ctrl-J` raw-JSON write submit and a no-arg mutating generic command each pass `ConfirmPolicy` before any `call` and send zero requests in read-only |
 
 ## Constraints
 
 - C1/C8: the palette lists whatever `ICommandClient::commands()` returns; no command-name list in TUI code (grep test as in 07).
-- Mutations pass `run_mutation` (confirm policy) (ADR 0003 rule 4).
+- Mutations pass `run_mutation` (confirm policy) (ADR 0003 rule 4) - including the `Ctrl-J` raw-JSON path and no-arg mutating commands (T-116), neither of which bypasses `CapabilityModel`/`ConfirmPolicy`.
+- The result viewer and palette rows render `text_fit::sanitize_for_terminal` of stored strings (T-110).
 - Layout as D9; palette is an overlay reachable from every screen via `:`.
 - No blocking calls.
 

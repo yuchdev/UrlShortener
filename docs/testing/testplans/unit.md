@@ -22,6 +22,12 @@ services. They are the first required test layer for every code change.
 - Storage model validation, SQL dialects, cache behavior, and error mapping.
 - Analytics builders, sanitizers, queue, worker, retention, and stats mapping.
 - Security primitives, auth broker behavior, access guards, and log redaction.
+- Command registry pipeline (`commands__01`..`14`), error table, ArgSpec, audit,
+  and catalog; link/browse/job command implementations (`commands__20`..`79`).
+- TUI models, goldens, flows, and conformance shim (`tui__01`..`tui__37`);
+  headless render harness; `UPDATE_GOLDEN=1` for intentional layout changes.
+- Conformance corpus lint (`conformance_00_corpus_lint`) and matcher vectors
+  (`conformance_01_matcher_vectors`), which carry the `unit` label.
 
 ## Acceptance criteria
 
