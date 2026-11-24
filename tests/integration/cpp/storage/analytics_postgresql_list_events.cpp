@@ -5,6 +5,7 @@
 #include <boost/test/unit_test.hpp>
 
 #include "click_event_list_events_shared.hpp"
+#include "metadata_contract_common.hpp"
 
 using namespace url_shortener;
 
@@ -20,8 +21,8 @@ using namespace url_shortener;
  */
 BOOST_AUTO_TEST_CASE(postgresql_list_events)
 {
-    const char* dsn = std::getenv("URL_SHORTENER_TEST_POSTGRES_DSN");
-    if (dsn == nullptr || std::string(dsn).empty()) {
+    const std::string& dsn = ContractPostgresDsn();
+    if (dsn.empty()) {
         BOOST_TEST_MESSAGE("SKIPPED: URL_SHORTENER_TEST_POSTGRES_DSN not set");
         BOOST_TEST(true);
         return;
